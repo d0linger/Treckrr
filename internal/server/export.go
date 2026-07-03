@@ -37,7 +37,7 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 	s.writeCSV(w, filename, entries, names)
 }
 
-// handleExportNeighbor exports one neighbour's entries within a billing year.
+// handleExportNeighbor exports one neighbor's entries within a billing year.
 func (s *Server) handleExportNeighbor(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {

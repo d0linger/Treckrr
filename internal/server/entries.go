@@ -67,7 +67,7 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "neighbor", data)
 }
 
-// handleNeighborOverview shows one neighbour across all billing years with cost,
+// handleNeighborOverview shows one neighbor across all billing years with cost,
 // hours and payment status (payment history).
 func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
@@ -117,7 +117,7 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 	s.render(w, r, "neighbor_overview", data)
 }
 
-// neighborName returns a neighbour's name for audit details, or "#id" if it
+// neighborName returns a neighbor's name for audit details, or "#id" if it
 // cannot be resolved.
 func (s *Server) neighborName(r *http.Request, id int64) string {
 	if n, err := s.store.GetNeighbor(r.Context(), id); err == nil {
@@ -254,7 +254,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 
 // resolveEntryFromForm reads the booking form fields, resolves the tractor,
 // load level and machines (from a fixed gespann or manual selection) and
-// returns a populated Entry (without neighbour/year) plus its machine ids. On
+// returns a populated Entry (without neighbor/year) plus its machine ids. On
 // validation failure it returns a non-empty German message.
 func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, string) {
 	var (

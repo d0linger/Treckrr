@@ -97,7 +97,7 @@ func (s *Store) SetYearStatus(ctx context.Context, id int64, status string) erro
 	return err
 }
 
-// SetNeighborPaid marks a neighbour's yearly bill as paid or open.
+// SetNeighborPaid marks a neighbor's yearly bill as paid or open.
 func (s *Store) SetNeighborPaid(ctx context.Context, yearID, neighborID int64, paid bool) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE billing_year_neighbors
@@ -106,14 +106,14 @@ func (s *Store) SetNeighborPaid(ctx context.Context, yearID, neighborID int64, p
 	return err
 }
 
-// ResetYearPayments sets every neighbour of a year back to "open" (unpaid).
+// ResetYearPayments sets every neighbor of a year back to "open" (unpaid).
 func (s *Store) ResetYearPayments(ctx context.Context, yearID int64) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE billing_year_neighbors SET paid = FALSE, paid_at = NULL WHERE billing_year_id = $1`, yearID)
 	return err
 }
 
-// YearPayments returns a map of neighbour id -> paid flag for a billing year.
+// YearPayments returns a map of neighbor id -> paid flag for a billing year.
 func (s *Store) YearPayments(ctx context.Context, yearID int64) (map[int64]bool, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT neighbor_id, paid FROM billing_year_neighbors WHERE billing_year_id=$1`, yearID)
@@ -161,8 +161,8 @@ func (s *Store) PreviousBillingYear(ctx context.Context, beforeYear int) (*model
 	return &y, nil
 }
 
-// CarryOverNeighbors copies the neighbour membership of one billing year into
-// another (idempotent), returning the number of neighbours newly added.
+// CarryOverNeighbors copies the neighbor membership of one billing year into
+// another (idempotent), returning the number of neighbors newly added.
 func (s *Store) CarryOverNeighbors(ctx context.Context, fromYearID, toYearID int64) (int, error) {
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO billing_year_neighbors (billing_year_id, neighbor_id)
@@ -175,9 +175,9 @@ func (s *Store) CarryOverNeighbors(ctx context.Context, fromYearID, toYearID int
 	return int(n), nil
 }
 
-// ---- Year <-> neighbour membership --------------------------------------
+// ---- Year <-> neighbor membership --------------------------------------
 
-// ListYearNeighbors returns the neighbours participating in a billing year.
+// ListYearNeighbors returns the neighbors participating in a billing year.
 func (s *Store) ListYearNeighbors(ctx context.Context, yearID int64) ([]models.Neighbor, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.name, n.note, n.archived, n.created_at
@@ -192,8 +192,8 @@ func (s *Store) ListYearNeighbors(ctx context.Context, yearID int64) ([]models.N
 	return scanNeighborRows(rows)
 }
 
-// ListNeighborsNotInYear returns active neighbours not yet in a billing year.
-// Archived neighbours are not offered for new assignments.
+// ListNeighborsNotInYear returns active neighbors not yet in a billing year.
+// Archived neighbors are not offered for new assignments.
 func (s *Store) ListNeighborsNotInYear(ctx context.Context, yearID int64) ([]models.Neighbor, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.name, n.note, n.archived, n.created_at
@@ -222,7 +222,7 @@ func scanNeighborRows(rows *sql.Rows) ([]models.Neighbor, error) {
 	return out, rows.Err()
 }
 
-// AddNeighborToYear links a neighbour to a billing year (idempotent).
+// AddNeighborToYear links a neighbor to a billing year (idempotent).
 func (s *Store) AddNeighborToYear(ctx context.Context, yearID, neighborID int64) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO billing_year_neighbors (billing_year_id, neighbor_id)
@@ -230,7 +230,7 @@ func (s *Store) AddNeighborToYear(ctx context.Context, yearID, neighborID int64)
 	return err
 }
 
-// RemoveNeighborFromYear unlinks a neighbour from a billing year.
+// RemoveNeighborFromYear unlinks a neighbor from a billing year.
 func (s *Store) RemoveNeighborFromYear(ctx context.Context, yearID, neighborID int64) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM billing_year_neighbors WHERE billing_year_id=$1 AND neighbor_id=$2`,
@@ -238,7 +238,7 @@ func (s *Store) RemoveNeighborFromYear(ctx context.Context, yearID, neighborID i
 	return err
 }
 
-// NeighborInYear reports whether a neighbour participates in a billing year.
+// NeighborInYear reports whether a neighbor participates in a billing year.
 func (s *Store) NeighborInYear(ctx context.Context, yearID, neighborID int64) (bool, error) {
 	var exists bool
 	err := s.db.QueryRowContext(ctx,
@@ -247,7 +247,7 @@ func (s *Store) NeighborInYear(ctx context.Context, yearID, neighborID int64) (b
 	return exists, err
 }
 
-// CountEntriesForNeighborYear returns entries a neighbour has in a year.
+// CountEntriesForNeighborYear returns entries a neighbor has in a year.
 func (s *Store) CountEntriesForNeighborYear(ctx context.Context, yearID, neighborID int64) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,

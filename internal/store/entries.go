@@ -9,9 +9,9 @@ import (
 	"treckrr/internal/models"
 )
 
-// ---- Neighbours ----------------------------------------------------------
+// ---- Neighbors ----------------------------------------------------------
 
-// ListNeighbors returns all neighbours (active first, then archived).
+// ListNeighbors returns all neighbors (active first, then archived).
 func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, name, note, archived, created_at FROM neighbors ORDER BY archived, name`)
@@ -30,7 +30,7 @@ func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 	return out, rows.Err()
 }
 
-// GetNeighbor returns a neighbour by id.
+// GetNeighbor returns a neighbor by id.
 func (s *Store) GetNeighbor(ctx context.Context, id int64) (*models.Neighbor, error) {
 	var n models.Neighbor
 	err := s.db.QueryRowContext(ctx,
@@ -42,13 +42,13 @@ func (s *Store) GetNeighbor(ctx context.Context, id int64) (*models.Neighbor, er
 	return &n, err
 }
 
-// SetNeighborArchived archives or reactivates a neighbour.
+// SetNeighborArchived archives or reactivates a neighbor.
 func (s *Store) SetNeighborArchived(ctx context.Context, id int64, archived bool) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE neighbors SET archived=$1 WHERE id=$2`, archived, id)
 	return err
 }
 
-// CreateNeighbor inserts a neighbour.
+// CreateNeighbor inserts a neighbor.
 func (s *Store) CreateNeighbor(ctx context.Context, name, note string) (int64, error) {
 	var id int64
 	err := s.db.QueryRowContext(ctx,
@@ -56,20 +56,20 @@ func (s *Store) CreateNeighbor(ctx context.Context, name, note string) (int64, e
 	return id, err
 }
 
-// UpdateNeighbor updates a neighbour.
+// UpdateNeighbor updates a neighbor.
 func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE neighbors SET name=$1, note=$2 WHERE id=$3`, name, note, id)
 	return err
 }
 
-// DeleteNeighbor removes a neighbour and their entries.
+// DeleteNeighbor removes a neighbor and their entries.
 func (s *Store) DeleteNeighbor(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM neighbors WHERE id=$1`, id)
 	return err
 }
 
-// CountYearsForNeighbor returns how many billing years a neighbour is part of.
+// CountYearsForNeighbor returns how many billing years a neighbor is part of.
 func (s *Store) CountYearsForNeighbor(ctx context.Context, neighborID int64) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,
@@ -77,7 +77,7 @@ func (s *Store) CountYearsForNeighbor(ctx context.Context, neighborID int64) (in
 	return n, err
 }
 
-// CountEntriesForNeighbor returns the total entries a neighbour has (all years).
+// CountEntriesForNeighbor returns the total entries a neighbor has (all years).
 func (s *Store) CountEntriesForNeighbor(ctx context.Context, neighborID int64) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,
@@ -154,7 +154,7 @@ func (s *Store) GetEntry(ctx context.Context, id int64) (*models.Entry, error) {
 	return &e, nil
 }
 
-// ListEntries returns entries for a neighbour within a billing year.
+// ListEntries returns entries for a neighbor within a billing year.
 func (s *Store) ListEntries(ctx context.Context, neighborID, yearID int64) ([]models.Entry, error) {
 	rows, err := s.db.QueryContext(ctx,
 		entrySelect+` WHERE neighbor_id=$1 AND billing_year_id=$2 ORDER BY entry_date, id`,
@@ -177,7 +177,7 @@ func (s *Store) ListEntriesByYear(ctx context.Context, yearID int64) ([]models.E
 	return collectEntries(rows)
 }
 
-// NeighborTotal returns the summed cost and hours for a neighbour in a year,
+// NeighborTotal returns the summed cost and hours for a neighbor in a year,
 // excluding voided (cancelled) entries.
 func (s *Store) NeighborTotal(ctx context.Context, neighborID, yearID int64) (cost, hours float64, err error) {
 	err = s.db.QueryRowContext(ctx,

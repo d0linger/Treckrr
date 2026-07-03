@@ -6,7 +6,7 @@ package totp
 import (
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha1"
+	"crypto/sha1" //nosec G505 -- RFC 6238 (TOTP) mandates HMAC-SHA1; required for authenticator-app compatibility
 	"encoding/base32"
 	"encoding/binary"
 	"fmt"
@@ -56,9 +56,15 @@ func Validate(secret, input string) bool {
 	if len(input) != digits {
 		return false
 	}
-	counter := uint64(time.Now().Unix() / period)
+	counter := uint64(time.Now().Unix() / period) //nosec G115 -- Unix time is non-negative
 	for delta := -1; delta <= 1; delta++ {
-		if c, err := code(secret, counter+uint64(delta)); err == nil && c == input {
+		probe := counter
+		if delta < 0 {
+			probe -= uint64(-delta) //nosec G115 -- -delta is 1 (non-negative)
+		} else {
+			probe += uint64(delta) //nosec G115 -- delta is 0 or 1 (non-negative)
+		}
+		if c, err := code(secret, probe); err == nil && c == input {
 			return true
 		}
 	}

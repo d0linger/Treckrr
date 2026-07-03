@@ -63,7 +63,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Neighbour id -> name for the by-neighbour aggregation.
+	// Neighbor id -> name for the by-neighbor aggregation.
 	names := map[int64]string{}
 	if ns, err := s.store.ListNeighbors(r.Context()); err == nil {
 		for _, n := range ns {

@@ -35,5 +35,9 @@ issues:
     - path: internal/server/
       linters: [errcheck]
       text: "Error return value of .*(Write|Encode|SetCookie).* is not checked"
+    # TOTP (RFC 6238) requires HMAC-SHA1; counter conversions are provably safe.
+    - path: internal/totp/
+      linters: [gosec]
+      text: "G505|G115"
   max-issues-per-linter: 0
   max-same-issues: 0

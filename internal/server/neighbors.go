@@ -8,14 +8,14 @@ import (
 	"treckrr/internal/store"
 )
 
-// neighborStat is a neighbour with aggregate counts for the central list.
+// neighborStat is a neighbor with aggregate counts for the central list.
 type neighborStat struct {
 	Neighbor models.Neighbor
 	Years    int
 	Entries  int
 }
 
-// handleNeighborsManage renders the central neighbour management page.
+// handleNeighborsManage renders the central neighbor management page.
 func (s *Server) handleNeighborsManage(w http.ResponseWriter, r *http.Request) {
 	neighbors, err := s.store.ListNeighbors(r.Context())
 	if err != nil {
@@ -42,7 +42,7 @@ func (s *Server) handleNeighborsManage(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "neighbors_manage", data)
 }
 
-// handleNeighborManageCreate creates a neighbour from the central page.
+// handleNeighborManageCreate creates a neighbor from the central page.
 func (s *Server) handleNeighborManageCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
@@ -64,7 +64,7 @@ func (s *Server) handleNeighborManageCreate(w http.ResponseWriter, r *http.Reque
 	redirect(w, r, "/neighbors")
 }
 
-// handleCarryOverNeighbors copies selected neighbours (or all checked ones)
+// handleCarryOverNeighbors copies selected neighbors (or all checked ones)
 // from the previous billing year into the current one.
 func (s *Server) handleCarryOverNeighbors(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
@@ -134,7 +134,7 @@ func (s *Server) handleCarryOverNeighbors(w http.ResponseWriter, r *http.Request
 	redirect(w, r, dashboardURL(yearID))
 }
 
-// handleNeighborArchive archives or reactivates a neighbour.
+// handleNeighborArchive archives or reactivates a neighbor.
 func (s *Server) handleNeighborArchive(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {

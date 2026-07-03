@@ -52,7 +52,7 @@ type seedMachine struct {
 
 // SeedDefaultData creates an initial pricing basis (year 2025) populated with
 // the values from the source spreadsheet, a cloned 2026 basis, and the three
-// example neighbours. It is a no-op if any pricing basis already exists.
+// example neighbors. It is a no-op if any pricing basis already exists.
 func (s *Store) SeedDefaultData(ctx context.Context) error {
 	bases, err := s.ListBases(ctx)
 	if err != nil {
@@ -144,7 +144,7 @@ func (s *Store) SeedDefaultData(ctx context.Context) error {
 	}
 
 	// Create a sample billing year (Abrechnungsjahr) that uses this basis and
-	// add the example neighbours as participants. Further years can be created
+	// add the example neighbors as participants. Further years can be created
 	// in the app and may reuse this basis or a newer one.
 	yearID, err := s.CreateBillingYear(ctx, 2025, baseID, "Abrechnung 2025")
 	if err != nil {

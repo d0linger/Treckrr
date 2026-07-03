@@ -66,7 +66,7 @@ const (
 )
 
 // BillingYear (Abrechnungsjahr) is the unit the user works in: a calendar year
-// bound to one pricing basis, with its own participating neighbours.
+// bound to one pricing basis, with its own participating neighbors.
 type BillingYear struct {
 	ID      int64
 	Year    int

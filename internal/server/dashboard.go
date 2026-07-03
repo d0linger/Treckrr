@@ -6,7 +6,7 @@ import (
 	"treckrr/internal/models"
 )
 
-// neighborSummary is a neighbour with its totals for the selected billing year.
+// neighborSummary is a neighbor with its totals for the selected billing year.
 type neighborSummary struct {
 	Neighbor models.Neighbor
 	Cost     float64
@@ -69,7 +69,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
-	// Offer "carry over neighbours from the previous year" when one exists and
+	// Offer "carry over neighbors from the previous year" when one exists and
 	// there are members not yet in this year.
 	if prev, err := s.store.PreviousBillingYear(r.Context(), year.Year); err == nil {
 		current := map[int64]bool{}
@@ -102,7 +102,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "dashboard", data)
 }
 
-// handleYearAddNeighbor adds an existing neighbour to the billing year.
+// handleYearAddNeighbor adds an existing neighbor to the billing year.
 func (s *Server) handleYearAddNeighbor(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
@@ -124,8 +124,8 @@ func (s *Server) handleYearAddNeighbor(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, dashboardURL(yearID))
 }
 
-// handleYearRemoveNeighbor removes a neighbour from the year (membership only).
-// It refuses when the neighbour still has entries booked in that year.
+// handleYearRemoveNeighbor removes a neighbor from the year (membership only).
+// It refuses when the neighbor still has entries booked in that year.
 func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
@@ -152,7 +152,7 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 	redirect(w, r, dashboardURL(yearID))
 }
 
-// handleNeighborPaid toggles the payment status of a neighbour within a year.
+// handleNeighborPaid toggles the payment status of a neighbor within a year.
 func (s *Server) handleNeighborPaid(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
@@ -197,8 +197,8 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, neighborReturnURL(r, id))
 }
 
-// neighborReturnURL points back to the central neighbour page when the request
-// originated there, otherwise to the neighbour within the current year.
+// neighborReturnURL points back to the central neighbor page when the request
+// originated there, otherwise to the neighbor within the current year.
 func neighborReturnURL(r *http.Request, id int64) string {
 	if r.FormValue("origin") == "manage" {
 		return "/neighbors"
@@ -206,14 +206,14 @@ func neighborReturnURL(r *http.Request, id int64) string {
 	return neighborURL(id, formInt64(r, "year_id"))
 }
 
-// handleNeighborDelete deletes the neighbour globally (all years and entries).
+// handleNeighborDelete deletes the neighbor globally (all years and entries).
 func (s *Server) handleNeighborDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	// Neighbours with bookings must not be deleted (would change history).
+	// Neighbors with bookings must not be deleted (would change history).
 	// They can be deactivated instead.
 	count, err := s.store.CountEntriesForNeighbor(r.Context(), id)
 	if err != nil {

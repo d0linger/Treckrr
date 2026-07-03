@@ -150,7 +150,7 @@ func (s *Server) handleYearStatus(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SetYearStatus(r.Context(), id, status); err != nil {
 		s.setFlash(w, "error", "Statuswechsel fehlgeschlagen.")
 	} else if status == models.YearCompleted {
-		// Every neighbour starts as "open" when the year is closed for billing.
+		// Every neighbor starts as "open" when the year is closed for billing.
 		if err := s.store.ResetYearPayments(r.Context(), id); err != nil {
 			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 			return
