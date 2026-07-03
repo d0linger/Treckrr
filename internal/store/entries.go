@@ -178,7 +178,7 @@ func (s *Store) ListEntriesByYear(ctx context.Context, yearID int64) ([]models.E
 }
 
 // NeighborTotal returns the summed cost and hours for a neighbor in a year,
-// excluding voided (cancelled) entries.
+// excluding voided (canceled) entries.
 func (s *Store) NeighborTotal(ctx context.Context, neighborID, yearID int64) (cost, hours float64, err error) {
 	err = s.db.QueryRowContext(ctx,
 		`SELECT COALESCE(SUM(cost),0), COALESCE(SUM(hours),0)
