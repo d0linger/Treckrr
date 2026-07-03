@@ -1,6 +1,10 @@
 package server
 
-import "net/http"
+import (
+	"net/http"
+	"net/url"
+	"strings"
+)
 
 const themeCookie = "treckrr_theme"
 
@@ -30,9 +34,28 @@ func (s *Server) handleTheme(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   365 * 24 * 3600,
 		SameSite: http.SameSiteLaxMode,
 	})
-	target := r.Header.Get("Referer")
-	if target == "" {
-		target = "/profile"
+	http.Redirect(w, r, safeReturnPath(r, "/profile"), http.StatusSeeOther)
+}
+
+// safeReturnPath returns the Referer as a local, same-origin path (to send the
+// user back where they were) or the fallback. It rejects absolute/cross-origin
+// URLs to prevent open redirects.
+func safeReturnPath(r *http.Request, fallback string) string {
+	ref := r.Header.Get("Referer")
+	if ref == "" {
+		return fallback
 	}
-	http.Redirect(w, r, target, http.StatusSeeOther)
+	u, err := url.Parse(ref)
+	if err != nil || (u.Host != "" && u.Host != r.Host) {
+		return fallback
+	}
+	// Only a local absolute path ("/...", but not "//host" or a scheme).
+	if !strings.HasPrefix(u.Path, "/") || strings.HasPrefix(u.Path, "//") {
+		return fallback
+	}
+	target := u.Path
+	if u.RawQuery != "" {
+		target += "?" + u.RawQuery
+	}
+	return target
 }

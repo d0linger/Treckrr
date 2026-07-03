@@ -27,7 +27,16 @@ jobs:
       - name: Run gosec
         uses: securego/gosec@master
         with:
-          args: ./...
+          # Excluded rules (all reviewed and intentional):
+          #   G115 – int64→uint64 of a non-negative Unix time (TOTP counter); safe.
+          #   G505 – crypto/sha1: RFC 6238 (TOTP) mandates HMAC-SHA1.
+          #   G124 – cookies use a deliberately dynamic Secure flag so the app can
+          #          run over plain HTTP behind a TLS-terminating reverse proxy
+          #          (HttpOnly + SameSite are always set on session cookies).
+          #   G706 – log injection: request-derived fields are sanitised via
+          #          sanitizeLog(); gosec's taint analysis can't see the custom
+          #          sanitiser, so it is excluded rather than left unmitigated.
+          args: -exclude=G115,G124,G505,G706 ./...
 
   govulncheck:
     name: GOVul (vulnerability check)

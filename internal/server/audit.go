@@ -177,6 +177,13 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 			user = u.Username
 		}
 		log.Printf("%s %s %d %s user=%s ip=%s",
-			r.Method, r.URL.Path, rec.status, time.Since(start).Round(time.Millisecond), user, s.clientIP(r))
+			sanitizeLog(r.Method), sanitizeLog(r.URL.Path), rec.status,
+			time.Since(start).Round(time.Millisecond), sanitizeLog(user), sanitizeLog(s.clientIP(r)))
 	})
+}
+
+// sanitizeLog strips CR/LF from request-derived values so they cannot forge
+// additional log lines (log injection).
+func sanitizeLog(s string) string {
+	return strings.NewReplacer("\n", " ", "\r", " ").Replace(s)
 }
