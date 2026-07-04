@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---------- Build stage ----------
-FROM golang:1.24-alpine AS build
+FROM golang:1.26.4-alpine3.24 AS build
 
 WORKDIR /src
 
@@ -16,7 +16,7 @@ ENV CGO_ENABLED=0 GOOS=linux
 RUN go build -trimpath -ldflags="-s -w" -o /out/treckrr ./cmd/treckrr
 
 # ---------- Runtime stage ----------
-FROM alpine:3.20
+FROM alpine:3.24
 
 # Non-root user & CA certs (for completeness; app talks only to local DB).
 RUN apk add --no-cache ca-certificates tzdata wget \

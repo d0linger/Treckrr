@@ -1,0 +1,8 @@
+# Keep Go sources LF everywhere; gofmt (and golangci-lint's gofmt check)
+# reports CRLF files as unformatted on Windows checkouts.
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sql text eol=lf

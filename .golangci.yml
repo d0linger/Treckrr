@@ -1,43 +1,69 @@
-# golangci-lint configuration for Treckrr.
+version: "2"
 run:
-  timeout: 5m
   tests: true
-
 linters:
   enable:
-    - errcheck
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - gofmt
-    - goimports
-    - misspell
-    - revive
     - bodyclose
     - gosec
+    - misspell
+    - revive
     - unconvert
     - whitespace
-
-linters-settings:
-  goimports:
-    local-prefixes: treckrr
-  misspell:
-    locale: US
-  revive:
+  settings:
+    gosec:
+      # Excluded rules (all reviewed and intentional, kept in sync with the
+      # gosec job in .github/workflows/security.yml):
+      #   G115 – int64→uint64 of a non-negative Unix time (TOTP counter); safe.
+      #   G505 – crypto/sha1: RFC 6238 (TOTP) mandates HMAC-SHA1.
+      #   G124 – cookies use a deliberately dynamic Secure flag so the app can
+      #          run over plain HTTP behind a TLS-terminating reverse proxy.
+      #   G706 – log injection: request-derived fields are sanitised via
+      #          sanitizeLog(); gosec's taint analysis can't see it.
+      excludes:
+        - G115
+        - G124
+        - G505
+        - G706
+    misspell:
+      locale: US
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
     rules:
-      - name: exported
-        disabled: true
-
+      - linters:
+          - errcheck
+        path: internal/server/
+        text: Error return value of .*(Write|Encode|SetCookie).* is not checked
+      - linters:
+          - gosec
+        path: internal/totp/
+        text: G505|G115
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-rules:
-    # Allow ignored errors on best-effort writes (flash cookies, CSV writer).
-    - path: internal/server/
-      linters: [errcheck]
-      text: "Error return value of .*(Write|Encode|SetCookie).* is not checked"
-    # TOTP (RFC 6238) requires HMAC-SHA1; counter conversions are provably safe.
-    - path: internal/totp/
-      linters: [gosec]
-      text: "G505|G115"
   max-issues-per-linter: 0
   max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - treckrr
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

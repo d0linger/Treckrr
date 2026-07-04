@@ -1,0 +1,41 @@
+# Example compose file using the prebuilt multi-arch image from GHCR
+# (published by .github/workflows/docker-publish.yml for amd64 + arm64).
+# No local build needed:
+#   docker compose -f docker-compose.ghcr.yml up -d
+# Pin a release instead of latest by setting TRECKRR_TAG (e.g. TRECKRR_TAG=1.2).
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: treckrr-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-treckrr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-treckrr-db-password-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-treckrr}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-treckrr} -d ${POSTGRES_DB:-treckrr}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: ghcr.io/arumes31/treckrr:${TRECKRR_TAG:-latest}
+    container_name: treckrr-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_PORT: ${APP_PORT:-8080}
+      DATABASE_URL: ${DATABASE_URL:-postgres://treckrr:treckrr-db-password-change-me@db:5432/treckrr?sslmode=disable}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-please-generate-a-random-value}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-admin-password}
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+
+volumes:
+  pgdata:
