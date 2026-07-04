@@ -26,6 +26,11 @@ jobs:
       - run: go mod tidy
       - name: Run gosec
         uses: securego/gosec@v2.27.1
+        env:
+          # The gosec container bundles its own Go with GOTOOLCHAIN=local,
+          # which can lag behind the go.mod requirement (e.g. 1.26.2 vs
+          # 1.26.4). Let it download the exact toolchain instead.
+          GOTOOLCHAIN: go1.26.4
         with:
           # Excluded rules (all reviewed and intentional):
           #   G115 – int64→uint64 of a non-negative Unix time (TOTP counter); safe.
