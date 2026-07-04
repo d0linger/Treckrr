@@ -161,20 +161,6 @@ func (s *Store) PreviousBillingYear(ctx context.Context, beforeYear int) (*model
 	return &y, nil
 }
 
-// CarryOverNeighbors copies the neighbor membership of one billing year into
-// another (idempotent), returning the number of neighbors newly added.
-func (s *Store) CarryOverNeighbors(ctx context.Context, fromYearID, toYearID int64) (int, error) {
-	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO billing_year_neighbors (billing_year_id, neighbor_id)
-		SELECT $2, neighbor_id FROM billing_year_neighbors WHERE billing_year_id = $1
-		ON CONFLICT DO NOTHING`, fromYearID, toYearID)
-	if err != nil {
-		return 0, err
-	}
-	n, _ := res.RowsAffected()
-	return int(n), nil
-}
-
 // ---- Year <-> neighbor membership --------------------------------------
 
 // ListYearNeighbors returns the neighbors participating in a billing year.

@@ -10,7 +10,7 @@ CSS/JS/icons are served locally. Only two Go dependencies (`pgx`, `x/crypto`).
 
 [![CI](https://github.com/d0linger/Treckrr/actions/workflows/ci.yml/badge.svg)](https://github.com/d0linger/Treckrr/actions/workflows/ci.yml)
 [![Security](https://github.com/d0linger/Treckrr/actions/workflows/security.yml/badge.svg)](https://github.com/d0linger/Treckrr/actions/workflows/security.yml)
-![Go](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8)
 
@@ -110,6 +110,20 @@ docker compose up -d --build
 #    http://localhost:8080   (HOST_PORT from .env)
 ```
 
+### Prebuilt image (GHCR)
+
+A multi-arch image (`linux/amd64`, `linux/arm64`) is published to GitHub
+Container Registry on every push to `main` and on `v*` release tags. To run it
+without building locally:
+
+```bash
+docker compose -f docker-compose.ghcr.yml up -d
+# pin a version instead of latest:
+TRECKRR_TAG=1.2 docker compose -f docker-compose.ghcr.yml up -d
+```
+
+Image: `ghcr.io/arumes31/treckrr` (tags: `latest`, `main`, semver from release tags).
+
 On first start the app runs schema migrations, provisions the admin user, and
 seeds an example **rate basis 2023** (spreadsheet values incl. rigs) plus a
 **billing year 2025** with three sample neighbours. Add further years under
@@ -183,7 +197,7 @@ internal/web       Embedded HTML templates & local assets (CSS/JS/icons)
 
 ## Development
 
-Without Docker (local Go ≥ 1.23 and a reachable PostgreSQL):
+Without Docker (local Go ≥ 1.26 and a reachable PostgreSQL):
 
 ```bash
 export DATABASE_URL="postgres://treckrr:treckrr@localhost:5432/treckrr?sslmode=disable"
@@ -210,6 +224,11 @@ GitHub workflows under `.github/workflows/`:
 - **CI** — `go vet`, tests with the race detector, build, and `golangci-lint`.
 - **Security** — `gosec` (static analysis) and `govulncheck` (known CVEs).
 - **Dependency review** — on pull requests.
+- **GitSecret** — `gitleaks` scans the full git history for leaked secrets.
+- **DeadCode** — `golang.org/x/tools/cmd/deadcode` fails the build on
+  unreachable functions.
+- **Docker** — builds the multi-arch image and pushes it to GHCR
+  (`ghcr.io/arumes31/treckrr`).
 
 **Dependabot** keeps Go modules, GitHub Actions and the Docker base image current.
 

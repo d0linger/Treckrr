@@ -12,7 +12,7 @@ cp .env.example .env          # then edit the secrets
 docker compose up -d --build  # http://localhost:8080
 ```
 
-For a local Go workflow (Go ≥ 1.23 and a reachable PostgreSQL), see the
+For a local Go workflow (Go ≥ 1.26 and a reachable PostgreSQL), see the
 [Development section of the README](README.md#development).
 
 ## Project layout
