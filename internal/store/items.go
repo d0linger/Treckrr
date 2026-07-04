@@ -176,18 +176,6 @@ func (s *Store) queryMachines(ctx context.Context, query string, args ...any) ([
 	return out, rows.Err()
 }
 
-// GetMachine returns a machine by id.
-func (s *Store) GetMachine(ctx context.Context, id int64) (*models.Machine, error) {
-	var m models.Machine
-	err := s.db.QueryRowContext(ctx,
-		`SELECT `+machineCols+` FROM machines WHERE id=$1`, id).
-		Scan(&m.ID, &m.BaseID, &m.Name, &m.WorkingWidth, &m.CostPerAB, &m.Active, &m.Category, &m.SortOrder)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	return &m, err
-}
-
 // SetMachineActive activates or deactivates a machine.
 func (s *Store) SetMachineActive(ctx context.Context, id int64, active bool) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE machines SET active=$1 WHERE id=$2`, active, id)
