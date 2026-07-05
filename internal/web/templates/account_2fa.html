@@ -1,21 +1,54 @@
 {{define "content"}}
 <section class="stack">
+	{{if .NewCodes}}
+	<div class="card">
+		<h2 class="section-title">Wiederherstellungscodes</h2>
+		{{if .Notice}}<div class="flash flash--info">{{.Notice}}</div>{{end}}
+		<p class="muted">Bewahre diese Codes sicher auf (z. B. Passwortmanager oder ausgedruckt).
+			Jeder Code funktioniert <strong>einmal</strong>, falls du keinen Zugriff auf deine
+			Authenticator‑App hast. Sie werden <strong>nur jetzt</strong> angezeigt.</p>
+		<ul class="codes" data-codes>
+			{{range .NewCodes}}<li><code>{{.}}</code></li>{{end}}
+		</ul>
+		<div class="btnrow">
+			<button class="btn btn--primary btn--sm" type="button" data-copy-codes>Kopieren</button>
+			<button class="btn btn--ghost btn--sm" type="button" onclick="window.print()">Drucken</button>
+			<a class="btn btn--ghost btn--sm" href="/profile">Fertig</a>
+		</div>
+	</div>
+	{{else}}
 	<div class="card">
 		<h2 class="section-title">Zwei‑Faktor‑Authentifizierung</h2>
 		{{if .Enabled}}
 		<p>2FA ist <strong>aktiviert</strong>. Zum Anmelden benötigst du zusätzlich den
-			6‑stelligen Code deiner Authenticator‑App.</p>
-		<form method="post" action="/account/2fa/disable" class="form"
-			data-confirm="Zwei‑Faktor wirklich deaktivieren?">
-			<label class="field"><span>Passwort bestätigen</span>
-				<input class="input" type="password" name="password" autocomplete="current-password" required></label>
-			<button class="btn btn--danger btn--sm" type="submit">2FA deaktivieren</button>
-		</form>
+			6‑stelligen Code deiner Authenticator‑App (oder einen Wiederherstellungscode).</p>
+		<p class="muted small">Verbleibende Wiederherstellungscodes: <strong>{{.RecoveryRemaining}}</strong>{{if lt .RecoveryRemaining 3}} — bitte bald neu erstellen{{end}}.</p>
+
+		<details class="disclosure disclosure--plain">
+			<summary>Wiederherstellungscodes neu erstellen</summary>
+			<form method="post" action="/account/2fa/recovery" class="form"
+				data-confirm="Neue Codes erstellen? Die alten werden ungültig.">
+				<label class="field"><span>Passwort bestätigen</span>
+					<input class="input" type="password" name="password" autocomplete="current-password" required></label>
+				<button class="btn btn--primary btn--sm" type="submit">Neue Codes erstellen</button>
+			</form>
+		</details>
+
+		<details class="disclosure disclosure--plain">
+			<summary>2FA deaktivieren</summary>
+			<form method="post" action="/account/2fa/disable" class="form"
+				data-confirm="Zwei‑Faktor wirklich deaktivieren?">
+				<label class="field"><span>Passwort bestätigen</span>
+					<input class="input" type="password" name="password" autocomplete="current-password" required></label>
+				<button class="btn btn--danger btn--sm" type="submit">2FA deaktivieren</button>
+			</form>
+		</details>
 		{{else}}
-		<p class="muted">Richte eine Authenticator‑App (z. B. Aegis, FreeOTP, Google Authenticator)
-			mit folgendem Schlüssel ein und bestätige anschließend mit einem Code.</p>
+		<p class="muted">Scanne den QR‑Code mit einer Authenticator‑App (z. B. Aegis, FreeOTP,
+			Google Authenticator) und bestätige anschließend mit einem Code.</p>
+		<div class="qrwrap"><img class="qr" src="/account/2fa/qr.png" alt="QR‑Code zum Einrichten" width="220" height="220"></div>
 		<div class="field">
-			<span>Geheimer Schlüssel (manuell eingeben)</span>
+			<span>Kann nicht scannen? Schlüssel manuell eingeben:</span>
 			<code class="secretkey">{{.Secret}}</code>
 		</div>
 		<details class="disclosure disclosure--plain">
@@ -30,6 +63,9 @@
 		</form>
 		{{end}}
 	</div>
+	{{end}}
 	<p class="muted center"><a class="link" href="/profile">Zurück zum Profil</a></p>
 </section>
 {{end}}
+
+{{define "scripts"}}<script src="/static/js/recovery.js" defer></script>{{end}}

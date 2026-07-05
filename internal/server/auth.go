@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"treckrr/internal/auth"
 	"treckrr/internal/models"
 	"treckrr/internal/store"
 	"treckrr/internal/totp"
@@ -127,8 +128,18 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
+	input := r.FormValue("totp")
 	secret, _ := s.store.GetTotpSecret(r.Context(), userID)
-	if !totp.Validate(secret, r.FormValue("totp")) {
+
+	switch {
+	case totp.Validate(secret, input):
+		// authenticator code accepted
+	case auth.LooksLikeRecoveryCode(input) && s.consumeRecovery(r, userID, input):
+		// one-time recovery code accepted
+		remaining, _ := s.store.CountUnusedRecoveryCodes(r.Context(), userID)
+		s.auditLogin(r, user.Username, "login_recovery", itoa(remaining)+" Codes übrig")
+		s.setFlash(w, "info", "Mit Wiederherstellungscode angemeldet. Noch "+itoa(remaining)+" Code(s) übrig.")
+	default:
 		s.logins.fail(rlKey)
 		s.auditLogin(r, user.Username, "login_2fa_failed", "")
 		s.setFlash(w, "error", "Code ungültig. Bitte erneut versuchen.")
@@ -138,6 +149,13 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 	s.logins.reset(rlKey)
 	s.clearPending2FA(w)
 	s.establishSession(w, r, user)
+}
+
+// consumeRecovery reports whether the input matches (and consumes) an unused
+// recovery code for the user.
+func (s *Server) consumeRecovery(r *http.Request, userID int64, input string) bool {
+	ok, err := s.store.ConsumeRecoveryCode(r.Context(), userID, auth.HashRecoveryCode(input))
+	return err == nil && ok
 }
 
 // establishSession creates the login session cookie and finishes the login.

@@ -3,8 +3,12 @@ package server
 import (
 	"net/http"
 
+	"treckrr/internal/auth"
 	"treckrr/internal/totp"
 )
+
+// recoveryCodeCount is how many one-time recovery codes are issued.
+const recoveryCodeCount = 10
 
 // ---- Forced / voluntary password change ---------------------------------
 
@@ -68,8 +72,37 @@ func (s *Server) handleTwoFactor(w http.ResponseWriter, r *http.Request) {
 		}
 		data["Secret"] = secret
 		data["URI"] = totp.ProvisioningURI(secret, user.Username, "Treckrr")
+	} else {
+		remaining, err := s.store.CountUnusedRecoveryCodes(r.Context(), user.ID)
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
+		}
+		data["RecoveryRemaining"] = remaining
 	}
 	s.render(w, r, "account_2fa", data)
+}
+
+// handleTwoFactorQR streams the setup QR code as a PNG for the pending secret.
+func (s *Server) handleTwoFactorQR(w http.ResponseWriter, r *http.Request) {
+	user := userFromCtx(r)
+	if user.TotpEnabled {
+		http.NotFound(w, r) // QR only relevant during setup
+		return
+	}
+	secret, err := s.store.GetTotpSecret(r.Context(), user.ID)
+	if err != nil || secret == "" {
+		http.NotFound(w, r)
+		return
+	}
+	png, err := qrPNG(totp.ProvisioningURI(secret, user.Username, "Treckrr"))
+	if err != nil {
+		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(png)
 }
 
 func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) {
@@ -94,8 +127,49 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.audit(r, "2fa_enable", "user", user.ID, "")
-	s.setFlash(w, "success", "Zwei‑Faktor‑Authentifizierung aktiviert.")
-	redirect(w, r, "/profile")
+	// Issue recovery codes and show them once.
+	s.issueAndShowRecoveryCodes(w, r, user.ID, "Zwei‑Faktor aktiviert. Bitte die Wiederherstellungscodes jetzt sichern – sie werden nur einmal angezeigt.")
+}
+
+// handleRecoveryRegenerate creates a fresh set of recovery codes (invalidating
+// the old ones), after confirming the account password.
+func (s *Server) handleRecoveryRegenerate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	user := userFromCtx(r)
+	if !user.TotpEnabled {
+		redirect(w, r, "/account/2fa")
+		return
+	}
+	if _, err := s.store.AuthenticateUser(r.Context(), user.Username, r.FormValue("password")); err != nil {
+		s.setFlash(w, "error", "Passwort falsch – Codes nicht neu erstellt.")
+		redirect(w, r, "/account/2fa")
+		return
+	}
+	s.audit(r, "2fa_recovery_regenerate", "user", user.ID, "")
+	s.issueAndShowRecoveryCodes(w, r, user.ID, "Neue Wiederherstellungscodes erstellt. Alte Codes sind ungültig. Bitte jetzt sichern.")
+}
+
+// issueAndShowRecoveryCodes generates, stores and then renders a fresh set of
+// recovery codes exactly once.
+func (s *Server) issueAndShowRecoveryCodes(w http.ResponseWriter, r *http.Request, userID int64, notice string) {
+	plain, hashes, err := auth.GenerateRecoveryCodes(recoveryCodeCount)
+	if err != nil {
+		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		return
+	}
+	if err := s.store.ReplaceRecoveryCodes(r.Context(), userID, hashes); err != nil {
+		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		return
+	}
+	data := s.newPage(w, r, "Zwei‑Faktor", "profile")
+	data["Enabled"] = true
+	data["NewCodes"] = plain
+	data["RecoveryRemaining"] = len(plain)
+	data["Notice"] = notice
+	s.render(w, r, "account_2fa", data)
 }
 
 func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +188,7 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
+	_ = s.store.ClearRecoveryCodes(r.Context(), user.ID)
 	s.audit(r, "2fa_disable", "user", user.ID, "")
 	s.setFlash(w, "success", "Zwei‑Faktor‑Authentifizierung deaktiviert.")
 	redirect(w, r, "/profile")
