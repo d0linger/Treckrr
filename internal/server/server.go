@@ -115,7 +115,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /account/password", s.auth(s.handleAccountPasswordForm))
 	mux.Handle("POST /account/password", s.auth(s.handleAccountPasswordSubmit))
 	mux.Handle("GET /account/2fa", s.auth(s.handleTwoFactor))
+	mux.Handle("GET /account/2fa/qr.png", s.auth(s.handleTwoFactorQR))
 	mux.Handle("POST /account/2fa/confirm", s.auth(s.handleTwoFactorConfirm))
+	mux.Handle("POST /account/2fa/recovery", s.auth(s.handleRecoveryRegenerate))
 	mux.Handle("POST /account/2fa/disable", s.auth(s.handleTwoFactorDisable))
 	mux.Handle("POST /account/sessions/revoke", s.auth(s.handleSessionRevoke))
 	mux.Handle("POST /account/sessions/revoke-others", s.auth(s.handleSessionRevokeOthers))
@@ -130,6 +132,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/users", s.admin(s.handleUserCreate))
 	mux.Handle("POST /admin/users/{id}/password", s.admin(s.handleUserPassword))
 	mux.Handle("POST /admin/users/{id}/role", s.admin(s.handleUserRole))
+	mux.Handle("POST /admin/users/{id}/reset-2fa", s.admin(s.handleUserResetTotp))
 	mux.Handle("POST /admin/users/{id}/delete", s.admin(s.handleUserDelete))
 
 	return s.accessLog(securityHeaders(mux))

@@ -32,6 +32,12 @@
 			</form>
 
 			<div class="btnrow">
+				{{if .TotpEnabled}}
+				<form method="post" action="/admin/users/{{.ID}}/reset-2fa"
+					data-confirm="2FA für {{.Username}} zurücksetzen? Der Benutzer muss es neu einrichten.">
+					<button class="btn btn--ghost btn--sm" type="submit">2FA zurücksetzen</button>
+				</form>
+				{{end}}
 				<form method="post" action="/admin/users/{{.ID}}/delete" data-confirm="Benutzer {{.Username}} löschen?">
 					<button class="btn btn--danger btn--sm" type="submit">Löschen</button>
 				</form>

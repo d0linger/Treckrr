@@ -145,6 +145,30 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/admin/users")
 }
 
+// handleUserResetTotp lets an admin disable & clear a user's 2FA (e.g. when the
+// user lost their authenticator device and their recovery codes).
+func (s *Server) handleUserResetTotp(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	target, err := s.store.GetUser(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.SetTotp(r.Context(), id, false, ""); err != nil {
+		s.setFlash(w, "error", "Zurücksetzen fehlgeschlagen.")
+		redirect(w, r, "/admin/users")
+		return
+	}
+	_ = s.store.ClearRecoveryCodes(r.Context(), id)
+	s.audit(r, "2fa_reset", "user", id, "durch Admin ("+target.Username+")")
+	s.setFlash(w, "success", "2FA für "+target.Username+" zurückgesetzt. Der Benutzer kann es neu einrichten.")
+	redirect(w, r, "/admin/users")
+}
+
 func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {

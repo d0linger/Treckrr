@@ -410,6 +410,19 @@ em { font-style: normal; color: var(--muted); }
 	background: var(--surface-2); border-radius: var(--radius-sm); padding: .5rem .7rem;
 	word-break: break-all; user-select: all; font-size: .9rem; }
 
+/* 2FA setup QR code */
+.qrwrap { display: flex; justify-content: center; margin: .4rem 0 .8rem; }
+.qr { width: 220px; height: 220px; max-width: 60vw; image-rendering: pixelated;
+	background: #fff; padding: .6rem; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+
+/* 2FA recovery codes */
+.codes { list-style: none; padding: 0; margin: .6rem 0; display: grid;
+	grid-template-columns: repeat(2, 1fr); gap: .5rem; }
+.codes li { background: var(--surface-2); border-radius: var(--radius-sm); padding: .5rem .6rem; text-align: center; }
+.codes code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+	font-size: 1rem; letter-spacing: .05em; user-select: all; }
+@media (max-width: 380px) { .codes { grid-template-columns: 1fr; } }
+
 /* Single clickable payment chip showing the current status (click to toggle). */
 .paytoggle { margin: 0; }
 .paychip {

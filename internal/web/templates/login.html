@@ -13,9 +13,11 @@
 				Authenticator‑App ein.</p>
 			<label class="field">
 				<span>Code</span>
-				<input class="input" type="text" name="totp" inputmode="numeric" pattern="[0-9]*"
-					maxlength="6" autocomplete="one-time-code" placeholder="123456" required autofocus>
+				<input class="input" type="text" name="totp"
+					autocomplete="one-time-code" placeholder="123456" required autofocus>
 			</label>
+			<p class="muted small">Kein Zugriff auf die App? Gib stattdessen einen
+				<strong>Wiederherstellungscode</strong> ein.</p>
 			<button class="btn btn--primary btn--block" type="submit">Bestätigen</button>
 			<p class="center"><a class="link" href="/login?cancel=1">Abbrechen</a></p>
 		</form>

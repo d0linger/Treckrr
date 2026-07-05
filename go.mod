@@ -5,6 +5,7 @@ go 1.26.4
 require (
 	github.com/jackc/pgx/v5 v5.10.0
 	golang.org/x/crypto v0.53.0
+	rsc.io/qr v0.2.0
 )
 
 require (
