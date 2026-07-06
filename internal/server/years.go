@@ -63,7 +63,7 @@ func (s *Server) handleYearCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
 		return
 	}
-	year := int(formInt64(r, "year"))
+	year := formInt(r, "year")
 	baseID := formInt64(r, "base_id")
 	label := trimmed(r, "label")
 
