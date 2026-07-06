@@ -239,7 +239,10 @@ func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, c *http.Cooki
 	if c.Path == "" {
 		c.Path = "/"
 	}
-	if c.SameSite == http.SameSiteDefaultMode {
+	// A cookie literal that omits the SameSite field carries the zero value (0),
+	// NOT http.SameSiteDefaultMode (1). Default the unset case to Lax so the
+	// attribute is actually written to the Set-Cookie header.
+	if c.SameSite == http.SameSiteDefaultMode || c.SameSite == 0 {
 		c.SameSite = http.SameSiteLaxMode
 	}
 	c.Secure = s.cookieSecure(r)
