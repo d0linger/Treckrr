@@ -66,7 +66,7 @@ func (s *Server) lockedRedirect(w http.ResponseWriter, r *http.Request, baseID i
 		return true
 	}
 	if base.Locked {
-		s.setFlash(w, "error", "Diese Bemessungsgrundlage ist gesperrt und kann nicht geändert werden.")
+		s.setFlash(w, r, "error", "Diese Bemessungsgrundlage ist gesperrt und kann nicht geändert werden.")
 		redirect(w, r, target)
 		return true
 	}
@@ -89,7 +89,7 @@ func (s *Server) handleLoadLevelSave(w http.ResponseWriter, r *http.Request) {
 	cost := formFloat(r, "cost_per_ps")
 	sort := int(formInt64(r, "sort_order"))
 	if name == "" {
-		s.setFlash(w, "error", "Name darf nicht leer sein.")
+		s.setFlash(w, r, "error", "Name darf nicht leer sein.")
 		redirect(w, r, pricesURL(baseID))
 		return
 	}
@@ -102,7 +102,7 @@ func (s *Server) handleLoadLevelSave(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		s.audit(r, "save", "load_level", id, name)
 	}
-	s.flashSaved(w, err)
+	s.flashSaved(w, r, err)
 	redirect(w, r, pricesURL(baseID))
 }
 
@@ -120,7 +120,7 @@ func (s *Server) handleLoadLevelDelete(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		s.audit(r, "delete", "load_level", id, "")
 	}
-	s.flashDeleted(w, err)
+	s.flashDeleted(w, r, err)
 	redirect(w, r, pricesURL(baseID))
 }
 
@@ -141,7 +141,7 @@ func (s *Server) handleTractorSave(w http.ResponseWriter, r *http.Request) {
 	ps := formFloat(r, "ps")
 	sortOrder := int(formInt64(r, "sort_order"))
 	if ident == "" || ps <= 0 {
-		s.setFlash(w, "error", "Bezeichnung und PS (> 0) sind erforderlich.")
+		s.setFlash(w, r, "error", "Bezeichnung und PS (> 0) sind erforderlich.")
 		redirect(w, r, pricesURL(baseID))
 		return
 	}
@@ -154,7 +154,7 @@ func (s *Server) handleTractorSave(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		s.audit(r, "save", "tractor", id, ident)
 	}
-	s.flashSaved(w, err)
+	s.flashSaved(w, r, err)
 	redirect(w, r, pricesURL(baseID))
 }
 
@@ -174,13 +174,13 @@ func (s *Server) handleTractorToggle(w http.ResponseWriter, r *http.Request) {
 	}
 	active := r.FormValue("active") == "true"
 	if err := s.store.SetTractorActive(r.Context(), id, active); err != nil {
-		s.setFlash(w, "error", "Aktion fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if active {
 		s.audit(r, "activate", "tractor", id, "")
-		s.setFlash(w, "success", "Traktor aktiviert.")
+		s.setFlash(w, r, "success", "Traktor aktiviert.")
 	} else {
 		s.audit(r, "deactivate", "tractor", id, "")
-		s.setFlash(w, "success", "Traktor deaktiviert (bleibt für bestehende Buchungen erhalten).")
+		s.setFlash(w, r, "success", "Traktor deaktiviert (bleibt für bestehende Buchungen erhalten).")
 	}
 	redirect(w, r, pricesURL(baseID))
 }
@@ -199,7 +199,7 @@ func (s *Server) handleTractorDelete(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		s.audit(r, "delete", "tractor", id, "")
 	}
-	s.flashDeleted(w, err)
+	s.flashDeleted(w, r, err)
 	redirect(w, r, pricesURL(baseID))
 }
 
@@ -221,7 +221,7 @@ func (s *Server) handleMachineSave(w http.ResponseWriter, r *http.Request) {
 	category := trimmed(r, "category")
 	sortOrder := int(formInt64(r, "sort_order"))
 	if name == "" || width <= 0 {
-		s.setFlash(w, "error", "Name und Arbeitsbreite (> 0) sind erforderlich.")
+		s.setFlash(w, r, "error", "Name und Arbeitsbreite (> 0) sind erforderlich.")
 		redirect(w, r, pricesURL(baseID))
 		return
 	}
@@ -234,7 +234,7 @@ func (s *Server) handleMachineSave(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		s.audit(r, "save", "machine", id, name)
 	}
-	s.flashSaved(w, err)
+	s.flashSaved(w, r, err)
 	redirect(w, r, pricesURL(baseID))
 }
 
@@ -254,13 +254,13 @@ func (s *Server) handleMachineToggle(w http.ResponseWriter, r *http.Request) {
 	}
 	active := r.FormValue("active") == "true"
 	if err := s.store.SetMachineActive(r.Context(), id, active); err != nil {
-		s.setFlash(w, "error", "Aktion fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if active {
 		s.audit(r, "activate", "machine", id, "")
-		s.setFlash(w, "success", "Maschine aktiviert.")
+		s.setFlash(w, r, "success", "Maschine aktiviert.")
 	} else {
 		s.audit(r, "deactivate", "machine", id, "")
-		s.setFlash(w, "success", "Maschine deaktiviert (bleibt für bestehende Buchungen erhalten).")
+		s.setFlash(w, r, "success", "Maschine deaktiviert (bleibt für bestehende Buchungen erhalten).")
 	}
 	redirect(w, r, pricesURL(baseID))
 }
@@ -279,24 +279,24 @@ func (s *Server) handleMachineDelete(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		s.audit(r, "delete", "machine", id, "")
 	}
-	s.flashDeleted(w, err)
+	s.flashDeleted(w, r, err)
 	redirect(w, r, pricesURL(baseID))
 }
 
 // ---- flash helpers -------------------------------------------------------
 
-func (s *Server) flashSaved(w http.ResponseWriter, err error) {
+func (s *Server) flashSaved(w http.ResponseWriter, r *http.Request, err error) {
 	if err != nil {
-		s.setFlash(w, "error", "Speichern fehlgeschlagen (evtl. Name bereits vergeben).")
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen (evtl. Name bereits vergeben).")
 		return
 	}
-	s.setFlash(w, "success", "Gespeichert.")
+	s.setFlash(w, r, "success", "Gespeichert.")
 }
 
-func (s *Server) flashDeleted(w http.ResponseWriter, err error) {
+func (s *Server) flashDeleted(w http.ResponseWriter, r *http.Request, err error) {
 	if err != nil {
-		s.setFlash(w, "error", "Löschen fehlgeschlagen (evtl. noch in Verwendung).")
+		s.setFlash(w, r, "error", "Löschen fehlgeschlagen (evtl. noch in Verwendung).")
 		return
 	}
-	s.setFlash(w, "success", "Gelöscht.")
+	s.setFlash(w, r, "success", "Gelöscht.")
 }

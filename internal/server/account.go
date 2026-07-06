@@ -29,12 +29,12 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 	next := r.FormValue("new_password")
 
 	if _, err := s.store.AuthenticateUser(r.Context(), user.Username, current); err != nil {
-		s.setFlash(w, "error", "Aktuelles Passwort ist falsch.")
+		s.setFlash(w, r, "error", "Aktuelles Passwort ist falsch.")
 		redirect(w, r, "/account/password")
 		return
 	}
 	if msg := passwordPolicyError(next); msg != "" {
-		s.setFlash(w, "error", msg)
+		s.setFlash(w, r, "error", msg)
 		redirect(w, r, "/account/password")
 		return
 	}
@@ -44,7 +44,7 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 	}
 	_ = s.store.SetMustChangePassword(r.Context(), user.ID, false)
 	s.audit(r, "password_change", "user", user.ID, "eigenes Passwort")
-	s.setFlash(w, "success", "Passwort geändert.")
+	s.setFlash(w, r, "success", "Passwort geändert.")
 	redirect(w, r, "/profile")
 }
 
@@ -113,12 +113,12 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 	user := userFromCtx(r)
 	secret, err := s.store.GetTotpSecret(r.Context(), user.ID)
 	if err != nil || secret == "" {
-		s.setFlash(w, "error", "Kein ausstehendes 2FA‑Geheimnis. Bitte erneut starten.")
+		s.setFlash(w, r, "error", "Kein ausstehendes 2FA‑Geheimnis. Bitte erneut starten.")
 		redirect(w, r, "/account/2fa")
 		return
 	}
 	if !totp.Validate(secret, r.FormValue("code")) {
-		s.setFlash(w, "error", "Code ungültig. Bitte erneut versuchen.")
+		s.setFlash(w, r, "error", "Code ungültig. Bitte erneut versuchen.")
 		redirect(w, r, "/account/2fa")
 		return
 	}
@@ -144,7 +144,7 @@ func (s *Server) handleRecoveryRegenerate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if _, err := s.store.AuthenticateUser(r.Context(), user.Username, r.FormValue("password")); err != nil {
-		s.setFlash(w, "error", "Passwort falsch – Codes nicht neu erstellt.")
+		s.setFlash(w, r, "error", "Passwort falsch – Codes nicht neu erstellt.")
 		redirect(w, r, "/account/2fa")
 		return
 	}
@@ -180,7 +180,7 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 	user := userFromCtx(r)
 	// Require the current password to disable 2FA.
 	if _, err := s.store.AuthenticateUser(r.Context(), user.Username, r.FormValue("password")); err != nil {
-		s.setFlash(w, "error", "Passwort falsch – 2FA nicht deaktiviert.")
+		s.setFlash(w, r, "error", "Passwort falsch – 2FA nicht deaktiviert.")
 		redirect(w, r, "/account/2fa")
 		return
 	}
@@ -190,7 +190,7 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 	}
 	_ = s.store.ClearRecoveryCodes(r.Context(), user.ID)
 	s.audit(r, "2fa_disable", "user", user.ID, "")
-	s.setFlash(w, "success", "Zwei‑Faktor‑Authentifizierung deaktiviert.")
+	s.setFlash(w, r, "success", "Zwei‑Faktor‑Authentifizierung deaktiviert.")
 	redirect(w, r, "/profile")
 }
 
@@ -203,10 +203,10 @@ func (s *Server) handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
 	}
 	user := userFromCtx(r)
 	if err := s.store.DeleteSessionForUser(r.Context(), user.ID, r.FormValue("token")); err != nil {
-		s.setFlash(w, "error", "Sitzung konnte nicht beendet werden.")
+		s.setFlash(w, r, "error", "Sitzung konnte nicht beendet werden.")
 	} else {
 		s.audit(r, "session_revoke", "user", user.ID, "")
-		s.setFlash(w, "success", "Sitzung beendet.")
+		s.setFlash(w, r, "success", "Sitzung beendet.")
 	}
 	redirect(w, r, "/profile")
 }
@@ -218,10 +218,10 @@ func (s *Server) handleSessionRevokeOthers(w http.ResponseWriter, r *http.Reques
 		current = c.Value
 	}
 	if err := s.store.DeleteUserSessionsExcept(r.Context(), user.ID, current); err != nil {
-		s.setFlash(w, "error", "Aktion fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else {
 		s.audit(r, "session_revoke_others", "user", user.ID, "")
-		s.setFlash(w, "success", "Alle anderen Sitzungen wurden beendet.")
+		s.setFlash(w, r, "success", "Alle anderen Sitzungen wurden beendet.")
 	}
 	redirect(w, r, "/profile")
 }

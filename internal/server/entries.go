@@ -227,14 +227,14 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if year.Completed() {
-		s.setFlash(w, "error", "Das Abrechnungsjahr ist abgeschlossen – es können keine Buchungen mehr erfasst werden.")
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen – es können keine Buchungen mehr erfasst werden.")
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
 
 	entry, machineIDs, msg := s.resolveEntryFromForm(r)
 	if msg != "" {
-		s.setFlash(w, "error", msg)
+		s.setFlash(w, r, "error", msg)
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
@@ -248,7 +248,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "create", "entry", newID, fmt.Sprintf("%s · %s, %.2f h × %.2f = %.2f €",
 		s.neighborName(r, neighborID), entry.TaskLabel, entry.Hours, entry.HourlyRate, entry.Cost))
-	s.setFlash(w, "success", "Buchung gespeichert.")
+	s.setFlash(w, r, "success", "Buchung gespeichert.")
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
 
@@ -343,13 +343,13 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if year, err := s.store.GetBillingYear(r.Context(), existing.BillingYearID); err == nil && year.Completed() {
-		s.setFlash(w, "error", "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr geändert werden.")
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr geändert werden.")
 		redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
 		return
 	}
 	entry, machineIDs, msg := s.resolveEntryFromForm(r)
 	if msg != "" {
-		s.setFlash(w, "error", msg)
+		s.setFlash(w, r, "error", msg)
 		redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
 		return
 	}
@@ -359,7 +359,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "update", "entry", id, fmt.Sprintf("%.2f h × %.2f = %.2f €", entry.Hours, entry.HourlyRate, entry.Cost))
-	s.setFlash(w, "success", "Buchung aktualisiert.")
+	s.setFlash(w, r, "success", "Buchung aktualisiert.")
 	redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
 }
 
@@ -381,7 +381,7 @@ func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if year, err := s.store.GetBillingYear(r.Context(), entry.BillingYearID); err == nil && year.Completed() {
-		s.setFlash(w, "error", "Das Abrechnungsjahr ist abgeschlossen.")
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
 		redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
 		return
 	}
@@ -389,13 +389,13 @@ func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 	reason := trimmed(r, "reason")
 	nb := s.neighborName(r, entry.NeighborID)
 	if err := s.store.SetEntryVoided(r.Context(), id, void, reason); err != nil {
-		s.setFlash(w, "error", "Aktion fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if void {
 		s.audit(r, "void", "entry", id, fmt.Sprintf("%s · %.2f € %s", nb, entry.Cost, reason))
-		s.setFlash(w, "success", "Buchung storniert.")
+		s.setFlash(w, r, "success", "Buchung storniert.")
 	} else {
 		s.audit(r, "unvoid", "entry", id, nb)
-		s.setFlash(w, "success", "Stornierung aufgehoben.")
+		s.setFlash(w, r, "success", "Stornierung aufgehoben.")
 	}
 	redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
 }
@@ -423,7 +423,7 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if year.Completed() {
-		s.setFlash(w, "error", "Das Abrechnungsjahr ist abgeschlossen.")
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
 		redirect(w, r, neighborURL(neighbor.ID, year.ID))
 		return
 	}
@@ -462,7 +462,7 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if year.Completed() {
-		s.setFlash(w, "error", "Das Abrechnungsjahr ist abgeschlossen.")
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
@@ -495,10 +495,10 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if created == 0 {
-		s.setFlash(w, "error", "Keine gültigen Zeilen (Gespann und Stunden erforderlich).")
+		s.setFlash(w, r, "error", "Keine gültigen Zeilen (Gespann und Stunden erforderlich).")
 	} else {
 		s.audit(r, "quick_create", "entry", 0, fmt.Sprintf("%d Buchungen für %s", created, s.neighborName(r, neighborID)))
-		s.setFlash(w, "success", fmt.Sprintf("%d Buchungen gespeichert.", created))
+		s.setFlash(w, r, "success", fmt.Sprintf("%d Buchungen gespeichert.", created))
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
@@ -560,16 +560,16 @@ func (s *Server) handleEntryDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if year, err := s.store.GetBillingYear(r.Context(), entry.BillingYearID); err == nil && year.Completed() {
-		s.setFlash(w, "error", "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr gelöscht werden.")
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr gelöscht werden.")
 		redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
 		return
 	}
 	if err := s.store.DeleteEntry(r.Context(), id); err != nil {
-		s.setFlash(w, "error", "Löschen fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
 		s.audit(r, "delete", "entry", id, fmt.Sprintf("%s · %s, %.2f h, %.2f €",
 			s.neighborName(r, entry.NeighborID), entry.TractorLabel, entry.Hours, entry.Cost))
-		s.setFlash(w, "success", "Buchung gelöscht.")
+		s.setFlash(w, r, "success", "Buchung gelöscht.")
 	}
 	redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
 }

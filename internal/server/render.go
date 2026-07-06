@@ -23,7 +23,7 @@ func (s *Server) newPage(w http.ResponseWriter, r *http.Request, title, active s
 		"BasePath": r.URL.Path,
 		"Theme":    themeFromCookie(r),
 	}
-	if msg, kind := readFlash(w, r); msg != "" {
+	if msg, kind := s.readFlash(w, r); msg != "" {
 		p["FlashMessage"] = msg
 		p["FlashKind"] = kind
 	}
@@ -54,25 +54,22 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 
 // ---- Flash messages (cookie based) --------------------------------------
 
-func (s *Server) setFlash(w http.ResponseWriter, kind, msg string) {
-	http.SetCookie(w, &http.Cookie{
+func (s *Server) setFlash(w http.ResponseWriter, r *http.Request, kind, msg string) {
+	s.setCookie(w, r, &http.Cookie{
 		Name:     flashCookie,
 		Value:    kind + "|" + url.QueryEscape(msg),
-		Path:     "/",
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   s.cfg.CookieSecure,
 		MaxAge:   30,
 	})
 }
 
 // readFlash returns the flash message and kind, clearing the cookie.
-func readFlash(w http.ResponseWriter, r *http.Request) (msg, kind string) {
+func (s *Server) readFlash(w http.ResponseWriter, r *http.Request) (msg, kind string) {
 	c, err := r.Cookie(flashCookie)
 	if err != nil || c.Value == "" {
 		return "", ""
 	}
-	http.SetCookie(w, &http.Cookie{Name: flashCookie, Value: "", Path: "/", MaxAge: -1})
+	s.setCookie(w, r, &http.Cookie{Name: flashCookie, Value: "", MaxAge: -1})
 	parts := strings.SplitN(c.Value, "|", 2)
 	if len(parts) != 2 {
 		return "", ""

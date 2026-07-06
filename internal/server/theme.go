@@ -27,12 +27,10 @@ func (s *Server) handleTheme(w http.ResponseWriter, r *http.Request) {
 	default:
 		value = "auto"
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     themeCookie,
-		Value:    value,
-		Path:     "/",
-		MaxAge:   365 * 24 * 3600,
-		SameSite: http.SameSiteLaxMode,
+	s.setCookie(w, r, &http.Cookie{
+		Name:   themeCookie,
+		Value:  value,
+		MaxAge: 365 * 24 * 3600,
 	})
 	http.Redirect(w, r, safeReturnPath(r, "/profile"), http.StatusSeeOther)
 }

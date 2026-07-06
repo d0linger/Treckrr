@@ -62,18 +62,18 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 		role = models.RoleEditor
 	}
 	if username == "" {
-		s.setFlash(w, "error", "Benutzername ist erforderlich.")
+		s.setFlash(w, r, "error", "Benutzername ist erforderlich.")
 		redirect(w, r, "/admin/users")
 		return
 	}
 	if msg := passwordPolicyError(password); msg != "" {
-		s.setFlash(w, "error", msg)
+		s.setFlash(w, r, "error", msg)
 		redirect(w, r, "/admin/users")
 		return
 	}
 	newID, err := s.store.CreateUser(r.Context(), username, password, role)
 	if err != nil {
-		s.setFlash(w, "error", "Anlegen fehlgeschlagen (Benutzername bereits vergeben?).")
+		s.setFlash(w, r, "error", "Anlegen fehlgeschlagen (Benutzername bereits vergeben?).")
 		redirect(w, r, "/admin/users")
 		return
 	}
@@ -81,7 +81,7 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.SetMustChangePassword(r.Context(), newID, true)
 	}
 	s.audit(r, "create", "user", newID, username+" ("+role+")")
-	s.setFlash(w, "success", "Benutzer angelegt.")
+	s.setFlash(w, r, "success", "Benutzer angelegt.")
 	redirect(w, r, "/admin/users")
 }
 
@@ -97,19 +97,19 @@ func (s *Server) handleUserPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	password := r.FormValue("password")
 	if msg := passwordPolicyError(password); msg != "" {
-		s.setFlash(w, "error", msg)
+		s.setFlash(w, r, "error", msg)
 		redirect(w, r, "/admin/users")
 		return
 	}
 	if err := s.store.UpdatePassword(r.Context(), id, password); err != nil {
-		s.setFlash(w, "error", "Änderung fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Änderung fehlgeschlagen.")
 		redirect(w, r, "/admin/users")
 		return
 	}
 	// Force the user to change this admin-set password at next login.
 	_ = s.store.SetMustChangePassword(r.Context(), id, r.FormValue("force_change") == "on")
 	s.audit(r, "password_reset", "user", id, "durch Admin")
-	s.setFlash(w, "success", "Passwort gesetzt.")
+	s.setFlash(w, r, "success", "Passwort gesetzt.")
 	redirect(w, r, "/admin/users")
 }
 
@@ -122,7 +122,7 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 	}
 	role := r.FormValue("role")
 	if !validRole(role) {
-		s.setFlash(w, "error", "Unbekannte Rolle.")
+		s.setFlash(w, r, "error", "Unbekannte Rolle.")
 		redirect(w, r, "/admin/users")
 		return
 	}
@@ -130,17 +130,17 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 	if role != models.RoleAdmin {
 		if target, err := s.store.GetUser(r.Context(), id); err == nil && target.IsAdmin {
 			if n, err := s.store.CountAdmins(r.Context()); err == nil && n <= 1 {
-				s.setFlash(w, "error", "Der letzte Administrator kann nicht herabgestuft werden.")
+				s.setFlash(w, r, "error", "Der letzte Administrator kann nicht herabgestuft werden.")
 				redirect(w, r, "/admin/users")
 				return
 			}
 		}
 	}
 	if err := s.store.SetRole(r.Context(), id, role); err != nil {
-		s.setFlash(w, "error", "Änderung fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Änderung fehlgeschlagen.")
 	} else {
 		s.audit(r, "set_role", "user", id, role)
-		s.setFlash(w, "success", "Rolle aktualisiert.")
+		s.setFlash(w, r, "success", "Rolle aktualisiert.")
 	}
 	redirect(w, r, "/admin/users")
 }
@@ -159,13 +159,13 @@ func (s *Server) handleUserResetTotp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.SetTotp(r.Context(), id, false, ""); err != nil {
-		s.setFlash(w, "error", "Zurücksetzen fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Zurücksetzen fehlgeschlagen.")
 		redirect(w, r, "/admin/users")
 		return
 	}
 	_ = s.store.ClearRecoveryCodes(r.Context(), id)
 	s.audit(r, "2fa_reset", "user", id, "durch Admin ("+target.Username+")")
-	s.setFlash(w, "success", "2FA für "+target.Username+" zurückgesetzt. Der Benutzer kann es neu einrichten.")
+	s.setFlash(w, r, "success", "2FA für "+target.Username+" zurückgesetzt. Der Benutzer kann es neu einrichten.")
 	redirect(w, r, "/admin/users")
 }
 
@@ -177,27 +177,27 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	current := userFromCtx(r)
 	if current.ID == id {
-		s.setFlash(w, "error", "Sie können sich nicht selbst löschen.")
+		s.setFlash(w, r, "error", "Sie können sich nicht selbst löschen.")
 		redirect(w, r, "/admin/users")
 		return
 	}
 	target, err := s.store.GetUser(r.Context(), id)
 	if err == nil && target.IsAdmin {
 		if n, err := s.store.CountAdmins(r.Context()); err == nil && n <= 1 {
-			s.setFlash(w, "error", "Der letzte Administrator kann nicht gelöscht werden.")
+			s.setFlash(w, r, "error", "Der letzte Administrator kann nicht gelöscht werden.")
 			redirect(w, r, "/admin/users")
 			return
 		}
 	}
 	if err := s.store.DeleteUser(r.Context(), id); err != nil {
-		s.setFlash(w, "error", "Löschen fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
 		detail := ""
 		if target != nil {
 			detail = target.Username
 		}
 		s.audit(r, "delete", "user", id, detail)
-		s.setFlash(w, "success", "Benutzer gelöscht.")
+		s.setFlash(w, r, "success", "Benutzer gelöscht.")
 	}
 	redirect(w, r, "/admin/users")
 }

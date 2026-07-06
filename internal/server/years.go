@@ -68,12 +68,12 @@ func (s *Server) handleYearCreate(w http.ResponseWriter, r *http.Request) {
 	label := trimmed(r, "label")
 
 	if year < 1900 || year > 3000 {
-		s.setFlash(w, "error", "Bitte ein gültiges Jahr angeben.")
+		s.setFlash(w, r, "error", "Bitte ein gültiges Jahr angeben.")
 		redirect(w, r, "/years")
 		return
 	}
 	if baseID == 0 {
-		s.setFlash(w, "error", "Bitte eine Bemessungsgrundlage wählen.")
+		s.setFlash(w, r, "error", "Bitte eine Bemessungsgrundlage wählen.")
 		redirect(w, r, "/years")
 		return
 	}
@@ -82,12 +82,12 @@ func (s *Server) handleYearCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.store.CreateBillingYear(r.Context(), year, baseID, label)
 	if err != nil {
-		s.setFlash(w, "error", "Anlegen fehlgeschlagen (Jahr bereits vorhanden?).")
+		s.setFlash(w, r, "error", "Anlegen fehlgeschlagen (Jahr bereits vorhanden?).")
 		redirect(w, r, "/years")
 		return
 	}
 	s.audit(r, "create", "year", id, strconv.Itoa(year)+" ("+label+")")
-	s.setFlash(w, "success", "Abrechnungsjahr angelegt.")
+	s.setFlash(w, r, "success", "Abrechnungsjahr angelegt.")
 	redirect(w, r, dashboardURL(id))
 }
 
@@ -118,16 +118,16 @@ func (s *Server) handleYearUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if baseID != year.BaseID {
-			s.setFlash(w, "error", "Bemessungsgrundlage kann nicht mehr geändert werden – es gibt bereits Buchungen.")
+			s.setFlash(w, r, "error", "Bemessungsgrundlage kann nicht mehr geändert werden – es gibt bereits Buchungen.")
 			redirect(w, r, "/years")
 			return
 		}
 	}
 	if err := s.store.UpdateBillingYear(r.Context(), id, baseID, label); err != nil {
-		s.setFlash(w, "error", "Aktualisierung fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")
 	} else {
 		s.audit(r, "update", "year", id, label)
-		s.setFlash(w, "success", "Abrechnungsjahr aktualisiert.")
+		s.setFlash(w, r, "success", "Abrechnungsjahr aktualisiert.")
 	}
 	redirect(w, r, "/years")
 }
@@ -148,7 +148,7 @@ func (s *Server) handleYearStatus(w http.ResponseWriter, r *http.Request) {
 		status = models.YearCompleted
 	}
 	if err := s.store.SetYearStatus(r.Context(), id, status); err != nil {
-		s.setFlash(w, "error", "Statuswechsel fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Statuswechsel fehlgeschlagen.")
 	} else if status == models.YearCompleted {
 		// Every neighbor starts as "open" when the year is closed for billing.
 		if err := s.store.ResetYearPayments(r.Context(), id); err != nil {
@@ -156,10 +156,10 @@ func (s *Server) handleYearStatus(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r, "complete", "year", id, "")
-		s.setFlash(w, "success", "Abrechnungsjahr abgeschlossen. Zahlungsstatus je Nachbar steht auf offen.")
+		s.setFlash(w, r, "success", "Abrechnungsjahr abgeschlossen. Zahlungsstatus je Nachbar steht auf offen.")
 	} else {
 		s.audit(r, "reopen", "year", id, "")
-		s.setFlash(w, "success", "Abrechnungsjahr wieder geöffnet.")
+		s.setFlash(w, r, "success", "Abrechnungsjahr wieder geöffnet.")
 	}
 	if r.FormValue("origin") == "dashboard" {
 		redirect(w, r, dashboardURL(id))
@@ -180,15 +180,15 @@ func (s *Server) handleYearDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if count > 0 {
-		s.setFlash(w, "error", "Jahr enthält Buchungen und kann nicht gelöscht werden.")
+		s.setFlash(w, r, "error", "Jahr enthält Buchungen und kann nicht gelöscht werden.")
 		redirect(w, r, "/years")
 		return
 	}
 	if err := s.store.DeleteBillingYear(r.Context(), id); err != nil {
-		s.setFlash(w, "error", "Löschen fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
 		s.audit(r, "delete", "year", id, "")
-		s.setFlash(w, "success", "Abrechnungsjahr gelöscht.")
+		s.setFlash(w, r, "success", "Abrechnungsjahr gelöscht.")
 	}
 	redirect(w, r, "/years")
 }
