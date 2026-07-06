@@ -97,16 +97,16 @@ func (s *Server) writeCSV(w http.ResponseWriter, filename string, entries []mode
 	var total float64
 	for _, e := range entries {
 		_ = cw.Write([]string{
-			names[e.NeighborID],
+			csvSafe(names[e.NeighborID]),
 			web.Date(e.Date),
-			e.TaskLabel,
-			e.TractorLabel,
-			e.LoadLabel,
-			e.MachineLabels,
+			csvSafe(e.TaskLabel),
+			csvSafe(e.TractorLabel),
+			csvSafe(e.LoadLabel),
+			csvSafe(e.MachineLabels),
 			deDecimal(e.Hours),
 			deDecimal(e.HourlyRate),
 			deDecimal(e.Cost),
-			e.Note,
+			csvSafe(e.Note),
 		})
 		total += e.Cost
 	}
@@ -116,4 +116,20 @@ func (s *Server) writeCSV(w http.ResponseWriter, filename string, entries []mode
 // deDecimal formats with a comma decimal separator for German spreadsheets.
 func deDecimal(v float64) string {
 	return strings.Replace(strconv.FormatFloat(v, 'f', 2, 64), ".", ",", 1)
+}
+
+// csvSafe neutralises spreadsheet formula injection: a cell whose first
+// character is one of = + - @ (or a leading tab/CR that some parsers strip to
+// reveal such a character) is prefixed with a single quote so Excel/LibreOffice
+// treat it as literal text instead of a formula. Applied to user-entered text
+// columns only, never to the numeric columns.
+func csvSafe(v string) string {
+	if v == "" {
+		return v
+	}
+	switch v[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + v
+	}
+	return v
 }

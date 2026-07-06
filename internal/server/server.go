@@ -135,7 +135,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/users/{id}/reset-2fa", s.admin(s.handleUserResetTotp))
 	mux.Handle("POST /admin/users/{id}/delete", s.admin(s.handleUserDelete))
 
-	return s.accessLog(securityHeaders(mux))
+	return s.accessLog(s.securityHeaders(mux))
 }
 
 // auth wraps a handler requiring an authenticated user. It also enforces the
@@ -212,7 +212,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("ok"))
 }
 
-func securityHeaders(next http.Handler) http.Handler {
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
@@ -221,6 +221,12 @@ func securityHeaders(next http.Handler) http.Handler {
 		// All assets are served locally, so a strict CSP is possible.
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'self'; form-action 'self'")
+		// Only advertise HSTS over an effective HTTPS connection: sending it over
+		// plain HTTP is ignored by browsers, but pinning it there risks locking
+		// out local non-TLS deployments.
+		if r.TLS != nil || s.cookieSecure(r) {
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
