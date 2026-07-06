@@ -51,7 +51,7 @@ func (s *Server) handleBaseCreate(w http.ResponseWriter, r *http.Request) {
 	year := int(formInt64(r, "year"))
 	name := trimmed(r, "name")
 	if year < 1900 || year > 3000 {
-		s.setFlash(w, "error", "Bitte ein gültiges Jahr angeben.")
+		s.setFlash(w, r, "error", "Bitte ein gültiges Jahr angeben.")
 		redirect(w, r, "/bases")
 		return
 	}
@@ -69,10 +69,10 @@ func (s *Server) handleBaseCreate(w http.ResponseWriter, r *http.Request) {
 		newID, err = s.store.CreateEmptyBase(r.Context(), year, name)
 	}
 	if err != nil {
-		s.setFlash(w, "error", "Anlegen fehlgeschlagen (Jahr bereits vorhanden?).")
+		s.setFlash(w, r, "error", "Anlegen fehlgeschlagen (Jahr bereits vorhanden?).")
 	} else {
 		s.audit(r, "create", "base", newID, name)
-		s.setFlash(w, "success", "Bemessungsgrundlage angelegt. Vorjahreswerte bleiben unverändert.")
+		s.setFlash(w, r, "success", "Bemessungsgrundlage angelegt. Vorjahreswerte bleiben unverändert.")
 	}
 	redirect(w, r, "/bases")
 }
@@ -91,15 +91,15 @@ func (s *Server) handleBaseUpdate(w http.ResponseWriter, r *http.Request) {
 	name := trimmed(r, "name")
 	year := int(formInt64(r, "year"))
 	if name == "" || year < 1900 || year > 3000 {
-		s.setFlash(w, "error", "Bitte Name und gültiges Jahr angeben.")
+		s.setFlash(w, r, "error", "Bitte Name und gültiges Jahr angeben.")
 		redirect(w, r, "/bases")
 		return
 	}
 	if err := s.store.UpdateBase(r.Context(), id, year, name); err != nil {
-		s.setFlash(w, "error", "Speichern fehlgeschlagen (Jahr bereits vergeben?).")
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen (Jahr bereits vergeben?).")
 	} else {
 		s.audit(r, "update", "base", id, name)
-		s.setFlash(w, "success", "Bemessungsgrundlage aktualisiert.")
+		s.setFlash(w, r, "success", "Bemessungsgrundlage aktualisiert.")
 	}
 	redirect(w, r, "/bases")
 }
@@ -117,15 +117,15 @@ func (s *Server) handleBaseDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if inUse {
-		s.setFlash(w, "error", "Grundlage wird von mindestens einem Abrechnungsjahr verwendet und kann nicht gelöscht werden.")
+		s.setFlash(w, r, "error", "Grundlage wird von mindestens einem Abrechnungsjahr verwendet und kann nicht gelöscht werden.")
 		redirect(w, r, "/bases")
 		return
 	}
 	if err := s.store.DeleteBase(r.Context(), id); err != nil {
-		s.setFlash(w, "error", "Löschen fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
 		s.audit(r, "delete", "base", id, "")
-		s.setFlash(w, "success", "Bemessungsgrundlage gelöscht.")
+		s.setFlash(w, r, "success", "Bemessungsgrundlage gelöscht.")
 	}
 	redirect(w, r, "/bases")
 }
@@ -145,13 +145,13 @@ func (s *Server) setBaseLock(w http.ResponseWriter, r *http.Request, locked bool
 		return
 	}
 	if err := s.store.SetBaseLocked(r.Context(), id, locked); err != nil {
-		s.setFlash(w, "error", "Aktion fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if locked {
 		s.audit(r, "lock", "base", id, "")
-		s.setFlash(w, "success", "Bemessungsgrundlage gesperrt.")
+		s.setFlash(w, r, "success", "Bemessungsgrundlage gesperrt.")
 	} else {
 		s.audit(r, "unlock", "base", id, "")
-		s.setFlash(w, "success", "Bemessungsgrundlage entsperrt.")
+		s.setFlash(w, r, "success", "Bemessungsgrundlage entsperrt.")
 	}
 	redirect(w, r, "/bases")
 }

@@ -50,16 +50,16 @@ func (s *Server) handleNeighborManageCreate(w http.ResponseWriter, r *http.Reque
 	}
 	name := trimmed(r, "name")
 	if name == "" {
-		s.setFlash(w, "error", "Name darf nicht leer sein.")
+		s.setFlash(w, r, "error", "Name darf nicht leer sein.")
 		redirect(w, r, "/neighbors")
 		return
 	}
 	id, err := s.store.CreateNeighbor(r.Context(), name, trimmed(r, "note"))
 	if err != nil {
-		s.setFlash(w, "error", "Anlegen fehlgeschlagen (Name bereits vergeben?).")
+		s.setFlash(w, r, "error", "Anlegen fehlgeschlagen (Name bereits vergeben?).")
 	} else {
 		s.audit(r, "create", "neighbor", id, name)
-		s.setFlash(w, "success", "Nachbar angelegt.")
+		s.setFlash(w, r, "success", "Nachbar angelegt.")
 	}
 	redirect(w, r, "/neighbors")
 }
@@ -79,7 +79,7 @@ func (s *Server) handleCarryOverNeighbors(w http.ResponseWriter, r *http.Request
 	}
 	prev, err := s.store.PreviousBillingYear(r.Context(), year.Year)
 	if errors.Is(err, store.ErrNotFound) {
-		s.setFlash(w, "error", "Kein Vorjahr vorhanden, aus dem übernommen werden könnte.")
+		s.setFlash(w, r, "error", "Kein Vorjahr vorhanden, aus dem übernommen werden könnte.")
 		redirect(w, r, dashboardURL(yearID))
 		return
 	}
@@ -101,7 +101,7 @@ func (s *Server) handleCarryOverNeighbors(w http.ResponseWriter, r *http.Request
 
 	selected := formInt64List(r, "neighbor_ids")
 	if len(selected) == 0 {
-		s.setFlash(w, "info", "Keine Nachbarn ausgewählt.")
+		s.setFlash(w, r, "info", "Keine Nachbarn ausgewählt.")
 		redirect(w, r, dashboardURL(yearID))
 		return
 	}
@@ -126,10 +126,10 @@ func (s *Server) handleCarryOverNeighbors(w http.ResponseWriter, r *http.Request
 		added++
 	}
 	if added == 0 {
-		s.setFlash(w, "info", "Alle ausgewählten Nachbarn sind bereits enthalten.")
+		s.setFlash(w, r, "info", "Alle ausgewählten Nachbarn sind bereits enthalten.")
 	} else {
 		s.audit(r, "carry_over", "year", year.ID, plural(added, "Nachbar", "Nachbarn")+" aus "+itoa(prev.Year))
-		s.setFlash(w, "success", plural(added, "Nachbar", "Nachbarn")+" aus "+itoa(prev.Year)+" übernommen.")
+		s.setFlash(w, r, "success", plural(added, "Nachbar", "Nachbarn")+" aus "+itoa(prev.Year)+" übernommen.")
 	}
 	redirect(w, r, dashboardURL(yearID))
 }
@@ -147,13 +147,13 @@ func (s *Server) handleNeighborArchive(w http.ResponseWriter, r *http.Request) {
 	}
 	archived := r.FormValue("archived") == "true"
 	if err := s.store.SetNeighborArchived(r.Context(), id, archived); err != nil {
-		s.setFlash(w, "error", "Aktion fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if archived {
 		s.audit(r, "deactivate", "neighbor", id, "")
-		s.setFlash(w, "success", "Nachbar deaktiviert. Bestehende Buchungen bleiben erhalten.")
+		s.setFlash(w, r, "success", "Nachbar deaktiviert. Bestehende Buchungen bleiben erhalten.")
 	} else {
 		s.audit(r, "reactivate", "neighbor", id, "")
-		s.setFlash(w, "success", "Nachbar wieder aktiviert.")
+		s.setFlash(w, r, "success", "Nachbar wieder aktiviert.")
 	}
 	redirect(w, r, "/neighbors")
 }

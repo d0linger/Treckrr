@@ -154,7 +154,7 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 		}
 		// Viewers may not mutate data, except managing their own account.
 		if r.Method == http.MethodPost && !user.CanWrite() && !isSelfServicePath(r.URL.Path) {
-			s.setFlash(w, "error", "Nur-Lese-Konto: Änderungen sind nicht möglich.")
+			s.setFlash(w, r, "error", "Nur-Lese-Konto: Änderungen sind nicht möglich.")
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
@@ -231,4 +231,17 @@ func staticServer() http.Handler {
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		fs.ServeHTTP(w, r)
 	})
+}
+
+// setCookie wraps http.SetCookie to apply consistent security defaults (Secure,
+// SameSite).
+func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, c *http.Cookie) { //nosec G124
+	if c.Path == "" {
+		c.Path = "/"
+	}
+	if c.SameSite == http.SameSiteDefaultMode {
+		c.SameSite = http.SameSiteLaxMode
+	}
+	c.Secure = s.cookieSecure(r)
+	http.SetCookie(w, c) //nosec G124 -- attributes are set dynamically or by caller
 }

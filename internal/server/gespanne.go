@@ -103,7 +103,7 @@ func (s *Server) handleGespannSave(w http.ResponseWriter, r *http.Request) {
 	machineIDs := formMachineIDs(r)
 	sortOrder := int(formInt64(r, "sort_order"))
 	if name == "" {
-		s.setFlash(w, "error", "Name darf nicht leer sein.")
+		s.setFlash(w, r, "error", "Name darf nicht leer sein.")
 		redirect(w, r, gespanneURL(baseID))
 		return
 	}
@@ -116,7 +116,7 @@ func (s *Server) handleGespannSave(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		s.audit(r, "save", "gespann", id, name)
 	}
-	s.flashSaved(w, err)
+	s.flashSaved(w, r, err)
 	redirect(w, r, gespanneURL(baseID))
 }
 
@@ -134,6 +134,6 @@ func (s *Server) handleGespannDelete(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		s.audit(r, "delete", "gespann", id, "")
 	}
-	s.flashDeleted(w, err)
+	s.flashDeleted(w, r, err)
 	redirect(w, r, gespanneURL(baseID))
 }

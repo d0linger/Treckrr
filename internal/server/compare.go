@@ -99,7 +99,7 @@ func (s *Server) handlePriceCompare(w http.ResponseWriter, r *http.Request) {
 	}
 	against, err := s.store.GetBase(r.Context(), againstID)
 	if err != nil {
-		s.setFlash(w, "error", "Vergleichsgrundlage nicht gefunden.")
+		s.setFlash(w, r, "error", "Vergleichsgrundlage nicht gefunden.")
 		redirect(w, r, "/prices/compare?base="+itoa64(base.ID))
 		return
 	}

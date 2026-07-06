@@ -111,7 +111,7 @@ func (s *Server) handleYearAddNeighbor(w http.ResponseWriter, r *http.Request) {
 	yearID := s.yearIDFromForm(r)
 	neighborID := formInt64(r, "neighbor_id")
 	if yearID == 0 || neighborID == 0 {
-		s.setFlash(w, "error", "Bitte einen Nachbarn wählen.")
+		s.setFlash(w, r, "error", "Bitte einen Nachbarn wählen.")
 		redirect(w, r, dashboardURL(yearID))
 		return
 	}
@@ -120,7 +120,7 @@ func (s *Server) handleYearAddNeighbor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "add_neighbor", "year", yearID, s.neighborName(r, neighborID))
-	s.setFlash(w, "success", "Nachbar zum Jahr hinzugefügt.")
+	s.setFlash(w, r, "success", "Nachbar zum Jahr hinzugefügt.")
 	redirect(w, r, dashboardURL(yearID))
 }
 
@@ -139,7 +139,7 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if count > 0 {
-		s.setFlash(w, "error", "Nachbar hat noch Buchungen in diesem Jahr und kann nicht entfernt werden.")
+		s.setFlash(w, r, "error", "Nachbar hat noch Buchungen in diesem Jahr und kann nicht entfernt werden.")
 		redirect(w, r, dashboardURL(yearID))
 		return
 	}
@@ -148,7 +148,7 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.audit(r, "remove_neighbor", "year", yearID, s.neighborName(r, neighborID))
-	s.setFlash(w, "success", "Nachbar aus dem Jahr entfernt.")
+	s.setFlash(w, r, "success", "Nachbar aus dem Jahr entfernt.")
 	redirect(w, r, dashboardURL(yearID))
 }
 
@@ -166,13 +166,13 @@ func (s *Server) handleNeighborPaid(w http.ResponseWriter, r *http.Request) {
 	}
 	paid := r.FormValue("paid") == "true"
 	if err := s.store.SetNeighborPaid(r.Context(), yearID, neighborID, paid); err != nil {
-		s.setFlash(w, "error", "Zahlungsstatus konnte nicht gesetzt werden.")
+		s.setFlash(w, r, "error", "Zahlungsstatus konnte nicht gesetzt werden.")
 	} else if paid {
 		s.audit(r, "mark_paid", "year", yearID, s.neighborName(r, neighborID))
-		s.setFlash(w, "success", "Als bezahlt markiert.")
+		s.setFlash(w, r, "success", "Als bezahlt markiert.")
 	} else {
 		s.audit(r, "mark_open", "year", yearID, s.neighborName(r, neighborID))
-		s.setFlash(w, "success", "Als offen markiert.")
+		s.setFlash(w, r, "success", "Als offen markiert.")
 	}
 	redirect(w, r, dashboardURL(yearID))
 }
@@ -189,10 +189,10 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	name := trimmed(r, "name")
 	if err := s.store.UpdateNeighbor(r.Context(), id, name, trimmed(r, "note")); err != nil {
-		s.setFlash(w, "error", "Aktualisierung fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")
 	} else {
 		s.audit(r, "update", "neighbor", id, name)
-		s.setFlash(w, "success", "Nachbar aktualisiert.")
+		s.setFlash(w, r, "success", "Nachbar aktualisiert.")
 	}
 	redirect(w, r, neighborReturnURL(r, id))
 }
@@ -221,12 +221,12 @@ func (s *Server) handleNeighborDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if count > 0 {
-		s.setFlash(w, "error", "Nachbar hat Buchungen und kann nicht gelöscht werden. Bitte stattdessen deaktivieren.")
+		s.setFlash(w, r, "error", "Nachbar hat Buchungen und kann nicht gelöscht werden. Bitte stattdessen deaktivieren.")
 	} else if err := s.store.DeleteNeighbor(r.Context(), id); err != nil {
-		s.setFlash(w, "error", "Löschen fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
 		s.audit(r, "delete", "neighbor", id, "")
-		s.setFlash(w, "success", "Nachbar gelöscht.")
+		s.setFlash(w, r, "success", "Nachbar gelöscht.")
 	}
 	if r.FormValue("origin") == "manage" {
 		redirect(w, r, "/neighbors")
