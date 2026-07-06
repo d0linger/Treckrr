@@ -94,6 +94,14 @@ func formInt64(r *http.Request, name string) int64 {
 	return v
 }
 
+// formInt parses a form field as a platform int, treating an empty or invalid
+// value as 0 (mirroring formInt64). strconv.Atoi yields an int directly, so the
+// value never passes through a lossy int64->int narrowing on 32-bit builds.
+func formInt(r *http.Request, name string) int {
+	v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue(name)))
+	return v
+}
+
 // formInt64Ptr returns a pointer to the parsed id, or nil when empty/zero.
 func formInt64Ptr(r *http.Request, name string) *int64 {
 	v := formInt64(r, name)

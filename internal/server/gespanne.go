@@ -101,7 +101,7 @@ func (s *Server) handleGespannSave(w http.ResponseWriter, r *http.Request) {
 	tractorID := formInt64Ptr(r, "tractor_id")
 	loadID := formInt64Ptr(r, "load_level_id")
 	machineIDs := formMachineIDs(r)
-	sortOrder := int(formInt64(r, "sort_order"))
+	sortOrder := formInt(r, "sort_order")
 	if name == "" {
 		s.setFlash(w, r, "error", "Name darf nicht leer sein.")
 		redirect(w, r, gespanneURL(baseID))

@@ -48,7 +48,7 @@ func (s *Server) handleBaseCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
 		return
 	}
-	year := int(formInt64(r, "year"))
+	year := formInt(r, "year")
 	name := trimmed(r, "name")
 	if year < 1900 || year > 3000 {
 		s.setFlash(w, r, "error", "Bitte ein gültiges Jahr angeben.")
@@ -89,7 +89,7 @@ func (s *Server) handleBaseUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := trimmed(r, "name")
-	year := int(formInt64(r, "year"))
+	year := formInt(r, "year")
 	if name == "" || year < 1900 || year > 3000 {
 		s.setFlash(w, r, "error", "Bitte Name und gültiges Jahr angeben.")
 		redirect(w, r, "/bases")

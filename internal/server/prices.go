@@ -87,7 +87,7 @@ func (s *Server) handleLoadLevelSave(w http.ResponseWriter, r *http.Request) {
 	id := formInt64(r, "id")
 	name := trimmed(r, "name")
 	cost := formFloat(r, "cost_per_ps")
-	sort := int(formInt64(r, "sort_order"))
+	sort := formInt(r, "sort_order")
 	if name == "" {
 		s.setFlash(w, r, "error", "Name darf nicht leer sein.")
 		redirect(w, r, pricesURL(baseID))
@@ -139,7 +139,7 @@ func (s *Server) handleTractorSave(w http.ResponseWriter, r *http.Request) {
 	ident := trimmed(r, "ident")
 	name := trimmed(r, "name")
 	ps := formFloat(r, "ps")
-	sortOrder := int(formInt64(r, "sort_order"))
+	sortOrder := formInt(r, "sort_order")
 	if ident == "" || ps <= 0 {
 		s.setFlash(w, r, "error", "Bezeichnung und PS (> 0) sind erforderlich.")
 		redirect(w, r, pricesURL(baseID))
@@ -219,7 +219,7 @@ func (s *Server) handleMachineSave(w http.ResponseWriter, r *http.Request) {
 	width := formFloat(r, "working_width")
 	cost := formFloat(r, "cost_per_ab")
 	category := trimmed(r, "category")
-	sortOrder := int(formInt64(r, "sort_order"))
+	sortOrder := formInt(r, "sort_order")
 	if name == "" || width <= 0 {
 		s.setFlash(w, r, "error", "Name und Arbeitsbreite (> 0) sind erforderlich.")
 		redirect(w, r, pricesURL(baseID))
