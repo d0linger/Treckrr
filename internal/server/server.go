@@ -135,7 +135,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/users/{id}/reset-2fa", s.admin(s.handleUserResetTotp))
 	mux.Handle("POST /admin/users/{id}/delete", s.admin(s.handleUserDelete))
 
-	return s.accessLog(s.securityHeaders(mux))
+	return s.accessLog(s.securityHeaders(s.csrf(mux)))
 }
 
 // auth wraps a handler requiring an authenticated user. It also enforces the

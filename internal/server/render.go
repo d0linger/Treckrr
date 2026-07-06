@@ -48,8 +48,11 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
+	// Inject a hidden CSRF token into every POST form of the rendered page so
+	// templates stay token-agnostic; validated by the csrf middleware.
+	out := injectCSRFField(buf.Bytes(), s.csrfToken(r))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = buf.WriteTo(w)
+	_, _ = w.Write(out)
 }
 
 // ---- Flash messages (cookie based) --------------------------------------
