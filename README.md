@@ -193,6 +193,26 @@ sh scripts/backup.sh                        # manual dump
 sh scripts/restore.sh backups/<file>.dump   # restore
 ```
 
+### Running rootless (rootless Docker / Podman)
+
+The stack runs under a **rootless** container engine with no changes:
+
+- The app image runs as a **non-root** user (`treckrr`, UID 10001) with a
+  **read-only root filesystem**, `no-new-privileges` and only a small `tmpfs`
+  for `/tmp`; Postgres uses a **named volume**, and nothing needs privileged
+  ports or capabilities.
+- On Ubuntu: install rootless Docker (`docker-ce-rootless-extras` + `uidmap`,
+  then `dockerd-rootless-setuptool.sh install`), point at the user socket
+  (`export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock`), run
+  `loginctl enable-linger "$USER"` so it survives reboots, then
+  `docker compose up -d --build` as usual. It also runs unchanged under
+  **rootless Podman** (`podman compose up`).
+- The app listens on **8080** (non-privileged); TLS/443 is terminated by your
+  reverse proxy (`TRUST_PROXY=true`), so no `CAP_NET_BIND_SERVICE` is required.
+- The optional backup profile bind-mounts `./backups`; under rootless the dumps
+  are owned by a mapped sub-UID on the host — retrieve them with
+  `docker compose cp` or make that directory writable for the mapping.
+
 ---
 
 ## Architecture
