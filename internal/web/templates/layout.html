@@ -16,20 +16,22 @@
 	<div class="topstack">
 		<header class="appbar">
 			<a class="appbar__brand" href="/">
-				<img src="/static/icons/favicon.svg" alt="" width="26" height="26">
+				<img src="/static/icons/favicon.svg" alt="" width="24" height="24">
 				<span>Treckrr</span>
 			</a>
 			<h1 class="appbar__title">{{.Title}}</h1>
-			<form class="appbar__logout" method="post" action="/logout">
-				<button class="btn btn--ghost btn--icon appbar__logout-btn" type="submit" title="Abmelden" aria-label="Abmelden">
-					<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
-						stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-						<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-						<polyline points="16 17 21 12 16 7"/>
-						<line x1="21" y1="12" x2="9" y2="12"/>
-					</svg>
-				</button>
-			</form>
+			<button class="appbar__icon" type="button" data-theme-toggle title="Design wechseln" aria-label="Hell/Dunkel umschalten">
+				<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+					<circle cx="12" cy="12" r="9"/><path d="M12 3v18" fill="currentColor" stroke="none"/>
+					<path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/>
+				</svg>
+			</button>
+			<button class="appbar__icon" type="button" data-drawer-open aria-label="Menü" aria-controls="drawer" aria-expanded="false">
+				<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"
+					stroke-width="2" stroke-linecap="round" aria-hidden="true">
+					<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+				</svg>
+			</button>
 		</header>
 
 		{{if .Years}}
@@ -54,6 +56,30 @@
 	</main>
 
 {{if .User}}
+	<div class="drawer__scrim" data-drawer-close hidden></div>
+	<aside class="drawer" id="drawer" aria-hidden="true" inert aria-label="Menü">
+		<div class="drawer__head">
+			<span class="drawer__user">{{.User.Username}}</span>
+			<span class="drawer__role muted">{{.User.RoleLabel}}</span>
+		</div>
+		<nav class="drawer__nav">
+			<a class="drawer__item {{if eq .Active "profile"}}is-active{{end}}" href="/profile">
+				<span class="drawer__ico">⚙️</span>Einstellungen</a>
+			{{if .User.IsAdmin}}
+			<a class="drawer__item {{if eq .Active "admin"}}is-active{{end}}" href="/admin/users">
+				<span class="drawer__ico">👥</span>Benutzer</a>
+			<a class="drawer__item {{if eq .Active "audit"}}is-active{{end}}" href="/admin/audit">
+				<span class="drawer__ico">🗒️</span>Audit‑Log</a>
+			{{end}}
+			<button class="drawer__item" type="button" data-theme-toggle>
+				<span class="drawer__ico">◐</span>Design wechseln</button>
+			<form method="post" action="/logout" class="drawer__logout">
+				<button class="drawer__item drawer__item--danger" type="submit">
+					<span class="drawer__ico">⎋</span>Abmelden</button>
+			</form>
+		</nav>
+	</aside>
+
 	<nav class="tabbar">
 		<a class="tabbar__item {{if eq .Active "dashboard"}}is-active{{end}}" href="/">
 			<span class="tabbar__icon">🏠</span><span>Übersicht</span>
@@ -66,14 +92,6 @@
 		</a>
 		<a class="tabbar__item {{if or (eq .Active "bases") (eq .Active "prices") (eq .Active "gespanne")}}is-active{{end}}" href="/bases">
 			<span class="tabbar__icon">🚜</span><span>Grundlagen</span>
-		</a>
-		{{if .User.IsAdmin}}
-		<a class="tabbar__item {{if eq .Active "admin"}}is-active{{end}}" href="/admin/users">
-			<span class="tabbar__icon">👥</span><span>Nutzer</span>
-		</a>
-		{{end}}
-		<a class="tabbar__item {{if eq .Active "profile"}}is-active{{end}}" href="/profile">
-			<span class="tabbar__icon">⚙️</span><span>Profil</span>
 		</a>
 	</nav>
 {{end}}

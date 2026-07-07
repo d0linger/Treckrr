@@ -26,11 +26,11 @@ CSS/JS/icons are served locally, and the dependency set is small and audited
 <p align="center">
   <img src="docs/img/login.png" width="240" alt="Login with password + passkey">
   <img src="docs/img/dashboard.png" width="240" alt="Billing-year overview">
-  <img src="docs/img/neighbor.png" width="240" alt="Neighbour bookings">
+  <img src="docs/img/menu.png" width="240" alt="Side menu / drawer">
 </p>
 <p align="center">
+  <img src="docs/img/neighbor.png" width="240" alt="Neighbour bookings">
   <img src="docs/img/stats.png" width="240" alt="Statistics and charts">
-  <img src="docs/img/passkeys.png" width="240" alt="Passkey management">
   <img src="docs/img/dashboard-dark.png" width="240" alt="Dark mode">
 </p>
 <p align="center"><sub>Mobile-first PWA · German UI · light &amp; dark themes · password + TOTP or one-tap passkey login · exact-decimal billing.</sub></p>
