@@ -147,6 +147,7 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
+		s.refreshSessionCookie(w, r)
 		// Force a password change before anything else (except the change page).
 		if user.MustChangePassword && r.URL.Path != "/account/password" {
 			http.Redirect(w, r, "/account/password", http.StatusSeeOther)
@@ -180,6 +181,7 @@ func (s *Server) admin(h http.HandlerFunc) http.Handler {
 			http.Error(w, "Zugriff verweigert", http.StatusForbidden)
 			return
 		}
+		s.refreshSessionCookie(w, r)
 		ctx := context.WithValue(r.Context(), userCtxKey, user)
 		h(w, r.WithContext(ctx))
 	})
@@ -191,11 +193,25 @@ func (s *Server) currentUser(r *http.Request) *models.User {
 	if err != nil || c.Value == "" {
 		return nil
 	}
-	user, err := s.store.UserFromSession(r.Context(), c.Value)
+	user, err := s.store.UserFromSession(r.Context(), c.Value, sessionTTL)
 	if err != nil {
 		return nil
 	}
 	return user
+}
+
+// refreshSessionCookie re-issues the session cookie with a fresh MaxAge so an
+// actively-used session keeps a live browser cookie in step with the rolling
+// server-side expiry (slid in UserFromSession).
+func (s *Server) refreshSessionCookie(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
+		s.setCookie(w, r, &http.Cookie{
+			Name:     sessionCookie,
+			Value:    c.Value,
+			HttpOnly: true,
+			MaxAge:   int(sessionTTL.Seconds()),
+		})
+	}
 }
 
 // userFromCtx returns the authenticated user placed by the auth middleware.

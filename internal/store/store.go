@@ -188,9 +188,11 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Durati
 	return token, err
 }
 
-// UserFromSession resolves a session token to its (non-expired) user and
-// refreshes the session's last-seen timestamp.
-func (s *Store) UserFromSession(ctx context.Context, token string) (*models.User, error) {
+// UserFromSession resolves a session token to its (non-expired) user. On each
+// hit it refreshes last-seen and slides the expiry forward by slideTTL, so an
+// actively-used session stays alive (rolling window) and only expires after
+// slideTTL of inactivity.
+func (s *Store) UserFromSession(ctx context.Context, token string, slideTTL time.Duration) (*models.User, error) {
 	u, err := scanUser(s.db.QueryRowContext(ctx,
 		`SELECT u.id, u.username, u.role, u.is_admin, u.must_change_password, u.totp_enabled, u.created_at
 		   FROM sessions s JOIN users u ON u.id = s.user_id
@@ -201,7 +203,9 @@ func (s *Store) UserFromSession(ctx context.Context, token string) (*models.User
 	if err != nil {
 		return nil, err
 	}
-	_, _ = s.db.ExecContext(ctx, `UPDATE sessions SET last_seen=now() WHERE token=$1`, token)
+	_, _ = s.db.ExecContext(ctx,
+		`UPDATE sessions SET last_seen=now(), expires_at=now() + make_interval(secs => $2) WHERE token=$1`,
+		token, slideTTL.Seconds())
 	return &u, nil
 }
 
