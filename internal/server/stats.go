@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"sort"
+	"strconv"
 
 	"github.com/shopspring/decimal"
 
@@ -52,6 +53,76 @@ func maxCost(rows []aggRow) decimal.Decimal {
 		}
 	}
 	return m
+}
+
+// yearStat is one row of the all-years overview.
+type yearStat struct {
+	Year      int
+	YearID    int64
+	Cost      decimal.Decimal
+	Hours     decimal.Decimal
+	PaidCost  decimal.Decimal
+	OpenCost  decimal.Decimal
+	Completed bool
+}
+
+// handleStatsAll renders a cross-year overview: per-year revenue, hours and
+// paid/open split, a revenue-per-year bar chart, and grand totals.
+func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
+	years, err := s.store.ListBillingYears(r.Context())
+	if err != nil {
+		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		return
+	}
+
+	stats := make([]yearStat, 0, len(years))
+	revenue := make([]aggRow, 0, len(years))
+	var grandCost, grandHours, grandPaid, grandOpen decimal.Decimal
+	for _, y := range years {
+		entries, err := s.store.ListEntriesByYear(r.Context(), y.ID)
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
+		}
+		var cost, hours decimal.Decimal
+		for _, e := range entries {
+			if e.Voided {
+				continue
+			}
+			cost = cost.Add(e.Cost)
+			hours = hours.Add(e.Hours)
+		}
+		payments, _ := s.store.YearPayments(r.Context(), y.ID)
+		members, _ := s.store.ListYearNeighbors(r.Context(), y.ID)
+		var paid, open decimal.Decimal
+		for _, n := range members {
+			c, _, _ := s.store.NeighborTotal(r.Context(), n.ID, y.ID)
+			if payments[n.ID] {
+				paid = paid.Add(c)
+			} else {
+				open = open.Add(c)
+			}
+		}
+		stats = append(stats, yearStat{
+			Year: y.Year, YearID: y.ID, Cost: cost, Hours: hours,
+			PaidCost: paid, OpenCost: open, Completed: y.Completed(),
+		})
+		revenue = append(revenue, aggRow{Label: strconv.Itoa(y.Year), Hours: hours, Cost: cost})
+		grandCost = grandCost.Add(cost)
+		grandHours = grandHours.Add(hours)
+		grandPaid = grandPaid.Add(paid)
+		grandOpen = grandOpen.Add(open)
+	}
+
+	data := s.newPage(w, r, "Statistik – Alle Jahre", "stats")
+	data["Stats"] = stats
+	data["Revenue"] = revenue
+	data["RevenueMax"] = maxCost(revenue)
+	data["GrandCost"] = grandCost
+	data["GrandHours"] = grandHours
+	data["GrandPaid"] = grandPaid
+	data["GrandOpen"] = grandOpen
+	s.render(w, r, "stats_all", data)
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -132,12 +203,18 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 			pc = pc.Add(e.Cost)
 			ph = ph.Add(e.Hours)
 		}
+		diff := totalCost.Sub(pc).Round(2)
 		data["PrevYear"] = prev.Year
 		data["PrevCost"] = pc
 		data["PrevHours"] = ph
-		data["DiffCost"] = totalCost.Sub(pc).Round(2)
+		data["DiffCost"] = diff
+		// Sign as booleans: templates must not compare a decimal to a float.
+		data["DiffUp"] = diff.IsPositive()
+		data["DiffDown"] = diff.IsNegative()
 		if !pc.IsZero() {
-			data["DiffPct"] = totalCost.Sub(pc).Div(pc).Mul(decimal.NewFromInt(100)).Round(2)
+			pct := totalCost.Sub(pc).Div(pc).Mul(decimal.NewFromInt(100)).Round(2)
+			data["DiffPct"] = pct
+			data["DiffPctUp"] = pct.IsPositive()
 		}
 	}
 

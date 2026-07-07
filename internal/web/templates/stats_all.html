@@ -1,0 +1,59 @@
+{{define "content"}}
+<section class="stack">
+	<a class="backlink" href="/">‹ Übersicht</a>
+
+	<div class="kpigrid">
+		<div class="kpi card"><span class="kpi__label">Umsatz gesamt</span><span class="kpi__value">{{money .GrandCost}}</span></div>
+		<div class="kpi card"><span class="kpi__label">Stunden gesamt</span><span class="kpi__value">{{num .GrandHours}} h</span></div>
+		<div class="kpi card"><span class="kpi__label">Bezahlt gesamt</span><span class="kpi__value">{{money .GrandPaid}}</span></div>
+		<div class="kpi card"><span class="kpi__label">Offen gesamt</span><span class="kpi__value">{{money .GrandOpen}}</span></div>
+	</div>
+
+	<div class="card">
+		<h2 class="section-title">Umsatz je Jahr</h2>
+		{{template "bar-chart" (dict "Rows" .Revenue "Max" .RevenueMax "Money" true)}}
+	</div>
+
+	<div class="card">
+		<h2 class="section-title">Jahresübersicht</h2>
+		<div class="tablewrap">
+			<table class="dtable dtable--zebra">
+				<thead>
+					<tr>
+						<th>Jahr</th>
+						<th class="num">Umsatz</th>
+						<th class="num">Stunden</th>
+						<th class="num">Bezahlt</th>
+						<th class="num">Offen</th>
+						<th>Status</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .Stats}}
+					<tr>
+						<td><a class="link strong" href="/stats?year={{.YearID}}">{{.Year}}</a></td>
+						<td class="num">{{money .Cost}}</td>
+						<td class="num">{{num .Hours}} h</td>
+						<td class="num">{{money .PaidCost}}</td>
+						<td class="num">{{money .OpenCost}}</td>
+						<td>{{if .Completed}}<span class="badge">abgeschlossen</span>{{else}}<span class="muted">offen</span>{{end}}</td>
+					</tr>
+					{{else}}
+					<tr><td colspan="6" class="muted center">Noch keine Abrechnungsjahre.</td></tr>
+					{{end}}
+				</tbody>
+				<tfoot>
+					<tr>
+						<th>Summe</th>
+						<th class="num">{{money .GrandCost}}</th>
+						<th class="num">{{num .GrandHours}} h</th>
+						<th class="num">{{money .GrandPaid}}</th>
+						<th class="num">{{money .GrandOpen}}</th>
+						<th></th>
+					</tr>
+				</tfoot>
+			</table>
+		</div>
+	</div>
+</section>
+{{end}}
