@@ -127,6 +127,41 @@
 		}, 4000);
 	}
 
+	// Side drawer (menu) open/close.
+	(function () {
+		var drawer = document.getElementById("drawer");
+		if (!drawer) return;
+		var scrim = document.querySelector(".drawer__scrim");
+		var openers = document.querySelectorAll("[data-drawer-open]");
+		function setOpen(on) {
+			drawer.classList.toggle("is-open", on);
+			drawer.setAttribute("aria-hidden", on ? "false" : "true");
+			if (scrim) scrim.hidden = !on;
+			openers.forEach(function (b) { b.setAttribute("aria-expanded", on ? "true" : "false"); });
+		}
+		openers.forEach(function (b) { b.addEventListener("click", function () { setOpen(true); }); });
+		document.querySelectorAll("[data-drawer-close]").forEach(function (b) {
+			b.addEventListener("click", function () { setOpen(false); });
+		});
+		document.addEventListener("keydown", function (e) { if (e.key === "Escape") setOpen(false); });
+	})();
+
+	// Instant dark/light toggle: apply immediately, mirror to localStorage, and
+	// persist the cookie in the background so server-rendered pages match.
+	(function () {
+		var toggles = document.querySelectorAll("[data-theme-toggle]");
+		if (!toggles.length) return;
+		toggles.forEach(function (btn) {
+			btn.addEventListener("click", function (e) {
+				e.preventDefault();
+				var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+				document.documentElement.setAttribute("data-theme", next);
+				try { localStorage.setItem("treckrr-theme", next); } catch (err) {}
+				fetch("/theme?set=" + next, { credentials: "same-origin" }).catch(function () {});
+			});
+		});
+	})();
+
 	// Register the service worker for offline/PWA support.
 	if ("serviceWorker" in navigator) {
 		window.addEventListener("load", function () {

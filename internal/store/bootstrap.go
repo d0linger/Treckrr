@@ -152,7 +152,7 @@ func (s *Store) SeedDefaultData(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, name := range []string{"Florian", "David", "Hermann"} {
+	for _, name := range []string{"Musterhof Berg", "Beispielhof Au", "Nachbar Talblick"} {
 		nid, err := s.CreateNeighbor(ctx, name, "")
 		if err != nil {
 			return err
