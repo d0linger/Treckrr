@@ -121,10 +121,15 @@ func (s *Server) handleBaseDelete(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/bases")
 		return
 	}
+	before, _ := s.store.GetBase(r.Context(), id)
 	if err := s.store.DeleteBase(r.Context(), id); err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
-		s.audit(r, "delete", "base", id, "")
+		detail := ""
+		if before != nil {
+			detail = before.Name
+		}
+		s.audit(r, "delete", "base", id, detail)
 		s.setFlash(w, r, "success", "Bemessungsgrundlage gelöscht.")
 	}
 	redirect(w, r, "/bases")

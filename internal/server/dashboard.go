@@ -235,11 +235,18 @@ func (s *Server) handleNeighborDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	if count > 0 {
 		s.setFlash(w, r, "error", "Nachbar hat Buchungen und kann nicht gelöscht werden. Bitte stattdessen deaktivieren.")
-	} else if err := s.store.DeleteNeighbor(r.Context(), id); err != nil {
-		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
-		s.audit(r, "delete", "neighbor", id, "")
-		s.setFlash(w, r, "success", "Nachbar gelöscht.")
+		before, _ := s.store.GetNeighbor(r.Context(), id)
+		if err := s.store.DeleteNeighbor(r.Context(), id); err != nil {
+			s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
+		} else {
+			detail := ""
+			if before != nil {
+				detail = before.Name
+			}
+			s.audit(r, "delete", "neighbor", id, detail)
+			s.setFlash(w, r, "success", "Nachbar gelöscht.")
+		}
 	}
 	if r.FormValue("origin") == "manage" {
 		redirect(w, r, "/neighbors")
