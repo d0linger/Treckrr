@@ -103,6 +103,39 @@ func (s *Server) audit(r *http.Request, action, entity string, entityID int64, d
 	}
 }
 
+// fieldChange is one before/after pair for building old→new audit details.
+type fieldChange struct {
+	Label, Old, New string
+}
+
+// diffFields renders only the changed fields as "Label: old → new", joined with
+// " · ". Empty values render as an em dash so a cleared field is visible.
+func diffFields(changes ...fieldChange) string {
+	parts := make([]string, 0, len(changes))
+	for _, c := range changes {
+		if c.Old != c.New {
+			parts = append(parts, c.Label+": "+orDash(c.Old)+" → "+orDash(c.New))
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+func orDash(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "—"
+	}
+	return s
+}
+
+// yearLabel resolves a billing-year id to its human year (e.g. "2025") for
+// audit detail; falls back to "#id" if the year can't be loaded.
+func (s *Server) yearLabel(r *http.Request, id int64) string {
+	if y, err := s.store.GetBillingYear(r.Context(), id); err == nil {
+		return strconv.Itoa(y.Year)
+	}
+	return "#" + strconv.FormatInt(id, 10)
+}
+
 // auditLogin records a login attempt where no ctx user is set yet.
 func (s *Server) auditLogin(r *http.Request, username, action, detail string) {
 	if err := s.store.AddAudit(r.Context(), nil, username, action, "auth", "", detail, s.clientIP(r)); err != nil {

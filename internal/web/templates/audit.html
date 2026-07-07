@@ -26,7 +26,7 @@
 	<p class="muted small">{{len .Entries}} Einträge angezeigt.</p>
 
 	<div class="card tablewrap">
-		<table class="dtable dtable--zebra">
+		<table class="dtable dtable--zebra dtable--audit">
 			<thead>
 				<tr><th>Zeitpunkt</th><th>Benutzer</th><th>Aktion</th><th>Objekt</th><th>Detail</th><th>IP</th></tr>
 			</thead>
@@ -36,8 +36,8 @@
 					<td class="nowrap small">{{.Created.Format "02.01.2006 15:04:05"}}</td>
 					<td class="small">{{if .Username}}{{.Username}}{{else}}—{{end}}</td>
 					<td class="small"><strong>{{.Action}}</strong></td>
-					<td class="small">{{.Entity}}{{if .EntityID}} #{{.EntityID}}{{end}}</td>
-					<td class="small">{{.Detail}}</td>
+					<td class="small nowrap">{{.Entity}}{{if .EntityID}} #{{.EntityID}}{{end}}</td>
+					<td class="small detailcell">{{if .Detail}}{{.Detail}}{{else}}—{{end}}</td>
 					<td class="small nowrap">{{.IP}}</td>
 				</tr>
 				{{else}}

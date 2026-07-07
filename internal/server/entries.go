@@ -332,6 +332,25 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	}, ids, ""
 }
 
+// entryUpdateDetail renders a per-field old→new summary of an edited booking so
+// the audit trail shows what actually changed, not just the resulting cost.
+func entryUpdateDetail(prev, cur *models.Entry) string {
+	d := diffFields(
+		fieldChange{"Datum", prev.Date.Format("02.01.2006"), cur.Date.Format("02.01.2006")},
+		fieldChange{"Tätigkeit", prev.TaskLabel, cur.TaskLabel},
+		fieldChange{"Maschinen", prev.MachineLabels, cur.MachineLabels},
+		fieldChange{"Stunden", prev.Hours.StringFixed(2), cur.Hours.StringFixed(2)},
+		fieldChange{"Satz", prev.HourlyRate.StringFixed(2), cur.HourlyRate.StringFixed(2)},
+		fieldChange{"Kosten", prev.Cost.StringFixed(2) + " €", cur.Cost.StringFixed(2) + " €"},
+		fieldChange{"Notiz", prev.Note, cur.Note},
+	)
+	if d == "" {
+		return fmt.Sprintf("keine inhaltliche Änderung (%s h × %s = %s €)",
+			cur.Hours.StringFixed(2), cur.HourlyRate.StringFixed(2), cur.Cost.StringFixed(2))
+	}
+	return d
+}
+
 // handleEntryUpdate edits an existing booking (only while the year is open).
 func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
@@ -364,8 +383,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
-	s.audit(r, "update", "entry", id, fmt.Sprintf("%s h × %s = %s €",
-		entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2)))
+	s.audit(r, "update", "entry", id, entryUpdateDetail(existing, entry))
 	s.setFlash(w, r, "success", "Buchung aktualisiert.")
 	redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
 }

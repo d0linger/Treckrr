@@ -155,10 +155,10 @@ func (s *Server) handleYearStatus(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 			return
 		}
-		s.audit(r, "complete", "year", id, "")
+		s.audit(r, "complete", "year", id, "Jahr "+s.yearLabel(r, id))
 		s.setFlash(w, r, "success", "Abrechnungsjahr abgeschlossen. Zahlungsstatus je Nachbar steht auf offen.")
 	} else {
-		s.audit(r, "reopen", "year", id, "")
+		s.audit(r, "reopen", "year", id, "Jahr "+s.yearLabel(r, id))
 		s.setFlash(w, r, "success", "Abrechnungsjahr wieder geöffnet.")
 	}
 	if r.FormValue("origin") == "dashboard" {
@@ -184,10 +184,11 @@ func (s *Server) handleYearDelete(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/years")
 		return
 	}
+	label := s.yearLabel(r, id) // resolve before the row is gone
 	if err := s.store.DeleteBillingYear(r.Context(), id); err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
-		s.audit(r, "delete", "year", id, "")
+		s.audit(r, "delete", "year", id, "Jahr "+label)
 		s.setFlash(w, r, "success", "Abrechnungsjahr gelöscht.")
 	}
 	redirect(w, r, "/years")
