@@ -16,21 +16,6 @@ func (s *Store) AddAudit(ctx context.Context, userID *int64, username, action, e
 	return err
 }
 
-// ListAudit returns the most recent audit entries, newest first.
-func (s *Store) ListAudit(ctx context.Context, limit int) ([]models.AuditEntry, error) {
-	if limit <= 0 || limit > 1000 {
-		limit = 200
-	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_id, username, action, entity, entity_id, detail, ip, created_at
-		  FROM audit_log ORDER BY created_at DESC, id DESC LIMIT $1`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanAuditRows(rows)
-}
-
 // auditFilter is the shared WHERE clause matching an action filter and a
 // case-insensitive substring search across the visible columns. $1 = action
 // (empty = all), $2 = query (empty = all). It mirrors the previous in-memory
