@@ -76,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 	// Authenticated area.
 	mux.Handle("GET /{$}", s.auth(s.handleDashboard))
 	mux.Handle("GET /stats", s.auth(s.handleStats))
+	mux.Handle("GET /stats/all", s.auth(s.handleStatsAll))
 	mux.Handle("GET /neighbors/{id}", s.auth(s.handleNeighborDetail))
 	mux.Handle("GET /neighbors/{id}/overview", s.auth(s.handleNeighborOverview))
 	mux.Handle("GET /neighbors", s.auth(s.handleNeighborsManage))

@@ -1,5 +1,10 @@
 {{define "content"}}
 <section class="stack">
+	<div class="btnrow btnrow--split">
+		<a class="backlink" href="/?year={{.Year.ID}}">‹ Übersicht {{.Year.Year}}</a>
+		<a class="btn btn--ghost btn--sm" href="/stats/all">Alle Jahre</a>
+	</div>
+
 	<div class="kpigrid">
 		<div class="kpi card"><span class="kpi__label">Umsatz {{.Year.Year}}</span><span class="kpi__value">{{money .TotalCost}}</span></div>
 		<div class="kpi card"><span class="kpi__label">Stunden</span><span class="kpi__value">{{num .TotalHours}} h</span></div>
@@ -15,8 +20,8 @@
 		<div class="kpigrid">
 			<div class="kpi"><span class="kpi__label">Umsatz {{.PrevYear}}</span><span class="kpi__value">{{money .PrevCost}}</span></div>
 			<div class="kpi"><span class="kpi__label">Differenz</span>
-				<span class="kpi__value {{if gt .DiffCost 0.0}}diff-up{{else if lt .DiffCost 0.0}}diff-down{{end}}">
-					{{if gt .DiffCost 0.0}}+{{end}}{{money .DiffCost}}{{if .DiffPct}} ({{if gt .DiffPct 0.0}}+{{end}}{{num .DiffPct}} %){{end}}</span></div>
+				<span class="kpi__value {{if .DiffUp}}diff-up{{else if .DiffDown}}diff-down{{end}}">
+					{{if .DiffUp}}+{{end}}{{money .DiffCost}}{{if .DiffPct}} ({{if .DiffPctUp}}+{{end}}{{num .DiffPct}} %){{end}}</span></div>
 		</div>
 	</div>
 	{{end}}

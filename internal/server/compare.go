@@ -17,17 +17,23 @@ func formInt64FromQuery(r *http.Request, name string) int64 {
 	return v
 }
 
-// diffRow is one comparison line between two bases.
+// diffRow is one comparison line between two bases. Up/Down carry the sign of
+// Diff as booleans so templates don't compare a decimal against a float literal
+// (Go's template gt/lt only support basic kinds and error on a struct).
 type diffRow struct {
 	Label string
 	A     decimal.Decimal // value in the selected basis
 	B     decimal.Decimal // value in the compared-against basis
 	Diff  decimal.Decimal // A - B
 	Pct   decimal.Decimal // percentage change vs B
+	Up    bool            // Diff > 0
+	Down  bool            // Diff < 0
 }
 
 func makeDiff(label string, a, b decimal.Decimal) diffRow {
 	d := diffRow{Label: label, A: a, B: b, Diff: a.Sub(b).Round(2)}
+	d.Up = d.Diff.IsPositive()
+	d.Down = d.Diff.IsNegative()
 	if !b.IsZero() {
 		d.Pct = a.Sub(b).Div(b).Mul(decimal.NewFromInt(100)).Round(2)
 	}

@@ -5,67 +5,80 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"treckrr/internal/models"
 )
 
-// filterAudit applies a text query and action filter, and returns the sorted
-// set of all actions seen (for the filter dropdown).
-func filterAudit(all []models.AuditEntry, q, action string) (filtered []models.AuditEntry, actions []string) {
-	q = strings.ToLower(strings.TrimSpace(q))
-	seen := map[string]bool{}
-	for _, e := range all {
-		if !seen[e.Action] {
-			seen[e.Action] = true
-			actions = append(actions, e.Action)
-		}
-		if action != "" && e.Action != action {
-			continue
-		}
-		if q != "" {
-			hay := strings.ToLower(e.Username + " " + e.Action + " " + e.Entity + " " +
-				e.EntityID + " " + e.Detail + " " + e.IP)
-			if !strings.Contains(hay, q) {
-				continue
-			}
-		}
-		filtered = append(filtered, e)
-	}
-	sort.Strings(actions)
-	return filtered, actions
-}
+// auditPageSize is how many audit rows are shown per page (keeps the trail from
+// becoming one endless scroll while staying searchable/filterable).
+const auditPageSize = 50
 
-// handleAudit renders the admin audit-trail view with search & action filter.
+// handleAudit renders the admin audit-trail view with search, action filter and
+// pagination. Filtering, counting and paging all run in SQL so they cover the
+// full audit history, not just a fixed recent batch.
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
-	all, err := s.store.ListAudit(r.Context(), 1000)
+	q := r.URL.Query().Get("q")
+	action := r.URL.Query().Get("action")
+
+	total, err := s.store.CountAudit(r.Context(), q, action)
 	if err != nil {
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
-	q := r.URL.Query().Get("q")
-	action := r.URL.Query().Get("action")
-	filtered, actions := filterAudit(all, q, action)
+	totalPages := (total + auditPageSize - 1) / auditPageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	page := 1
+	if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && p > 1 {
+		page = p
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+	offset := (page - 1) * auditPageSize
+
+	entries, err := s.store.ListAuditFiltered(r.Context(), q, action, auditPageSize, offset)
+	if err != nil {
+		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		return
+	}
+	actions, err := s.store.AuditActions(r.Context())
+	if err != nil {
+		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		return
+	}
 
 	data := s.newPage(w, r, "Protokoll", "admin")
-	data["Entries"] = filtered
+	data["Entries"] = entries
 	data["Actions"] = actions
 	data["Q"] = q
 	data["Action"] = action
+	data["Total"] = total
+	data["Page"] = page
+	data["TotalPages"] = totalPages
+	data["HasPrev"] = page > 1
+	data["HasNext"] = page < totalPages
+	data["PrevPage"] = page - 1
+	data["NextPage"] = page + 1
+	rangeFrom := offset + 1
+	if len(entries) == 0 {
+		rangeFrom = 0 // empty result: read "0 von 0", not "1 von 0"
+	}
+	data["RangeFrom"] = rangeFrom
+	data["RangeTo"] = offset + len(entries)
 	s.render(w, r, "audit", data)
 }
 
 // handleAuditExport streams the (optionally filtered) audit trail as CSV.
 func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
-	all, err := s.store.ListAudit(r.Context(), 5000)
+	filtered, err := s.store.ListAuditFiltered(r.Context(),
+		r.URL.Query().Get("q"), r.URL.Query().Get("action"), 0, 0)
 	if err != nil {
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
-	filtered, _ := filterAudit(all, r.URL.Query().Get("q"), r.URL.Query().Get("action"))
 
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"treckrr_audit.csv\"")

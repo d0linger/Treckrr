@@ -41,10 +41,10 @@
 				<td>{{.Label}}</td>
 				<td class="num">{{if $money}}{{money .A}}{{else}}{{num .A}}{{end}}</td>
 				<td class="num muted">{{if $money}}{{money .B}}{{else}}{{num .B}}{{end}}</td>
-				<td class="num {{if gt .Diff 0.0}}diff-up{{else if lt .Diff 0.0}}diff-down{{end}}">
-					{{if gt .Diff 0.0}}+{{end}}{{if $money}}{{money .Diff}}{{else}}{{num .Diff}}{{end}}</td>
-				<td class="num {{if gt .Diff 0.0}}diff-up{{else if lt .Diff 0.0}}diff-down{{end}}">
-					{{if gt .Diff 0.0}}+{{end}}{{num .Pct}} %</td>
+				<td class="num {{if .Up}}diff-up{{else if .Down}}diff-down{{end}}">
+					{{if .Up}}+{{end}}{{if $money}}{{money .Diff}}{{else}}{{num .Diff}}{{end}}</td>
+				<td class="num {{if .Up}}diff-up{{else if .Down}}diff-down{{end}}">
+					{{if .Up}}+{{end}}{{num .Pct}} %</td>
 			</tr>
 			{{else}}
 			<tr><td colspan="5" class="muted center">Keine vergleichbaren Positionen.</td></tr>

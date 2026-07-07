@@ -438,6 +438,9 @@ em { font-style: normal; color: var(--muted); }
 /* ---- Button rows & carry-over ----------------------------------------- */
 .btnrow { display: flex; gap: .5rem; }
 .btnrow .btn { flex: 1; }
+/* Split row: backlink on the left, action(s) on the right (non-stretching). */
+.btnrow--split { align-items: center; justify-content: space-between; }
+.btnrow--split .btn { flex: 0 0 auto; }
 .carryover { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
 .statusrow { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
 .statusrow__info { display: flex; flex-direction: column; gap: .25rem; }
