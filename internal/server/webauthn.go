@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -14,6 +16,29 @@ import (
 
 	"treckrr/internal/models"
 )
+
+// webauthnErrReason extracts a concise, log-safe reason from a WebAuthn error.
+// go-webauthn returns *protocol.Error with a type, a short detail and (most
+// useful for diagnosis) DevInfo — e.g. "Error validating origin". Plain errors
+// fall back to their message.
+func webauthnErrReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	var pe *protocol.Error
+	if errors.As(err, &pe) {
+		parts := make([]string, 0, 3)
+		for _, p := range []string{pe.Type, pe.Details, pe.DevInfo} {
+			if p != "" {
+				parts = append(parts, p)
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, ": ")
+		}
+	}
+	return err.Error()
+}
 
 // waCookie holds the short-lived, HMAC-signed WebAuthn challenge/session between
 // the begin and finish steps of a ceremony (opaque to the client).
@@ -166,6 +191,8 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 		webauthn.WithExclusions(webauthn.Credentials(wu.creds).CredentialDescriptors()),
 	)
 	if err != nil {
+		log.Printf("passkey register begin failed: user=%s reason=%s",
+			sanitizeLog(user.Username), sanitizeLog(webauthnErrReason(err)))
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
@@ -188,6 +215,10 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 	}
 	cred, err := s.wa.FinishRegistration(wu, *sd, r)
 	if err != nil {
+		reason := webauthnErrReason(err)
+		log.Printf("passkey register finish failed: user=%s ua=%q reason=%s",
+			sanitizeLog(user.Username), sanitizeLog(r.UserAgent()), sanitizeLog(reason))
+		s.audit(r, "passkey_add_failed", "user", user.ID, reason)
 		http.Error(w, "Passkey-Registrierung fehlgeschlagen.", http.StatusBadRequest)
 		return
 	}
@@ -205,6 +236,8 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {
 	assertion, sd, err := s.wa.BeginDiscoverableLogin()
 	if err != nil {
+		log.Printf("passkey login begin failed: ip=%s reason=%s",
+			s.clientIP(r), sanitizeLog(webauthnErrReason(err)))
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
@@ -215,6 +248,11 @@ func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request)
 func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 	sd, ok := s.loadWASession(r)
 	if !ok {
+		// The begin→finish challenge cookie is missing or failed HMAC/decoding.
+		// Common behind a misconfigured proxy (cookie dropped, or Secure/SameSite
+		// mismatch), so record it instead of returning silently.
+		log.Printf("passkey login: challenge cookie missing/invalid ip=%s", s.clientIP(r))
+		s.auditLogin(r, "", "login_passkey_failed", "Challenge fehlt oder abgelaufen (Cookie nicht empfangen)")
 		http.Error(w, "Challenge abgelaufen. Bitte erneut versuchen.", http.StatusBadRequest)
 		return
 	}
@@ -222,18 +260,22 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 
 	rlKey := s.clientIP(r)
 	if s.logins.blocked(r.Context(), rlKey) {
+		s.auditLogin(r, "", "login_passkey_failed", "Rate-Limit: zu viele Fehlversuche")
 		http.Error(w, "Zu viele Fehlversuche. Bitte später erneut versuchen.", http.StatusTooManyRequests)
 		return
 	}
 
 	var loggedIn *models.User
+	var handlerErr error
 	handler := func(_, userHandle []byte) (webauthn.User, error) {
 		u, err := s.store.UserByWebauthnHandle(r.Context(), userHandle)
 		if err != nil {
+			handlerErr = err
 			return nil, err
 		}
 		wu, err := s.webauthnUserFor(r, u)
 		if err != nil {
+			handlerErr = err
 			return nil, err
 		}
 		loggedIn = u
@@ -242,7 +284,16 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 	cred, err := s.wa.FinishDiscoverableLogin(handler, *sd, r)
 	if err != nil || loggedIn == nil {
 		s.logins.fail(r.Context(), rlKey)
-		s.auditLogin(r, "", "login_passkey_failed", "")
+		reason := webauthnErrReason(err)
+		if reason == "" && handlerErr != nil {
+			reason = "Benutzer/Passkey nicht gefunden: " + handlerErr.Error()
+		}
+		if reason == "" {
+			reason = "kein passender Passkey gefunden"
+		}
+		log.Printf("passkey login failed: ip=%s ua=%q reason=%s",
+			s.clientIP(r), sanitizeLog(r.UserAgent()), sanitizeLog(reason))
+		s.auditLogin(r, "", "login_passkey_failed", reason)
 		http.Error(w, "Anmeldung mit Passkey fehlgeschlagen.", http.StatusUnauthorized)
 		return
 	}

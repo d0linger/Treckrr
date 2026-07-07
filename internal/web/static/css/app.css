@@ -515,3 +515,7 @@ em { font-style: normal; color: var(--muted); }
 .dtable .entry__detail { display: block; line-height: 1.35; }
 /* Keep the numeric/action columns tight so the task column gets the space. */
 .dtable--entries th.num, .dtable--entries td.num { width: 1%; }
+
+/* Audit trail: let the Detail column wrap (old→new diffs can be long) instead
+   of forcing a horizontal scrollbar; keep it readable with a sensible cap. */
+.dtable--audit td.detailcell { white-space: normal; overflow-wrap: anywhere; max-width: 26rem; }

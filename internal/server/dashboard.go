@@ -121,7 +121,7 @@ func (s *Server) handleYearAddNeighbor(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
-	s.audit(r, "add_neighbor", "year", yearID, s.neighborName(r, neighborID))
+	s.audit(r, "add_neighbor", "year", yearID, s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID))
 	s.setFlash(w, r, "success", "Nachbar zum Jahr hinzugefügt.")
 	redirect(w, r, dashboardURL(yearID))
 }
@@ -149,7 +149,7 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
-	s.audit(r, "remove_neighbor", "year", yearID, s.neighborName(r, neighborID))
+	s.audit(r, "remove_neighbor", "year", yearID, s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID))
 	s.setFlash(w, r, "success", "Nachbar aus dem Jahr entfernt.")
 	redirect(w, r, dashboardURL(yearID))
 }
@@ -170,10 +170,10 @@ func (s *Server) handleNeighborPaid(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SetNeighborPaid(r.Context(), yearID, neighborID, paid); err != nil {
 		s.setFlash(w, r, "error", "Zahlungsstatus konnte nicht gesetzt werden.")
 	} else if paid {
-		s.audit(r, "mark_paid", "year", yearID, s.neighborName(r, neighborID))
+		s.audit(r, "mark_paid", "year", yearID, s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID))
 		s.setFlash(w, r, "success", "Als bezahlt markiert.")
 	} else {
-		s.audit(r, "mark_open", "year", yearID, s.neighborName(r, neighborID))
+		s.audit(r, "mark_open", "year", yearID, s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID))
 		s.setFlash(w, r, "success", "Als offen markiert.")
 	}
 	redirect(w, r, dashboardURL(yearID))
@@ -190,10 +190,21 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := trimmed(r, "name")
-	if err := s.store.UpdateNeighbor(r.Context(), id, name, trimmed(r, "note")); err != nil {
+	note := trimmed(r, "note")
+	before, _ := s.store.GetNeighbor(r.Context(), id)
+	if err := s.store.UpdateNeighbor(r.Context(), id, name, note); err != nil {
 		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")
 	} else {
-		s.audit(r, "update", "neighbor", id, name)
+		detail := name
+		if before != nil {
+			if d := diffFields(
+				fieldChange{"Name", before.Name, name},
+				fieldChange{"Notiz", before.Note, note},
+			); d != "" {
+				detail = d
+			}
+		}
+		s.audit(r, "update", "neighbor", id, detail)
 		s.setFlash(w, r, "success", "Nachbar aktualisiert.")
 	}
 	redirect(w, r, neighborReturnURL(r, id))
