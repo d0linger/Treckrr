@@ -46,7 +46,7 @@ func run() error {
 	}
 	log.Println("migrations applied")
 
-	st := store.New(pool)
+	st := store.New(pool, cfg.SessionSecret)
 	if err := st.EnsureAdmin(ctx, cfg.AdminUsername, cfg.AdminPassword); err != nil {
 		return err
 	}
