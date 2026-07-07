@@ -3,6 +3,8 @@ services:
     image: postgres:16-alpine
     container_name: treckrr-db
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-treckrr}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-treckrr-db-password-change-me}
@@ -23,6 +25,14 @@ services:
     build: .
     container_name: treckrr-app
     restart: unless-stopped
+    # Hardening — works the same under rootless Docker/Podman. The app writes
+    # nothing to disk (state is in Postgres, logs go to stdout), so the root
+    # filesystem is read-only with a small tmpfs for /tmp.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       db:
         condition: service_healthy
@@ -47,6 +57,8 @@ services:
     image: postgres:16-alpine
     container_name: treckrr-backup
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     profiles: ["backup"]
     depends_on:
       db:

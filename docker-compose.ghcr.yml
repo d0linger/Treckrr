@@ -21,7 +21,8 @@ services:
       retries: 5
 
   app:
-    image: ghcr.io/arumes31/treckrr:${TRECKRR_TAG:-latest}
+    image: ghcr.io/d0linger/treckrr:${TRECKRR_TAG:-latest}
+    pull_policy: always
     container_name: treckrr-app
     restart: unless-stopped
     depends_on:
@@ -32,8 +33,12 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://treckrr:treckrr-db-password-change-me@db:5432/treckrr?sslmode=disable}
       SESSION_SECRET: ${SESSION_SECRET:-change-me-please-generate-a-random-value}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-admin-password}
+      # Passkeys (WebAuthn): set to your public host / origin behind a proxy.
+      RP_ID: ${RP_ID:-localhost}
+      RP_ORIGIN: ${RP_ORIGIN:-http://localhost:8080}
     ports:
       - "${HOST_PORT:-8080}:8080"
 
