@@ -6,7 +6,8 @@ replaces a hand-maintained spreadsheet: work is booked per **neighbour** and
 **year**, priced automatically from a shared rate basis, and exported to CSV.
 
 Written in **Go**, data in **PostgreSQL**, shipped with **Docker**. No CDNs — all
-CSS/JS/icons are served locally. Only two Go dependencies (`pgx`, `x/crypto`).
+CSS/JS/icons are served locally, and the dependency set is small and audited
+(`pgx`, `x/crypto`, `shopspring/decimal`, `go-webauthn`, `rsc.io/qr`).
 
 [![CI](https://github.com/d0linger/Treckrr/actions/workflows/ci.yml/badge.svg)](https://github.com/d0linger/Treckrr/actions/workflows/ci.yml)
 [![Security](https://github.com/d0linger/Treckrr/actions/workflows/security.yml/badge.svg)](https://github.com/d0linger/Treckrr/actions/workflows/security.yml)
@@ -17,6 +18,22 @@ CSS/JS/icons are served locally. Only two Go dependencies (`pgx`, `x/crypto`).
 > **Note on language:** the user interface is **German** (the app targets a
 > German-speaking farming context). The codebase, docs and configuration are in
 > English so the project is easy to fork and adapt.
+
+---
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/img/login.png" width="240" alt="Login with password + passkey">
+  <img src="docs/img/dashboard.png" width="240" alt="Billing-year overview">
+  <img src="docs/img/neighbor.png" width="240" alt="Neighbour bookings">
+</p>
+<p align="center">
+  <img src="docs/img/stats.png" width="240" alt="Statistics and charts">
+  <img src="docs/img/passkeys.png" width="240" alt="Passkey management">
+  <img src="docs/img/dashboard-dark.png" width="240" alt="Dark mode">
+</p>
+<p align="center"><sub>Mobile-first PWA · German UI · light &amp; dark themes · password + TOTP or one-tap passkey login · exact-decimal billing.</sub></p>
 
 ---
 
@@ -40,7 +57,9 @@ Two concepts are deliberately separated:
   **picks one rate basis** and has its **own set of neighbours**.
 
 Bookings store a **frozen price snapshot**, so historical exports never change
-when a basis is edited later.
+when a basis is edited later. All money is computed and stored as **exact
+decimals** (Postgres `NUMERIC` + `shopspring/decimal`) — no floating-point
+rounding drift.
 
 ---
 
@@ -80,8 +99,16 @@ when a basis is edited later.
 
 **Security & administration**
 - **Roles**: administrator, editor, read-only.
-- Password policy + forced change, **TOTP two-factor auth**, **session
-  management** (list/revoke active sessions) and login **rate limiting**.
+- **Login options**: password + **TOTP two-factor** (with one-time **recovery
+  codes** and a setup QR), or one-tap **passkeys / WebAuthn** (usernameless,
+  biometric) — passwords/TOTP remain the fallback. Admins can reset a user's 2FA.
+- **TOTP secrets are encrypted at rest** (AES-GCM); passwords are bcrypt-hashed,
+  recovery codes SHA-256-hashed, and passkeys store only public keys.
+- **CSRF protection** on all state-changing requests, **HSTS** over HTTPS, and a
+  strict **Content-Security-Policy** (everything served same-origin).
+- **Rolling sessions** (stay signed in while active), **session management**
+  (list/revoke), sign-out of other sessions on password/role change, and
+  **rate limiting** on login and every sensitive action.
 - **Audit trail** (`/admin/audit`) with search, action filter and CSV export;
   every request is also logged to stdout.
 - Bootstrap admin is provisioned from environment variables on every start.
@@ -137,6 +164,7 @@ seeds an example **rate basis 2023** (spreadsheet values incl. rigs) plus a
 | `SESSION_SECRET` | Random value, ≥ 16 chars (`openssl rand -hex 32`) |
 | `COOKIE_SECURE` | Set `true` behind HTTPS (or use `TRUST_PROXY`) |
 | `TRUST_PROXY` | `true` behind a trusted reverse proxy |
+| `RP_ID` / `RP_ORIGIN` | Passkeys (WebAuthn): your host (no scheme) and full origin, e.g. `treckrr.example.com` / `https://treckrr.example.com`. Defaults to `localhost` / `http://localhost:8080` for local dev |
 | `DATABASE_URL` | Postgres connection (default points at the `db` container) |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Database credentials |
 | `APP_PORT` / `HOST_PORT` | Container / host port |
@@ -174,9 +202,10 @@ cmd/treckrr        Entry point (HTTP server, graceful shutdown)
 internal/config    Configuration from environment
 internal/db        Connection pool + embedded SQL migrations
 internal/models    Domain types
-internal/calc      Cost model (unit-tested against the spreadsheet values)
-internal/auth      Password hashing (bcrypt), session tokens, TOTP
-internal/store     Database access
+internal/calc      Cost model (exact decimals, unit-tested vs. the spreadsheet)
+internal/auth      Password hashing (bcrypt), session tokens, recovery codes, AES-GCM
+internal/totp      RFC 6238 TOTP (pure Go)
+internal/store     Database access (incl. passkeys, encrypted TOTP secrets)
 internal/server    HTTP routing, middleware, handlers
 internal/web       Embedded HTML templates & local assets (CSS/JS/icons)
 ```
@@ -191,6 +220,9 @@ internal/web       Embedded HTML templates & local assets (CSS/JS/icons)
 - `neighbors` — global, reused across years.
 - `entries` (+ `entry_machines`) — bookings per year with **frozen** price
   snapshots so exports and history stay stable.
+- `sessions` — rolling login sessions; `login_attempts` — rate-limit counters.
+- `webauthn_credentials` — registered passkeys (public keys only);
+  `totp_recovery_codes` — hashed one-time recovery codes.
 - `audit_log` — security-/data-relevant actions.
 
 ---
@@ -223,6 +255,7 @@ GitHub workflows under `.github/workflows/`:
 
 - **CI** — `go vet`, tests with the race detector, build, and `golangci-lint`.
 - **Security** — `gosec` (static analysis) and `govulncheck` (known CVEs).
+- **CodeQL** — semantic code scanning for Go, JavaScript and Actions.
 - **Dependency review** — on pull requests.
 - **GitSecret** — `gitleaks` scans the full git history for leaked secrets.
 - **DeadCode** — `golang.org/x/tools/cmd/deadcode` fails the build on
