@@ -92,16 +92,10 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 			cost = cost.Add(e.Cost)
 			hours = hours.Add(e.Hours)
 		}
-		payments, _ := s.store.YearPayments(r.Context(), y.ID)
-		members, _ := s.store.ListYearNeighbors(r.Context(), y.ID)
-		var paid, open decimal.Decimal
-		for _, n := range members {
-			c, _, _ := s.store.NeighborTotal(r.Context(), n.ID, y.ID)
-			if payments[n.ID] {
-				paid = paid.Add(c)
-			} else {
-				open = open.Add(c)
-			}
+		paid, open, err := s.store.YearPaymentTotals(r.Context(), y.ID)
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
 		}
 		stats = append(stats, yearStat{
 			Year: y.Year, YearID: y.ID, Cost: cost, Hours: hours,
@@ -162,17 +156,11 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	})
 	byTractor := aggregate(entries, func(e models.Entry) string { return e.TractorLabel })
 
-	// Payment split.
-	payments, _ := s.store.YearPayments(r.Context(), year.ID)
-	var paidCost, openCost decimal.Decimal
-	members, _ := s.store.ListYearNeighbors(r.Context(), year.ID)
-	for _, n := range members {
-		c, _, _ := s.store.NeighborTotal(r.Context(), n.ID, year.ID)
-		if payments[n.ID] {
-			paidCost = paidCost.Add(c)
-		} else {
-			openCost = openCost.Add(c)
-		}
+	// Payment split (paid vs open), computed in a single query.
+	paidCost, openCost, err := s.store.YearPaymentTotals(r.Context(), year.ID)
+	if err != nil {
+		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		return
 	}
 
 	data := s.newPage(w, r, "Statistik", "stats")

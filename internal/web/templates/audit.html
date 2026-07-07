@@ -23,7 +23,7 @@
 			<a class="btn btn--ghost btn--sm" href="/admin/audit/export?q={{.Q}}&action={{.Action}}">CSV Export</a>
 		</div>
 	</form>
-	<p class="muted small">{{len .Entries}} Einträge angezeigt.</p>
+	<p class="muted small">{{if .Total}}{{.RangeFrom}}–{{.RangeTo}} von {{.Total}} Einträgen · Seite {{.Page}}/{{.TotalPages}}{{else}}Keine Einträge.{{end}}</p>
 
 	<div class="card tablewrap">
 		<table class="dtable dtable--zebra dtable--audit">
@@ -46,5 +46,13 @@
 			</tbody>
 		</table>
 	</div>
+
+	{{if gt .TotalPages 1}}
+	<div class="btnrow btnrow--split">
+		{{if .HasPrev}}<a class="btn btn--ghost btn--sm" href="/admin/audit?q={{.Q}}&action={{.Action}}&page={{.PrevPage}}">‹ Neuere</a>{{else}}<span></span>{{end}}
+		<span class="muted small">Seite {{.Page}} / {{.TotalPages}}</span>
+		{{if .HasNext}}<a class="btn btn--ghost btn--sm" href="/admin/audit?q={{.Q}}&action={{.Action}}&page={{.NextPage}}">Ältere ›</a>{{else}}<span></span>{{end}}
+	</div>
+	{{end}}
 </section>
 {{end}}

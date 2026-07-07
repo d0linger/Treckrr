@@ -39,7 +39,12 @@ func filterAudit(all []models.AuditEntry, q, action string) (filtered []models.A
 	return filtered, actions
 }
 
-// handleAudit renders the admin audit-trail view with search & action filter.
+// auditPageSize is how many audit rows are shown per page (keeps the trail from
+// becoming one endless scroll while staying searchable/filterable).
+const auditPageSize = 50
+
+// handleAudit renders the admin audit-trail view with search, action filter and
+// pagination.
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	all, err := s.store.ListAudit(r.Context(), 1000)
 	if err != nil {
@@ -50,11 +55,41 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	action := r.URL.Query().Get("action")
 	filtered, actions := filterAudit(all, q, action)
 
+	total := len(filtered)
+	totalPages := (total + auditPageSize - 1) / auditPageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	page := 1
+	if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && p > 1 {
+		page = p
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+	start := (page - 1) * auditPageSize
+	if start > total {
+		start = total
+	}
+	end := start + auditPageSize
+	if end > total {
+		end = total
+	}
+
 	data := s.newPage(w, r, "Protokoll", "admin")
-	data["Entries"] = filtered
+	data["Entries"] = filtered[start:end]
 	data["Actions"] = actions
 	data["Q"] = q
 	data["Action"] = action
+	data["Total"] = total
+	data["Page"] = page
+	data["TotalPages"] = totalPages
+	data["HasPrev"] = page > 1
+	data["HasNext"] = page < totalPages
+	data["PrevPage"] = page - 1
+	data["NextPage"] = page + 1
+	data["RangeFrom"] = start + 1
+	data["RangeTo"] = end
 	s.render(w, r, "audit", data)
 }
 

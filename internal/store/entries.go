@@ -189,6 +189,23 @@ func (s *Store) NeighborTotal(ctx context.Context, neighborID, yearID int64) (co
 	return
 }
 
+// YearPaymentTotals returns the paid and open cost totals for a billing year in
+// a single query (paid = neighbours marked paid, open = the rest). This replaces
+// a per-neighbour fan-out of NeighborTotal calls.
+func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open decimal.Decimal, err error) {
+	err = s.db.QueryRowContext(ctx, `
+		SELECT
+		  COALESCE(SUM(CASE WHEN byn.paid THEN e.cost ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN NOT byn.paid THEN e.cost ELSE 0 END), 0)
+		FROM billing_year_neighbors byn
+		LEFT JOIN entries e
+		  ON e.neighbor_id = byn.neighbor_id
+		 AND e.billing_year_id = byn.billing_year_id
+		 AND NOT e.voided
+		WHERE byn.billing_year_id = $1`, yearID).Scan(&paid, &open)
+	return
+}
+
 // UpdateEntry replaces the editable fields (and pricing snapshot) of an entry
 // and its machine links.
 func (s *Store) UpdateEntry(ctx context.Context, e *models.Entry, machineIDs []int64) error {
