@@ -35,7 +35,7 @@ func New(cfg *config.Config, st *store.Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, store: st, templates: tpl, logins: newLoginLimiter()}, nil
+	return &Server{cfg: cfg, store: st, templates: tpl, logins: newLoginLimiter(st)}, nil
 }
 
 type ctxKey string
@@ -207,6 +207,9 @@ func userFromCtx(r *http.Request) *models.User {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.PurgeExpiredSessions(r.Context()); err != nil {
 		log.Printf("purge sessions: %v", err)
+	}
+	if err := s.store.PurgeStaleRateLimits(r.Context()); err != nil {
+		log.Printf("purge rate limits: %v", err)
 	}
 	w.Header().Set("Content-Type", "text/plain")
 	_, _ = w.Write([]byte("ok"))

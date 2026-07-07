@@ -59,7 +59,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	rlKey := s.clientIP(r)
 
-	if s.logins.blocked(rlKey) {
+	if s.logins.blocked(r.Context(), rlKey) {
 		s.auditLogin(r, username, "login_blocked", "zu viele Fehlversuche")
 		s.setFlash(w, r, "error", "Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen.")
 		redirect(w, r, "/login")
@@ -68,7 +68,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	user, err := s.store.AuthenticateUser(r.Context(), username, password)
 	if errors.Is(err, store.ErrNotFound) {
-		s.logins.fail(rlKey)
+		s.logins.fail(r.Context(), rlKey)
 		s.auditLogin(r, username, "login_failed", "falsche Zugangsdaten")
 		s.setFlash(w, r, "error", "Benutzername oder Passwort falsch.")
 		redirect(w, r, "/login")
@@ -78,7 +78,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
-	s.logins.reset(rlKey)
+	s.logins.reset(r.Context(), rlKey)
 
 	if user.TotpEnabled {
 		s.setCookie(w, r, &http.Cookie{
@@ -114,7 +114,7 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rlKey := s.clientIP(r)
-	if s.logins.blocked(rlKey) {
+	if s.logins.blocked(r.Context(), rlKey) {
 		s.setFlash(w, r, "error", "Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen.")
 		redirect(w, r, "/login")
 		return
@@ -137,13 +137,13 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		s.auditLogin(r, user.Username, "login_recovery", itoa(remaining)+" Codes übrig")
 		s.setFlash(w, r, "info", "Mit Wiederherstellungscode angemeldet. Noch "+itoa(remaining)+" Code(s) übrig.")
 	default:
-		s.logins.fail(rlKey)
+		s.logins.fail(r.Context(), rlKey)
 		s.auditLogin(r, user.Username, "login_2fa_failed", "")
 		s.setFlash(w, r, "error", "Code ungültig. Bitte erneut versuchen.")
 		redirect(w, r, "/login") // pending cookie stays -> 2FA step shown again
 		return
 	}
-	s.logins.reset(rlKey)
+	s.logins.reset(r.Context(), rlKey)
 	s.clearPending2FA(w, r)
 	s.establishSession(w, r, user)
 }

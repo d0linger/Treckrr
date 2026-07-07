@@ -108,8 +108,10 @@ func (s *Server) handleUserPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	// Force the user to change this admin-set password at next login.
 	_ = s.store.SetMustChangePassword(r.Context(), id, r.FormValue("force_change") == "on")
-	s.audit(r, "password_reset", "user", id, "durch Admin")
-	s.setFlash(w, r, "success", "Passwort gesetzt.")
+	// Terminate the target user's sessions so the reset takes effect immediately.
+	_ = s.store.DeleteUserSessionsExcept(r.Context(), id, "")
+	s.audit(r, "password_reset", "user", id, "durch Admin; Sitzungen beendet")
+	s.setFlash(w, r, "success", "Passwort gesetzt. Bestehende Sitzungen wurden beendet.")
 	redirect(w, r, "/admin/users")
 }
 
@@ -139,8 +141,11 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SetRole(r.Context(), id, role); err != nil {
 		s.setFlash(w, r, "error", "Änderung fehlgeschlagen.")
 	} else {
-		s.audit(r, "set_role", "user", id, role)
-		s.setFlash(w, r, "success", "Rolle aktualisiert.")
+		// Rotate privileges: end the user's sessions so the new role takes
+		// effect on their next (re-authenticated) session.
+		_ = s.store.DeleteUserSessionsExcept(r.Context(), id, "")
+		s.audit(r, "set_role", "user", id, role+"; Sitzungen beendet")
+		s.setFlash(w, r, "success", "Rolle aktualisiert. Sitzungen des Benutzers wurden beendet.")
 	}
 	redirect(w, r, "/admin/users")
 }
