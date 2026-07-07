@@ -33,7 +33,7 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
-	data := pageData{"Title": "Anmelden", "Theme": themeFromCookie(r)}
+	data := pageData{"Title": "Anmelden", "Theme": themeFromCookie(r), "CSRF": s.csrfToken(r)}
 	// If a valid pending-2FA cookie is present, show the second step instead.
 	if c, err := r.Cookie(pending2FACookie); err == nil {
 		if _, ok := s.verifyPending2FA(c.Value); ok {
@@ -157,10 +157,20 @@ func (s *Server) consumeRecovery(r *http.Request, userID int64, input string) bo
 
 // establishSession creates the login session cookie and finishes the login.
 func (s *Server) establishSession(w http.ResponseWriter, r *http.Request, user *models.User) {
+	if !s.startSession(w, r, user) {
+		return
+	}
+	redirect(w, r, "/")
+}
+
+// startSession creates the session, sets the cookie and audits the login,
+// without writing a response body. Returns false (after emitting a 500) on
+// failure. Used directly by API-style logins (e.g. passkeys) that return JSON.
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *models.User) bool {
 	token, err := s.store.CreateSession(r.Context(), user.ID, sessionTTL, r.UserAgent(), s.clientIP(r))
 	if err != nil {
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
-		return
+		return false
 	}
 	s.setCookie(w, r, &http.Cookie{
 		Name:     sessionCookie,
@@ -169,7 +179,7 @@ func (s *Server) establishSession(w http.ResponseWriter, r *http.Request, user *
 		MaxAge:   int(sessionTTL.Seconds()),
 	})
 	_ = s.store.AddAudit(r.Context(), &user.ID, user.Username, "login", "auth", "", "", s.clientIP(r))
-	redirect(w, r, "/")
+	return true
 }
 
 // ---- Signed pending-2FA token (survives step 1 -> step 2, no DB state) ----

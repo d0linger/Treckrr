@@ -171,6 +171,19 @@ type Entry struct {
 	Created       time.Time
 }
 
+// WebauthnCredential is a registered passkey (public key only).
+type WebauthnCredential struct {
+	ID           int64
+	CredentialID []byte
+	PublicKey    []byte
+	AAGUID       []byte
+	SignCount    uint32
+	Transports   string
+	Name         string
+	Created      time.Time
+	LastUsed     *time.Time
+}
+
 // AuditEntry is one recorded action in the audit trail.
 type AuditEntry struct {
 	ID       int64

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
+
 	"treckrr/internal/config"
 	"treckrr/internal/models"
 	"treckrr/internal/store"
@@ -27,6 +29,7 @@ type Server struct {
 	store     *store.Store
 	templates map[string]*template.Template
 	logins    *loginLimiter
+	wa        *webauthn.WebAuthn
 }
 
 // New constructs a Server and parses templates.
@@ -35,7 +38,15 @@ func New(cfg *config.Config, st *store.Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, store: st, templates: tpl, logins: newLoginLimiter(st)}, nil
+	wa, err := webauthn.New(&webauthn.Config{
+		RPID:          cfg.RPID,
+		RPDisplayName: "Treckrr",
+		RPOrigins:     []string{cfg.RPOrigin},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Server{cfg: cfg, store: st, templates: tpl, logins: newLoginLimiter(st), wa: wa}, nil
 }
 
 type ctxKey string
@@ -58,6 +69,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /login", s.handleLoginForm)
 	mux.HandleFunc("POST /login", s.handleLogin)
 	mux.HandleFunc("POST /login/2fa", s.handleLogin2FA)
+	mux.HandleFunc("POST /login/passkey/begin", s.handlePasskeyLoginBegin)
+	mux.HandleFunc("POST /login/passkey/finish", s.handlePasskeyLoginFinish)
 	mux.HandleFunc("POST /logout", s.handleLogout)
 
 	// Authenticated area.
@@ -114,6 +127,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /profile", s.auth(s.handleProfile))
 	mux.Handle("GET /account/password", s.auth(s.handleAccountPasswordForm))
 	mux.Handle("POST /account/password", s.auth(s.handleAccountPasswordSubmit))
+	mux.Handle("GET /account/passkeys", s.auth(s.handlePasskeys))
+	mux.Handle("POST /account/passkeys/register/begin", s.auth(s.handlePasskeyRegisterBegin))
+	mux.Handle("POST /account/passkeys/register/finish", s.auth(s.handlePasskeyRegisterFinish))
+	mux.Handle("POST /account/passkeys/{id}/delete", s.auth(s.handlePasskeyDelete))
 	mux.Handle("GET /account/2fa", s.auth(s.handleTwoFactor))
 	mux.Handle("GET /account/2fa/qr.png", s.auth(s.handleTwoFactorQR))
 	mux.Handle("POST /account/2fa/confirm", s.auth(s.handleTwoFactorConfirm))

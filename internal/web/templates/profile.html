@@ -11,6 +11,7 @@
 			<a class="btn btn--primary btn--sm" href="/account/password">Passwort ändern</a>
 			<a class="btn {{if .User.TotpEnabled}}btn--ghost{{else}}btn--primary{{end}} btn--sm" href="/account/2fa">
 				2FA {{if .User.TotpEnabled}}verwalten ✓{{else}}einrichten{{end}}</a>
+			<a class="btn btn--ghost btn--sm" href="/account/passkeys">🔐 Passkeys</a>
 		</div>
 	</div>
 

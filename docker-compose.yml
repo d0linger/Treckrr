@@ -33,6 +33,10 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-admin-password}
+      # Passkeys (WebAuthn). Must match the URL the browser uses. For production
+      # set RP_ID to your host (no scheme) and RP_ORIGIN to the full origin.
+      RP_ID: ${RP_ID:-localhost}
+      RP_ORIGIN: ${RP_ORIGIN:-http://localhost:8080}
     ports:
       - "${HOST_PORT:-8080}:8080"
 

@@ -1,0 +1,31 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="btn btn--ghost btn--sm" href="/profile">← Profil</a>
+		<h1>Passkeys</h1>
+	</div>
+
+	<div class="card">
+		<p class="muted">Passkeys erlauben die Anmeldung per Fingerabdruck, Gesicht oder
+			Geräte‑PIN — ohne Passwort und ohne Authenticator‑Code. Dein Passwort und die
+			Zwei‑Faktor‑Authentifizierung bleiben als Alternative bestehen.</p>
+		<button id="passkey-register" type="button" class="btn btn--primary">➕ Passkey auf diesem Gerät einrichten</button>
+	</div>
+
+	<div class="list">
+		{{range .Passkeys}}
+		<div class="card disclosure--row">
+			<span class="list__title">🔐 {{.Name}}
+				<span class="list__sub muted">seit {{date .Created}}{{if .LastUsed}} · schon verwendet{{end}}</span>
+			</span>
+			<form method="post" action="/account/passkeys/{{.ID}}/delete"
+				data-confirm="Diesen Passkey entfernen?">
+				<button class="btn btn--danger btn--sm" type="submit">Entfernen</button>
+			</form>
+		</div>
+		{{else}}
+		<p class="muted center">Noch keine Passkeys eingerichtet.</p>
+		{{end}}
+	</div>
+</section>
+{{end}}
