@@ -27,7 +27,7 @@ func TestRateLimitIntegration(t *testing.T) {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	st := store.New(pool)
+	st := store.New(pool, "test-encryption-secret")
 
 	const key = "test:1.2.3.4"
 	const max = 5

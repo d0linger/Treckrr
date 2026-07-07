@@ -3,8 +3,10 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"treckrr/internal/auth"
@@ -16,11 +18,15 @@ var ErrNotFound = errors.New("not found")
 
 // Store wraps the database connection pool.
 type Store struct {
-	db *sql.DB
+	db  *sql.DB
+	key []byte
 }
 
 // New returns a Store backed by the given pool.
-func New(db *sql.DB) *Store { return &Store{db: db} }
+func New(db *sql.DB, encryptionKey string) *Store {
+	h := sha256.Sum256([]byte(encryptionKey))
+	return &Store{db: db, key: h[:]}
+}
 
 // ---- Users ---------------------------------------------------------------
 
@@ -123,6 +129,8 @@ func (s *Store) AuthenticateUser(ctx context.Context, username, password string)
 	return &u, nil
 }
 
+const totpPrefix = "v1:"
+
 // GetTotpSecret returns the stored TOTP secret for a user (may be empty).
 func (s *Store) GetTotpSecret(ctx context.Context, userID int64) (string, error) {
 	var secret string
@@ -131,11 +139,24 @@ func (s *Store) GetTotpSecret(ctx context.Context, userID int64) (string, error)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrNotFound
 	}
-	return secret, err
+	if err != nil {
+		return "", err
+	}
+	if strings.HasPrefix(secret, totpPrefix) {
+		return auth.Decrypt(strings.TrimPrefix(secret, totpPrefix), s.key)
+	}
+	return secret, nil
 }
 
 // SetTotp enables/disables TOTP and stores the secret.
 func (s *Store) SetTotp(ctx context.Context, userID int64, enabled bool, secret string) error {
+	if secret != "" {
+		enc, err := auth.Encrypt(secret, s.key)
+		if err != nil {
+			return err
+		}
+		secret = totpPrefix + enc
+	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE users SET totp_enabled=$1, totp_secret=$2 WHERE id=$3`, enabled, secret, userID)
 	return err

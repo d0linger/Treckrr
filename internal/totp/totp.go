@@ -52,6 +52,11 @@ func code(secret string, counter uint64) (string, error) {
 // Validate reports whether the supplied code matches the secret within a ±1
 // step window (to tolerate clock skew).
 func Validate(secret, input string) bool {
+	// Fail closed: an empty or undecryptable secret would decode to an empty
+	// HMAC key, whose code an attacker can compute — it must never authenticate.
+	if strings.TrimSpace(secret) == "" {
+		return false
+	}
 	input = strings.TrimSpace(input)
 	if len(input) != digits {
 		return false
