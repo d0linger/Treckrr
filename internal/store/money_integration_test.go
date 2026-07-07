@@ -28,7 +28,7 @@ func TestMoneyRoundTripIntegration(t *testing.T) {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	st := store.New(pool)
+	st := store.New(pool, "test-encryption-secret")
 
 	baseID, err := st.CreateEmptyBase(ctx, 2099, "Test-Basis")
 	if err != nil {
