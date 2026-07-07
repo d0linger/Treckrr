@@ -136,6 +136,9 @@
 		function setOpen(on) {
 			drawer.classList.toggle("is-open", on);
 			drawer.setAttribute("aria-hidden", on ? "false" : "true");
+			// inert keeps the closed (off-screen) drawer out of the tab order and
+			// the accessibility tree — it is only hidden via CSS transform.
+			if (on) { drawer.removeAttribute("inert"); } else { drawer.setAttribute("inert", ""); }
 			if (scrim) scrim.hidden = !on;
 			openers.forEach(function (b) { b.setAttribute("aria-expanded", on ? "true" : "false"); });
 		}

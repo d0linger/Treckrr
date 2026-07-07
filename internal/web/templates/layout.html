@@ -57,7 +57,7 @@
 
 {{if .User}}
 	<div class="drawer__scrim" data-drawer-close hidden></div>
-	<aside class="drawer" id="drawer" aria-hidden="true" aria-label="Menü">
+	<aside class="drawer" id="drawer" aria-hidden="true" inert aria-label="Menü">
 		<div class="drawer__head">
 			<span class="drawer__user">{{.User.Username}}</span>
 			<span class="drawer__role muted">{{.User.RoleLabel}}</span>
