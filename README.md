@@ -149,12 +149,38 @@ docker compose -f docker-compose.ghcr.yml up -d
 TRECKRR_TAG=1.2 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
-Image: `ghcr.io/arumes31/treckrr` (tags: `latest`, `main`, semver from release tags).
+Image: `ghcr.io/d0linger/treckrr` (tags: `latest`, `main`, semver from release tags).
 
 On first start the app runs schema migrations, provisions the admin user, and
 seeds an example **rate basis 2023** (spreadsheet values incl. rigs) plus a
 **billing year 2025** with three sample neighbours. Add further years under
 **Jahre**.
+
+### Deploying with Portainer
+
+Portainer's **web-editor** stack is processed by the Compose engine running
+*inside the Portainer container*, which **cannot see files on the Docker host**.
+That has two practical consequences:
+
+- `env_file: - /treckrr/.env` (or any host path) **fails** — Portainer can't
+  read it and the stack deploy returns **HTTP 500**. Host `env_file` paths only
+  work when you run `docker compose` **on the host itself**.
+- Instead, keep `${VAR}` placeholders in the compose file and supply the values
+  in Portainer's **Environment variables** panel below the editor. *Advanced
+  mode* lets you paste a whole `.env` at once, and **one** set of variables can
+  feed **both** the `db` and `app` services.
+
+So: paste the compose (with `${...}` placeholders — the same file works with
+`environment:` blocks referencing the variables), add the variables in the
+panel, then **Update the stack**. Values in the panel are literal — unlike a
+shell `.env` there is no `$`/`#`/quote escaping to worry about.
+
+If you would rather read a real `.env` **file** from disk, don't use the web
+editor — run the stack on the host, where `env_file` works normally:
+
+```bash
+cd /treckrr && docker compose up -d
+```
 
 ### Environment variables
 
@@ -183,7 +209,44 @@ The app speaks **plain HTTP on port 8080** — the proxy terminates TLS.
    through the proxy** (otherwise clients could spoof these headers).
 2. Point the proxy at `treckrr-app:8080` (same Docker network) or the host IP.
    Websockets are not required. Serve at the **domain root** (no sub-path).
-3. Prefer **not** exposing `HOST_PORT` publicly — only the proxy needs access.
+3. For passkeys, set `RP_ID` / `RP_ORIGIN` to the **public** host, e.g.
+   `treckrr.example.com` / `https://treckrr.example.com`.
+4. Prefer **not** exposing `HOST_PORT` publicly — only the proxy needs access.
+
+**Minimal Nginx example** (TLS terminated at the proxy). The one line that
+matters most is `X-Forwarded-Proto` — without it the app can't tell it is
+served over HTTPS, so it never sets `Secure` cookies or HSTS:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name treckrr.example.com;
+
+    # ssl_certificate / ssl_certificate_key managed by your cert tooling
+    # (certbot, acme.sh, or the proxy itself).
+
+    client_max_body_size 10m;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8080;   # or http://treckrr-app:8080 on the same Docker network
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;   # REQUIRED for Secure cookies + HSTS
+    }
+}
+
+# Optional: redirect plain HTTP to HTTPS
+server {
+    listen 80;
+    server_name treckrr.example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+With **Traefik** or **Caddy** the `X-Forwarded-*` headers are added
+automatically — just keep `TRUST_PROXY=true` and point the router at
+`treckrr-app:8080`.
 
 ### Automatic backups
 
@@ -281,7 +344,7 @@ GitHub workflows under `.github/workflows/`:
 - **DeadCode** — `golang.org/x/tools/cmd/deadcode` fails the build on
   unreachable functions.
 - **Docker** — builds the multi-arch image and pushes it to GHCR
-  (`ghcr.io/arumes31/treckrr`).
+  (`ghcr.io/d0linger/treckrr`).
 
 **Dependabot** keeps Go modules, GitHub Actions and the Docker base image current.
 
