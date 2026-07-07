@@ -24,6 +24,7 @@ func (s *Server) newPage(w http.ResponseWriter, r *http.Request, title, active s
 		"User":     userFromCtx(r),
 		"BasePath": r.URL.Path,
 		"Theme":    themeFromCookie(r),
+		"CSRF":     s.csrfToken(r),
 	}
 	if msg, kind := s.readFlash(w, r); msg != "" {
 		p["FlashMessage"] = msg

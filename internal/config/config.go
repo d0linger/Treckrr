@@ -16,6 +16,10 @@ type Config struct {
 	TrustProxy    bool
 	AdminUsername string
 	AdminPassword string
+	// WebAuthn (passkeys). RPID is the effective domain (host only, no scheme);
+	// RPOrigin is the full origin the browser sees. Both must match the site.
+	RPID     string
+	RPOrigin string
 }
 
 // Load reads configuration from the environment and validates required values.
@@ -28,6 +32,8 @@ func Load() (*Config, error) {
 		TrustProxy:    strings.EqualFold(getenv("TRUST_PROXY", "false"), "true"),
 		AdminUsername: getenv("ADMIN_USERNAME", "admin"),
 		AdminPassword: os.Getenv("ADMIN_PASSWORD"),
+		RPID:          getenv("RP_ID", "localhost"),
+		RPOrigin:      getenv("RP_ORIGIN", "http://localhost:8080"),
 	}
 
 	if c.DatabaseURL == "" {
