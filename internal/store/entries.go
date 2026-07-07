@@ -190,8 +190,8 @@ func (s *Store) NeighborTotal(ctx context.Context, neighborID, yearID int64) (co
 }
 
 // YearPaymentTotals returns the paid and open cost totals for a billing year in
-// a single query (paid = neighbours marked paid, open = the rest). This replaces
-// a per-neighbour fan-out of NeighborTotal calls.
+// a single query (paid = neighbors marked paid, open = the rest). This replaces
+// a per-neighbor fan-out of NeighborTotal calls.
 func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open decimal.Decimal, err error) {
 	err = s.db.QueryRowContext(ctx, `
 		SELECT

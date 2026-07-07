@@ -69,7 +69,7 @@ func TestMoneyRoundTripIntegration(t *testing.T) {
 }
 
 // TestYearPaymentTotalsIntegration verifies the single-query paid/open split
-// used by the stats pages matches the intended per-neighbour aggregation, with
+// used by the stats pages matches the intended per-neighbor aggregation, with
 // exact decimals. Runs only when TEST_DATABASE_URL is set.
 func TestYearPaymentTotalsIntegration(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
