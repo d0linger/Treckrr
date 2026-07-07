@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shopspring/decimal"
+
 	"treckrr/internal/web"
 )
 
@@ -114,17 +116,21 @@ func formInt64Ptr(r *http.Request, name string) *int64 {
 	return &v
 }
 
-// formFloat parses a form field as float64, accepting both "," and "." as the
-// decimal separator (German users type commas).
-func formFloat(r *http.Request, name string) float64 {
-	return parseGermanFloat(r.FormValue(name))
+// formDecimal parses a form field as an exact decimal, accepting both "," and
+// "." as the decimal separator (German users type commas). Empty/invalid -> 0.
+func formDecimal(r *http.Request, name string) decimal.Decimal {
+	return parseGermanDecimal(r.FormValue(name))
 }
 
-// parseGermanFloat parses a decimal accepting "," or "." as separator.
-func parseGermanFloat(raw string) float64 {
+// parseGermanDecimal parses a raw string as an exact decimal, accepting "," or
+// "." as the decimal separator. Empty/invalid -> 0.
+func parseGermanDecimal(raw string) decimal.Decimal {
 	raw = strings.ReplaceAll(strings.TrimSpace(raw), ",", ".")
-	v, _ := strconv.ParseFloat(raw, 64)
-	return v
+	d, err := decimal.NewFromString(raw)
+	if err != nil {
+		return decimal.Zero
+	}
+	return d
 }
 
 // formInt64List collects repeated form values under name as int64s.

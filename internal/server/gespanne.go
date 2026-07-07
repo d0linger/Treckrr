@@ -3,6 +3,8 @@ package server
 import (
 	"net/http"
 
+	"github.com/shopspring/decimal"
+
 	"treckrr/internal/calc"
 	"treckrr/internal/models"
 )
@@ -10,7 +12,7 @@ import (
 // partRate is one line of a gespann's cost breakdown.
 type partRate struct {
 	Label string
-	Rate  float64
+	Rate  decimal.Decimal
 }
 
 // gespannView pairs a gespann with its resolved parts and hourly rate.
@@ -19,7 +21,7 @@ type gespannView struct {
 	Tractor   *models.Tractor
 	Load      *models.LoadLevel
 	Machines  []models.Machine
-	Rate      float64
+	Rate      decimal.Decimal
 	Breakdown []partRate // tractor + each machine, for the full cost breakdown
 }
 

@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shopspring/decimal"
+
 	"treckrr/internal/models"
 )
 
@@ -45,7 +47,7 @@ func (s *Store) GetLoadLevel(ctx context.Context, id int64) (*models.LoadLevel, 
 }
 
 // CreateLoadLevel inserts a load level.
-func (s *Store) CreateLoadLevel(ctx context.Context, baseID int64, name string, cost float64, sort int) (int64, error) {
+func (s *Store) CreateLoadLevel(ctx context.Context, baseID int64, name string, cost decimal.Decimal, sort int) (int64, error) {
 	var id int64
 	err := s.db.QueryRowContext(ctx,
 		`INSERT INTO load_levels (base_id,name,cost_per_ps,sort_order) VALUES ($1,$2,$3,$4) RETURNING id`,
@@ -54,7 +56,7 @@ func (s *Store) CreateLoadLevel(ctx context.Context, baseID int64, name string, 
 }
 
 // UpdateLoadLevel updates a load level.
-func (s *Store) UpdateLoadLevel(ctx context.Context, id int64, name string, cost float64, sort int) error {
+func (s *Store) UpdateLoadLevel(ctx context.Context, id int64, name string, cost decimal.Decimal, sort int) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE load_levels SET name=$1, cost_per_ps=$2, sort_order=$3 WHERE id=$4`,
 		name, cost, sort, id)
@@ -121,7 +123,7 @@ func (s *Store) SetTractorActive(ctx context.Context, id int64, active bool) err
 }
 
 // CreateTractor inserts a tractor.
-func (s *Store) CreateTractor(ctx context.Context, baseID int64, ident, name string, ps float64, sortOrder int) (int64, error) {
+func (s *Store) CreateTractor(ctx context.Context, baseID int64, ident, name string, ps decimal.Decimal, sortOrder int) (int64, error) {
 	var id int64
 	err := s.db.QueryRowContext(ctx,
 		`INSERT INTO tractors (base_id,ident,name,ps,sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
@@ -130,7 +132,7 @@ func (s *Store) CreateTractor(ctx context.Context, baseID int64, ident, name str
 }
 
 // UpdateTractor updates a tractor.
-func (s *Store) UpdateTractor(ctx context.Context, id int64, ident, name string, ps float64, sortOrder int) error {
+func (s *Store) UpdateTractor(ctx context.Context, id int64, ident, name string, ps decimal.Decimal, sortOrder int) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE tractors SET ident=$1, name=$2, ps=$3, sort_order=$4 WHERE id=$5`, ident, name, ps, sortOrder, id)
 	return err
@@ -218,7 +220,7 @@ func (s *Store) MachinesByIDs(ctx context.Context, ids []int64) ([]models.Machin
 }
 
 // CreateMachine inserts a machine.
-func (s *Store) CreateMachine(ctx context.Context, baseID int64, name string, width, cost float64, category string, sortOrder int) (int64, error) {
+func (s *Store) CreateMachine(ctx context.Context, baseID int64, name string, width, cost decimal.Decimal, category string, sortOrder int) (int64, error) {
 	var id int64
 	err := s.db.QueryRowContext(ctx,
 		`INSERT INTO machines (base_id,name,working_width,cost_per_ab,category,sort_order)
@@ -228,7 +230,7 @@ func (s *Store) CreateMachine(ctx context.Context, baseID int64, name string, wi
 }
 
 // UpdateMachine updates a machine.
-func (s *Store) UpdateMachine(ctx context.Context, id int64, name string, width, cost float64, category string, sortOrder int) error {
+func (s *Store) UpdateMachine(ctx context.Context, id int64, name string, width, cost decimal.Decimal, category string, sortOrder int) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE machines SET name=$1, working_width=$2, cost_per_ab=$3, category=$4, sort_order=$5 WHERE id=$6`,
 		name, width, cost, category, sortOrder, id)

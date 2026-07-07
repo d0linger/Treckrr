@@ -4,14 +4,16 @@ import (
 	"net/http"
 	"sort"
 
+	"github.com/shopspring/decimal"
+
 	"treckrr/internal/models"
 )
 
 // aggRow is one aggregated statistic line (used for KPI lists and bar charts).
 type aggRow struct {
 	Label string
-	Hours float64
-	Cost  float64
+	Hours decimal.Decimal
+	Cost  decimal.Decimal
 }
 
 // aggregate groups entries by the key returned from keyFn, summing hours/cost,
@@ -30,22 +32,22 @@ func aggregate(entries []models.Entry, keyFn func(models.Entry) string) []aggRow
 			byKey[k] = row
 			order = append(order, k)
 		}
-		row.Hours += e.Hours
-		row.Cost += e.Cost
+		row.Hours = row.Hours.Add(e.Hours)
+		row.Cost = row.Cost.Add(e.Cost)
 	}
 	out := make([]aggRow, 0, len(order))
 	for _, k := range order {
 		out = append(out, *byKey[k])
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Cost > out[j].Cost })
+	sort.Slice(out, func(i, j int) bool { return out[i].Cost.GreaterThan(out[j].Cost) })
 	return out
 }
 
 // maxCost returns the largest cost in the rows (for bar-chart scaling).
-func maxCost(rows []aggRow) float64 {
-	m := 0.0
+func maxCost(rows []aggRow) decimal.Decimal {
+	m := decimal.Zero
 	for _, r := range rows {
-		if r.Cost > m {
+		if r.Cost.GreaterThan(m) {
 			m = r.Cost
 		}
 	}
@@ -71,13 +73,13 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var totalCost, totalHours float64
+	var totalCost, totalHours decimal.Decimal
 	for _, e := range entries {
 		if e.Voided {
 			continue
 		}
-		totalCost += e.Cost
-		totalHours += e.Hours
+		totalCost = totalCost.Add(e.Cost)
+		totalHours = totalHours.Add(e.Hours)
 	}
 
 	byNeighbor := aggregate(entries, func(e models.Entry) string { return names[e.NeighborID] })
@@ -91,14 +93,14 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 	// Payment split.
 	payments, _ := s.store.YearPayments(r.Context(), year.ID)
-	var paidCost, openCost float64
+	var paidCost, openCost decimal.Decimal
 	members, _ := s.store.ListYearNeighbors(r.Context(), year.ID)
 	for _, n := range members {
 		c, _, _ := s.store.NeighborTotal(r.Context(), n.ID, year.ID)
 		if payments[n.ID] {
-			paidCost += c
+			paidCost = paidCost.Add(c)
 		} else {
-			openCost += c
+			openCost = openCost.Add(c)
 		}
 	}
 
@@ -122,20 +124,20 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	// Year-over-year comparison with the previous billing year.
 	if prev, err := s.store.PreviousBillingYear(r.Context(), year.Year); err == nil {
 		prevEntries, _ := s.store.ListEntriesByYear(r.Context(), prev.ID)
-		var pc, ph float64
+		var pc, ph decimal.Decimal
 		for _, e := range prevEntries {
 			if e.Voided {
 				continue
 			}
-			pc += e.Cost
-			ph += e.Hours
+			pc = pc.Add(e.Cost)
+			ph = ph.Add(e.Hours)
 		}
 		data["PrevYear"] = prev.Year
 		data["PrevCost"] = pc
 		data["PrevHours"] = ph
-		data["DiffCost"] = round2(totalCost - pc)
-		if pc != 0 {
-			data["DiffPct"] = round2((totalCost - pc) / pc * 100)
+		data["DiffCost"] = totalCost.Sub(pc).Round(2)
+		if !pc.IsZero() {
+			data["DiffPct"] = totalCost.Sub(pc).Div(pc).Mul(decimal.NewFromInt(100)).Round(2)
 		}
 	}
 

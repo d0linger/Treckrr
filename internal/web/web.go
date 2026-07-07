@@ -11,6 +11,8 @@ import (
 	"io/fs"
 	"strings"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 //go:embed templates/*.html
@@ -127,12 +129,12 @@ func funcMap() template.FuncMap {
 }
 
 // Money formats a value as German-style currency, e.g. 1234.5 -> "1.234,50 €".
-func Money(v float64) string {
+func Money(v decimal.Decimal) string {
 	return formatDecimal(v, 2) + " €"
 }
 
 // Num formats a number with up to three decimals, German style, no trailing zeros.
-func Num(v float64) string {
+func Num(v decimal.Decimal) string {
 	s := formatDecimal(v, 3)
 	// Trim trailing zeros after the decimal comma.
 	if strings.Contains(s, ",") {
@@ -152,8 +154,8 @@ func Date(t time.Time) string {
 
 // formatDecimal renders v with the given decimals using "." as thousands
 // separator and "," as decimal separator (de-DE).
-func formatDecimal(v float64, decimals int) string {
-	s := fmt.Sprintf("%.*f", decimals, v)
+func formatDecimal(v decimal.Decimal, decimals int32) string {
+	s := v.StringFixed(decimals)
 	neg := strings.HasPrefix(s, "-")
 	if neg {
 		s = s[1:]

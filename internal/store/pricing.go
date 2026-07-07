@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/shopspring/decimal"
+
 	"treckrr/internal/models"
 )
 
@@ -113,7 +115,7 @@ func (s *Store) CloneBase(ctx context.Context, srcBaseID int64, newYear int, nam
 		func(scan func(...any) error) (int64, func(int64) (int64, error), error) {
 			var oldID int64
 			var name string
-			var cost float64
+			var cost decimal.Decimal
 			var sort int
 			if err := scan(&oldID, &name, &cost, &sort); err != nil {
 				return 0, nil, err
@@ -136,7 +138,7 @@ func (s *Store) CloneBase(ctx context.Context, srcBaseID int64, newYear int, nam
 		func(scan func(...any) error) (int64, func(int64) (int64, error), error) {
 			var oldID int64
 			var ident, name string
-			var ps float64
+			var ps decimal.Decimal
 			var active bool
 			var sortOrder int
 			if err := scan(&oldID, &ident, &name, &ps, &active, &sortOrder); err != nil {
@@ -160,7 +162,7 @@ func (s *Store) CloneBase(ctx context.Context, srcBaseID int64, newYear int, nam
 		func(scan func(...any) error) (int64, func(int64) (int64, error), error) {
 			var oldID int64
 			var name, category string
-			var ab, cost float64
+			var ab, cost decimal.Decimal
 			var active bool
 			var sortOrder int
 			if err := scan(&oldID, &name, &ab, &cost, &active, &category, &sortOrder); err != nil {

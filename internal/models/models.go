@@ -1,7 +1,11 @@
 // Package models holds the domain types shared across the application.
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/shopspring/decimal"
+)
 
 // Roles control what a user may do.
 const (
@@ -86,7 +90,7 @@ type LoadLevel struct {
 	ID        int64
 	BaseID    int64
 	Name      string
-	CostPerPS float64
+	CostPerPS decimal.Decimal
 	SortOrder int
 }
 
@@ -96,7 +100,7 @@ type Tractor struct {
 	BaseID    int64
 	Ident     string
 	Name      string
-	PS        float64
+	PS        decimal.Decimal
 	Active    bool
 	SortOrder int
 }
@@ -107,7 +111,7 @@ func (t Tractor) Label() string {
 	if t.Name != "" {
 		base = t.Ident + " " + t.Name
 	}
-	return base + " (" + trimFloat(t.PS) + " PS)"
+	return base + " (" + t.PS.String() + " PS)"
 }
 
 // Machine: hourly rate = WorkingWidth * CostPerAB.
@@ -115,15 +119,15 @@ type Machine struct {
 	ID           int64
 	BaseID       int64
 	Name         string
-	WorkingWidth float64
-	CostPerAB    float64
+	WorkingWidth decimal.Decimal
+	CostPerAB    decimal.Decimal
 	Active       bool
 	Category     string
 	SortOrder    int
 }
 
 // HourlyRate returns the machine's contribution to a Gespann's hourly rate.
-func (m Machine) HourlyRate() float64 { return round2(m.WorkingWidth * m.CostPerAB) }
+func (m Machine) HourlyRate() decimal.Decimal { return m.WorkingWidth.Mul(m.CostPerAB).Round(2) }
 
 // Gespann is a named fixed combination of a tractor, a load level and machines.
 type Gespann struct {
@@ -158,9 +162,9 @@ type Entry struct {
 	TractorLabel  string
 	LoadLabel     string
 	MachineLabels string
-	Hours         float64
-	HourlyRate    float64
-	Cost          float64
+	Hours         decimal.Decimal
+	HourlyRate    decimal.Decimal
+	Cost          decimal.Decimal
 	Note          string
 	Voided        bool
 	VoidReason    string
@@ -179,5 +183,3 @@ type AuditEntry struct {
 	IP       string
 	Created  time.Time
 }
-
-func trimFloat(f float64) string { return formatFloat(f) }

@@ -3,14 +3,16 @@ package server
 import (
 	"net/http"
 
+	"github.com/shopspring/decimal"
+
 	"treckrr/internal/models"
 )
 
 // neighborSummary is a neighbor with its totals for the selected billing year.
 type neighborSummary struct {
 	Neighbor models.Neighbor
-	Cost     float64
-	Hours    float64
+	Cost     decimal.Decimal
+	Hours    decimal.Decimal
 	Entries  int
 	Paid     bool
 }
@@ -33,7 +35,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var summaries []neighborSummary
-	var grandCost, grandHours, paidCost, openCost float64
+	var grandCost, grandHours, paidCost, openCost decimal.Decimal
 	for _, n := range neighbors {
 		cost, hours, err := s.store.NeighborTotal(r.Context(), n.ID, year.ID)
 		if err != nil {
@@ -49,12 +51,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		summaries = append(summaries, neighborSummary{
 			Neighbor: n, Cost: cost, Hours: hours, Entries: count, Paid: paid,
 		})
-		grandCost += cost
-		grandHours += hours
+		grandCost = grandCost.Add(cost)
+		grandHours = grandHours.Add(hours)
 		if paid {
-			paidCost += cost
+			paidCost = paidCost.Add(cost)
 		} else {
-			openCost += cost
+			openCost = openCost.Add(cost)
 		}
 	}
 

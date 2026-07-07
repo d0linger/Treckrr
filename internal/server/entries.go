@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"treckrr/internal/calc"
 	"treckrr/internal/models"
 )
@@ -88,13 +90,13 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 	type yearRow struct {
 		Year      int
 		YearID    int64
-		Cost      float64
-		Hours     float64
+		Cost      decimal.Decimal
+		Hours     decimal.Decimal
 		Paid      bool
 		Completed bool
 	}
 	var rows []yearRow
-	var totalCost, totalHours float64
+	var totalCost, totalHours decimal.Decimal
 	for _, y := range years {
 		member, err := s.store.NeighborInYear(r.Context(), y.ID, id)
 		if err != nil || !member {
@@ -106,8 +108,8 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 			Year: y.Year, YearID: y.ID, Cost: cost, Hours: hours,
 			Paid: payments[id], Completed: y.Completed(),
 		})
-		totalCost += cost
-		totalHours += hours
+		totalCost = totalCost.Add(cost)
+		totalHours = totalHours.Add(hours)
 	}
 	data := s.newPage(w, r, neighbor.Name+" · Verlauf", "dashboard")
 	data["Neighbor"] = neighbor
@@ -129,8 +131,8 @@ func (s *Server) neighborName(r *http.Request, id int64) string {
 // taskSummary aggregates hours and cost per task label (like the Excel columns).
 type taskSummary struct {
 	Task  string
-	Hours float64
-	Cost  float64
+	Hours decimal.Decimal
+	Cost  decimal.Decimal
 }
 
 // summarizeByTask groups entries by task label, preserving first-seen order.
@@ -148,8 +150,8 @@ func summarizeByTask(entries []models.Entry) []taskSummary {
 			byTask[label] = s
 			order = append(order, label)
 		}
-		s.Hours += e.Hours
-		s.Cost += e.Cost
+		s.Hours = s.Hours.Add(e.Hours)
+		s.Cost = s.Cost.Add(e.Cost)
 	}
 	out := make([]taskSummary, 0, len(order))
 	for _, l := range order {
@@ -195,14 +197,17 @@ func (s *Server) handlePricingAPI(w http.ResponseWriter, r *http.Request) {
 		Machines []apiMachine `json:"machines"`
 		Gespanne []apiGespann `json:"gespanne"`
 	}{}
+	// The pricing API feeds a client-side preview only; float is fine here and
+	// keeps the JSON numeric for the JS. The authoritative cost is computed
+	// server-side in exact decimals.
 	for _, t := range tractors {
-		out.Tractors = append(out.Tractors, apiTractor{ID: t.ID, PS: t.PS})
+		out.Tractors = append(out.Tractors, apiTractor{ID: t.ID, PS: t.PS.InexactFloat64()})
 	}
 	for _, l := range loads {
-		out.Loads = append(out.Loads, apiLoad{ID: l.ID, Cost: l.CostPerPS})
+		out.Loads = append(out.Loads, apiLoad{ID: l.ID, Cost: l.CostPerPS.InexactFloat64()})
 	}
 	for _, m := range machines {
-		out.Machines = append(out.Machines, apiMachine{ID: m.ID, Rate: calc.MachineRate(m)})
+		out.Machines = append(out.Machines, apiMachine{ID: m.ID, Rate: calc.MachineRate(m).InexactFloat64()})
 	}
 	for _, g := range gespanne {
 		out.Gespanne = append(out.Gespanne, apiGespann{
@@ -246,8 +251,9 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
-	s.audit(r, "create", "entry", newID, fmt.Sprintf("%s · %s, %.2f h × %.2f = %.2f €",
-		s.neighborName(r, neighborID), entry.TaskLabel, entry.Hours, entry.HourlyRate, entry.Cost))
+	s.audit(r, "create", "entry", newID, fmt.Sprintf("%s · %s, %s h × %s = %s €",
+		s.neighborName(r, neighborID), entry.TaskLabel,
+		entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2)))
 	s.setFlash(w, r, "success", "Buchung gespeichert.")
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
@@ -295,8 +301,8 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	if err != nil {
 		return nil, nil, "Interner Fehler beim Laden der Maschinen."
 	}
-	hours := formFloat(r, "hours")
-	if hours <= 0 {
+	hours := formDecimal(r, "hours")
+	if !hours.IsPositive() {
 		return nil, nil, "Stunden müssen größer als 0 sein."
 	}
 	entryDate, err := time.Parse("2006-01-02", trimmed(r, "entry_date"))
@@ -358,7 +364,8 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
-	s.audit(r, "update", "entry", id, fmt.Sprintf("%.2f h × %.2f = %.2f €", entry.Hours, entry.HourlyRate, entry.Cost))
+	s.audit(r, "update", "entry", id, fmt.Sprintf("%s h × %s = %s €",
+		entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2)))
 	s.setFlash(w, r, "success", "Buchung aktualisiert.")
 	redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
 }
@@ -391,7 +398,7 @@ func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SetEntryVoided(r.Context(), id, void, reason); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if void {
-		s.audit(r, "void", "entry", id, fmt.Sprintf("%s · %.2f € %s", nb, entry.Cost, reason))
+		s.audit(r, "void", "entry", id, fmt.Sprintf("%s · %s € %s", nb, entry.Cost.StringFixed(2), reason))
 		s.setFlash(w, r, "success", "Buchung storniert.")
 	} else {
 		s.audit(r, "unvoid", "entry", id, nb)
@@ -473,11 +480,11 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	created := 0
 	for i := range gespanne {
 		gid, _ := strconv.ParseInt(strings.TrimSpace(gespanne[i]), 10, 64)
-		hours := 0.0
+		hours := decimal.Zero
 		if i < len(hoursList) {
-			hours = parseGermanFloat(hoursList[i])
+			hours = parseGermanDecimal(hoursList[i])
 		}
-		if gid == 0 || hours <= 0 {
+		if gid == 0 || !hours.IsPositive() {
 			continue
 		}
 		dateStr := ""
@@ -504,7 +511,7 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 }
 
 // buildGespannEntry resolves a fixed gespann into a snapshotted entry.
-func (s *Server) buildGespannEntry(r *http.Request, gespannID int64, hours float64, dateStr string) (*models.Entry, []int64, bool) {
+func (s *Server) buildGespannEntry(r *http.Request, gespannID int64, hours decimal.Decimal, dateStr string) (*models.Entry, []int64, bool) {
 	g, err := s.store.GetGespann(r.Context(), gespannID)
 	if err != nil || g.TractorID == nil || g.LoadLevelID == nil {
 		return nil, nil, false
@@ -567,8 +574,9 @@ func (s *Server) handleEntryDelete(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.DeleteEntry(r.Context(), id); err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
-		s.audit(r, "delete", "entry", id, fmt.Sprintf("%s · %s, %.2f h, %.2f €",
-			s.neighborName(r, entry.NeighborID), entry.TractorLabel, entry.Hours, entry.Cost))
+		s.audit(r, "delete", "entry", id, fmt.Sprintf("%s · %s, %s h, %s €",
+			s.neighborName(r, entry.NeighborID), entry.TractorLabel,
+			entry.Hours.StringFixed(2), entry.Cost.StringFixed(2)))
 		s.setFlash(w, r, "success", "Buchung gelöscht.")
 	}
 	redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))

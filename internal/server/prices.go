@@ -3,6 +3,8 @@ package server
 import (
 	"net/http"
 
+	"github.com/shopspring/decimal"
+
 	"treckrr/internal/calc"
 	"treckrr/internal/models"
 )
@@ -15,7 +17,7 @@ type tractorRateView struct {
 
 type loadRate struct {
 	Load models.LoadLevel
-	Rate float64
+	Rate decimal.Decimal
 }
 
 func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +40,7 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 
 	type machineView struct {
 		Machine models.Machine
-		Rate    float64
+		Rate    decimal.Decimal
 	}
 	var machineViews []machineView
 	for _, m := range machines {
@@ -86,7 +88,7 @@ func (s *Server) handleLoadLevelSave(w http.ResponseWriter, r *http.Request) {
 	}
 	id := formInt64(r, "id")
 	name := trimmed(r, "name")
-	cost := formFloat(r, "cost_per_ps")
+	cost := formDecimal(r, "cost_per_ps")
 	sort := formInt(r, "sort_order")
 	if name == "" {
 		s.setFlash(w, r, "error", "Name darf nicht leer sein.")
@@ -138,9 +140,9 @@ func (s *Server) handleTractorSave(w http.ResponseWriter, r *http.Request) {
 	id := formInt64(r, "id")
 	ident := trimmed(r, "ident")
 	name := trimmed(r, "name")
-	ps := formFloat(r, "ps")
+	ps := formDecimal(r, "ps")
 	sortOrder := formInt(r, "sort_order")
-	if ident == "" || ps <= 0 {
+	if ident == "" || !ps.IsPositive() {
 		s.setFlash(w, r, "error", "Bezeichnung und PS (> 0) sind erforderlich.")
 		redirect(w, r, pricesURL(baseID))
 		return
@@ -216,11 +218,11 @@ func (s *Server) handleMachineSave(w http.ResponseWriter, r *http.Request) {
 	}
 	id := formInt64(r, "id")
 	name := trimmed(r, "name")
-	width := formFloat(r, "working_width")
-	cost := formFloat(r, "cost_per_ab")
+	width := formDecimal(r, "working_width")
+	cost := formDecimal(r, "cost_per_ab")
 	category := trimmed(r, "category")
 	sortOrder := formInt(r, "sort_order")
-	if name == "" || width <= 0 {
+	if name == "" || !width.IsPositive() {
 		s.setFlash(w, r, "error", "Name und Arbeitsbreite (> 0) sind erforderlich.")
 		redirect(w, r, pricesURL(baseID))
 		return

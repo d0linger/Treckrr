@@ -1,15 +1,14 @@
 package server
 
 import (
-	"math"
 	"net/http"
 	"strconv"
+
+	"github.com/shopspring/decimal"
 
 	"treckrr/internal/calc"
 	"treckrr/internal/models"
 )
-
-func round2(f float64) float64 { return math.Round(f*100) / 100 }
 
 func itoa64(n int64) string { return strconv.FormatInt(n, 10) }
 
@@ -21,23 +20,23 @@ func formInt64FromQuery(r *http.Request, name string) int64 {
 // diffRow is one comparison line between two bases.
 type diffRow struct {
 	Label string
-	A     float64 // value in the selected basis
-	B     float64 // value in the compared-against basis
-	Diff  float64 // A - B
-	Pct   float64 // percentage change vs B
+	A     decimal.Decimal // value in the selected basis
+	B     decimal.Decimal // value in the compared-against basis
+	Diff  decimal.Decimal // A - B
+	Pct   decimal.Decimal // percentage change vs B
 }
 
-func makeDiff(label string, a, b float64) diffRow {
-	d := diffRow{Label: label, A: a, B: b, Diff: round2(a - b)}
-	if b != 0 {
-		d.Pct = round2((a - b) / b * 100)
+func makeDiff(label string, a, b decimal.Decimal) diffRow {
+	d := diffRow{Label: label, A: a, B: b, Diff: a.Sub(b).Round(2)}
+	if !b.IsZero() {
+		d.Pct = a.Sub(b).Div(b).Mul(decimal.NewFromInt(100)).Round(2)
 	}
 	return d
 }
 
 // gespannRates returns name -> hourly rate for all gespanne of a base.
-func (s *Server) gespannRates(r *http.Request, baseID int64) map[string]float64 {
-	out := map[string]float64{}
+func (s *Server) gespannRates(r *http.Request, baseID int64) map[string]decimal.Decimal {
+	out := map[string]decimal.Decimal{}
 	gespanne, _ := s.store.ListGespanne(r.Context(), baseID)
 	tractors, _ := s.store.ListTractors(r.Context(), baseID)
 	loads, _ := s.store.ListLoadLevels(r.Context(), baseID)
@@ -107,7 +106,7 @@ func (s *Server) handlePriceCompare(w http.ResponseWriter, r *http.Request) {
 
 	// Load levels (cost per PS).
 	loadsA, _ := s.store.ListLoadLevels(r.Context(), base.ID)
-	loadsB := map[string]float64{}
+	loadsB := map[string]decimal.Decimal{}
 	if lb, err := s.store.ListLoadLevels(r.Context(), against.ID); err == nil {
 		for _, l := range lb {
 			loadsB[l.Name] = l.CostPerPS
@@ -121,7 +120,7 @@ func (s *Server) handlePriceCompare(w http.ResponseWriter, r *http.Request) {
 
 	// Machines (hourly rate), matched by name.
 	machA, _ := s.store.ListMachines(r.Context(), base.ID)
-	machB := map[string]float64{}
+	machB := map[string]decimal.Decimal{}
 	if mb, err := s.store.ListMachines(r.Context(), against.ID); err == nil {
 		for _, m := range mb {
 			machB[m.Name] = calc.MachineRate(m)

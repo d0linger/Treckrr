@@ -4,8 +4,9 @@ import (
 	"encoding/csv"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
+
+	"github.com/shopspring/decimal"
 
 	"treckrr/internal/models"
 	"treckrr/internal/web"
@@ -94,7 +95,7 @@ func (s *Server) writeCSV(w http.ResponseWriter, filename string, entries []mode
 		"Maschinen", "Stunden", "Stundensatz (€)", "Kosten (€)", "Notiz",
 	})
 
-	var total float64
+	var total decimal.Decimal
 	for _, e := range entries {
 		_ = cw.Write([]string{
 			csvSafe(names[e.NeighborID]),
@@ -108,17 +109,18 @@ func (s *Server) writeCSV(w http.ResponseWriter, filename string, entries []mode
 			deDecimal(e.Cost),
 			csvSafe(e.Note),
 		})
-		total += e.Cost
+		total = total.Add(e.Cost)
 	}
 	_ = cw.Write([]string{"", "", "", "", "", "", "", "Gesamt", deDecimal(total), ""})
 }
 
-// deDecimal formats with a comma decimal separator for German spreadsheets.
-func deDecimal(v float64) string {
-	return strings.Replace(strconv.FormatFloat(v, 'f', 2, 64), ".", ",", 1)
+// deDecimal formats an exact decimal with a comma separator for German
+// spreadsheets, e.g. 1234.5 -> "1234,50".
+func deDecimal(v decimal.Decimal) string {
+	return strings.Replace(v.StringFixed(2), ".", ",", 1)
 }
 
-// csvSafe neutralises spreadsheet formula injection: a cell whose first
+// csvSafe neutralizes spreadsheet formula injection: a cell whose first
 // character is one of = + - @ (or a leading tab/CR that some parsers strip to
 // reveal such a character) is prefixed with a single quote so Excel/LibreOffice
 // treat it as literal text instead of a formula. Applied to user-entered text

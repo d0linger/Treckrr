@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/shopspring/decimal"
+
 	"treckrr/internal/models"
 )
 
@@ -79,7 +81,7 @@ func (s *Store) SeedDefaultData(ctx context.Context) error {
 	}
 	loadIDs := map[string]int64{}
 	for _, l := range loads {
-		id, err := s.CreateLoadLevel(ctx, baseID, l.name, l.cost, l.sort)
+		id, err := s.CreateLoadLevel(ctx, baseID, l.name, decimal.NewFromFloat(l.cost), l.sort)
 		if err != nil {
 			return err
 		}
@@ -91,7 +93,7 @@ func (s *Store) SeedDefaultData(ctx context.Context) error {
 	}
 	tractorIDs := map[string]int64{}
 	for _, t := range tractors {
-		id, err := s.CreateTractor(ctx, baseID, t.ident, "", t.ps, 0)
+		id, err := s.CreateTractor(ctx, baseID, t.ident, "", decimal.NewFromFloat(t.ps), 0)
 		if err != nil {
 			return err
 		}
@@ -108,7 +110,7 @@ func (s *Store) SeedDefaultData(ctx context.Context) error {
 	}
 	machineIDs := map[string]int64{}
 	for _, m := range machines {
-		id, err := s.CreateMachine(ctx, baseID, m.name, m.width, m.cost, "", 0)
+		id, err := s.CreateMachine(ctx, baseID, m.name, decimal.NewFromFloat(m.width), decimal.NewFromFloat(m.cost), "", 0)
 		if err != nil {
 			return err
 		}
