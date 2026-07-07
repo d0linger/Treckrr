@@ -50,9 +50,6 @@ func run() error {
 	if err := st.EnsureAdmin(ctx, cfg.AdminUsername, cfg.AdminPassword); err != nil {
 		return err
 	}
-	if err := st.SeedDefaultData(ctx); err != nil {
-		return err
-	}
 	log.Println("bootstrap complete")
 
 	srv, err := server.New(cfg, st)

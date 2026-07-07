@@ -151,10 +151,9 @@ TRECKRR_TAG=1.2 docker compose -f docker-compose.ghcr.yml up -d
 
 Image: `ghcr.io/d0linger/treckrr` (tags: `latest`, `main`, semver from release tags).
 
-On first start the app runs schema migrations, provisions the admin user, and
-seeds an example **rate basis 2023** (spreadsheet values incl. rigs) plus a
-**billing year 2025** with three sample neighbours. Add further years under
-**Jahre**.
+On first start the app runs schema migrations and provisions the admin user.
+The database starts **empty** — create your first **rate basis** under
+**Grundlagen**, then a **billing year** under **Jahre**, and add neighbours.
 
 ### Deploying with Portainer
 
