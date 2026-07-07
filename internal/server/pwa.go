@@ -31,7 +31,7 @@ func (s *Server) handleServiceWorker(w http.ResponseWriter, r *http.Request) {
 
 // handleOffline is the fallback page shown by the service worker when offline.
 func (s *Server) handleOffline(w http.ResponseWriter, r *http.Request) {
-	data := pageData{"Title": "Offline", "Theme": themeFromCookie(r)}
+	data := pageData{"Title": "Offline", "Theme": themeFromCookie(r), "CSRF": s.csrfToken(r)}
 	s.render(w, r, "offline", data)
 }
 

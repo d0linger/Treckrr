@@ -2,6 +2,9 @@
 -- user to authenticators; credentials store only public keys, so nothing secret
 -- lives here.
 ALTER TABLE users ADD COLUMN webauthn_handle BYTEA;
+-- Unique + indexed: discoverable login looks users up by handle on every attempt,
+-- and no two users may share a handle.
+CREATE UNIQUE INDEX idx_users_webauthn_handle ON users(webauthn_handle) WHERE webauthn_handle IS NOT NULL;
 
 CREATE TABLE webauthn_credentials (
     id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

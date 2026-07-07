@@ -33,7 +33,7 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
-	data := pageData{"Title": "Anmelden", "Theme": themeFromCookie(r)}
+	data := pageData{"Title": "Anmelden", "Theme": themeFromCookie(r), "CSRF": s.csrfToken(r)}
 	// If a valid pending-2FA cookie is present, show the second step instead.
 	if c, err := r.Cookie(pending2FACookie); err == nil {
 		if _, ok := s.verifyPending2FA(c.Value); ok {

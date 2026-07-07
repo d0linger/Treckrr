@@ -122,7 +122,10 @@
 
 	document.addEventListener("DOMContentLoaded", function () {
 		var rb = document.getElementById("passkey-register");
-		if (rb) rb.addEventListener("click", function (e) { e.preventDefault(); register(rb); });
+		if (rb) {
+			if (!supported()) { rb.style.display = "none"; }
+			rb.addEventListener("click", function (e) { e.preventDefault(); register(rb); });
+		}
 		var lb = document.getElementById("passkey-login");
 		if (lb) {
 			if (!supported()) { lb.style.display = "none"; }

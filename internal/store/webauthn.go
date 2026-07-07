@@ -13,24 +13,21 @@ import (
 // and persisting one on first use. The handle (not the DB id) is what
 // authenticators store, so it must never change for a user.
 func (s *Store) WebauthnHandle(ctx context.Context, userID int64) ([]byte, error) {
+	fresh := make([]byte, 32)
+	if _, err := rand.Read(fresh); err != nil {
+		return nil, err
+	}
+	// Atomic first-use assignment: COALESCE keeps any existing handle and only
+	// writes the fresh one when the column is still NULL, so concurrent initial
+	// calls (e.g. two register tabs) can never diverge to different handles.
 	var handle []byte
 	err := s.db.QueryRowContext(ctx,
-		`SELECT webauthn_handle FROM users WHERE id=$1`, userID).Scan(&handle)
+		`UPDATE users SET webauthn_handle = COALESCE(webauthn_handle, $1)
+		  WHERE id=$2 RETURNING webauthn_handle`, fresh, userID).Scan(&handle)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, err
-	}
-	if len(handle) > 0 {
-		return handle, nil
-	}
-	handle = make([]byte, 32)
-	if _, err := rand.Read(handle); err != nil {
-		return nil, err
-	}
-	if _, err := s.db.ExecContext(ctx,
-		`UPDATE users SET webauthn_handle=$1 WHERE id=$2`, handle, userID); err != nil {
 		return nil, err
 	}
 	return handle, nil
