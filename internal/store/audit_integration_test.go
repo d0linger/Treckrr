@@ -28,6 +28,18 @@ func TestAuditFilterPaginationIntegration(t *testing.T) {
 	}
 	st := store.New(pool, "test-encryption-secret")
 
+	// Keep the exact-count assertions stable across repeated runs on a reused
+	// database: clear any rows from a previous run up front, and tidy up after.
+	// The defer runs before pool.Close() (LIFO), so the pool is still open.
+	clearTestAudit := func() {
+		if _, err := pool.ExecContext(ctx,
+			`DELETE FROM audit_log WHERE action IN ('itest_a','itest_b')`); err != nil {
+			t.Errorf("clear test audit rows: %v", err)
+		}
+	}
+	clearTestAudit()
+	defer clearTestAudit()
+
 	// Insert 120 rows with test-unique actions so assertions are independent of
 	// any other rows in the table: 80x itest_a, 40x itest_b, one carrying a
 	// unique search marker.

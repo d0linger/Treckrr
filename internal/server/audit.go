@@ -62,7 +62,11 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	data["HasNext"] = page < totalPages
 	data["PrevPage"] = page - 1
 	data["NextPage"] = page + 1
-	data["RangeFrom"] = offset + 1
+	rangeFrom := offset + 1
+	if len(entries) == 0 {
+		rangeFrom = 0 // empty result: read "0 von 0", not "1 von 0"
+	}
+	data["RangeFrom"] = rangeFrom
 	data["RangeTo"] = offset + len(entries)
 	s.render(w, r, "audit", data)
 }
