@@ -305,7 +305,20 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.logins.reset(r.Context(), rlKey)
-	_ = s.store.TouchWebauthnCredential(r.Context(), cred.ID, cred.Authenticator.SignCount, cred.Flags.BackupState)
+	// Clone detection: go-webauthn flags a regressed signature counter (never
+	// for counter-less synced authenticators, which stay at 0). Surface it —
+	// login still proceeds, but an admin can see the signal in the trail.
+	if cred.Authenticator.CloneWarning {
+		log.Printf("passkey login: possible clone (signature counter regressed) user=%s ip=%s",
+			sanitizeLog(loggedIn.Username), s.clientIP(r))
+		s.auditLogin(r, loggedIn.Username, "login_passkey_clone_warning", "Signaturzähler rückläufig – möglicher Klon")
+	}
+	// Persist the updated counter/backup-state; a failure here would leave stale
+	// state for the next assertion, so log it rather than swallowing it.
+	if err := s.store.TouchWebauthnCredential(r.Context(), cred.ID, cred.Authenticator.SignCount, cred.Flags.BackupState); err != nil {
+		log.Printf("passkey login: credential state update failed user=%s: %v",
+			sanitizeLog(loggedIn.Username), err)
+	}
 	s.auditLogin(r, loggedIn.Username, "login_passkey", "")
 	if !s.startSession(w, r, loggedIn) {
 		return
