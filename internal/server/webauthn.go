@@ -78,12 +78,17 @@ func toWACreds(list []models.WebauthnCredential) []webauthn.Credential {
 				transports = append(transports, protocol.AuthenticatorTransport(t))
 			}
 		}
-		out = append(out, webauthn.Credential{
+		wc := webauthn.Credential{
 			ID:            c.CredentialID,
 			PublicKey:     c.PublicKey,
 			Transport:     transports,
 			Authenticator: webauthn.Authenticator{AAGUID: c.AAGUID, SignCount: c.SignCount},
-		})
+		}
+		// Replay the BE/BS flags observed at registration; go-webauthn requires
+		// the stored BackupEligible flag to match the assertion on every login.
+		wc.Flags.BackupEligible = c.BackupEligible
+		wc.Flags.BackupState = c.BackupState
+		out = append(out, wc)
 	}
 	return out
 }
@@ -94,12 +99,14 @@ func fromWACred(c *webauthn.Credential, name string) models.WebauthnCredential {
 		ts = append(ts, string(t))
 	}
 	return models.WebauthnCredential{
-		CredentialID: c.ID,
-		PublicKey:    c.PublicKey,
-		AAGUID:       c.Authenticator.AAGUID,
-		SignCount:    c.Authenticator.SignCount,
-		Transports:   strings.Join(ts, ","),
-		Name:         name,
+		CredentialID:   c.ID,
+		PublicKey:      c.PublicKey,
+		AAGUID:         c.Authenticator.AAGUID,
+		SignCount:      c.Authenticator.SignCount,
+		Transports:     strings.Join(ts, ","),
+		Name:           name,
+		BackupEligible: c.Flags.BackupEligible,
+		BackupState:    c.Flags.BackupState,
 	}
 }
 

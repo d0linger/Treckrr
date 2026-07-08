@@ -180,8 +180,13 @@ type WebauthnCredential struct {
 	SignCount    uint32
 	Transports   string
 	Name         string
-	Created      time.Time
-	LastUsed     *time.Time
+	// BackupEligible/BackupState are the WebAuthn BE/BS flags captured at
+	// registration. BE is fixed for the credential's life and must be replayed
+	// on login or go-webauthn rejects the assertion.
+	BackupEligible bool
+	BackupState    bool
+	Created        time.Time
+	LastUsed       *time.Time
 }
 
 // AuditEntry is one recorded action in the audit trail.

@@ -50,7 +50,8 @@ func (s *Store) UserByWebauthnHandle(ctx context.Context, handle []byte) (*model
 // ListWebauthnCredentials returns a user's registered passkeys.
 func (s *Store) ListWebauthnCredentials(ctx context.Context, userID int64) ([]models.WebauthnCredential, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, credential_id, public_key, aaguid, sign_count, transports, name, created_at, last_used_at
+		`SELECT id, credential_id, public_key, aaguid, sign_count, transports, name,
+		        backup_eligible, backup_state, created_at, last_used_at
 		   FROM webauthn_credentials WHERE user_id=$1 ORDER BY created_at`, userID)
 	if err != nil {
 		return nil, err
@@ -61,7 +62,8 @@ func (s *Store) ListWebauthnCredentials(ctx context.Context, userID int64) ([]mo
 		var c models.WebauthnCredential
 		var count int64
 		if err := rows.Scan(&c.ID, &c.CredentialID, &c.PublicKey, &c.AAGUID,
-			&count, &c.Transports, &c.Name, &c.Created, &c.LastUsed); err != nil {
+			&count, &c.Transports, &c.Name, &c.BackupEligible, &c.BackupState,
+			&c.Created, &c.LastUsed); err != nil {
 			return nil, err
 		}
 		c.SignCount = uint32(count) //nolint:gosec // sign_count is a small non-negative counter
@@ -73,9 +75,11 @@ func (s *Store) ListWebauthnCredentials(ctx context.Context, userID int64) ([]mo
 // AddWebauthnCredential stores a newly registered passkey.
 func (s *Store) AddWebauthnCredential(ctx context.Context, userID int64, c models.WebauthnCredential) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO webauthn_credentials (user_id, credential_id, public_key, aaguid, sign_count, transports, name)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		userID, c.CredentialID, c.PublicKey, c.AAGUID, int64(c.SignCount), c.Transports, c.Name)
+		`INSERT INTO webauthn_credentials
+		   (user_id, credential_id, public_key, aaguid, sign_count, transports, name, backup_eligible, backup_state)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		userID, c.CredentialID, c.PublicKey, c.AAGUID, int64(c.SignCount), c.Transports, c.Name,
+		c.BackupEligible, c.BackupState)
 	return err
 }
 
