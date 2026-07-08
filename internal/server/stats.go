@@ -17,6 +17,14 @@ type aggRow struct {
 	Cost  decimal.Decimal
 }
 
+// ledgerBar is one bar of the per-neighbour verrechnung chart: Bar is the
+// magnitude (drives the meter), Amount the signed value shown as the label.
+type ledgerBar struct {
+	Name   string
+	Amount decimal.Decimal
+	Bar    decimal.Decimal
+}
+
 // aggregate groups entries by the key returned from keyFn, summing hours/cost,
 // then returns rows sorted by cost descending. Voided entries are skipped.
 func aggregate(entries []models.Entry, keyFn func(models.Entry) string) []aggRow {
@@ -195,15 +203,29 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["NetResult"] = totalCost.Add(ledgerSum)
 	hasLedger := !ledgerSum.IsZero()
 	data["HasLedger"] = hasLedger
-	// Per-neighbour Leistungen/Verrechnung/Netto — only worth showing when there
-	// are ledger postings (otherwise it duplicates the "Umsatz je Nachbar" chart).
+	// Verrechnung per neighbour as a bar chart (magnitude = bar, signed value =
+	// label) — only when there are ledger postings.
 	if hasLedger {
 		results, err := s.store.YearNeighborResults(r.Context(), year.ID)
 		if err != nil {
 			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 			return
 		}
-		data["NeighborResults"] = results
+		bars := make([]ledgerBar, 0, len(results))
+		var maxAbs decimal.Decimal
+		for _, res := range results {
+			if res.Ledger.IsZero() {
+				continue
+			}
+			abs := res.Ledger.Abs()
+			bars = append(bars, ledgerBar{Name: res.Name, Amount: res.Ledger, Bar: abs})
+			if abs.GreaterThan(maxAbs) {
+				maxAbs = abs
+			}
+		}
+		sort.Slice(bars, func(i, j int) bool { return bars[i].Bar.GreaterThan(bars[j].Bar) })
+		data["LedgerBars"] = bars
+		data["LedgerBarsMax"] = maxAbs
 	}
 	data["Completed"] = year.Completed()
 	data["ByNeighbor"] = byNeighbor

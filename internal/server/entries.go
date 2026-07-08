@@ -565,7 +565,8 @@ func (s *Server) handleLedgerUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.UpdateNeighborLedger(r.Context(), id, amount, description, date); err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	} else {
-		s.audit(r, "ledger_update", "neighbor", neighborID, amount.StringFixed(2)+" € "+description)
+		s.audit(r, "ledger_update", "neighbor", neighborID,
+			s.neighborName(r, neighborID)+" · "+amount.StringFixed(2)+" € "+description)
 		s.setFlash(w, r, "success", "Position aktualisiert.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
@@ -596,10 +597,12 @@ func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SetLedgerVoided(r.Context(), id, void, reason); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if void {
-		s.audit(r, "ledger_void", "neighbor", neighborID, e.Amount.StringFixed(2)+" € "+reason)
+		s.audit(r, "ledger_void", "neighbor", neighborID,
+			s.neighborName(r, neighborID)+" · "+e.Amount.StringFixed(2)+" € "+reason)
 		s.setFlash(w, r, "success", "Position storniert.")
 	} else {
-		s.audit(r, "ledger_unvoid", "neighbor", neighborID, e.Amount.StringFixed(2)+" €")
+		s.audit(r, "ledger_unvoid", "neighbor", neighborID,
+			s.neighborName(r, neighborID)+" · "+e.Amount.StringFixed(2)+" €")
 		s.setFlash(w, r, "success", "Stornierung aufgehoben.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
@@ -623,7 +626,8 @@ func (s *Server) handleLedgerDelete(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.DeleteNeighborLedger(r.Context(), id); err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
-		s.audit(r, "ledger_delete", "neighbor", neighborID, e.Amount.StringFixed(2)+" € "+e.Description)
+		s.audit(r, "ledger_delete", "neighbor", neighborID,
+			s.neighborName(r, neighborID)+" · "+e.Amount.StringFixed(2)+" € "+e.Description)
 		s.setFlash(w, r, "success", "Position entfernt.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
