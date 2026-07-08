@@ -118,12 +118,14 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 		cost, hours, _ := s.store.NeighborTotal(r.Context(), id, y.ID)
+		led, _ := s.store.NeighborLedgerSum(r.Context(), y.ID, id)
+		net := cost.Add(led) // same net (bookings + ledger) as the dashboard/detail
 		payments, _ := s.store.YearPayments(r.Context(), y.ID)
 		rows = append(rows, yearRow{
-			Year: y.Year, YearID: y.ID, Cost: cost, Hours: hours,
+			Year: y.Year, YearID: y.ID, Cost: net, Hours: hours,
 			Paid: payments[id], Completed: y.Completed(),
 		})
-		totalCost = totalCost.Add(cost)
+		totalCost = totalCost.Add(net)
 		totalHours = totalHours.Add(hours)
 	}
 	data := s.newPage(w, r, neighbor.Name+" · Verlauf", "dashboard")
@@ -495,6 +497,14 @@ func (s *Server) handleLedgerAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
+		return
+	}
+	// Only members of the year may get postings, otherwise an orphan posting
+	// would count in the year total (YearLedgerSum) but not in the per-neighbor /
+	// payment views (which join billing_year_neighbors), skewing the stats.
+	if member, err := s.store.NeighborInYear(r.Context(), yearID, neighborID); err != nil || !member {
+		s.setFlash(w, r, "error", "Nachbar ist in diesem Abrechnungsjahr nicht vorhanden.")
+		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
 	amount, description, date, msg := ledgerFormValues(r)
