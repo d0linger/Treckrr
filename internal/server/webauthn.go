@@ -305,7 +305,7 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.logins.reset(r.Context(), rlKey)
-	_ = s.store.TouchWebauthnCredential(r.Context(), cred.ID, cred.Authenticator.SignCount)
+	_ = s.store.TouchWebauthnCredential(r.Context(), cred.ID, cred.Authenticator.SignCount, cred.Flags.BackupState)
 	s.auditLogin(r, loggedIn.Username, "login_passkey", "")
 	if !s.startSession(w, r, loggedIn) {
 		return

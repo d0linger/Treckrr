@@ -83,12 +83,15 @@ func (s *Store) AddWebauthnCredential(ctx context.Context, userID int64, c model
 	return err
 }
 
-// TouchWebauthnCredential updates the signature counter and last-used time after
-// a successful login (clone-detection hygiene).
-func (s *Store) TouchWebauthnCredential(ctx context.Context, credentialID []byte, signCount uint32) error {
+// TouchWebauthnCredential updates the signature counter, current backup state
+// and last-used time after a successful login. Backup-State (BS) can change over
+// a credential's life (it flips when the authenticator first syncs), so the
+// latest value is tracked here for the next assertion; the counter is kept for
+// clone-detection hygiene.
+func (s *Store) TouchWebauthnCredential(ctx context.Context, credentialID []byte, signCount uint32, backupState bool) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE webauthn_credentials SET sign_count=$1, last_used_at=now() WHERE credential_id=$2`,
-		int64(signCount), credentialID)
+		`UPDATE webauthn_credentials SET sign_count=$1, backup_state=$2, last_used_at=now() WHERE credential_id=$3`,
+		int64(signCount), backupState, credentialID)
 	return err
 }
 

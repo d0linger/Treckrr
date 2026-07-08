@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"testing"
 
@@ -31,10 +32,22 @@ func TestWebauthnBackupFlagsRoundTrip(t *testing.T) {
 	}
 	st := store.New(pool, "test-encryption-secret")
 
-	uid, err := st.CreateUser(ctx, "wa-flags-user", "pw-at-least-8-chars", models.RoleAdmin)
+	// Unique username per run + cleanup, so reruns against a persistent
+	// TEST_DATABASE_URL don't collide on the username unique constraint. The
+	// defer runs before pool.Close() (LIFO); deleting the user cascades to its
+	// credentials.
+	suffix := make([]byte, 6)
+	_, _ = rand.Read(suffix)
+	username := "wa-flags-" + hex.EncodeToString(suffix)
+	uid, err := st.CreateUser(ctx, username, "pw-at-least-8-chars", models.RoleAdmin)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	defer func() {
+		if _, err := pool.ExecContext(ctx, `DELETE FROM users WHERE id=$1`, uid); err != nil {
+			t.Errorf("cleanup user: %v", err)
+		}
+	}()
 
 	credID := make([]byte, 16)
 	_, _ = rand.Read(credID)
