@@ -90,7 +90,12 @@ func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 	for _, e := range filtered {
 		_ = cw.Write([]string{
 			e.Created.Format("2006-01-02 15:04:05"),
-			e.Username, e.Action, e.Entity, e.EntityID, e.Detail, e.IP,
+			csvSafe(e.Username),
+			csvSafe(e.Action),
+			csvSafe(e.Entity),
+			csvSafe(e.EntityID),
+			csvSafe(e.Detail),
+			csvSafe(e.IP),
 		})
 	}
 }
