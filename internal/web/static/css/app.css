@@ -171,14 +171,20 @@ em { font-style: normal; color: var(--muted); }
 }
 
 /* ---- Summary card ----------------------------------------------------- */
-.summary-card { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; background: linear-gradient(135deg, var(--primary), var(--primary-strong)); color: #fff; border: none; }
+/* Mobile-first: stack the value above the meta/actions so nothing overflows;
+   side-by-side layout kicks in on wider screens (see @media below). */
+.summary-card { display: flex; flex-direction: column; gap: 1rem; background: linear-gradient(135deg, var(--primary), var(--primary-strong)); color: #fff; border: none; }
 .summary-card__label { display: block; font-size: .8rem; opacity: .85; }
 .summary-card__value { display: block; font-size: 1.7rem; font-weight: 700; }
-.summary-card__meta { text-align: right; font-size: .85rem; opacity: .95; display: flex; flex-direction: column; gap: .4rem; align-items: flex-end; }
+.summary-card__meta { font-size: .85rem; opacity: .95; display: flex; flex-direction: column; gap: .4rem; align-items: flex-start; text-align: left; }
 .summary-card .btn--ghost { color: #fff; border-color: rgba(255, 255, 255, .5); }
+@media (min-width: 560px) {
+	.summary-card { flex-direction: row; align-items: flex-end; justify-content: space-between; }
+	.summary-card__meta { align-items: flex-end; text-align: right; }
+}
 /* Keep the Statistik / CSV-Export buttons on one line, sized to their text. */
-.summary-card__meta .btnrow { display: flex; flex-wrap: nowrap; gap: .4rem; }
-.summary-card__meta .btnrow .btn { flex: 0 0 auto; white-space: nowrap; }
+.summary-card__meta .btnrow { display: flex; flex-wrap: wrap; gap: .4rem; }
+.summary-card__meta .btnrow .btn { flex: 0 0 auto; }
 
 /* ---- Lists ------------------------------------------------------------ */
 .list { display: flex; flex-direction: column; gap: .6rem; }
@@ -258,6 +264,7 @@ em { font-style: normal; color: var(--muted); }
 	border: 1px solid transparent;
 	border-radius: 999px;
 	cursor: pointer;
+	white-space: nowrap;
 	transition: transform .08s ease, filter .15s ease, background .15s ease;
 	-webkit-tap-highlight-color: transparent;
 }
@@ -436,8 +443,10 @@ em { font-style: normal; color: var(--muted); }
 .badge { font-size: .72rem; color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: .1rem .5rem; }
 
 /* ---- Button rows & carry-over ----------------------------------------- */
-.btnrow { display: flex; gap: .5rem; }
-.btnrow .btn { flex: 1; }
+.btnrow { display: flex; gap: .5rem; flex-wrap: wrap; }
+/* Grow to fill, but size to the label (basis auto) and wrap to a new line when
+   the row is too narrow — avoids labels wrapping into tall pill "ovals". */
+.btnrow .btn { flex: 1 1 auto; }
 /* Split row: backlink on the left, action(s) on the right (non-stretching). */
 .btnrow--split { align-items: center; justify-content: space-between; }
 .btnrow--split .btn { flex: 0 0 auto; }
