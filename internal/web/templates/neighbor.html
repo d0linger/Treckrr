@@ -176,8 +176,11 @@
 							</form>
 							{{else}}
 							<a class="btn btn--ghost btn--icon" href="/entries/{{.ID}}/edit" aria-label="Bearbeiten" title="Bearbeiten">✎</a>
-							<form method="post" action="/entries/{{.ID}}/void" data-confirm="Buchung stornieren? (bleibt sichtbar, zählt nicht mehr)">
+							<form method="post" action="/entries/{{.ID}}/void"
+								data-confirm="Buchung stornieren? (bleibt sichtbar, zählt nicht mehr)"
+								data-confirm-reason="Grund der Stornierung (optional)">
 								<input type="hidden" name="voided" value="true">
+								<input type="hidden" name="reason" value="">
 								<button class="btn btn--ghost btn--icon" type="submit" aria-label="Stornieren" title="Stornieren">⊘</button>
 							</form>
 							<form method="post" action="/entries/{{.ID}}/delete" data-confirm="Buchung endgültig löschen?">

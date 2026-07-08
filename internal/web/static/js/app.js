@@ -88,6 +88,7 @@
 	// native confirm when <dialog> is unsupported).
 	var modal = document.getElementById("confirmModal");
 	var msgEl = modal ? modal.querySelector("[data-modal-msg]") : null;
+	var inputEl = modal ? modal.querySelector("[data-modal-input]") : null;
 	var pendingForm = null;
 
 	if (modal && typeof modal.showModal === "function") {
@@ -95,6 +96,11 @@
 			var form = pendingForm;
 			pendingForm = null;
 			if (modal.returnValue === "confirm" && form) {
+				// Copy an optional reason (e.g. void reason) into the form before submit.
+				if (inputEl && !inputEl.hidden) {
+					var target = form.querySelector("input[name='reason']");
+					if (target) target.value = inputEl.value.trim();
+				}
 				form.dataset.confirmed = "1";
 				form.submit(); // does not re-trigger the submit listener
 			}
@@ -105,15 +111,31 @@
 		form.addEventListener("submit", function (e) {
 			if (form.dataset.confirmed === "1") return;
 			var message = form.getAttribute("data-confirm");
+			var reasonLabel = form.getAttribute("data-confirm-reason");
 			if (!modal || typeof modal.showModal !== "function") {
-				if (!window.confirm(message)) e.preventDefault();
+				if (!window.confirm(message)) { e.preventDefault(); return; }
+				// Native fallback: prompt for the reason if one was requested.
+				if (reasonLabel !== null) {
+					var target = form.querySelector("input[name='reason']");
+					if (target) target.value = (window.prompt(reasonLabel) || "").trim();
+				}
 				return;
 			}
 			e.preventDefault();
 			pendingForm = form;
 			if (msgEl) msgEl.textContent = message;
+			if (inputEl) {
+				if (reasonLabel !== null) {
+					inputEl.hidden = false;
+					inputEl.placeholder = reasonLabel;
+					inputEl.value = "";
+				} else {
+					inputEl.hidden = true;
+				}
+			}
 			modal.returnValue = "";
 			modal.showModal();
+			if (inputEl && !inputEl.hidden) inputEl.focus();
 		});
 	});
 
