@@ -37,7 +37,7 @@
 					<td class="small">{{if .Username}}{{.Username}}{{else}}—{{end}}</td>
 					<td class="small"><strong>{{.Action}}</strong></td>
 					<td class="small nowrap">{{.Entity}}{{if .EntityID}} #{{.EntityID}}{{end}}</td>
-					<td class="small detailcell">{{if .Detail}}{{.Detail}}{{else}}—{{end}}</td>
+					<td class="small detailcell">{{if .Detail}}{{range $i, $p := split " · " .Detail}}{{if $i}}<br>{{end}}{{$p}}{{end}}{{else}}—{{end}}</td>
 					<td class="small nowrap">{{.IP}}</td>
 				</tr>
 				{{else}}

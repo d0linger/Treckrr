@@ -103,6 +103,14 @@ func funcMap() template.FuncMap {
 			return t.Format("2006-01-02")
 		},
 		"dict": dict,
+		// split breaks a string on sep — used to render multi-part audit details
+		// (fields joined by " · ") on separate lines.
+		"split": func(sep, s string) []string {
+			if s == "" {
+				return nil
+			}
+			return strings.Split(s, sep)
+		},
 		"seq": func(n int) []int {
 			out := make([]int, n)
 			for i := range out {
