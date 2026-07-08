@@ -1,0 +1,27 @@
+{{define "content"}}
+<section class="stack">
+	<a class="backlink" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ Zurück zu {{.Neighbor.Name}}</a>
+	<h2 class="section-title">Position bearbeiten · {{.Year.Year}}</h2>
+	<form method="post" action="/ledger/{{.Ledger.ID}}/update" class="card form">
+		<div class="form__grid">
+			<label class="field"><span>Betrag (€)</span>
+				<input class="input" type="number" step="0.01" min="0" name="amount" value="{{.AbsAmount.StringFixed 2}}" required></label>
+			<label class="field"><span>Datum</span>
+				<input class="input" type="date" name="posting_date" value="{{dateInput .Ledger.Date}}"></label>
+			<label class="field"><span>Beschreibung</span>
+				<input class="input" name="description" value="{{.Ledger.Description}}" placeholder="z. B. Gegenleistung Heuernte"></label>
+		</div>
+		<div class="segmented" role="radiogroup" aria-label="Richtung">
+			<label class="segmented__item">
+				<input type="radio" name="direction" value="credit" {{if .IsCredit}}checked{{end}}>
+				<span>Ich schulde (−)</span>
+			</label>
+			<label class="segmented__item">
+				<input type="radio" name="direction" value="charge" {{if not .IsCredit}}checked{{end}}>
+				<span>Zusatzforderung (+)</span>
+			</label>
+		</div>
+		<button class="btn btn--primary" type="submit">Speichern</button>
+	</form>
+</section>
+{{end}}

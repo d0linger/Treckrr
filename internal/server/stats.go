@@ -17,6 +17,14 @@ type aggRow struct {
 	Cost  decimal.Decimal
 }
 
+// ledgerBar is one bar of the per-neighbor verrechnung chart: Bar is the
+// magnitude (drives the meter), Amount the signed value shown as the label.
+type ledgerBar struct {
+	Name   string
+	Amount decimal.Decimal
+	Bar    decimal.Decimal
+}
+
 // aggregate groups entries by the key returned from keyFn, summing hours/cost,
 // then returns rows sorted by cost descending. Voided entries are skipped.
 func aggregate(entries []models.Entry, keyFn func(models.Entry) string) []aggRow {
@@ -59,8 +67,10 @@ func maxCost(rows []aggRow) decimal.Decimal {
 type yearStat struct {
 	Year      int
 	YearID    int64
-	Cost      decimal.Decimal
+	Cost      decimal.Decimal // Leistungen (bookings)
 	Hours     decimal.Decimal
+	Ledger    decimal.Decimal // signed ledger sum (verrechnung)
+	Net       decimal.Decimal // Cost + Ledger
 	PaidCost  decimal.Decimal
 	OpenCost  decimal.Decimal
 	Completed bool
@@ -77,7 +87,8 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 
 	stats := make([]yearStat, 0, len(years))
 	revenue := make([]aggRow, 0, len(years))
-	var grandCost, grandHours, grandPaid, grandOpen decimal.Decimal
+	var grandCost, grandHours, grandLedger, grandPaid, grandOpen decimal.Decimal
+	hasLedger := false // true if any single year has ledger activity
 	for _, y := range years {
 		entries, err := s.store.ListEntriesByYear(r.Context(), y.ID)
 		if err != nil {
@@ -97,13 +108,23 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 			return
 		}
+		led, err := s.store.YearLedgerSum(r.Context(), y.ID)
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
+		}
+		if !led.IsZero() {
+			hasLedger = true
+		}
 		stats = append(stats, yearStat{
 			Year: y.Year, YearID: y.ID, Cost: cost, Hours: hours,
+			Ledger: led, Net: cost.Add(led),
 			PaidCost: paid, OpenCost: open, Completed: y.Completed(),
 		})
 		revenue = append(revenue, aggRow{Label: strconv.Itoa(y.Year), Hours: hours, Cost: cost})
 		grandCost = grandCost.Add(cost)
 		grandHours = grandHours.Add(hours)
+		grandLedger = grandLedger.Add(led)
 		grandPaid = grandPaid.Add(paid)
 		grandOpen = grandOpen.Add(open)
 	}
@@ -114,6 +135,9 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 	data["RevenueMax"] = maxCost(revenue)
 	data["GrandCost"] = grandCost
 	data["GrandHours"] = grandHours
+	data["GrandLedger"] = grandLedger
+	data["GrandNet"] = grandCost.Add(grandLedger)
+	data["HasLedger"] = hasLedger
 	data["GrandPaid"] = grandPaid
 	data["GrandOpen"] = grandOpen
 	s.render(w, r, "stats_all", data)
@@ -162,6 +186,28 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
+	// Per-neighbor Verrechnung: fetch unconditionally and derive the total, the
+	// bar chart and HasLedger from it — so a year whose postings net to zero
+	// across neighbors (e.g. +50/-50) still shows the chart instead of vanishing.
+	results, err := s.store.YearNeighborResults(r.Context(), year.ID)
+	if err != nil {
+		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		return
+	}
+	var ledgerSum, ledgerMax decimal.Decimal
+	ledgerBars := make([]ledgerBar, 0, len(results))
+	for _, res := range results {
+		ledgerSum = ledgerSum.Add(res.Ledger)
+		if res.Ledger.IsZero() {
+			continue
+		}
+		abs := res.Ledger.Abs()
+		ledgerBars = append(ledgerBars, ledgerBar{Name: res.Name, Amount: res.Ledger, Bar: abs})
+		if abs.GreaterThan(ledgerMax) {
+			ledgerMax = abs
+		}
+	}
+	sort.Slice(ledgerBars, func(i, j int) bool { return ledgerBars[i].Bar.GreaterThan(ledgerBars[j].Bar) })
 
 	data := s.newPage(w, r, "Statistik", "stats")
 	if err := s.withYearSelector(r, data, year); err != nil {
@@ -172,6 +218,11 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["TotalHours"] = totalHours
 	data["PaidCost"] = paidCost
 	data["OpenCost"] = openCost
+	data["LedgerSum"] = ledgerSum
+	data["NetResult"] = totalCost.Add(ledgerSum)
+	data["HasLedger"] = len(ledgerBars) > 0
+	data["LedgerBars"] = ledgerBars
+	data["LedgerBarsMax"] = ledgerMax
 	data["Completed"] = year.Completed()
 	data["ByNeighbor"] = byNeighbor
 	data["ByNeighborMax"] = maxCost(byNeighbor)

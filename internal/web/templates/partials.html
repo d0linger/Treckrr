@@ -45,6 +45,27 @@
 	</div>
 {{end}}
 
+{{/*
+	"bar-abs" renders a horizontal bar chart of signed money values: the bar
+	length uses the magnitude (so debts/credits both show), the label shows the
+	signed amount in the neutral colour (like the revenue charts). Expects dict:
+	"Rows" ([]ledgerBar with Name/Amount/Bar) and "Max" (magnitude of largest bar).
+*/}}
+{{define "bar-abs"}}
+	<div class="barchart">
+		{{$max := .Max}}
+		{{range .Rows}}
+		<div class="barchart__row">
+			<span class="barchart__label" title="{{.Name}}">{{.Name}}</span>
+			<meter class="barchart__meter" min="0" max="{{$max}}" value="{{.Bar}}"></meter>
+			<span class="barchart__val">{{money .Amount}}</span>
+		</div>
+		{{else}}
+		<p class="muted">Keine Verrechnungen.</p>
+		{{end}}
+	</div>
+{{end}}
+
 {{define "machine-checks"}}
 	<div class="checkgroup">
 		{{$selected := .Selected}}

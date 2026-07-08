@@ -193,16 +193,27 @@ func (s *Store) NeighborTotal(ctx context.Context, neighborID, yearID int64) (co
 // a single query (paid = neighbors marked paid, open = the rest). This replaces
 // a per-neighbor fan-out of NeighborTotal calls.
 func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open decimal.Decimal, err error) {
+	// Per neighbor: net = work bookings + signed ledger postings. Aggregate the
+	// two sides in subqueries first so joining them can't multiply rows, then
+	// split by the paid flag.
 	err = s.db.QueryRowContext(ctx, `
+		WITH per_neighbor AS (
+		  SELECT byn.neighbor_id, byn.paid,
+		    COALESCE((SELECT SUM(e.cost) FROM entries e
+		               WHERE e.neighbor_id = byn.neighbor_id
+		                 AND e.billing_year_id = byn.billing_year_id
+		                 AND NOT e.voided), 0)
+		    + COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
+		                 WHERE l.neighbor_id = byn.neighbor_id
+		                   AND l.billing_year_id = byn.billing_year_id
+		                   AND NOT l.voided), 0) AS net
+		  FROM billing_year_neighbors byn
+		  WHERE byn.billing_year_id = $1
+		)
 		SELECT
-		  COALESCE(SUM(CASE WHEN byn.paid THEN e.cost ELSE 0 END), 0),
-		  COALESCE(SUM(CASE WHEN NOT byn.paid THEN e.cost ELSE 0 END), 0)
-		FROM billing_year_neighbors byn
-		LEFT JOIN entries e
-		  ON e.neighbor_id = byn.neighbor_id
-		 AND e.billing_year_id = byn.billing_year_id
-		 AND NOT e.voided
-		WHERE byn.billing_year_id = $1`, yearID).Scan(&paid, &open)
+		  COALESCE(SUM(CASE WHEN paid THEN net ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN NOT paid THEN net ELSE 0 END), 0)
+		FROM per_neighbor`, yearID).Scan(&paid, &open)
 	return
 }
 

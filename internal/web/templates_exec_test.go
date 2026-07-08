@@ -39,6 +39,7 @@ func TestStatsPageRendersWithPreviousYear(t *testing.T) {
 		"TotalHours": d(2.17),
 		"PaidCost":   d(0),
 		"OpenCost":   d(209.88),
+		"LedgerSum":  d(-30), "NetResult": d(179.88), "HasLedger": true,
 		"Completed":  false,
 		"ByNeighbor": rows, "ByNeighborMax": d(209.88),
 		"ByTask": rows, "ByTaskMax": d(209.88),
@@ -54,12 +55,13 @@ func TestStatsAllPageRenders(t *testing.T) {
 	execPage(t, "stats_all", map[string]any{
 		"Title": "Statistik – Alle Jahre",
 		"Stats": []map[string]any{
-			{"Year": 2026, "YearID": int64(3), "Cost": d(209.88), "Hours": d(2.17), "PaidCost": d(0), "OpenCost": d(209.88), "Completed": false},
-			{"Year": 2025, "YearID": int64(2), "Cost": d(150), "Hours": d(1.5), "PaidCost": d(150), "OpenCost": d(0), "Completed": true},
+			{"Year": 2026, "YearID": int64(3), "Cost": d(209.88), "Hours": d(2.17), "Ledger": d(-30), "Net": d(179.88), "PaidCost": d(0), "OpenCost": d(209.88), "Completed": false},
+			{"Year": 2025, "YearID": int64(2), "Cost": d(150), "Hours": d(1.5), "Ledger": d(0), "Net": d(150), "PaidCost": d(150), "OpenCost": d(0), "Completed": true},
 		},
 		"Revenue":    []map[string]any{{"Label": "2026", "Hours": d(2.17), "Cost": d(209.88)}, {"Label": "2025", "Hours": d(1.5), "Cost": d(150)}},
 		"RevenueMax": d(209.88),
 		"GrandCost":  d(359.88), "GrandHours": d(3.67), "GrandPaid": d(150), "GrandOpen": d(209.88),
+		"GrandLedger": d(-30), "GrandNet": d(329.88), "HasLedger": true,
 	})
 }
 
