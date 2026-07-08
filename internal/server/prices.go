@@ -96,13 +96,15 @@ func (s *Server) handleLoadLevelSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var err error
+	action := "update"
 	if id == 0 {
-		_, err = s.store.CreateLoadLevel(r.Context(), baseID, name, cost, sort)
+		action = "create"
+		id, err = s.store.CreateLoadLevel(r.Context(), baseID, name, cost, sort)
 	} else {
 		err = s.store.UpdateLoadLevel(r.Context(), id, name, cost, sort)
 	}
 	if err == nil {
-		s.audit(r, "save", "load_level", id, name)
+		s.audit(r, action, "load_level", id, name)
 	}
 	s.flashSaved(w, r, err)
 	redirect(w, r, pricesURL(baseID))
@@ -118,9 +120,14 @@ func (s *Server) handleLoadLevelDelete(w http.ResponseWriter, r *http.Request) {
 	if s.lockedRedirect(w, r, baseID, pricesURL(baseID)) {
 		return
 	}
+	before, _ := s.store.GetLoadLevel(r.Context(), id)
 	err = s.store.DeleteLoadLevel(r.Context(), id)
 	if err == nil {
-		s.audit(r, "delete", "load_level", id, "")
+		detail := ""
+		if before != nil {
+			detail = before.Name
+		}
+		s.audit(r, "delete", "load_level", id, detail)
 	}
 	s.flashDeleted(w, r, err)
 	redirect(w, r, pricesURL(baseID))
@@ -148,13 +155,15 @@ func (s *Server) handleTractorSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var err error
+	action := "update"
 	if id == 0 {
-		_, err = s.store.CreateTractor(r.Context(), baseID, ident, name, ps, sortOrder)
+		action = "create"
+		id, err = s.store.CreateTractor(r.Context(), baseID, ident, name, ps, sortOrder)
 	} else {
 		err = s.store.UpdateTractor(r.Context(), id, ident, name, ps, sortOrder)
 	}
 	if err == nil {
-		s.audit(r, "save", "tractor", id, ident)
+		s.audit(r, action, "tractor", id, ident)
 	}
 	s.flashSaved(w, r, err)
 	redirect(w, r, pricesURL(baseID))
@@ -175,13 +184,14 @@ func (s *Server) handleTractorToggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	active := r.FormValue("active") == "true"
+	label := s.tractorLabel(r, &id)
 	if err := s.store.SetTractorActive(r.Context(), id, active); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if active {
-		s.audit(r, "activate", "tractor", id, "")
+		s.audit(r, "activate", "tractor", id, label)
 		s.setFlash(w, r, "success", "Traktor aktiviert.")
 	} else {
-		s.audit(r, "deactivate", "tractor", id, "")
+		s.audit(r, "deactivate", "tractor", id, label)
 		s.setFlash(w, r, "success", "Traktor deaktiviert (bleibt für bestehende Buchungen erhalten).")
 	}
 	redirect(w, r, pricesURL(baseID))
@@ -197,9 +207,14 @@ func (s *Server) handleTractorDelete(w http.ResponseWriter, r *http.Request) {
 	if s.lockedRedirect(w, r, baseID, pricesURL(baseID)) {
 		return
 	}
+	before, _ := s.store.GetTractor(r.Context(), id)
 	err = s.store.DeleteTractor(r.Context(), id)
 	if err == nil {
-		s.audit(r, "delete", "tractor", id, "")
+		detail := ""
+		if before != nil {
+			detail = before.Label()
+		}
+		s.audit(r, "delete", "tractor", id, detail)
 	}
 	s.flashDeleted(w, r, err)
 	redirect(w, r, pricesURL(baseID))
@@ -228,13 +243,15 @@ func (s *Server) handleMachineSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var err error
+	action := "update"
 	if id == 0 {
-		_, err = s.store.CreateMachine(r.Context(), baseID, name, width, cost, category, sortOrder)
+		action = "create"
+		id, err = s.store.CreateMachine(r.Context(), baseID, name, width, cost, category, sortOrder)
 	} else {
 		err = s.store.UpdateMachine(r.Context(), id, name, width, cost, category, sortOrder)
 	}
 	if err == nil {
-		s.audit(r, "save", "machine", id, name)
+		s.audit(r, action, "machine", id, name)
 	}
 	s.flashSaved(w, r, err)
 	redirect(w, r, pricesURL(baseID))
@@ -255,13 +272,14 @@ func (s *Server) handleMachineToggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	active := r.FormValue("active") == "true"
+	name := s.machineNames(r, []int64{id})
 	if err := s.store.SetMachineActive(r.Context(), id, active); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if active {
-		s.audit(r, "activate", "machine", id, "")
+		s.audit(r, "activate", "machine", id, name)
 		s.setFlash(w, r, "success", "Maschine aktiviert.")
 	} else {
-		s.audit(r, "deactivate", "machine", id, "")
+		s.audit(r, "deactivate", "machine", id, name)
 		s.setFlash(w, r, "success", "Maschine deaktiviert (bleibt für bestehende Buchungen erhalten).")
 	}
 	redirect(w, r, pricesURL(baseID))
@@ -277,9 +295,13 @@ func (s *Server) handleMachineDelete(w http.ResponseWriter, r *http.Request) {
 	if s.lockedRedirect(w, r, baseID, pricesURL(baseID)) {
 		return
 	}
+	name := ""
+	if ms, mErr := s.store.MachinesByIDs(r.Context(), []int64{id}); mErr == nil && len(ms) > 0 {
+		name = ms[0].Name
+	}
 	err = s.store.DeleteMachine(r.Context(), id)
 	if err == nil {
-		s.audit(r, "delete", "machine", id, "")
+		s.audit(r, "delete", "machine", id, name)
 	}
 	s.flashDeleted(w, r, err)
 	redirect(w, r, pricesURL(baseID))

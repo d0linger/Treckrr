@@ -2,12 +2,51 @@ package server
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/shopspring/decimal"
 
 	"treckrr/internal/calc"
 	"treckrr/internal/models"
 )
+
+// --- audit label resolvers (human names for audit detail) ----------------
+
+func (s *Server) tractorLabel(r *http.Request, id *int64) string {
+	if id == nil {
+		return "—"
+	}
+	if t, err := s.store.GetTractor(r.Context(), *id); err == nil {
+		return t.Label()
+	}
+	return "#" + strconv.FormatInt(*id, 10)
+}
+
+func (s *Server) loadName(r *http.Request, id *int64) string {
+	if id == nil {
+		return "—"
+	}
+	if l, err := s.store.GetLoadLevel(r.Context(), *id); err == nil {
+		return l.Name
+	}
+	return "#" + strconv.FormatInt(*id, 10)
+}
+
+func (s *Server) machineNames(r *http.Request, ids []int64) string {
+	if len(ids) == 0 {
+		return "—"
+	}
+	ms, err := s.store.MachinesByIDs(r.Context(), ids)
+	if err != nil || len(ms) == 0 {
+		return "—"
+	}
+	names := make([]string, 0, len(ms))
+	for _, m := range ms {
+		names = append(names, m.Name)
+	}
+	return strings.Join(names, ", ")
+}
 
 // partRate is one line of a gespann's cost breakdown.
 type partRate struct {
@@ -111,12 +150,28 @@ func (s *Server) handleGespannSave(w http.ResponseWriter, r *http.Request) {
 	}
 	var err error
 	if id == 0 {
-		_, err = s.store.CreateGespann(r.Context(), baseID, name, tractorID, loadID, machineIDs, sortOrder)
+		var newID int64
+		newID, err = s.store.CreateGespann(r.Context(), baseID, name, tractorID, loadID, machineIDs, sortOrder)
+		if err == nil {
+			s.audit(r, "create", "gespann", newID, name)
+		}
 	} else {
+		before, _ := s.store.GetGespann(r.Context(), id)
 		err = s.store.UpdateGespann(r.Context(), id, name, tractorID, loadID, machineIDs, sortOrder)
-	}
-	if err == nil {
-		s.audit(r, "save", "gespann", id, name)
+		if err == nil {
+			detail := name
+			if before != nil {
+				if d := diffFields(
+					fieldChange{"Name", before.Name, name},
+					fieldChange{"Traktor", s.tractorLabel(r, before.TractorID), s.tractorLabel(r, tractorID)},
+					fieldChange{"Last", s.loadName(r, before.LoadLevelID), s.loadName(r, loadID)},
+					fieldChange{"Maschinen", s.machineNames(r, before.MachineIDs), s.machineNames(r, machineIDs)},
+				); d != "" {
+					detail = d
+				}
+			}
+			s.audit(r, "update", "gespann", id, detail)
+		}
 	}
 	s.flashSaved(w, r, err)
 	redirect(w, r, gespanneURL(baseID))
@@ -132,9 +187,14 @@ func (s *Server) handleGespannDelete(w http.ResponseWriter, r *http.Request) {
 	if s.lockedRedirect(w, r, baseID, gespanneURL(baseID)) {
 		return
 	}
+	before, _ := s.store.GetGespann(r.Context(), id)
 	err = s.store.DeleteGespann(r.Context(), id)
 	if err == nil {
-		s.audit(r, "delete", "gespann", id, "")
+		detail := ""
+		if before != nil {
+			detail = before.Name
+		}
+		s.audit(r, "delete", "gespann", id, detail)
 	}
 	s.flashDeleted(w, r, err)
 	redirect(w, r, gespanneURL(baseID))
