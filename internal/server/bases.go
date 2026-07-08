@@ -149,13 +149,17 @@ func (s *Server) setBaseLock(w http.ResponseWriter, r *http.Request, locked bool
 		http.NotFound(w, r)
 		return
 	}
+	name := ""
+	if b, err := s.store.GetBase(r.Context(), id); err == nil {
+		name = b.Name
+	}
 	if err := s.store.SetBaseLocked(r.Context(), id, locked); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if locked {
-		s.audit(r, "lock", "base", id, "")
+		s.audit(r, "lock", "base", id, name)
 		s.setFlash(w, r, "success", "Bemessungsgrundlage gesperrt.")
 	} else {
-		s.audit(r, "unlock", "base", id, "")
+		s.audit(r, "unlock", "base", id, name)
 		s.setFlash(w, r, "success", "Bemessungsgrundlage entsperrt.")
 	}
 	redirect(w, r, "/bases")

@@ -146,13 +146,14 @@ func (s *Server) handleNeighborArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	archived := r.FormValue("archived") == "true"
+	name := s.neighborName(r, id)
 	if err := s.store.SetNeighborArchived(r.Context(), id, archived); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if archived {
-		s.audit(r, "deactivate", "neighbor", id, "")
+		s.audit(r, "deactivate", "neighbor", id, name)
 		s.setFlash(w, r, "success", "Nachbar deaktiviert. Bestehende Buchungen bleiben erhalten.")
 	} else {
-		s.audit(r, "reactivate", "neighbor", id, "")
+		s.audit(r, "reactivate", "neighbor", id, name)
 		s.setFlash(w, r, "success", "Nachbar wieder aktiviert.")
 	}
 	redirect(w, r, "/neighbors")

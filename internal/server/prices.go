@@ -184,13 +184,14 @@ func (s *Server) handleTractorToggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	active := r.FormValue("active") == "true"
+	label := s.tractorLabel(r, &id)
 	if err := s.store.SetTractorActive(r.Context(), id, active); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if active {
-		s.audit(r, "activate", "tractor", id, "")
+		s.audit(r, "activate", "tractor", id, label)
 		s.setFlash(w, r, "success", "Traktor aktiviert.")
 	} else {
-		s.audit(r, "deactivate", "tractor", id, "")
+		s.audit(r, "deactivate", "tractor", id, label)
 		s.setFlash(w, r, "success", "Traktor deaktiviert (bleibt für bestehende Buchungen erhalten).")
 	}
 	redirect(w, r, pricesURL(baseID))
@@ -271,13 +272,14 @@ func (s *Server) handleMachineToggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	active := r.FormValue("active") == "true"
+	name := s.machineNames(r, []int64{id})
 	if err := s.store.SetMachineActive(r.Context(), id, active); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if active {
-		s.audit(r, "activate", "machine", id, "")
+		s.audit(r, "activate", "machine", id, name)
 		s.setFlash(w, r, "success", "Maschine aktiviert.")
 	} else {
-		s.audit(r, "deactivate", "machine", id, "")
+		s.audit(r, "deactivate", "machine", id, name)
 		s.setFlash(w, r, "success", "Maschine deaktiviert (bleibt für bestehende Buchungen erhalten).")
 	}
 	redirect(w, r, pricesURL(baseID))
