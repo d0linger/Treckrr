@@ -108,7 +108,10 @@ em { font-style: normal; color: var(--muted); }
 }
 .appbar__brand { display: flex; align-items: center; gap: .45rem; color: #fff; font-weight: 700; }
 .appbar__brand img { display: block; }
-.appbar__title { flex: 1; text-align: center; font-size: 1.05rem; font-weight: 600; }
+/* min-width:0 + ellipsis so a long page title (e.g. "Bemessungsgrundlagen")
+   truncates instead of forcing the app bar wider than the screen (which caused
+   a horizontal scroll and pushed the fixed tab bar below the fold). */
+.appbar__title { flex: 1; min-width: 0; text-align: center; font-size: 1.05rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .appbar__icon {
 	flex: none;
 	width: 40px; height: 40px;
