@@ -519,6 +519,14 @@ em { font-style: normal; color: var(--muted); }
 /* Keep the numeric/action columns tight so the task column gets the space. */
 .dtable--entries th.num, .dtable--entries td.num { width: 1%; }
 
-/* Audit trail: let the Detail column wrap (old→new diffs can be long) instead
-   of forcing a horizontal scrollbar; keep it readable with a sensible cap. */
-.dtable--audit td.detailcell { white-space: normal; overflow-wrap: anywhere; max-width: 26rem; }
+/* Audit trail: let the Detail column wrap at word boundaries (not mid-word) so
+   old→new diffs stay readable; each " · "-separated field renders on its own
+   line. Give it a comfortable width; the table scrolls if space is tight. */
+.dtable--audit td.detailcell {
+	white-space: normal;
+	overflow-wrap: break-word;
+	word-break: normal;
+	min-width: 15rem;
+	max-width: 34rem;
+	line-height: 1.45;
+}
