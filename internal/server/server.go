@@ -96,6 +96,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /entries/{id}/void", s.auth(s.handleEntryVoid))
 	mux.Handle("POST /entries/{id}/delete", s.auth(s.handleEntryDelete))
 	mux.Handle("POST /neighbors/{id}/ledger", s.auth(s.handleLedgerAdd))
+	mux.Handle("GET /ledger/{id}/edit", s.auth(s.handleLedgerEditForm))
+	mux.Handle("POST /ledger/{id}/update", s.auth(s.handleLedgerUpdate))
+	mux.Handle("POST /ledger/{id}/void", s.auth(s.handleLedgerVoid))
 	mux.Handle("POST /ledger/{id}/delete", s.auth(s.handleLedgerDelete))
 	mux.Handle("GET /api/base/{id}/pricing", s.auth(s.handlePricingAPI))
 

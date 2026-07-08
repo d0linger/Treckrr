@@ -196,6 +196,9 @@ type LedgerEntry struct {
 	ID          int64
 	Amount      decimal.Decimal
 	Description string
+	Date        time.Time // editable posting date (like a booking's date)
+	Voided      bool
+	VoidReason  string
 	Created     time.Time
 }
 

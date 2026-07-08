@@ -62,15 +62,28 @@ func TestLedgerNetIntegration(t *testing.T) {
 		t.Fatalf("entry: %v", err)
 	}
 	// Ledger: I owe 30 (credit) and an extra charge of 10 → net ledger -20.
-	if _, err := st.AddNeighborLedger(ctx, yearID, nid, decimal.RequireFromString("-30"), "Gegenleistung"); err != nil {
+	if _, err := st.AddNeighborLedger(ctx, yearID, nid, decimal.RequireFromString("-30"), "Gegenleistung", time.Now()); err != nil {
 		t.Fatalf("ledger credit: %v", err)
 	}
-	if _, err := st.AddNeighborLedger(ctx, yearID, nid, decimal.RequireFromString("10"), "Zuschlag"); err != nil {
+	chargeID, err := st.AddNeighborLedger(ctx, yearID, nid, decimal.RequireFromString("10"), "Zuschlag", time.Now())
+	if err != nil {
 		t.Fatalf("ledger charge: %v", err)
 	}
 
 	if sum, err := st.NeighborLedgerSum(ctx, yearID, nid); err != nil || !sum.Equal(decimal.RequireFromString("-20")) {
 		t.Fatalf("NeighborLedgerSum = %s, %v; want -20", sum, err)
+	}
+
+	// A voided posting must drop out of the sum: void the +10 → net ledger -30.
+	if err := st.SetLedgerVoided(ctx, chargeID, true, "Testkorrektur"); err != nil {
+		t.Fatalf("void: %v", err)
+	}
+	if sum, err := st.NeighborLedgerSum(ctx, yearID, nid); err != nil || !sum.Equal(decimal.RequireFromString("-30")) {
+		t.Fatalf("after void NeighborLedgerSum = %s, %v; want -30", sum, err)
+	}
+	// Restore it for the net assertion below.
+	if err := st.SetLedgerVoided(ctx, chargeID, false, ""); err != nil {
+		t.Fatalf("unvoid: %v", err)
 	}
 
 	// Net owed = 100 - 20 = 80. Mark paid → paid total should be 80, open 0.

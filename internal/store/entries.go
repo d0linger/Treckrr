@@ -205,7 +205,8 @@ func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open
 		                 AND NOT e.voided), 0)
 		    + COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
 		                 WHERE l.neighbor_id = byn.neighbor_id
-		                   AND l.billing_year_id = byn.billing_year_id), 0) AS net
+		                   AND l.billing_year_id = byn.billing_year_id
+		                   AND NOT l.voided), 0) AS net
 		  FROM billing_year_neighbors byn
 		  WHERE byn.billing_year_id = $1
 		)

@@ -216,15 +216,32 @@
 			„Ich schulde" reduziert den Saldo, „Zusatzforderung" erhöht ihn.</p>
 		<div class="list">
 			{{range .Ledger}}
-			<div class="list__row list__row--plain">
+			<div class="list__row list__row--plain{{if .Voided}} is-voided{{end}}">
 				<div class="list__main">
-					<span class="list__title">{{money .Amount}}</span>
-					<span class="list__sub muted small">{{if .Description}}{{.Description}}{{else}}—{{end}} · {{date .Created}}</span>
+					<span class="list__title">{{money .Amount}}{{if .Voided}} <span class="pill-off">storniert</span>{{end}}</span>
+					<span class="list__sub muted small">{{date .Date}} · {{if .Description}}{{.Description}}{{else}}—{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
 				</div>
 				{{if not $.Completed}}
-				<form method="post" action="/ledger/{{.ID}}/delete" data-confirm="Position entfernen?">
-					<button class="btn btn--ghost btn--icon btn--danger" type="submit" aria-label="Entfernen" title="Entfernen">🗑</button>
-				</form>
+				<div class="rowactions">
+					{{if .Voided}}
+					<form method="post" action="/ledger/{{.ID}}/void">
+						<input type="hidden" name="voided" value="false">
+						<button class="btn btn--ghost btn--sm" type="submit" title="Stornierung aufheben">↺</button>
+					</form>
+					{{else}}
+					<a class="btn btn--ghost btn--icon" href="/ledger/{{.ID}}/edit" aria-label="Bearbeiten" title="Bearbeiten">✎</a>
+					<form method="post" action="/ledger/{{.ID}}/void"
+						data-confirm="Position stornieren? (bleibt sichtbar, zählt nicht mehr)"
+						data-confirm-reason="Grund der Stornierung (optional)">
+						<input type="hidden" name="voided" value="true">
+						<input type="hidden" name="reason" value="">
+						<button class="btn btn--ghost btn--icon" type="submit" aria-label="Stornieren" title="Stornieren">⊘</button>
+					</form>
+					<form method="post" action="/ledger/{{.ID}}/delete" data-confirm="Position endgültig löschen?">
+						<button class="btn btn--ghost btn--icon btn--danger" type="submit" aria-label="Löschen" title="Löschen">🗑</button>
+					</form>
+					{{end}}
+				</div>
 				{{end}}
 			</div>
 			{{else}}
@@ -240,6 +257,8 @@
 				<div class="form__grid">
 					<label class="field"><span>Betrag (€)</span>
 						<input class="input" type="number" step="0.01" min="0" name="amount" required></label>
+					<label class="field"><span>Datum</span>
+						<input class="input" type="date" name="posting_date" value="{{$.Today}}"></label>
 					<label class="field"><span>Beschreibung</span>
 						<input class="input" name="description" placeholder="z. B. Gegenleistung Heuernte"></label>
 				</div>

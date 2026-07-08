@@ -6,8 +6,12 @@
 	</div>
 
 	<div class="kpigrid">
-		<div class="kpi card"><span class="kpi__label">Umsatz {{.Year.Year}}</span><span class="kpi__value">{{money .TotalCost}}</span></div>
+		<div class="kpi card"><span class="kpi__label">Leistungen {{.Year.Year}}</span><span class="kpi__value">{{money .TotalCost}}</span></div>
 		<div class="kpi card"><span class="kpi__label">Stunden</span><span class="kpi__value">{{num .TotalHours}} h</span></div>
+		{{if .HasLedger}}
+		<div class="kpi card"><span class="kpi__label">Verrechnung</span><span class="kpi__value">{{money .LedgerSum}}</span></div>
+		<div class="kpi card"><span class="kpi__label">Netto-Ergebnis</span><span class="kpi__value">{{money .NetResult}}</span></div>
+		{{end}}
 		{{if .Completed}}
 		<div class="kpi card"><span class="kpi__label">Bezahlt</span><span class="kpi__value">{{money .PaidCost}}</span></div>
 		<div class="kpi card"><span class="kpi__label">Offen</span><span class="kpi__value">{{money .OpenCost}}</span></div>

@@ -59,8 +59,10 @@ func maxCost(rows []aggRow) decimal.Decimal {
 type yearStat struct {
 	Year      int
 	YearID    int64
-	Cost      decimal.Decimal
+	Cost      decimal.Decimal // Leistungen (bookings)
 	Hours     decimal.Decimal
+	Ledger    decimal.Decimal // signed ledger sum (verrechnung)
+	Net       decimal.Decimal // Cost + Ledger
 	PaidCost  decimal.Decimal
 	OpenCost  decimal.Decimal
 	Completed bool
@@ -77,7 +79,7 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 
 	stats := make([]yearStat, 0, len(years))
 	revenue := make([]aggRow, 0, len(years))
-	var grandCost, grandHours, grandPaid, grandOpen decimal.Decimal
+	var grandCost, grandHours, grandLedger, grandPaid, grandOpen decimal.Decimal
 	for _, y := range years {
 		entries, err := s.store.ListEntriesByYear(r.Context(), y.ID)
 		if err != nil {
@@ -97,13 +99,20 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 			return
 		}
+		led, err := s.store.YearLedgerSum(r.Context(), y.ID)
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
+		}
 		stats = append(stats, yearStat{
 			Year: y.Year, YearID: y.ID, Cost: cost, Hours: hours,
+			Ledger: led, Net: cost.Add(led),
 			PaidCost: paid, OpenCost: open, Completed: y.Completed(),
 		})
 		revenue = append(revenue, aggRow{Label: strconv.Itoa(y.Year), Hours: hours, Cost: cost})
 		grandCost = grandCost.Add(cost)
 		grandHours = grandHours.Add(hours)
+		grandLedger = grandLedger.Add(led)
 		grandPaid = grandPaid.Add(paid)
 		grandOpen = grandOpen.Add(open)
 	}
@@ -114,6 +123,9 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 	data["RevenueMax"] = maxCost(revenue)
 	data["GrandCost"] = grandCost
 	data["GrandHours"] = grandHours
+	data["GrandLedger"] = grandLedger
+	data["GrandNet"] = grandCost.Add(grandLedger)
+	data["HasLedger"] = !grandLedger.IsZero()
 	data["GrandPaid"] = grandPaid
 	data["GrandOpen"] = grandOpen
 	s.render(w, r, "stats_all", data)
@@ -162,6 +174,13 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
+	// Net result = bookings + signed ledger (credits I owe reduce it), so the
+	// bottom line isn't overstated by counting only income.
+	ledgerSum, err := s.store.YearLedgerSum(r.Context(), year.ID)
+	if err != nil {
+		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		return
+	}
 
 	data := s.newPage(w, r, "Statistik", "stats")
 	if err := s.withYearSelector(r, data, year); err != nil {
@@ -172,6 +191,9 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["TotalHours"] = totalHours
 	data["PaidCost"] = paidCost
 	data["OpenCost"] = openCost
+	data["LedgerSum"] = ledgerSum
+	data["NetResult"] = totalCost.Add(ledgerSum)
+	data["HasLedger"] = !ledgerSum.IsZero()
 	data["Completed"] = year.Completed()
 	data["ByNeighbor"] = byNeighbor
 	data["ByNeighborMax"] = maxCost(byNeighbor)

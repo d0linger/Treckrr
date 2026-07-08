@@ -49,7 +49,9 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	ledgerSum := decimal.Zero
 	for _, l := range ledger {
-		ledgerSum = ledgerSum.Add(l.Amount)
+		if !l.Voided {
+			ledgerSum = ledgerSum.Add(l.Amount)
+		}
 	}
 
 	// Only active tractors/machines can be booked; inactive ones remain only
@@ -438,9 +440,38 @@ func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
 }
 
+// ledgerFormValues parses the shared add/edit fields: a positive amount plus a
+// direction ("credit" = I owe the neighbour → stored negative), a description
+// and an optional posting date (defaults to today). Returns a user-facing
+// message when the amount is invalid.
+func ledgerFormValues(r *http.Request) (amount decimal.Decimal, description string, date time.Time, msg string) {
+	amount = formDecimal(r, "amount").Abs()
+	if !amount.IsPositive() {
+		return amount, "", date, "Bitte einen Betrag größer 0 angeben."
+	}
+	if r.FormValue("direction") == "credit" {
+		amount = amount.Neg() // I owe the neighbour → reduces the balance
+	}
+	description = trimmed(r, "description")
+	date, err := time.Parse("2006-01-02", trimmed(r, "posting_date"))
+	if err != nil {
+		date = time.Now()
+	}
+	return amount, description, date, ""
+}
+
+// ledgerYearOpen loads the posting's year/neighbour and reports whether the year
+// is still open; on a completed year it flashes and returns false.
+func (s *Server) ledgerYearOpen(w http.ResponseWriter, r *http.Request, yearID, neighborID int64) bool {
+	if year, err := s.store.GetBillingYear(r.Context(), yearID); err == nil && year.Completed() {
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return false
+	}
+	return true
+}
+
 // handleLedgerAdd records a manual account posting for a neighbour in a year.
-// direction "credit" = I owe the neighbour (negative); otherwise an extra
-// receivable (positive). Only while the year is open.
 func (s *Server) handleLedgerAdd(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
@@ -456,27 +487,120 @@ func (s *Server) handleLedgerAdd(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
 		return
 	}
-	if year, err := s.store.GetBillingYear(r.Context(), yearID); err == nil && year.Completed() {
-		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
+	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
+		return
+	}
+	amount, description, date, msg := ledgerFormValues(r)
+	if msg != "" {
+		s.setFlash(w, r, "error", msg)
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	amount := formDecimal(r, "amount").Abs()
-	if !amount.IsPositive() {
-		s.setFlash(w, r, "error", "Bitte einen Betrag größer 0 angeben.")
-		redirect(w, r, neighborURL(neighborID, yearID))
-		return
-	}
-	if r.FormValue("direction") == "credit" {
-		amount = amount.Neg() // I owe the neighbour → reduces the balance
-	}
-	description := trimmed(r, "description")
-	if _, err := s.store.AddNeighborLedger(r.Context(), yearID, neighborID, amount, description); err != nil {
+	if _, err := s.store.AddNeighborLedger(r.Context(), yearID, neighborID, amount, description, date); err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	} else {
 		s.audit(r, "ledger_add", "neighbor", neighborID,
 			s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID)+" · "+amount.StringFixed(2)+" € "+description)
 		s.setFlash(w, r, "success", "Position hinzugefügt.")
+	}
+	redirect(w, r, neighborURL(neighborID, yearID))
+}
+
+// handleLedgerEditForm renders the edit form for one posting.
+func (s *Server) handleLedgerEditForm(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	yearID, neighborID, e, err := s.store.GetLedgerEntry(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), neighborID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	year, err := s.store.GetBillingYear(r.Context(), yearID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	data := s.newPage(w, r, "Position bearbeiten", "dashboard")
+	data["Neighbor"] = neighbor
+	data["Year"] = year
+	data["Ledger"] = e
+	data["IsCredit"] = e.Amount.IsNegative()
+	data["AbsAmount"] = e.Amount.Abs()
+	s.render(w, r, "ledger_edit", data)
+}
+
+// handleLedgerUpdate saves an edited posting (while the year is open).
+func (s *Server) handleLedgerUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	yearID, neighborID, _, err := s.store.GetLedgerEntry(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
+		return
+	}
+	amount, description, date, msg := ledgerFormValues(r)
+	if msg != "" {
+		s.setFlash(w, r, "error", msg)
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
+	if err := s.store.UpdateNeighborLedger(r.Context(), id, amount, description, date); err != nil {
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+	} else {
+		s.audit(r, "ledger_update", "neighbor", neighborID, amount.StringFixed(2)+" € "+description)
+		s.setFlash(w, r, "success", "Position aktualisiert.")
+	}
+	redirect(w, r, neighborURL(neighborID, yearID))
+}
+
+// handleLedgerVoid cancels or restores a posting (traceable alternative to
+// deletion; a voided posting stays visible but is excluded from the balance).
+func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	yearID, neighborID, e, err := s.store.GetLedgerEntry(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
+		return
+	}
+	void := r.FormValue("voided") == "true"
+	reason := trimmed(r, "reason")
+	if err := s.store.SetLedgerVoided(r.Context(), id, void, reason); err != nil {
+		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
+	} else if void {
+		s.audit(r, "ledger_void", "neighbor", neighborID, e.Amount.StringFixed(2)+" € "+reason)
+		s.setFlash(w, r, "success", "Position storniert.")
+	} else {
+		s.audit(r, "ledger_unvoid", "neighbor", neighborID, e.Amount.StringFixed(2)+" €")
+		s.setFlash(w, r, "success", "Stornierung aufgehoben.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
@@ -488,20 +612,18 @@ func (s *Server) handleLedgerDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	yearID, neighborID, amount, description, err := s.store.GetLedgerEntry(r.Context(), id)
+	yearID, neighborID, e, err := s.store.GetLedgerEntry(r.Context(), id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	if year, err := s.store.GetBillingYear(r.Context(), yearID); err == nil && year.Completed() {
-		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
-		redirect(w, r, neighborURL(neighborID, yearID))
+	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
 		return
 	}
 	if err := s.store.DeleteNeighborLedger(r.Context(), id); err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
-		s.audit(r, "ledger_delete", "neighbor", neighborID, amount.StringFixed(2)+" € "+description)
+		s.audit(r, "ledger_delete", "neighbor", neighborID, e.Amount.StringFixed(2)+" € "+e.Description)
 		s.setFlash(w, r, "success", "Position entfernt.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
