@@ -72,6 +72,17 @@ body {
 	padding-bottom: calc(72px + env(safe-area-inset-bottom));
 }
 
+/* The off-canvas side drawer is fixed and parked just off the right edge when
+   closed. On iOS Safari a fixed element beyond the viewport becomes pannable,
+   which produced a stray horizontal scrollbar (and pushed the fixed tab bar
+   below the fold). Clip horizontal overflow at the root — `clip` doesn't create
+   a scroll container, so the sticky app bar keeps working; `hidden` is the
+   fallback for browsers without `overflow: clip`. */
+html { overflow-x: hidden; }
+@supports (overflow: clip) {
+	html { overflow-x: clip; }
+}
+
 a { color: var(--primary); text-decoration: none; }
 h1, h2, h3 { margin: 0; }
 .muted { color: var(--muted); font-size: .9rem; }
