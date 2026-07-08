@@ -35,6 +35,38 @@
 		{{template "bar-chart" (dict "Rows" .ByNeighbor "Max" .ByNeighborMax "Money" true)}}
 	</div>
 
+	{{if .NeighborResults}}
+	<div class="card">
+		<h2 class="section-title">Verrechnung je Nachbar</h2>
+		<p class="muted small">Leistungen siehe „Umsatz je Nachbar" oben; hier die Verrechnung und das Netto-Ergebnis.</p>
+		<table class="dtable dtable--zebra">
+			<thead>
+				<tr>
+					<th>Nachbar</th>
+					<th class="num">Verrechnung</th>
+					<th class="num">Netto</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .NeighborResults}}
+				<tr>
+					<td>{{.Name}}</td>
+					<td class="num">{{money .Ledger}}</td>
+					<td class="num strong">{{money .Net}}</td>
+				</tr>
+				{{end}}
+			</tbody>
+			<tfoot>
+				<tr>
+					<th>Summe</th>
+					<th class="num">{{money .LedgerSum}}</th>
+					<th class="num">{{money .NetResult}}</th>
+				</tr>
+			</tfoot>
+		</table>
+	</div>
+	{{end}}
+
 	<div class="card">
 		<h2 class="section-title">Umsatz je Tätigkeit</h2>
 		{{template "bar-chart" (dict "Rows" .ByTask "Max" .ByTaskMax "Money" true)}}

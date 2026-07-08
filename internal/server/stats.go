@@ -193,7 +193,18 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["OpenCost"] = openCost
 	data["LedgerSum"] = ledgerSum
 	data["NetResult"] = totalCost.Add(ledgerSum)
-	data["HasLedger"] = !ledgerSum.IsZero()
+	hasLedger := !ledgerSum.IsZero()
+	data["HasLedger"] = hasLedger
+	// Per-neighbour Leistungen/Verrechnung/Netto — only worth showing when there
+	// are ledger postings (otherwise it duplicates the "Umsatz je Nachbar" chart).
+	if hasLedger {
+		results, err := s.store.YearNeighborResults(r.Context(), year.ID)
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
+		}
+		data["NeighborResults"] = results
+	}
 	data["Completed"] = year.Completed()
 	data["ByNeighbor"] = byNeighbor
 	data["ByNeighborMax"] = maxCost(byNeighbor)

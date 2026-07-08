@@ -55,6 +55,48 @@ func (s *Store) YearLedgerSum(ctx context.Context, yearID int64) (decimal.Decima
 	return sum, err
 }
 
+// YearNeighborResult is a per-neighbour breakdown for a year: work bookings
+// (Leistungen), the signed ledger sum (Verrechnung) and their net.
+type YearNeighborResult struct {
+	Name       string
+	Leistungen decimal.Decimal
+	Ledger     decimal.Decimal
+	Net        decimal.Decimal
+}
+
+// YearNeighborResults returns the per-neighbour Leistungen/Verrechnung/Netto for
+// a year (non-voided only), ordered by name — in one query, no per-row fan-out.
+func (s *Store) YearNeighborResults(ctx context.Context, yearID int64) ([]YearNeighborResult, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT n.name,
+		  COALESCE((SELECT SUM(e.cost) FROM entries e
+		             WHERE e.neighbor_id = n.id
+		               AND e.billing_year_id = byn.billing_year_id
+		               AND NOT e.voided), 0) AS leistungen,
+		  COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
+		             WHERE l.neighbor_id = n.id
+		               AND l.billing_year_id = byn.billing_year_id
+		               AND NOT l.voided), 0) AS ledger
+		FROM billing_year_neighbors byn
+		JOIN neighbors n ON n.id = byn.neighbor_id
+		WHERE byn.billing_year_id = $1
+		ORDER BY n.name`, yearID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []YearNeighborResult
+	for rows.Next() {
+		var r YearNeighborResult
+		if err := rows.Scan(&r.Name, &r.Leistungen, &r.Ledger); err != nil {
+			return nil, err
+		}
+		r.Net = r.Leistungen.Add(r.Ledger)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // AddNeighborLedger records a manual posting and returns its id.
 func (s *Store) AddNeighborLedger(ctx context.Context, yearID, neighborID int64, amount decimal.Decimal, description string, date time.Time) (int64, error) {
 	var id int64
