@@ -189,7 +189,7 @@ type WebauthnCredential struct {
 	LastUsed       *time.Time
 }
 
-// LedgerEntry is one manual account posting for a neighbour in a billing year.
+// LedgerEntry is one manual account posting for a neighbor in a billing year.
 // A positive amount is an extra receivable (they owe more); a negative amount is
 // a payable (I owe them). It nets against the work bookings for the year.
 type LedgerEntry struct {

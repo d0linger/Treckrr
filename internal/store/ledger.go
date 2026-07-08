@@ -11,7 +11,7 @@ import (
 	"treckrr/internal/models"
 )
 
-// ListNeighborLedger returns a neighbour's manual account postings for a year,
+// ListNeighborLedger returns a neighbor's manual account postings for a year,
 // oldest first. Voided postings are included (shown struck-through) but do not
 // count toward the balance.
 func (s *Store) ListNeighborLedger(ctx context.Context, yearID, neighborID int64) ([]models.LedgerEntry, error) {
@@ -35,7 +35,7 @@ func (s *Store) ListNeighborLedger(ctx context.Context, yearID, neighborID int64
 	return out, rows.Err()
 }
 
-// NeighborLedgerSum returns the signed sum of a neighbour's non-voided ledger
+// NeighborLedgerSum returns the signed sum of a neighbor's non-voided ledger
 // for a year (positive = extra receivable, negative = payable).
 func (s *Store) NeighborLedgerSum(ctx context.Context, yearID, neighborID int64) (decimal.Decimal, error) {
 	var sum decimal.Decimal
@@ -55,7 +55,7 @@ func (s *Store) YearLedgerSum(ctx context.Context, yearID int64) (decimal.Decima
 	return sum, err
 }
 
-// YearNeighborResult is a per-neighbour breakdown for a year: work bookings
+// YearNeighborResult is a per-neighbor breakdown for a year: work bookings
 // (Leistungen), the signed ledger sum (Verrechnung) and their net.
 type YearNeighborResult struct {
 	Name       string
@@ -64,7 +64,7 @@ type YearNeighborResult struct {
 	Net        decimal.Decimal
 }
 
-// YearNeighborResults returns the per-neighbour Leistungen/Verrechnung/Netto for
+// YearNeighborResults returns the per-neighbor Leistungen/Verrechnung/Netto for
 // a year (non-voided only), ordered by name — in one query, no per-row fan-out.
 func (s *Store) YearNeighborResults(ctx context.Context, yearID int64) ([]YearNeighborResult, error) {
 	rows, err := s.db.QueryContext(ctx, `
@@ -121,8 +121,8 @@ func (s *Store) SetLedgerVoided(ctx context.Context, id int64, voided bool, reas
 	return err
 }
 
-// GetLedgerEntry returns a posting with its owning year/neighbour (used to
-// authorise, lock-check, prefill an edit form, and audit).
+// GetLedgerEntry returns a posting with its owning year/neighbor (used to
+// authorize, lock-check, prefill an edit form, and audit).
 func (s *Store) GetLedgerEntry(ctx context.Context, id int64) (yearID, neighborID int64, e models.LedgerEntry, err error) {
 	err = s.db.QueryRowContext(ctx,
 		`SELECT billing_year_id, neighbor_id, id, amount, description, posting_date, voided, void_reason, created_at

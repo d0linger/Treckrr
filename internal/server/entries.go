@@ -441,7 +441,7 @@ func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 }
 
 // ledgerFormValues parses the shared add/edit fields: a positive amount plus a
-// direction ("credit" = I owe the neighbour → stored negative), a description
+// direction ("credit" = I owe the neighbor → stored negative), a description
 // and an optional posting date (defaults to today). Returns a user-facing
 // message when the amount is invalid.
 func ledgerFormValues(r *http.Request) (amount decimal.Decimal, description string, date time.Time, msg string) {
@@ -450,7 +450,7 @@ func ledgerFormValues(r *http.Request) (amount decimal.Decimal, description stri
 		return amount, "", date, "Bitte einen Betrag größer 0 angeben."
 	}
 	if r.FormValue("direction") == "credit" {
-		amount = amount.Neg() // I owe the neighbour → reduces the balance
+		amount = amount.Neg() // I owe the neighbor → reduces the balance
 	}
 	description = trimmed(r, "description")
 	date, err := time.Parse("2006-01-02", trimmed(r, "posting_date"))
@@ -460,10 +460,17 @@ func ledgerFormValues(r *http.Request) (amount decimal.Decimal, description stri
 	return amount, description, date, ""
 }
 
-// ledgerYearOpen loads the posting's year/neighbour and reports whether the year
-// is still open; on a completed year it flashes and returns false.
+// ledgerYearOpen reports whether the billing year is still open. It fails
+// closed: a lookup error also blocks the mutation (never silently proceed on a
+// possibly-completed or missing year).
 func (s *Server) ledgerYearOpen(w http.ResponseWriter, r *http.Request, yearID, neighborID int64) bool {
-	if year, err := s.store.GetBillingYear(r.Context(), yearID); err == nil && year.Completed() {
+	year, err := s.store.GetBillingYear(r.Context(), yearID)
+	if err != nil {
+		s.setFlash(w, r, "error", "Abrechnungsjahr konnte nicht geladen werden.")
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return false
+	}
+	if year.Completed() {
 		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return false
@@ -471,7 +478,7 @@ func (s *Server) ledgerYearOpen(w http.ResponseWriter, r *http.Request, yearID, 
 	return true
 }
 
-// handleLedgerAdd records a manual account posting for a neighbour in a year.
+// handleLedgerAdd records a manual account posting for a neighbor in a year.
 func (s *Server) handleLedgerAdd(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {

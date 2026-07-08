@@ -14,7 +14,7 @@ import (
 )
 
 // TestLedgerNetIntegration verifies that manual ledger postings net against the
-// work bookings in both the per-neighbour sum and the paid/open split.
+// work bookings in both the per-neighbor sum and the paid/open split.
 // Runs only when TEST_DATABASE_URL is set.
 func TestLedgerNetIntegration(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")

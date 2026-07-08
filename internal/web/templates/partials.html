@@ -48,8 +48,8 @@
 {{/*
 	"bar-abs" renders a horizontal bar chart of signed money values: the bar
 	length uses the magnitude (so debts/credits both show), the label shows the
-	signed amount (coloured by sign). Expects dict: "Rows" ([]ledgerBar with
-	Name/Amount/Bar) and "Max" (magnitude of the largest bar).
+	signed amount in the neutral colour (like the revenue charts). Expects dict:
+	"Rows" ([]ledgerBar with Name/Amount/Bar) and "Max" (magnitude of largest bar).
 */}}
 {{define "bar-abs"}}
 	<div class="barchart">

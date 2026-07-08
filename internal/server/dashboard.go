@@ -47,7 +47,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 			return
 		}
-		// Net what the neighbour owes = work bookings + signed ledger postings.
+		// Net what the neighbor owes = work bookings + signed ledger postings.
 		led, err := s.store.NeighborLedgerSum(r.Context(), year.ID, n.ID)
 		if err != nil {
 			http.Error(w, "Interner Fehler", http.StatusInternalServerError)

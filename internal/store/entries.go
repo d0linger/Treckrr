@@ -193,7 +193,7 @@ func (s *Store) NeighborTotal(ctx context.Context, neighborID, yearID int64) (co
 // a single query (paid = neighbors marked paid, open = the rest). This replaces
 // a per-neighbor fan-out of NeighborTotal calls.
 func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open decimal.Decimal, err error) {
-	// Per neighbour: net = work bookings + signed ledger postings. Aggregate the
+	// Per neighbor: net = work bookings + signed ledger postings. Aggregate the
 	// two sides in subqueries first so joining them can't multiply rows, then
 	// split by the paid flag.
 	err = s.db.QueryRowContext(ctx, `
