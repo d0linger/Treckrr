@@ -161,6 +161,39 @@ func (s *Store) CountLedgerForNeighborYear(ctx context.Context, yearID, neighbor
 	return n, err
 }
 
+// YearTotal is one year's aggregate, oldest first — feeds the tile sparklines.
+type YearTotal struct {
+	Year   int
+	Cost   decimal.Decimal
+	Hours  decimal.Decimal
+	Ledger decimal.Decimal
+}
+
+// YearlyTotals returns per-year bookings/hours/ledger across all years (oldest
+// first) in one query, for the mini trend sparklines.
+func (s *Store) YearlyTotals(ctx context.Context) ([]YearTotal, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT y.year,
+		  COALESCE((SELECT SUM(e.cost)   FROM entries e        WHERE e.billing_year_id = y.id AND NOT e.voided), 0),
+		  COALESCE((SELECT SUM(e.hours)  FROM entries e        WHERE e.billing_year_id = y.id AND NOT e.voided), 0),
+		  COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l WHERE l.billing_year_id = y.id AND NOT l.voided), 0)
+		FROM billing_years y
+		ORDER BY y.year`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []YearTotal
+	for rows.Next() {
+		var t YearTotal
+		if err := rows.Scan(&t.Year, &t.Cost, &t.Hours, &t.Ledger); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // AddNeighborLedger records a manual posting and returns its id.
 func (s *Store) AddNeighborLedger(ctx context.Context, yearID, neighborID int64, amount decimal.Decimal, description string, date time.Time) (int64, error) {
 	var id int64

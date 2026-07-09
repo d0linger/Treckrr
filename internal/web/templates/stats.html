@@ -6,15 +6,19 @@
 	</div>
 
 	<div class="kpigrid">
-		<div class="kpi card"><span class="kpi__label">Leistungen {{.Year.Year}}</span><span class="kpi__value">{{money .TotalCost}}</span></div>
-		<div class="kpi card"><span class="kpi__label">Stunden</span><span class="kpi__value">{{num .TotalHours}} h</span></div>
+		<div class="kpi card kpi--rev"><span class="kpi__label">Leistungen {{.Year.Year}}</span><span class="kpi__value">{{money .TotalCost}}</span>
+			{{if .DiffPct}}<span class="delta {{if .DiffPctUp}}delta--up{{else}}delta--down{{end}}">{{if .DiffPctUp}}▲{{else}}▼{{end}} {{num .DiffPct}} % ggü. {{.PrevYear}}</span>{{end}}
+			{{with .RevSpark}}{{template "spark" .}}{{end}}</div>
+		<div class="kpi card kpi--hours"><span class="kpi__label">Stunden</span><span class="kpi__value">{{num .TotalHours}} h</span>
+			{{with .HoursSpark}}{{template "spark" .}}{{end}}</div>
 		{{if .HasLedger}}
-		<div class="kpi card"><span class="kpi__label">Verrechnung</span><span class="kpi__value">{{money .LedgerSum}}</span></div>
-		<div class="kpi card"><span class="kpi__label">Netto-Ergebnis</span><span class="kpi__value">{{money .NetResult}}</span></div>
+		<div class="kpi card kpi--{{if .LedgerSum.IsNegative}}owe{{else}}pay{{end}}"><span class="kpi__label">Verrechnung</span><span class="kpi__value">{{money .LedgerSum}}</span></div>
+		<div class="kpi card kpi--{{if .NetResult.IsNegative}}owe{{else}}net{{end}}"><span class="kpi__label">Netto-Ergebnis</span><span class="kpi__value">{{money .NetResult}}</span>
+			{{with .NetSpark}}{{template "spark" .}}{{end}}</div>
 		{{end}}
 		{{if .Completed}}
-		<div class="kpi card"><span class="kpi__label">Bezahlt</span><span class="kpi__value">{{money .PaidCost}}</span></div>
-		<div class="kpi card"><span class="kpi__label">Offen</span><span class="kpi__value">{{money .OpenCost}}</span></div>
+		<div class="kpi card kpi--paid"><span class="kpi__label">Bezahlt</span><span class="kpi__value">{{money .PaidCost}}</span></div>
+		<div class="kpi card kpi--open"><span class="kpi__label">Offen</span><span class="kpi__value">{{money .OpenCost}}</span></div>
 		{{end}}
 	</div>
 

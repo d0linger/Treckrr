@@ -103,6 +103,18 @@ func funcMap() template.FuncMap {
 			return t.Format("2006-01-02")
 		},
 		"dict": dict,
+		// pct returns |v|/max as a percentage string (clamped 0–100) for an SVG
+		// width/x attribute — CSP-safe (a presentation attribute, not inline style).
+		"pct": func(v, max decimal.Decimal) string {
+			if !max.IsPositive() {
+				return "0%"
+			}
+			p := v.Abs().Div(max).Mul(decimal.NewFromInt(100))
+			if p.GreaterThan(decimal.NewFromInt(100)) {
+				p = decimal.NewFromInt(100)
+			}
+			return p.StringFixed(1) + "%"
+		},
 		// split breaks a string on sep — used to render multi-part audit details
 		// (fields joined by " · ") on separate lines.
 		"split": func(sep, s string) []string {

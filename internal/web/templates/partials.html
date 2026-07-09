@@ -26,9 +26,10 @@
 {{end}}
 
 {{/*
-	"bar-chart" renders a horizontal bar chart using native <meter> elements
-	(CSP-safe: no inline styles). Expects dict: "Rows" ([]aggRow), "Max" (float),
-	"Money" (bool — format value as currency vs hours).
+	"bar-chart" renders a horizontal magnitude bar chart: a thin rounded track
+	with a gradient fill (width via the pct helper) and the value in its own
+	column. Expects dict: "Rows" ([]aggRow), "Max" (decimal), "Money" (bool —
+	format value as currency vs hours).
 */}}
 {{define "bar-chart"}}
 	<div class="barchart">
@@ -36,7 +37,10 @@
 		{{range .Rows}}
 		<div class="barchart__row">
 			<span class="barchart__label" title="{{.Label}}">{{.Label}}</span>
-			<meter class="barchart__meter" min="0" max="{{$max}}" value="{{.Cost}}"></meter>
+			<svg class="bchart" preserveAspectRatio="none" aria-hidden="true">
+				<rect class="bchart__track" x="0" y="0" width="100%" height="10" rx="5"></rect>
+				<rect class="bchart__fill" x="0" y="0" width="{{pct .Cost $max}}" height="10" rx="5"></rect>
+			</svg>
 			<span class="barchart__val">{{if $money}}{{money .Cost}}{{else}}{{num .Hours}} h{{end}}</span>
 		</div>
 		{{else}}
@@ -46,25 +50,41 @@
 {{end}}
 
 {{/*
-	"bar-abs" renders a horizontal bar chart of signed money values: the bar
-	length uses the magnitude (so debts/credits both show), the label shows the
-	signed amount in the neutral colour (like the revenue charts). Expects dict:
-	"Rows" ([]ledgerBar with Name/Amount/Bar) and "Max" (magnitude of largest bar).
+	"bar-abs" renders a diverging bar chart of signed money values (Verrechnung):
+	bars grow from a center axis — left = owe (warm), right = receivable (green).
+	The signed value label carries the sign; color only reinforces. Expects dict:
+	"Rows" ([]ledgerBar with Name/Amount + precomputed SVG geometry Half/OweX).
 */}}
 {{define "bar-abs"}}
-	<div class="barchart">
-		{{$max := .Max}}
+	<div class="dchart">
 		{{range .Rows}}
-		<div class="barchart__row">
-			<span class="barchart__label" title="{{.Name}}">{{.Name}}</span>
-			<meter class="barchart__meter" min="0" max="{{$max}}" value="{{.Bar}}"></meter>
-			<span class="barchart__val">{{money .Amount}}</span>
+		<div class="dchart__row">
+			<span class="dchart__label" title="{{.Name}}">{{.Name}}</span>
+			<svg class="dchart__svg" preserveAspectRatio="none" aria-hidden="true">
+				<line class="dchart__center" x1="50%" y1="0" x2="50%" y2="12"></line>
+				{{if .Amount.IsNegative}}
+				<rect class="dchart__fill dchart__fill--owe" x="{{.OweX}}" y="0" width="{{.Half}}" height="12" rx="5"></rect>
+				{{else}}
+				<rect class="dchart__fill dchart__fill--pay" x="50%" y="0" width="{{.Half}}" height="12" rx="5"></rect>
+				{{end}}
+			</svg>
+			<span class="dchart__val {{if .Amount.IsNegative}}dchart__val--owe{{else}}dchart__val--pay{{end}}">{{money .Amount}}</span>
 		</div>
 		{{else}}
 		<p class="muted">Keine Verrechnungen.</p>
 		{{end}}
+		{{if .Rows}}
+		<div class="dchart__legend">
+			<span><span class="dchart__sw dchart__sw--owe"></span>Ich schulde (−)</span>
+			<span><span class="dchart__sw dchart__sw--pay"></span>Zusatzforderung (+)</span>
+		</div>
+		{{end}}
 	</div>
 {{end}}
+
+{{/* "spark" renders a tile trend sparkline from a *sparkView (Line/Area SVG
+	point strings). Points ride on SVG attributes — CSP-safe. */}}
+{{define "spark"}}<svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><polygon class="spark__area" points="{{.Area}}"></polygon><polyline class="spark__line" points="{{.Line}}"></polyline></svg>{{end}}
 
 {{define "machine-checks"}}
 	<div class="checkgroup">

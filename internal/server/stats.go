@@ -1,14 +1,55 @@
 package server
 
 import (
+	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/shopspring/decimal"
 
 	"treckrr/internal/models"
 )
+
+// sparkView holds SVG polygon/polyline point strings for a tile's trend
+// sparkline (viewBox 0 0 100 32). Points ride on SVG attributes — CSP-safe.
+type sparkView struct {
+	Line string // polyline points
+	Area string // polygon points (line + baseline corners)
+}
+
+// makeSpark normalises a value series into an SVG sparkline. Returns nil for
+// fewer than two points (nothing to trend).
+func makeSpark(vals []decimal.Decimal) *sparkView {
+	n := len(vals)
+	if n < 2 {
+		return nil
+	}
+	fs := make([]float64, n)
+	lo, hi := math.Inf(1), math.Inf(-1)
+	for i, v := range vals {
+		f, _ := v.Float64()
+		fs[i] = f
+		lo, hi = math.Min(lo, f), math.Max(hi, f)
+	}
+	rng := hi - lo
+	var b strings.Builder
+	for i, f := range fs {
+		x := float64(i) / float64(n-1) * 100
+		y := 15.5 // a flat (no-variance) series draws a centered line
+		if rng > 0 {
+			y = 29 - (f-lo)/rng*27 // y in ~2..29 (SVG y grows downward)
+		}
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		fmt.Fprintf(&b, "%.1f,%.1f", x, y)
+	}
+	line := b.String()
+	return &sparkView{Line: line, Area: line + " 100.0,32 0.0,32"}
+}
 
 // aggRow is one aggregated statistic line (used for KPI lists and bar charts).
 type aggRow struct {
@@ -17,12 +58,16 @@ type aggRow struct {
 	Cost  decimal.Decimal
 }
 
-// ledgerBar is one bar of the per-neighbor verrechnung chart: Bar is the
-// magnitude (drives the meter), Amount the signed value shown as the label.
+// ledgerBar is one bar of the per-neighbor verrechnung chart. Amount is the
+// signed value shown as the label; Bar its magnitude. Half/OweX are SVG
+// attribute strings for the diverging chart (a rect's width and, for a payable,
+// its left edge), each as a percentage of the axis where the center is 50%.
 type ledgerBar struct {
 	Name   string
 	Amount decimal.Decimal
 	Bar    decimal.Decimal
+	Half   string // bar width = magnitude/max * 50%
+	OweX   string // left edge for an "owe" bar = 50% − Half
 }
 
 // aggregate groups entries by the key returned from keyFn, summing hours/cost,
@@ -208,6 +253,30 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sort.Slice(ledgerBars, func(i, j int) bool { return ledgerBars[i].Bar.GreaterThan(ledgerBars[j].Bar) })
+	// Precompute SVG geometry (half-axis width + owe left edge) as percentage
+	// strings — set on the rect as attributes, so no CSP-blocked inline styles.
+	fifty := decimal.NewFromInt(50)
+	for i := range ledgerBars {
+		half := decimal.Zero
+		if ledgerMax.IsPositive() {
+			half = ledgerBars[i].Bar.Div(ledgerMax).Mul(fifty)
+		}
+		ledgerBars[i].Half = half.StringFixed(2) + "%"
+		ledgerBars[i].OweX = fifty.Sub(half).StringFixed(2) + "%"
+	}
+
+	// Mini trend sparklines from the per-year series (decorative — a failure
+	// here simply omits them rather than failing the page).
+	var revSpark, hoursSpark, netSpark *sparkView
+	if totals, err := s.store.YearlyTotals(r.Context()); err == nil && len(totals) >= 2 {
+		rev := make([]decimal.Decimal, len(totals))
+		hrs := make([]decimal.Decimal, len(totals))
+		net := make([]decimal.Decimal, len(totals))
+		for i, t := range totals {
+			rev[i], hrs[i], net[i] = t.Cost, t.Hours, t.Cost.Add(t.Ledger)
+		}
+		revSpark, hoursSpark, netSpark = makeSpark(rev), makeSpark(hrs), makeSpark(net)
+	}
 
 	data := s.newPage(w, r, "Statistik", "stats")
 	if err := s.withYearSelector(r, data, year); err != nil {
@@ -220,6 +289,9 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["OpenCost"] = openCost
 	data["LedgerSum"] = ledgerSum
 	data["NetResult"] = totalCost.Add(ledgerSum)
+	data["RevSpark"] = revSpark
+	data["HoursSpark"] = hoursSpark
+	data["NetSpark"] = netSpark
 	data["HasLedger"] = len(ledgerBars) > 0
 	data["LedgerBars"] = ledgerBars
 	data["LedgerBarsMax"] = ledgerMax

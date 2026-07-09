@@ -12,6 +12,12 @@
 	--danger: #b4442f;
 	--danger-tint: #f7e3df;
 	--accent: #c8891f;
+	/* chart marks: a touch more chroma than the brand green so a bar doesn't read
+	   grey; owe/pay are the diverging poles for signed (Verrechnung) charts. */
+	--data: #2f8457;
+	--data-track: #e8ece8;
+	--pay: #2f8457;
+	--owe: #c05635;
 	--radius: 14px;
 	--radius-sm: 9px;
 	--shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 4px 16px rgba(0, 0, 0, .05);
@@ -36,6 +42,10 @@
 		--danger: #e06a52;
 		--danger-tint: #33201c;
 		--accent: #e0a640;
+		--data: #52b184;
+		--data-track: #26302a;
+		--pay: #52b184;
+		--owe: #e0805f;
 		--shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .35);
 	}
 }
@@ -519,18 +529,71 @@ em { font-style: normal; color: var(--muted); }
 .rowactions form { margin: 0; }
 .is-invalid { border-color: var(--danger) !important; box-shadow: 0 0 0 2px var(--danger-tint); }
 /* ---- KPIs & charts ---------------------------------------------------- */
-.kpigrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .6rem; }
-.kpi { display: flex; flex-direction: column; gap: .15rem; padding: .8rem; }
-.kpi__label { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-.kpi__value { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.barchart { display: flex; flex-direction: column; gap: .45rem; }
-.barchart__row { display: grid; grid-template-columns: minmax(70px, 30%) 1fr auto; align-items: center; gap: .6rem; }
+/* KPI tiles: a role-coloured accent edge, a larger tabular value, and an
+   optional trend chip. Colour the edge with .kpi--<role>. */
+.kpigrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .6rem; }
+.kpi { position: relative; display: flex; flex-direction: column; gap: .08rem; padding: .85rem .9rem; overflow: hidden; }
+.kpi::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--kpi-accent, var(--data)); }
+.kpi--rev { --kpi-accent: var(--data); }
+.kpi--hours { --kpi-accent: var(--accent); }
+.kpi--owe { --kpi-accent: var(--owe); }
+.kpi--pay { --kpi-accent: var(--pay); }
+.kpi--net { --kpi-accent: var(--primary-strong); }
+.kpi--paid { --kpi-accent: var(--primary); }
+.kpi--open { --kpi-accent: var(--accent); }
+.kpi__label { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
+.kpi__value { font-size: clamp(1.3rem, 3.4vw, 1.6rem); font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: .12rem; }
+.delta { display: inline-flex; align-items: center; gap: .22rem; align-self: flex-start; font-size: .72rem; font-weight: 700;
+	margin-top: .35rem; padding: .08rem .42rem; border-radius: 999px; }
+.delta--up { color: var(--data); background: color-mix(in srgb, var(--data) 15%, transparent); }
+.delta--down { color: var(--owe); background: color-mix(in srgb, var(--owe) 16%, transparent); }
+/* Tile trend sparkline: inline SVG, coloured by the tile's role accent. Stretched
+   to full width (preserveAspectRatio none) with a non-scaling stroke so the line
+   keeps its 2px weight. */
+.spark { display: block; width: 100%; height: 28px; margin-top: .5rem; color: var(--kpi-accent, var(--data)); overflow: visible; }
+.spark__area { fill: currentColor; opacity: .13; stroke: none; }
+.spark__line { fill: none; stroke: currentColor; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Horizontal bar chart. Rendered as inline SVG so bar widths ride on SVG
+   geometry attributes (CSP-safe) rather than a CSP-blocked inline style; the
+   fill scales in with a gentle staggered grow-in. Magnitude → one hue (green). */
+.barchart { display: flex; flex-direction: column; gap: .6rem; }
+.barchart__row { display: grid; grid-template-columns: minmax(64px, 28%) 1fr auto; align-items: center; gap: .7rem; }
 .barchart__label { font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .barchart__val { font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.barchart__meter { width: 100%; height: 14px; -webkit-appearance: meter; appearance: meter; }
-.barchart__meter::-webkit-meter-bar { background: var(--surface-2); border: 0; border-radius: 999px; height: 14px; }
-.barchart__meter::-webkit-meter-optimum-value { background: var(--primary); border-radius: 999px; }
-.barchart__meter::-moz-meter-bar { background: var(--primary); border-radius: 999px; }
+.bchart { display: block; width: 100%; height: 10px; }
+.bchart__track { fill: var(--data-track); }
+.bchart__fill { fill: var(--data); transform-box: fill-box; transform-origin: left center;
+	animation: barGrow .7s cubic-bezier(.22, .61, .36, 1) both; }
+.barchart__row:nth-child(2) .bchart__fill { animation-delay: .05s; }
+.barchart__row:nth-child(3) .bchart__fill { animation-delay: .1s; }
+.barchart__row:nth-child(4) .bchart__fill { animation-delay: .15s; }
+.barchart__row:nth-child(5) .bchart__fill { animation-delay: .2s; }
+.barchart__row:nth-child(n+6) .bchart__fill { animation-delay: .25s; }
+/* The rect's resting width is its full value; the grow only scales it, so the
+   bar is correct even when the animation is skipped. */
+@keyframes barGrow { from { transform: scaleX(0); } }
+
+/* Diverging bar chart for signed money (Verrechnung): bars grow from a center
+   axis — left = owe (warm), right = receivable (green). The signed value label
+   carries the sign; colour only reinforces. */
+.dchart { display: flex; flex-direction: column; gap: .6rem; }
+.dchart__row { display: grid; grid-template-columns: minmax(64px, 26%) 1fr auto; align-items: center; gap: .7rem; }
+.dchart__label { font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dchart__svg { display: block; width: 100%; height: 12px; }
+.dchart__center { stroke: var(--border); stroke-width: 1; }
+.dchart__fill { transform-box: fill-box; animation: barGrow .7s cubic-bezier(.22, .61, .36, 1) both; }
+.dchart__fill--owe { fill: var(--owe); transform-origin: right center; }
+.dchart__fill--pay { fill: var(--pay); transform-origin: left center; }
+.dchart__val { font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dchart__val--owe { color: var(--owe); }
+.dchart__val--pay { color: var(--pay); }
+.dchart__legend { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: .1rem; font-size: .74rem; color: var(--muted); }
+.dchart__legend span { display: inline-flex; align-items: center; gap: .35rem; }
+.dchart__sw { width: 10px; height: 10px; border-radius: 3px; }
+.dchart__sw--owe { background: var(--owe); }
+.dchart__sw--pay { background: var(--pay); }
+@media (prefers-reduced-motion: reduce) { .bchart__fill, .dchart__fill { animation: none; } }
 
 .diff-up { color: var(--danger); font-weight: 700; }
 .diff-down { color: var(--primary-strong); font-weight: 700; }
