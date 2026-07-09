@@ -134,7 +134,10 @@ func (s *Server) handleYearAddNeighbor(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleYearRemoveNeighbor removes a neighbor from the year (membership only).
-// It refuses when the neighbor still has entries booked in that year.
+// It refuses when the neighbor still has entries booked or ledger postings in
+// that year — removal would orphan them: still counted in the year total
+// (YearLedgerSum) but invisible in the per-neighbor/payment views, the same
+// skew the membership guard in handleLedgerAdd prevents on the add side.
 func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
@@ -144,7 +147,7 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 	neighborID := formInt64(r, "neighbor_id")
 	count, err := s.store.CountEntriesForNeighborYear(r.Context(), yearID, neighborID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, "remove neighbor: count entries", err)
 		return
 	}
 	if count > 0 {
@@ -152,8 +155,18 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 		redirect(w, r, dashboardURL(yearID))
 		return
 	}
+	ledgerCount, err := s.store.CountLedgerForNeighborYear(r.Context(), yearID, neighborID)
+	if err != nil {
+		s.serverError(w, "remove neighbor: count ledger", err)
+		return
+	}
+	if ledgerCount > 0 {
+		s.setFlash(w, r, "error", "Nachbar hat noch Verrechnungspositionen (Konto) in diesem Jahr und kann nicht entfernt werden.")
+		redirect(w, r, dashboardURL(yearID))
+		return
+	}
 	if err := s.store.RemoveNeighborFromYear(r.Context(), yearID, neighborID); err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, "remove neighbor from year", err)
 		return
 	}
 	s.audit(r, "remove_neighbor", "year", yearID, s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID))

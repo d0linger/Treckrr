@@ -100,4 +100,32 @@ func TestLedgerNetIntegration(t *testing.T) {
 	if !open.Equal(decimal.Zero) {
 		t.Fatalf("open = %s, want 0", open)
 	}
+
+	// NeighborYearHistory (single-query history) must agree: one row for this
+	// year with net 80, hours 1, paid, and status carried through.
+	history, err := st.NeighborYearHistory(ctx, nid)
+	if err != nil {
+		t.Fatalf("NeighborYearHistory: %v", err)
+	}
+	var row *store.NeighborYearHistoryRow
+	for i := range history {
+		if history[i].YearID == yearID {
+			row = &history[i]
+		}
+	}
+	if row == nil {
+		t.Fatalf("NeighborYearHistory missing year %d (got %d rows)", yearID, len(history))
+	}
+	if !row.Net.Equal(decimal.RequireFromString("80")) || !row.Cost.Equal(decimal.RequireFromString("100")) ||
+		!row.Ledger.Equal(decimal.RequireFromString("-20")) {
+		t.Fatalf("history row cost/ledger/net = %s/%s/%s, want 100/-20/80", row.Cost, row.Ledger, row.Net)
+	}
+	if !row.Hours.Equal(decimal.RequireFromString("1")) || !row.Paid || row.Year != 2097 {
+		t.Fatalf("history row hours/paid/year = %s/%v/%d, want 1/true/2097", row.Hours, row.Paid, row.Year)
+	}
+
+	// Orphan guard: postings must block removing the membership row's neighbor.
+	if n, err := st.CountLedgerForNeighborYear(ctx, yearID, nid); err != nil || n != 2 {
+		t.Fatalf("CountLedgerForNeighborYear = %d, %v; want 2", n, err)
+	}
 }
