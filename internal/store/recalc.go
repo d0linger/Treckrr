@@ -32,7 +32,7 @@ type RecalcRow struct {
 }
 
 // RecalcPreview recomputes each non-voided booking of a year (optionally a single
-// neighbour) from the current values of the year's basis items — same tractor/
+// neighbor) from the current values of the year's basis items — same tractor/
 // load/machines as booked, current prices — without writing. Bookings whose
 // items no longer resolve (e.g. missing) are returned unchanged.
 func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int64) ([]RecalcRow, error) {
@@ -145,7 +145,7 @@ func (s *Store) entryMachineIDs(ctx context.Context, yearID int64) (map[int64][]
 }
 
 // ApplyRecalc writes the recomputed rate/cost/labels for the changed bookings of
-// a year (optionally one neighbour) in a single transaction, and returns how many
+// a year (optionally one neighbor) in a single transaction, and returns how many
 // were updated plus the old/new cost totals for the audit trail.
 func (s *Store) ApplyRecalc(ctx context.Context, yearID int64, neighborID *int64) (updated int, oldTotal, newTotal decimal.Decimal, err error) {
 	rows, err := s.RecalcPreview(ctx, yearID, neighborID)

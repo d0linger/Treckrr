@@ -8,7 +8,7 @@ import (
 )
 
 // recalcPreview renders the before/after table for re-pricing a year's bookings
-// (optionally one neighbour) against the current basis. Blocked on a completed
+// (optionally one neighbor) against the current basis. Blocked on a completed
 // year. neighborID nil = whole year.
 func (s *Server) recalcPreview(w http.ResponseWriter, r *http.Request, yearID int64, neighborID *int64, title, backURL, applyURL string) {
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
@@ -35,7 +35,7 @@ func (s *Server) recalcPreview(w http.ResponseWriter, r *http.Request, yearID in
 			newTotal = newTotal.Add(ro.NewCost)
 		}
 	}
-	// Warn when the change touches already-settled neighbours.
+	// Warn when the change touches already-settled neighbors.
 	paid := false
 	if payments, err := s.store.YearPayments(r.Context(), yearID); err == nil {
 		if neighborID != nil {
