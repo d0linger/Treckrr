@@ -33,6 +33,15 @@ func (s *Server) newPage(w http.ResponseWriter, r *http.Request, title, active s
 	return p
 }
 
+// serverError logs the underlying error with a short context tag and answers
+// with a generic 500. Handlers should prefer this over a bare http.Error so a
+// production failure leaves a diagnosable trace (which call failed, and why)
+// without leaking internals to the client.
+func (s *Server) serverError(w http.ResponseWriter, what string, err error) {
+	log.Printf("internal error (%s): %v", what, err)
+	http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+}
+
 // render executes the named page template's "layout" into the response.
 func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, data pageData) {
 	tpl, ok := s.templates[page]

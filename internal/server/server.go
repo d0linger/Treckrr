@@ -254,6 +254,14 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("ok"))
 }
 
+// The two possible CSP values, fixed at compile time (all assets are served
+// locally, so a strict policy is possible). The secure variant additionally
+// upgrades plain-HTTP subresource requests — advertised alongside HSTS only.
+const (
+	cspBase   = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
+	cspSecure = cspBase + "; upgrade-insecure-requests"
+)
+
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -268,17 +276,15 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		// the FIDO USB transport.
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
 
-		// All assets are served locally, so a strict CSP is possible.
-		csp := "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
-
 		// Only advertise HSTS and upgrade requests over an effective HTTPS
 		// connection: over plain HTTP HSTS is ignored, and pinning it there risks
 		// locking out local non-TLS deployments.
 		if r.TLS != nil || s.cookieSecure(r) {
 			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-			csp += "; upgrade-insecure-requests"
+			h.Set("Content-Security-Policy", cspSecure)
+		} else {
+			h.Set("Content-Security-Policy", cspBase)
 		}
-		h.Set("Content-Security-Policy", csp)
 		next.ServeHTTP(w, r)
 	})
 }

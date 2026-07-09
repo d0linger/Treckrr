@@ -97,6 +97,70 @@ func (s *Store) YearNeighborResults(ctx context.Context, yearID int64) ([]YearNe
 	return out, rows.Err()
 }
 
+// NeighborYearHistoryRow is one year of a neighbor's cross-year history:
+// bookings (Leistungen), signed ledger sum (Verrechnung), their Net, hours,
+// the payment flag and the year's status.
+type NeighborYearHistoryRow struct {
+	YearID int64
+	Year   int
+	Status string
+	Cost   decimal.Decimal // work bookings, not voided
+	Ledger decimal.Decimal // signed manual postings, not voided
+	Net    decimal.Decimal // Cost + Ledger
+	Hours  decimal.Decimal
+	Paid   bool
+}
+
+// NeighborYearHistory returns a neighbor's per-year history (newest first) in a
+// single query — membership, totals, ledger and paid flag together, replacing a
+// 4-queries-per-year fan-out. Years the neighbor is not a member of are
+// naturally absent via the billing_year_neighbors join.
+func (s *Store) NeighborYearHistory(ctx context.Context, neighborID int64) ([]NeighborYearHistoryRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT y.id, y.year, y.status, byn.paid,
+		  COALESCE((SELECT SUM(e.cost) FROM entries e
+		             WHERE e.neighbor_id = byn.neighbor_id
+		               AND e.billing_year_id = byn.billing_year_id
+		               AND NOT e.voided), 0) AS cost,
+		  COALESCE((SELECT SUM(e.hours) FROM entries e
+		             WHERE e.neighbor_id = byn.neighbor_id
+		               AND e.billing_year_id = byn.billing_year_id
+		               AND NOT e.voided), 0) AS hours,
+		  COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
+		             WHERE l.neighbor_id = byn.neighbor_id
+		               AND l.billing_year_id = byn.billing_year_id
+		               AND NOT l.voided), 0) AS ledger
+		FROM billing_year_neighbors byn
+		JOIN billing_years y ON y.id = byn.billing_year_id
+		WHERE byn.neighbor_id = $1
+		ORDER BY y.year DESC`, neighborID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []NeighborYearHistoryRow
+	for rows.Next() {
+		var r NeighborYearHistoryRow
+		if err := rows.Scan(&r.YearID, &r.Year, &r.Status, &r.Paid, &r.Cost, &r.Hours, &r.Ledger); err != nil {
+			return nil, err
+		}
+		r.Net = r.Cost.Add(r.Ledger)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// CountLedgerForNeighborYear returns how many ledger postings a neighbor has in
+// a year. Voided postings count too — they are kept as visible history and would
+// equally be orphaned by removing the membership.
+func (s *Store) CountLedgerForNeighborYear(ctx context.Context, yearID, neighborID int64) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM neighbor_ledger WHERE billing_year_id=$1 AND neighbor_id=$2`,
+		yearID, neighborID).Scan(&n)
+	return n, err
+}
+
 // AddNeighborLedger records a manual posting and returns its id.
 func (s *Store) AddNeighborLedger(ctx context.Context, yearID, neighborID int64, amount decimal.Decimal, description string, date time.Time) (int64, error) {
 	var id int64

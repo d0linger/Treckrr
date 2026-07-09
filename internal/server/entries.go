@@ -97,9 +97,12 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
-	years, err := s.store.ListBillingYears(r.Context())
+	// One query for the whole history (membership, totals, ledger, paid flag)
+	// instead of a 4-queries-per-year fan-out. Cost carries the net (bookings +
+	// ledger), same as the dashboard/detail views.
+	history, err := s.store.NeighborYearHistory(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, "neighbor year history", err)
 		return
 	}
 	type yearRow struct {
@@ -110,41 +113,15 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 		Paid      bool
 		Completed bool
 	}
-	var rows []yearRow
+	rows := make([]yearRow, 0, len(history))
 	var totalCost, totalHours decimal.Decimal
-	for _, y := range years {
-		member, err := s.store.NeighborInYear(r.Context(), y.ID, id)
-		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
-			return
-		}
-		if !member {
-			continue
-		}
-		// All three feed money shown to the user; a swallowed error here would
-		// under-report the total (the exact net drift this page was fixed for).
-		cost, hours, err := s.store.NeighborTotal(r.Context(), id, y.ID)
-		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
-			return
-		}
-		led, err := s.store.NeighborLedgerSum(r.Context(), y.ID, id)
-		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
-			return
-		}
-		payments, err := s.store.YearPayments(r.Context(), y.ID)
-		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
-			return
-		}
-		net := cost.Add(led) // same net (bookings + ledger) as the dashboard/detail
+	for _, h := range history {
 		rows = append(rows, yearRow{
-			Year: y.Year, YearID: y.ID, Cost: net, Hours: hours,
-			Paid: payments[id], Completed: y.Completed(),
+			Year: h.Year, YearID: h.YearID, Cost: h.Net, Hours: h.Hours,
+			Paid: h.Paid, Completed: h.Status == models.YearCompleted,
 		})
-		totalCost = totalCost.Add(net)
-		totalHours = totalHours.Add(hours)
+		totalCost = totalCost.Add(h.Net)
+		totalHours = totalHours.Add(h.Hours)
 	}
 	data := s.newPage(w, r, neighbor.Name+" · Verlauf", "dashboard")
 	data["Neighbor"] = neighbor
@@ -520,7 +497,14 @@ func (s *Server) handleLedgerAdd(w http.ResponseWriter, r *http.Request) {
 	// Only members of the year may get postings, otherwise an orphan posting
 	// would count in the year total (YearLedgerSum) but not in the per-neighbor /
 	// payment views (which join billing_year_neighbors), skewing the stats.
-	if member, err := s.store.NeighborInYear(r.Context(), yearID, neighborID); err != nil || !member {
+	// A lookup error is NOT "not a member": surface it instead of masking a DB
+	// problem behind a data-sounding message.
+	member, err := s.store.NeighborInYear(r.Context(), yearID, neighborID)
+	if err != nil {
+		s.serverError(w, "ledger add: membership lookup", err)
+		return
+	}
+	if !member {
 		s.setFlash(w, r, "error", "Nachbar ist in diesem Abrechnungsjahr nicht vorhanden.")
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
