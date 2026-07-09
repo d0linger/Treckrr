@@ -147,6 +147,16 @@
 	</div>
 	{{end}}
 
+	{{if and (not .Completed) .StaleCount}}
+	<div class="card statusrow statusrow--warn">
+		<div class="statusrow__info">
+			<strong>{{.StaleCount}} Buchung(en) weichen von der aktuellen Grundlage ab.</strong>
+			<span class="muted small">Die Grundlage wurde geändert – diese Buchungen behalten noch ihren alten Satz.</span>
+		</div>
+		<a class="btn btn--primary btn--sm" href="/neighbors/{{.Neighbor.ID}}/recalc?year={{.Year.ID}}">Neu berechnen</a>
+	</div>
+	{{end}}
+
 	<h2 class="section-title">Gesamtübersicht Buchungen</h2>
 	<div class="card tablewrap">
 		<table class="dtable dtable--entries dtable--zebra">
@@ -161,7 +171,7 @@
 				<tr {{if .Voided}}class="is-voided"{{end}}>
 					<td class="nowrap">{{date .Date}}</td>
 					<td>
-						<span class="entry__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}{{if .Voided}} <span class="pill-off">storniert</span>{{end}}</span>
+						<span class="entry__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}{{if .Voided}} <span class="pill-off">storniert</span>{{end}}{{if index $.Stale .ID}} <span class="pill-warn" title="Preis weicht von der aktuellen Grundlage ab">Grundlage geändert</span>{{end}}</span>
 						<span class="entry__detail muted small">{{.TractorLabel}} · {{.LoadLabel}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}</span>
 						<span class="entry__detail muted small">{{num .Hours}} h × {{money .HourlyRate}}/h{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
 					</td>
