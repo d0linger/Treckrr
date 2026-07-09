@@ -45,9 +45,18 @@ func TestRecalcIntegration(t *testing.T) {
 		t.Fatalf("neighbor: %v", err)
 	}
 	defer func() {
-		_, _ = pool.ExecContext(ctx, `DELETE FROM billing_years WHERE id=$1`, yearID)
-		_, _ = pool.ExecContext(ctx, `DELETE FROM price_bases WHERE id=$1`, baseID)
-		_, _ = pool.ExecContext(ctx, `DELETE FROM neighbors WHERE id=$1`, nid)
+		for _, del := range []struct {
+			sql string
+			id  int64
+		}{
+			{`DELETE FROM billing_years WHERE id=$1`, yearID}, // cascades to entries
+			{`DELETE FROM price_bases WHERE id=$1`, baseID},
+			{`DELETE FROM neighbors WHERE id=$1`, nid},
+		} {
+			if _, err := pool.ExecContext(ctx, del.sql, del.id); err != nil {
+				t.Errorf("cleanup %q: %v", del.sql, err)
+			}
+		}
 	}()
 	if err := st.AddNeighborToYear(ctx, yearID, nid); err != nil {
 		t.Fatalf("add neighbor: %v", err)

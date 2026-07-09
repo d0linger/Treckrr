@@ -1,10 +1,13 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/shopspring/decimal"
+
+	"treckrr/internal/store"
 )
 
 // recalcPreview renders the before/after table for re-pricing a year's bookings
@@ -35,17 +38,21 @@ func (s *Server) recalcPreview(w http.ResponseWriter, r *http.Request, yearID in
 			newTotal = newTotal.Add(ro.NewCost)
 		}
 	}
-	// Warn when the change touches already-settled neighbors.
+	// Warn when the change touches already-settled neighbors. Surface a lookup
+	// failure rather than silently dropping the warning.
+	payments, err := s.store.YearPayments(r.Context(), yearID)
+	if err != nil {
+		s.serverError(w, "recalc preview: payments", err)
+		return
+	}
 	paid := false
-	if payments, err := s.store.YearPayments(r.Context(), yearID); err == nil {
-		if neighborID != nil {
-			paid = payments[*neighborID]
-		} else {
-			for _, p := range payments {
-				if p {
-					paid = true
-					break
-				}
+	if neighborID != nil {
+		paid = payments[*neighborID]
+	} else {
+		for _, p := range payments {
+			if p {
+				paid = true
+				break
 			}
 		}
 	}
@@ -79,7 +86,16 @@ func (s *Server) recalcApply(w http.ResponseWriter, r *http.Request, yearID int6
 	}
 	updated, oldTotal, newTotal, err := s.store.ApplyRecalc(r.Context(), yearID, neighborID)
 	if err != nil {
-		s.serverError(w, "recalc apply", err)
+		switch {
+		case errors.Is(err, store.ErrYearCompleted):
+			s.setFlash(w, r, "error", "Das Abrechnungsjahr wurde zwischenzeitlich abgeschlossen.")
+			redirect(w, r, backURL)
+		case errors.Is(err, store.ErrRecalcConflict):
+			s.setFlash(w, r, "error", "Eine Buchung wurde zwischenzeitlich geändert – bitte erneut prüfen.")
+			redirect(w, r, backURL)
+		default:
+			s.serverError(w, "recalc apply", err)
+		}
 		return
 	}
 	if updated == 0 {

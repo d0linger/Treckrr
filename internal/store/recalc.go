@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -9,6 +10,14 @@ import (
 
 	"treckrr/internal/calc"
 	"treckrr/internal/models"
+)
+
+// Recalc apply outcomes that the caller distinguishes from a generic failure.
+var (
+	// ErrYearCompleted: the year was closed before the write ran.
+	ErrYearCompleted = errors.New("billing year is completed")
+	// ErrRecalcConflict: a booking changed between preview and apply.
+	ErrRecalcConflict = errors.New("booking changed since preview")
 )
 
 // RecalcRow is one booking's before/after when re-pricing it against the current
@@ -78,11 +87,13 @@ func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int
 	if err != nil {
 		return nil, err
 	}
-	names := map[int64]string{}
-	if ns, err := s.ListNeighbors(ctx); err == nil {
-		for _, n := range ns {
-			names[n.ID] = n.Name
-		}
+	ns, err := s.ListNeighbors(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[int64]string, len(ns))
+	for _, n := range ns {
+		names[n.ID] = n.Name
 	}
 
 	out := make([]RecalcRow, 0, len(entries))
@@ -157,14 +168,38 @@ func (s *Store) ApplyRecalc(ctx context.Context, yearID int64, neighborID *int64
 		return 0, oldTotal, newTotal, err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	// Re-check the year status inside the transaction (locking the row) so a
+	// concurrent "complete year" cannot be raced past the handler's pre-check.
+	var status string
+	if e := tx.QueryRowContext(ctx,
+		`SELECT status FROM billing_years WHERE id=$1 FOR UPDATE`, yearID).Scan(&status); e != nil {
+		return 0, oldTotal, newTotal, e
+	}
+	if status == models.YearCompleted {
+		return 0, oldTotal, newTotal, ErrYearCompleted
+	}
+
 	for _, r := range rows {
 		if !r.Changed {
 			continue
 		}
-		if _, e := tx.ExecContext(ctx, `
+		// Optimistic guard: only overwrite the booking if it still holds the
+		// values the preview was computed from. If it was edited concurrently
+		// since then, abort rather than clobber the newer data.
+		res, e := tx.ExecContext(ctx, `
 			UPDATE entries SET hourly_rate=$1, cost=$2, tractor_label=$3, load_label=$4, machine_labels=$5
-			 WHERE id=$6`, r.NewRate, r.NewCost, r.TractorLabel, r.LoadLabel, r.MachineLabels, r.EntryID); e != nil {
+			 WHERE id=$6 AND hourly_rate=$7 AND cost=$8`,
+			r.NewRate, r.NewCost, r.TractorLabel, r.LoadLabel, r.MachineLabels, r.EntryID, r.OldRate, r.OldCost)
+		if e != nil {
 			return 0, oldTotal, newTotal, e
+		}
+		n, e := res.RowsAffected()
+		if e != nil {
+			return 0, oldTotal, newTotal, e
+		}
+		if n == 0 {
+			return 0, oldTotal, newTotal, ErrRecalcConflict
 		}
 		updated++
 		oldTotal = oldTotal.Add(r.OldCost)

@@ -35,7 +35,7 @@
 			</tbody>
 			<tfoot>
 				<tr>
-					<th {{if .YearScope}}colspan="5"{{else}}colspan="4"{{end}}>Summe · Differenz {{money .Diff}}</th>
+					<th {{if .YearScope}}colspan="5"{{else}}colspan="4"{{end}}>Summe · Differenz {{if .Diff.IsPositive}}+{{end}}{{money .Diff}}</th>
 					<th class="num nowrap"><span class="muted">{{money .OldTotal}}</span> → {{money .NewTotal}}</th>
 				</tr>
 			</tfoot>
