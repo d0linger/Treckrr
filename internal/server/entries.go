@@ -114,16 +114,36 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 	var totalCost, totalHours decimal.Decimal
 	for _, y := range years {
 		member, err := s.store.NeighborInYear(r.Context(), y.ID, id)
-		if err != nil || !member {
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
+		}
+		if !member {
 			continue
 		}
-		cost, hours, _ := s.store.NeighborTotal(r.Context(), id, y.ID)
-		payments, _ := s.store.YearPayments(r.Context(), y.ID)
+		// All three feed money shown to the user; a swallowed error here would
+		// under-report the total (the exact net drift this page was fixed for).
+		cost, hours, err := s.store.NeighborTotal(r.Context(), id, y.ID)
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
+		}
+		led, err := s.store.NeighborLedgerSum(r.Context(), y.ID, id)
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
+		}
+		payments, err := s.store.YearPayments(r.Context(), y.ID)
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
+		}
+		net := cost.Add(led) // same net (bookings + ledger) as the dashboard/detail
 		rows = append(rows, yearRow{
-			Year: y.Year, YearID: y.ID, Cost: cost, Hours: hours,
+			Year: y.Year, YearID: y.ID, Cost: net, Hours: hours,
 			Paid: payments[id], Completed: y.Completed(),
 		})
-		totalCost = totalCost.Add(cost)
+		totalCost = totalCost.Add(net)
 		totalHours = totalHours.Add(hours)
 	}
 	data := s.newPage(w, r, neighbor.Name+" · Verlauf", "dashboard")
@@ -495,6 +515,14 @@ func (s *Server) handleLedgerAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
+		return
+	}
+	// Only members of the year may get postings, otherwise an orphan posting
+	// would count in the year total (YearLedgerSum) but not in the per-neighbor /
+	// payment views (which join billing_year_neighbors), skewing the stats.
+	if member, err := s.store.NeighborInYear(r.Context(), yearID, neighborID); err != nil || !member {
+		s.setFlash(w, r, "error", "Nachbar ist in diesem Abrechnungsjahr nicht vorhanden.")
+		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
 	amount, description, date, msg := ledgerFormValues(r)
