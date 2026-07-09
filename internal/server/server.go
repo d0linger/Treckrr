@@ -260,15 +260,25 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+		h.Set("X-Permitted-Cross-Domain-Policies", "none")
+		// Disable browser features the app never uses. WebAuthn is unaffected:
+		// publickey-credentials-* are not listed, and usb=() controls WebUSB, not
+		// the FIDO USB transport.
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+
 		// All assets are served locally, so a strict CSP is possible.
-		h.Set("Content-Security-Policy",
-			"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'self'; form-action 'self'")
-		// Only advertise HSTS over an effective HTTPS connection: sending it over
-		// plain HTTP is ignored by browsers, but pinning it there risks locking
-		// out local non-TLS deployments.
+		csp := "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
+
+		// Only advertise HSTS and upgrade requests over an effective HTTPS
+		// connection: over plain HTTP HSTS is ignored, and pinning it there risks
+		// locking out local non-TLS deployments.
 		if r.TLS != nil || s.cookieSecure(r) {
 			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			csp += "; upgrade-insecure-requests"
 		}
+		h.Set("Content-Security-Policy", csp)
 		next.ServeHTTP(w, r)
 	})
 }

@@ -29,8 +29,12 @@ Treckrr ships with:
 - session management (list/revoke active sessions) and **login rate limiting**,
 - role-based access (administrator / editor / read-only),
 - an **audit trail** plus request logging,
-- a strict **Content-Security-Policy** (all assets served locally, no CDNs) and
-  hardened HTTP security headers,
+- a strict **Content-Security-Policy** (all assets served locally, no CDNs;
+  `object-src 'none'`, `frame-ancestors 'none'`, and `upgrade-insecure-requests`
+  over HTTPS) plus hardened HTTP security headers — `X-Content-Type-Options`,
+  `X-Frame-Options: DENY`, `Referrer-Policy`, `Cross-Origin-Opener-Policy` and
+  `Cross-Origin-Resource-Policy` (`same-origin`), `X-Permitted-Cross-Domain-Policies: none`,
+  a restrictive `Permissions-Policy`, and **HSTS** over HTTPS,
 - `HttpOnly`, `SameSite=Lax` session cookies (`Secure` behind HTTPS).
 
 ## Hardening checklist for operators
