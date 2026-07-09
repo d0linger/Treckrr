@@ -1,0 +1,57 @@
+{{define "content"}}
+<section class="stack">
+	<a class="backlink" href="{{.BackURL}}">‹ Zurück</a>
+	<h2 class="section-title">Kosten neu berechnen · {{.YearLabel}}{{if not .YearScope}} · {{.Scope}}{{end}}</h2>
+
+	{{if .Count}}
+	<p class="sub muted">Die aktuelle Grundlage ergibt für <strong>{{.Count}}</strong> Buchung(en) andere Kosten (gleiche Traktoren/Maschinen wie gebucht, aber aktuelle Preise). Prüfe die Änderungen und übernimm sie.</p>
+	{{if .Paid}}
+	<div class="flash flash--info">Achtung: In diesem Umfang sind bereits Nachbarn als <strong>bezahlt</strong> markiert – eine Neuberechnung ändert deren Beträge nachträglich.</div>
+	{{end}}
+
+	<div class="card tablewrap">
+		<table class="dtable dtable--zebra">
+			<thead>
+				<tr>
+					<th>Datum</th>
+					{{if .YearScope}}<th>Nachbar</th>{{end}}
+					<th>Tätigkeit</th>
+					<th class="num">Std</th>
+					<th class="num">Satz alt → neu</th>
+					<th class="num">Kosten alt → neu</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Rows}}{{if .Changed}}
+				<tr>
+					<td class="nowrap">{{date .Date}}</td>
+					{{if $.YearScope}}<td>{{.NeighborName}}</td>{{end}}
+					<td>{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}</td>
+					<td class="num">{{num .Hours}}</td>
+					<td class="num nowrap"><span class="muted">{{money .OldRate}}</span> → <strong>{{money .NewRate}}</strong></td>
+					<td class="num nowrap"><span class="muted">{{money .OldCost}}</span> → <strong>{{money .NewCost}}</strong></td>
+				</tr>
+				{{end}}{{end}}
+			</tbody>
+			<tfoot>
+				<tr>
+					<th {{if .YearScope}}colspan="5"{{else}}colspan="4"{{end}}>Summe · Differenz {{if .Diff.IsPositive}}+{{end}}{{money .Diff}}</th>
+					<th class="num nowrap"><span class="muted">{{money .OldTotal}}</span> → {{money .NewTotal}}</th>
+				</tr>
+			</tfoot>
+		</table>
+	</div>
+
+	<form method="post" action="{{.ApplyURL}}" data-confirm="{{.Count}} Buchungen mit der aktuellen Grundlage neu berechnen? Die eingefrorenen Preise dieser Buchungen werden überschrieben.">
+		{{if not .YearScope}}<input type="hidden" name="year_id" value="{{.YearID}}">{{end}}
+		<div class="btnrow btnrow--split">
+			<a class="btn btn--ghost btn--sm" href="{{.BackURL}}">Abbrechen</a>
+			<button class="btn btn--primary" type="submit">Neuberechnung anwenden</button>
+		</div>
+	</form>
+	{{else}}
+	<div class="card"><p class="muted center">Alle Buchungen sind bereits auf dem Stand der aktuellen Grundlage – nichts zu tun.</p></div>
+	<a class="btn btn--ghost btn--sm" href="{{.BackURL}}">Zurück</a>
+	{{end}}
+</section>
+{{end}}

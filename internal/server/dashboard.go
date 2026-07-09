@@ -108,6 +108,18 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	data["Completed"] = year.Completed()
 	data["PaidCost"] = paidCost
 	data["OpenCost"] = openCost
+	// How many bookings are out of sync with the current basis (open years only).
+	staleCount := 0
+	if !year.Completed() {
+		if rows, err := s.store.RecalcPreview(r.Context(), year.ID, nil); err == nil {
+			for _, ro := range rows {
+				if ro.Changed {
+					staleCount++
+				}
+			}
+		}
+	}
+	data["StaleCount"] = staleCount
 	s.render(w, r, "dashboard", data)
 }
 

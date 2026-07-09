@@ -54,6 +54,18 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Bookings whose stored price no longer matches the current basis (the basis
+	// was edited after they were booked). Marked in the table; offered for
+	// recalculation. Best-effort — a failure just omits the markers.
+	stale := map[int64]bool{}
+	if rows, err := s.store.RecalcPreview(r.Context(), year.ID, &neighbor.ID); err == nil {
+		for _, ro := range rows {
+			if ro.Changed {
+				stale[ro.EntryID] = true
+			}
+		}
+	}
+
 	// Only active tractors/machines can be booked; inactive ones remain only
 	// on historical entries.
 	tractors, _ := s.store.ListActiveTractors(r.Context(), base.ID)
@@ -62,6 +74,8 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	gespanne, _ := s.store.ListGespanne(r.Context(), base.ID)
 
 	data := s.newPage(w, r, neighbor.Name, "dashboard")
+	data["Stale"] = stale
+	data["StaleCount"] = len(stale)
 	data["TaskSummary"] = summarizeByTask(entries)
 	data["Completed"] = year.Completed()
 	if err := s.withYearSelector(r, data, year); err != nil {

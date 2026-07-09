@@ -15,6 +15,16 @@
 		</div>
 	</div>
 
+	{{if and (not .Completed) .StaleCount}}
+	<div class="card statusrow statusrow--warn">
+		<div class="statusrow__info">
+			<strong>{{.StaleCount}} Buchung(en) weichen von der aktuellen Grundlage ab.</strong>
+			<span class="muted small">Grundlage {{.Year.Base.Year}} wurde geändert – die Buchungen behalten ihren alten Satz.</span>
+		</div>
+		<a class="btn btn--primary btn--sm" href="/years/{{.Year.ID}}/recalc">Alle neu berechnen</a>
+	</div>
+	{{end}}
+
 	<div class="card statusrow">
 		<div class="statusrow__info">
 			<span>Status:

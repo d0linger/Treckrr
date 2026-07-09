@@ -365,6 +365,7 @@ em { font-style: normal; color: var(--muted); }
 /* Deactivated pricing items are dimmed but still visible for traceability. */
 .is-inactive { opacity: .55; }
 .pill-off { font-size: .7rem; font-weight: 700; color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: .05rem .5rem; margin-left: .4rem; }
+.pill-warn { font-size: .7rem; font-weight: 700; color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 999px; padding: .05rem .5rem; margin-left: .4rem; white-space: nowrap; }
 
 /* ---- Modal dialog ----------------------------------------------------- */
 .modal {
@@ -478,6 +479,7 @@ em { font-style: normal; color: var(--muted); }
 .btnrow--split .btn { flex: 0 0 auto; }
 .carryover { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
 .statusrow { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.statusrow--warn { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .statusrow__info { display: flex; flex-direction: column; gap: .25rem; }
 .statusrow form { margin: 0; }
 .paysummary { display: flex; gap: .4rem; flex-wrap: wrap; }
