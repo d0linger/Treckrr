@@ -114,13 +114,31 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 	var totalCost, totalHours decimal.Decimal
 	for _, y := range years {
 		member, err := s.store.NeighborInYear(r.Context(), y.ID, id)
-		if err != nil || !member {
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
+		}
+		if !member {
 			continue
 		}
-		cost, hours, _ := s.store.NeighborTotal(r.Context(), id, y.ID)
-		led, _ := s.store.NeighborLedgerSum(r.Context(), y.ID, id)
+		// All three feed money shown to the user; a swallowed error here would
+		// under-report the total (the exact net drift this page was fixed for).
+		cost, hours, err := s.store.NeighborTotal(r.Context(), id, y.ID)
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
+		}
+		led, err := s.store.NeighborLedgerSum(r.Context(), y.ID, id)
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
+		}
+		payments, err := s.store.YearPayments(r.Context(), y.ID)
+		if err != nil {
+			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			return
+		}
 		net := cost.Add(led) // same net (bookings + ledger) as the dashboard/detail
-		payments, _ := s.store.YearPayments(r.Context(), y.ID)
 		rows = append(rows, yearRow{
 			Year: y.Year, YearID: y.ID, Cost: net, Hours: hours,
 			Paid: payments[id], Completed: y.Completed(),
