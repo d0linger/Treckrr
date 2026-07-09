@@ -1,14 +1,55 @@
 package server
 
 import (
+	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/shopspring/decimal"
 
 	"treckrr/internal/models"
 )
+
+// sparkView holds SVG polygon/polyline point strings for a tile's trend
+// sparkline (viewBox 0 0 100 32). Points ride on SVG attributes — CSP-safe.
+type sparkView struct {
+	Line string // polyline points
+	Area string // polygon points (line + baseline corners)
+}
+
+// makeSpark normalises a value series into an SVG sparkline. Returns nil for
+// fewer than two points (nothing to trend).
+func makeSpark(vals []decimal.Decimal) *sparkView {
+	n := len(vals)
+	if n < 2 {
+		return nil
+	}
+	fs := make([]float64, n)
+	lo, hi := math.Inf(1), math.Inf(-1)
+	for i, v := range vals {
+		f, _ := v.Float64()
+		fs[i] = f
+		lo, hi = math.Min(lo, f), math.Max(hi, f)
+	}
+	rng := hi - lo
+	if rng == 0 {
+		rng = 1
+	}
+	var b strings.Builder
+	for i, f := range fs {
+		x := float64(i) / float64(n-1) * 100
+		y := 29 - (f-lo)/rng*27 // baseline padding: y in ~2..29
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		fmt.Fprintf(&b, "%.1f,%.1f", x, y)
+	}
+	line := b.String()
+	return &sparkView{Line: line, Area: line + " 100.0,32 0.0,32"}
+}
 
 // aggRow is one aggregated statistic line (used for KPI lists and bar charts).
 type aggRow struct {
@@ -224,6 +265,19 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		ledgerBars[i].OweX = fifty.Sub(half).StringFixed(2) + "%"
 	}
 
+	// Mini trend sparklines from the per-year series (decorative — a failure
+	// here simply omits them rather than failing the page).
+	var revSpark, hoursSpark, netSpark *sparkView
+	if totals, err := s.store.YearlyTotals(r.Context()); err == nil && len(totals) >= 2 {
+		rev := make([]decimal.Decimal, len(totals))
+		hrs := make([]decimal.Decimal, len(totals))
+		net := make([]decimal.Decimal, len(totals))
+		for i, t := range totals {
+			rev[i], hrs[i], net[i] = t.Cost, t.Hours, t.Cost.Add(t.Ledger)
+		}
+		revSpark, hoursSpark, netSpark = makeSpark(rev), makeSpark(hrs), makeSpark(net)
+	}
+
 	data := s.newPage(w, r, "Statistik", "stats")
 	if err := s.withYearSelector(r, data, year); err != nil {
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
@@ -235,6 +289,9 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["OpenCost"] = openCost
 	data["LedgerSum"] = ledgerSum
 	data["NetResult"] = totalCost.Add(ledgerSum)
+	data["RevSpark"] = revSpark
+	data["HoursSpark"] = hoursSpark
+	data["NetSpark"] = netSpark
 	data["HasLedger"] = len(ledgerBars) > 0
 	data["LedgerBars"] = ledgerBars
 	data["LedgerBarsMax"] = ledgerMax

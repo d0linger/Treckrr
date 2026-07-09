@@ -82,6 +82,10 @@
 	</div>
 {{end}}
 
+{{/* "spark" renders a tile trend sparkline from a *sparkView (Line/Area SVG
+	point strings). Points ride on SVG attributes — CSP-safe. */}}
+{{define "spark"}}<svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><polygon class="spark__area" points="{{.Area}}"></polygon><polyline class="spark__line" points="{{.Line}}"></polyline></svg>{{end}}
+
 {{define "machine-checks"}}
 	<div class="checkgroup">
 		{{$selected := .Selected}}

@@ -547,6 +547,12 @@ em { font-style: normal; color: var(--muted); }
 .delta--up { color: var(--data); background: color-mix(in srgb, var(--data) 15%, transparent); }
 .delta--down { color: var(--owe); background: color-mix(in srgb, var(--owe) 16%, transparent); }
 .delta--flat { color: var(--muted); background: var(--surface-2); }
+/* Tile trend sparkline: inline SVG, coloured by the tile's role accent. Stretched
+   to full width (preserveAspectRatio none) with a non-scaling stroke so the line
+   keeps its 2px weight. */
+.spark { display: block; width: 100%; height: 28px; margin-top: .5rem; color: var(--kpi-accent, var(--data)); overflow: visible; }
+.spark__area { fill: currentColor; opacity: .13; stroke: none; }
+.spark__line { fill: none; stroke: currentColor; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Horizontal bar chart. Rendered as inline SVG so bar widths ride on SVG
    geometry attributes (CSP-safe) rather than a CSP-blocked inline style; the
