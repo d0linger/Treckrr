@@ -17,12 +17,16 @@ type aggRow struct {
 	Cost  decimal.Decimal
 }
 
-// ledgerBar is one bar of the per-neighbor verrechnung chart: Bar is the
-// magnitude (drives the meter), Amount the signed value shown as the label.
+// ledgerBar is one bar of the per-neighbor verrechnung chart. Amount is the
+// signed value shown as the label; Bar its magnitude. Half/OweX are SVG
+// attribute strings for the diverging chart (a rect's width and, for a payable,
+// its left edge), each as a percentage of the axis where the centre is 50%.
 type ledgerBar struct {
 	Name   string
 	Amount decimal.Decimal
 	Bar    decimal.Decimal
+	Half   string // bar width = magnitude/max * 50%
+	OweX   string // left edge for an "owe" bar = 50% − Half
 }
 
 // aggregate groups entries by the key returned from keyFn, summing hours/cost,
@@ -208,6 +212,17 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sort.Slice(ledgerBars, func(i, j int) bool { return ledgerBars[i].Bar.GreaterThan(ledgerBars[j].Bar) })
+	// Precompute SVG geometry (half-axis width + owe left edge) as percentage
+	// strings — set on the rect as attributes, so no CSP-blocked inline styles.
+	fifty := decimal.NewFromInt(50)
+	for i := range ledgerBars {
+		half := decimal.Zero
+		if ledgerMax.IsPositive() {
+			half = ledgerBars[i].Bar.Div(ledgerMax).Mul(fifty)
+		}
+		ledgerBars[i].Half = half.StringFixed(2) + "%"
+		ledgerBars[i].OweX = fifty.Sub(half).StringFixed(2) + "%"
+	}
 
 	data := s.newPage(w, r, "Statistik", "stats")
 	if err := s.withYearSelector(r, data, year); err != nil {
