@@ -12,8 +12,8 @@
 		<div class="kpi card kpi--hours"><span class="kpi__label">Stunden</span><span class="kpi__value">{{num .TotalHours}} h</span>
 			{{with .HoursSpark}}{{template "spark" .}}{{end}}</div>
 		{{if .HasLedger}}
-		<div class="kpi card kpi--owe"><span class="kpi__label">Verrechnung</span><span class="kpi__value">{{money .LedgerSum}}</span></div>
-		<div class="kpi card kpi--net"><span class="kpi__label">Netto-Ergebnis</span><span class="kpi__value">{{money .NetResult}}</span>
+		<div class="kpi card kpi--{{if .LedgerSum.IsNegative}}owe{{else}}pay{{end}}"><span class="kpi__label">Verrechnung</span><span class="kpi__value">{{money .LedgerSum}}</span></div>
+		<div class="kpi card kpi--{{if .NetResult.IsNegative}}owe{{else}}net{{end}}"><span class="kpi__label">Netto-Ergebnis</span><span class="kpi__value">{{money .NetResult}}</span>
 			{{with .NetSpark}}{{template "spark" .}}{{end}}</div>
 		{{end}}
 		{{if .Completed}}

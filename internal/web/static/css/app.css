@@ -537,6 +537,7 @@ em { font-style: normal; color: var(--muted); }
 .kpi--rev { --kpi-accent: var(--data); }
 .kpi--hours { --kpi-accent: var(--accent); }
 .kpi--owe { --kpi-accent: var(--owe); }
+.kpi--pay { --kpi-accent: var(--pay); }
 .kpi--net { --kpi-accent: var(--primary-strong); }
 .kpi--paid { --kpi-accent: var(--primary); }
 .kpi--open { --kpi-accent: var(--accent); }
@@ -546,7 +547,6 @@ em { font-style: normal; color: var(--muted); }
 	margin-top: .35rem; padding: .08rem .42rem; border-radius: 999px; }
 .delta--up { color: var(--data); background: color-mix(in srgb, var(--data) 15%, transparent); }
 .delta--down { color: var(--owe); background: color-mix(in srgb, var(--owe) 16%, transparent); }
-.delta--flat { color: var(--muted); background: var(--surface-2); }
 /* Tile trend sparkline: inline SVG, coloured by the tile's role accent. Stretched
    to full width (preserveAspectRatio none) with a non-scaling stroke so the line
    keeps its 2px weight. */
@@ -574,7 +574,7 @@ em { font-style: normal; color: var(--muted); }
    bar is correct even when the animation is skipped. */
 @keyframes barGrow { from { transform: scaleX(0); } }
 
-/* Diverging bar chart for signed money (Verrechnung): bars grow from a centre
+/* Diverging bar chart for signed money (Verrechnung): bars grow from a center
    axis — left = owe (warm), right = receivable (green). The signed value label
    carries the sign; colour only reinforces. */
 .dchart { display: flex; flex-direction: column; gap: .6rem; }

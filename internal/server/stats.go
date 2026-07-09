@@ -35,13 +35,13 @@ func makeSpark(vals []decimal.Decimal) *sparkView {
 		lo, hi = math.Min(lo, f), math.Max(hi, f)
 	}
 	rng := hi - lo
-	if rng == 0 {
-		rng = 1
-	}
 	var b strings.Builder
 	for i, f := range fs {
 		x := float64(i) / float64(n-1) * 100
-		y := 29 - (f-lo)/rng*27 // baseline padding: y in ~2..29
+		y := 15.5 // a flat (no-variance) series draws a centered line
+		if rng > 0 {
+			y = 29 - (f-lo)/rng*27 // y in ~2..29 (SVG y grows downward)
+		}
 		if i > 0 {
 			b.WriteByte(' ')
 		}
@@ -61,7 +61,7 @@ type aggRow struct {
 // ledgerBar is one bar of the per-neighbor verrechnung chart. Amount is the
 // signed value shown as the label; Bar its magnitude. Half/OweX are SVG
 // attribute strings for the diverging chart (a rect's width and, for a payable,
-// its left edge), each as a percentage of the axis where the centre is 50%.
+// its left edge), each as a percentage of the axis where the center is 50%.
 type ledgerBar struct {
 	Name   string
 	Amount decimal.Decimal

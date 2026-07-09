@@ -51,9 +51,9 @@
 
 {{/*
 	"bar-abs" renders a diverging bar chart of signed money values (Verrechnung):
-	bars grow from a centre axis — left = owe (warm), right = receivable (green).
-	The signed value label carries the sign; colour only reinforces. Expects dict:
-	"Rows" ([]ledgerBar with Name/Amount/Bar), "Max" (magnitude of largest bar).
+	bars grow from a center axis — left = owe (warm), right = receivable (green).
+	The signed value label carries the sign; color only reinforces. Expects dict:
+	"Rows" ([]ledgerBar with Name/Amount + precomputed SVG geometry Half/OweX).
 */}}
 {{define "bar-abs"}}
 	<div class="dchart">
