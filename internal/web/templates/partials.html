@@ -37,7 +37,8 @@
 		{{range .Rows}}
 		<div class="barchart__row">
 			<span class="barchart__label" title="{{.Label}}">{{.Label}}</span>
-			<svg class="bchart" preserveAspectRatio="none" aria-hidden="true">
+			<svg class="bchart" preserveAspectRatio="none">
+				<title>{{.Label}} · {{if $money}}{{money .Cost}}{{else}}{{num .Hours}} h{{end}}</title>
 				<rect class="bchart__track" x="0" y="0" width="100%" height="10" rx="5"></rect>
 				<rect class="bchart__fill" x="0" y="0" width="{{pct .Cost $max}}" height="10" rx="5"></rect>
 			</svg>
@@ -60,7 +61,8 @@
 		{{range .Rows}}
 		<div class="dchart__row">
 			<span class="dchart__label" title="{{.Name}}">{{.Name}}</span>
-			<svg class="dchart__svg" preserveAspectRatio="none" aria-hidden="true">
+			<svg class="dchart__svg" preserveAspectRatio="none">
+				<title>{{.Name}} · {{money .Amount}}</title>
 				<line class="dchart__center" x1="50%" y1="0" x2="50%" y2="12"></line>
 				{{if .Amount.IsNegative}}
 				<rect class="dchart__fill dchart__fill--owe" x="{{.OweX}}" y="0" width="{{.Half}}" height="12" rx="5"></rect>

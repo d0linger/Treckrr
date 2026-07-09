@@ -532,7 +532,9 @@ em { font-style: normal; color: var(--muted); }
 /* KPI tiles: a role-coloured accent edge, a larger tabular value, and an
    optional trend chip. Colour the edge with .kpi--<role>. */
 .kpigrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .6rem; }
-.kpi { position: relative; display: flex; flex-direction: column; gap: .08rem; padding: .85rem .9rem; overflow: hidden; }
+.kpi { position: relative; display: flex; flex-direction: column; gap: .08rem; padding: .85rem .9rem; overflow: hidden;
+	transition: transform .14s ease, box-shadow .14s ease; }
+.kpi:hover { transform: translateY(-2px); box-shadow: 0 2px 4px rgba(0, 0, 0, .07), 0 12px 26px rgba(0, 0, 0, .09); }
 .kpi::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--kpi-accent, var(--data)); }
 .kpi--rev { --kpi-accent: var(--data); }
 .kpi--hours { --kpi-accent: var(--accent); }
@@ -564,7 +566,9 @@ em { font-style: normal; color: var(--muted); }
 .bchart { display: block; width: 100%; height: 10px; }
 .bchart__track { fill: var(--data-track); }
 .bchart__fill { fill: var(--data); transform-box: fill-box; transform-origin: left center;
-	animation: barGrow .7s cubic-bezier(.22, .61, .36, 1) both; }
+	animation: barGrow .7s cubic-bezier(.22, .61, .36, 1) both; transition: filter .15s ease; }
+.barchart__row:hover .bchart__fill { filter: brightness(1.08); }
+.barchart__row:hover .barchart__label { color: var(--text); }
 .barchart__row:nth-child(2) .bchart__fill { animation-delay: .05s; }
 .barchart__row:nth-child(3) .bchart__fill { animation-delay: .1s; }
 .barchart__row:nth-child(4) .bchart__fill { animation-delay: .15s; }
@@ -582,7 +586,8 @@ em { font-style: normal; color: var(--muted); }
 .dchart__label { font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dchart__svg { display: block; width: 100%; height: 12px; }
 .dchart__center { stroke: var(--border); stroke-width: 1; }
-.dchart__fill { transform-box: fill-box; animation: barGrow .7s cubic-bezier(.22, .61, .36, 1) both; }
+.dchart__fill { transform-box: fill-box; animation: barGrow .7s cubic-bezier(.22, .61, .36, 1) both; transition: filter .15s ease; }
+.dchart__row:hover .dchart__fill { filter: brightness(1.08); }
 .dchart__fill--owe { fill: var(--owe); transform-origin: right center; }
 .dchart__fill--pay { fill: var(--pay); transform-origin: left center; }
 .dchart__val { font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
