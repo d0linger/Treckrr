@@ -25,12 +25,13 @@ Always run the most recent build.
 Treckrr ships with:
 
 - password hashing with **bcrypt**, a password policy and forced password change,
-- **TOTP** two-factor authentication,
+- **TOTP** two-factor authentication (secrets are **encrypted at rest** using AES-GCM),
 - session management (list/revoke active sessions) and **login rate limiting**,
 - role-based access (administrator / editor / read-only),
 - an **audit trail** plus request logging,
 - a strict **Content-Security-Policy** (all assets served locally, no CDNs) and
-  hardened HTTP security headers,
+  hardened HTTP security headers (including HSTS, CSP, COOP, CORP, and Permissions-Policy),
+- **CSRF protection** on all state-changing requests using signed per-session tokens,
 - `HttpOnly`, `SameSite=Lax` session cookies (`Secure` behind HTTPS).
 
 ## Hardening checklist for operators
@@ -45,9 +46,7 @@ Treckrr ships with:
 
 ## Known limitations
 
-- The TOTP secret is currently stored unencrypted in the database; protect
-  database access and backups accordingly.
-- CSRF protection relies on `SameSite=Lax` cookies rather than per-request
-  tokens.
+- This is a small self-hosted project; ensure you run it on a trusted network
+  behind a secure reverse proxy.
 
-Contributions improving these are welcome.
+Contributions improving the security posture are welcome.
