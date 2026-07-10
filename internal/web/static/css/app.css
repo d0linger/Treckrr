@@ -426,7 +426,7 @@ em { font-style: normal; color: var(--muted); }
 	color: var(--muted);
 	min-height: var(--tap);
 }
-.tabbar__icon { font-size: 1.15rem; line-height: 1; }
+.tabbar__icon { width: 22px; height: 22px; display: block; }
 .tabbar__item.is-active { color: var(--primary); font-weight: 700; }
 
 .tabbar__item span:last-child { white-space: nowrap; }
@@ -639,28 +639,31 @@ em { font-style: normal; color: var(--muted); }
 .chip2--owe { color: var(--owe); background: color-mix(in srgb, var(--owe) 14%, transparent); border-color: color-mix(in srgb, var(--owe) 30%, transparent); }
 
 /* ---- Booking / ledger cards (mobile-first, replace the sideways table) - */
-.bookcards { display: flex; flex-direction: column; gap: .55rem; }
+/* Two compact lines per card: date · task · badges · cost on top, the
+   derivation/details plus small icon actions below. */
+.bookcards { display: flex; flex-direction: column; gap: .45rem; }
 .bcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-	padding: .65rem .75rem; display: flex; flex-direction: column; gap: .45rem; box-shadow: var(--shadow); }
+	padding: .5rem .7rem; display: flex; flex-direction: column; gap: .25rem; box-shadow: var(--shadow); }
 .bcard--void { background: var(--surface-2); }
 .bcard--void .bcard__task, .bcard--void .bcard__cost { text-decoration: line-through; color: var(--muted); }
-.bcard__top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
-.bcard__date { font-size: .74rem; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
-.bcard__badges { display: flex; gap: .3rem; flex-wrap: wrap; justify-content: flex-end; }
-.bcard__task { font-weight: 700; font-size: .95rem; }
-.bcard__detail { font-size: .78rem; color: var(--muted); line-height: 1.4; }
-.bcard__calc { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem;
-	border-top: 1px dashed var(--border); padding-top: .4rem; }
-.bcard__formula { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-.bcard__cost { font-weight: 800; font-size: 1.05rem; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-.bcard__actions { display: flex; gap: .4rem; border-top: 1px solid var(--border); padding-top: .5rem; }
-.bcard__actions form { margin: 0; flex: 1; }
-.actbtn { display: inline-flex; align-items: center; justify-content: center; gap: .3rem; width: 100%;
-	font-size: .78rem; font-weight: 700; padding: .45rem .3rem; border-radius: 9px;
-	border: 1px solid var(--border); color: var(--muted); background: var(--surface);
-	cursor: pointer; min-height: 2.3rem; text-decoration: none; }
-.actbtn:hover { background: var(--surface-2); color: var(--text); }
-.actbtn--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+/* The head may wrap on very narrow cards: the task keeps a readable minimum
+   (so it ellipsizes instead of vanishing), badges/cost move to the next line
+   when the fixed parts alone don't fit, and the cost stays right-aligned. */
+.bcard__head { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .5rem; }
+.bcard__date { font-size: .74rem; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bcard__task { flex: 1 1 auto; min-width: 6ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+	font-weight: 700; font-size: .92rem; }
+.bcard__badges { display: flex; gap: .3rem; flex-wrap: wrap; flex: 0 1 auto; min-width: 0; }
+.bcard__cost { flex: 0 0 auto; margin-left: auto; font-weight: 800; font-size: .98rem; font-variant-numeric: tabular-nums; white-space: nowrap; letter-spacing: -.01em; }
+.bcard__foot { display: flex; align-items: center; gap: .5rem; }
+.bcard__detail { flex: 1 1 auto; min-width: 0; font-size: .76rem; color: var(--muted); line-height: 1.4; }
+.bcard__acts { display: flex; gap: .25rem; flex: 0 0 auto; align-self: flex-end; }
+.bcard__acts form { margin: 0; }
+.iconact { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 9px;
+	border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: .95rem;
+	cursor: pointer; text-decoration: none; }
+.iconact:hover { background: var(--surface-2); color: var(--text); }
+.iconact--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
 .bcard__summary { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem;
 	padding: .15rem .3rem 0; font-weight: 800; font-variant-numeric: tabular-nums; }
 .bcard__summary .muted { font-weight: 600; }
