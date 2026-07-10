@@ -625,3 +625,99 @@ em { font-style: normal; color: var(--muted); }
 	max-width: 34rem;
 	line-height: 1.45;
 }
+
+/* ---- Unified status chips -------------------------------------------- */
+/* One shape for every state: glyph + colour + label (never colour alone, so
+   it stays legible for colour-blind users and in print). */
+.chip2 { display: inline-flex; align-items: center; gap: .3rem; font-size: .7rem; font-weight: 800;
+	padding: .14rem .5rem; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; line-height: 1.3; }
+.chip2__g { font-size: .74rem; line-height: 1; }
+.chip2--paid { color: var(--pay); background: color-mix(in srgb, var(--pay) 14%, transparent); border-color: color-mix(in srgb, var(--pay) 30%, transparent); }
+.chip2--open { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
+.chip2--void { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
+.chip2--stale { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.chip2--owe { color: var(--owe); background: color-mix(in srgb, var(--owe) 14%, transparent); border-color: color-mix(in srgb, var(--owe) 30%, transparent); }
+
+/* ---- Booking / ledger cards (mobile-first, replace the sideways table) - */
+.bookcards { display: flex; flex-direction: column; gap: .55rem; }
+.bcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+	padding: .65rem .75rem; display: flex; flex-direction: column; gap: .45rem; box-shadow: var(--shadow); }
+.bcard--void { background: var(--surface-2); }
+.bcard--void .bcard__task, .bcard--void .bcard__cost { text-decoration: line-through; color: var(--muted); }
+.bcard__top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.bcard__date { font-size: .74rem; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+.bcard__badges { display: flex; gap: .3rem; flex-wrap: wrap; justify-content: flex-end; }
+.bcard__task { font-weight: 700; font-size: .95rem; }
+.bcard__detail { font-size: .78rem; color: var(--muted); line-height: 1.4; }
+.bcard__calc { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem;
+	border-top: 1px dashed var(--border); padding-top: .4rem; }
+.bcard__formula { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bcard__cost { font-weight: 800; font-size: 1.05rem; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.bcard__actions { display: flex; gap: .4rem; border-top: 1px solid var(--border); padding-top: .5rem; }
+.bcard__actions form { margin: 0; flex: 1; }
+.actbtn { display: inline-flex; align-items: center; justify-content: center; gap: .3rem; width: 100%;
+	font-size: .78rem; font-weight: 700; padding: .45rem .3rem; border-radius: 9px;
+	border: 1px solid var(--border); color: var(--muted); background: var(--surface);
+	cursor: pointer; min-height: 2.3rem; text-decoration: none; }
+.actbtn:hover { background: var(--surface-2); color: var(--text); }
+.actbtn--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.bcard__summary { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem;
+	padding: .15rem .3rem 0; font-weight: 800; font-variant-numeric: tabular-nums; }
+.bcard__summary .muted { font-weight: 600; }
+
+/* ---- "Zu erledigen" attention strip (dashboard cockpit) --------------- */
+.attn { display: flex; flex-direction: column; gap: .4rem; }
+.attn__row { display: flex; align-items: center; gap: .6rem; text-decoration: none; color: var(--text);
+	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+	padding: .55rem .65rem; box-shadow: var(--shadow); }
+.attn__row:hover { background: var(--surface-2); }
+.attn__row--warn { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.attn__row--owe { border-color: color-mix(in srgb, var(--owe) 40%, var(--border)); background: color-mix(in srgb, var(--owe) 7%, var(--surface)); }
+.attn__ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
+	font-size: .9rem; font-weight: 800; flex: 0 0 auto; }
+.attn__ic--warn { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+.attn__ic--owe { background: color-mix(in srgb, var(--owe) 18%, transparent); color: var(--owe); }
+.attn__ic--pay { background: color-mix(in srgb, var(--pay) 18%, transparent); color: var(--pay); }
+.attn__txt { flex: 1; font-size: .85rem; }
+.attn__txt strong { font-weight: 800; }
+.attn__go { color: var(--muted); font-size: 1.1rem; line-height: 1; }
+
+/* ---- Floating action button (quick-book) ------------------------------ */
+.fab { position: fixed; right: 1rem; z-index: 25;
+	bottom: calc(1rem + 58px + env(safe-area-inset-bottom));
+	width: 52px; height: 52px; border-radius: 50%; background: var(--primary); color: #fff;
+	display: grid; place-items: center; font-size: 1.6rem; font-weight: 700; text-decoration: none;
+	box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 55%, transparent), 0 2px 6px rgba(0, 0, 0, .3); }
+.fab:hover { background: var(--primary-strong); }
+
+/* ---- Compact shareable list (Beleg — zum Screenshotten & Weitergeben) - */
+.beleg { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+	overflow: hidden; box-shadow: var(--shadow); }
+.beleg__head { padding: .7rem .85rem; border-bottom: 1px solid var(--border);
+	display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; }
+.beleg__who { font-weight: 800; font-size: 1.05rem; }
+.beleg__yr { font-size: .8rem; color: var(--muted); font-weight: 700; white-space: nowrap; }
+.beleg__row { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem;
+	padding: .45rem .85rem; border-bottom: 1px solid var(--border); }
+.beleg__l { min-width: 0; display: flex; gap: .5rem; align-items: baseline; }
+.beleg__date { font-size: .74rem; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.beleg__task { font-weight: 600; font-size: .9rem; }
+.beleg__sub { font-size: .76rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.beleg__cost { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.beleg__row--void .beleg__task, .beleg__row--void .beleg__cost { text-decoration: line-through; color: var(--muted); }
+.beleg__foot { display: flex; justify-content: space-between; padding: .55rem .85rem; font-variant-numeric: tabular-nums; }
+.beleg__foot--total { background: var(--surface-2); font-weight: 800; font-size: 1rem; }
+.beleg__foot--sub { color: var(--muted); font-weight: 600; font-size: .85rem; border-bottom: 1px solid var(--border); }
+.beleg__foot--sub strong { color: var(--text); }
+.beleg__foot--owe { color: var(--owe); }
+.beleg__foot--owe strong { color: var(--owe); }
+
+/* Small derivation line under a collapsed cost item (Grundlagen · vor dem
+   Aufklappen) — screenshot-friendly. */
+.calcline { display: block; font-size: .76rem; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: .1rem; }
+.disclosure > summary .list__main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+
+/* Subtle typographic lift for the headline figures (restrained — no display
+   webfont): tabular digits and a touch of negative tracking give them presence
+   without shouting. */
+.summary-card__value { font-variant-numeric: tabular-nums; letter-spacing: -.02em; }

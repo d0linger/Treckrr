@@ -1,0 +1,55 @@
+{{define "content"}}
+<section class="stack">
+	<a class="backlink" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ {{.Neighbor.Name}} · {{.Year.Year}}</a>
+	<p class="muted small">Kompakte Übersicht zum Screenshotten &amp; Weitergeben.</p>
+
+	<div class="beleg">
+		<div class="beleg__head">
+			<span class="beleg__who">{{.Neighbor.Name}}</span>
+			<span class="beleg__yr">Abrechnung {{.Year.Year}}</span>
+		</div>
+		{{range .Entries}}
+		<div class="beleg__row {{if .Voided}}beleg__row--void{{end}}">
+			<span class="beleg__l">
+				<span class="beleg__date">{{date .Date}}</span>
+				<span>
+					<span class="beleg__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}</span>
+					<span class="beleg__sub">{{if .Voided}} · storniert{{else}} · {{num .Hours}} h × {{money .HourlyRate}}{{end}}</span>
+				</span>
+			</span>
+			<span class="beleg__cost">{{money .Cost}}</span>
+		</div>
+		{{else}}
+		<div class="beleg__row"><span class="muted">Keine Buchungen in diesem Jahr.</span></div>
+		{{end}}
+		<div class="beleg__foot {{if .Ledger}}beleg__foot--sub{{else}}beleg__foot--total{{end}}">
+			<span>{{if .Ledger}}Leistungen{{else}}Summe{{end}}</span><span>{{money .TotalCost}}</span>
+		</div>
+
+		{{if .Ledger}}
+		{{range .Ledger}}
+		<div class="beleg__row {{if .Voided}}beleg__row--void{{end}}">
+			<span class="beleg__l">
+				<span class="beleg__date">{{date .Date}}</span>
+				<span>
+					<span class="beleg__task">{{if .Amount.IsNegative}}Ich schulde{{else}}Zusatzforderung{{end}}</span>
+					<span class="beleg__sub">{{if .Description}} · {{.Description}}{{end}}{{if .Voided}} · storniert{{end}}</span>
+				</span>
+			</span>
+			<span class="beleg__cost">{{money .Amount}}</span>
+		</div>
+		{{end}}
+		<div class="beleg__foot beleg__foot--sub"><span>Verrechnung</span><span>{{money .LedgerSum}}</span></div>
+		<div class="beleg__foot beleg__foot--total"><span>Saldo</span><span>{{money .Saldo}}</span></div>
+		{{end}}
+
+		{{if .Completed}}
+		<div class="beleg__foot beleg__foot--sub {{if not .Paid}}beleg__foot--owe{{end}}">
+			<span>Status</span><span>{{if .Paid}}✓ Bezahlt{{else}}Offen{{end}}</span>
+		</div>
+		{{end}}
+	</div>
+
+	<p class="muted small center">Stand {{.Today}} · Treckrr · {{num .TotalHours}} h</p>
+</section>
+{{end}}

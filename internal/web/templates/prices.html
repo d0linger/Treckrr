@@ -56,7 +56,10 @@
 		{{range .TractorViews}}
 		<details class="card disclosure disclosure--row {{if not .Tractor.Active}}is-inactive{{end}}">
 			<summary>
-				<span class="list__title">{{.Tractor.Label}}{{if not .Tractor.Active}}<span class="pill-off">inaktiv</span>{{end}}</span>
+				<span class="list__main">
+					<span class="list__title">{{.Tractor.Label}}{{if not .Tractor.Active}}<span class="pill-off">inaktiv</span>{{end}}</span>
+					{{if .Rates}}<span class="calcline">{{num .Tractor.PS}} PS · {{range $i, $r := .Rates}}{{if $i}} · {{end}}{{$r.Load.Name}} {{num $r.Rate}}{{end}} €/h</span>{{end}}
+				</span>
 				<span class="list__value">{{num .Tractor.PS}} PS</span>
 			</summary>
 			<div class="ratechips">
@@ -126,9 +129,12 @@
 		<details class="card disclosure disclosure--row {{if not .Machine.Active}}is-inactive{{end}}"
 			data-machine-row data-category="{{.Machine.Category}}">
 			<summary>
-				<span class="list__title">{{.Machine.Name}}
-					{{if .Machine.Category}}<span class="chip">{{.Machine.Category}}</span>{{end}}
-					{{if not .Machine.Active}}<span class="pill-off">inaktiv</span>{{end}}</span>
+				<span class="list__main">
+					<span class="list__title">{{.Machine.Name}}
+						{{if .Machine.Category}}<span class="chip">{{.Machine.Category}}</span>{{end}}
+						{{if not .Machine.Active}}<span class="pill-off">inaktiv</span>{{end}}</span>
+					<span class="calcline">{{num .Machine.WorkingWidth}} m × {{num .Machine.CostPerAB}} €/AB·h</span>
+				</span>
 				<span class="list__value">{{money .Rate}}/h</span>
 			</summary>
 			{{if not $.Locked}}

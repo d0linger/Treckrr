@@ -13,14 +13,17 @@
 		</div>
 		<div class="summary-card__meta">
 			<span>{{num .TotalHours}} h · {{len .Entries}} Buchungen</span>
-			<a class="btn btn--ghost btn--sm" href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}">CSV Export</a>
+			<span class="btnrow">
+				<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}/beleg?year={{.Year.ID}}">Beleg</a>
+				<a class="btn btn--ghost btn--sm" href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}">CSV Export</a>
+			</span>
 		</div>
 	</div>
 
 	{{if .Completed}}
 	<div class="flash flash--info">Dieses Abrechnungsjahr ist <strong>abgeschlossen</strong> – neue Buchungen und Löschungen sind gesperrt.</div>
 	{{else}}
-	<h2 class="section-title">Neue Buchung</h2>
+	<h2 class="section-title" id="neue-buchung">Neue Buchung</h2>
 	<form method="post" action="/entries" class="card form" data-entry-form
 		data-pricing-url="/api/base/{{.Base.ID}}/pricing">
 		<input type="hidden" name="year_id" value="{{.Year.ID}}">
@@ -158,131 +161,103 @@
 	{{end}}
 
 	<h2 class="section-title">Gesamtübersicht Buchungen</h2>
-	<div class="card tablewrap">
-		<table class="dtable dtable--entries dtable--zebra">
-			<thead>
-				<tr>
-					<th>Datum</th><th>Tätigkeit</th>
-					<th class="num">Std</th><th class="num">Kosten</th><th aria-label="Aktion"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{{range .Entries}}
-				<tr {{if .Voided}}class="is-voided"{{end}}>
-					<td class="nowrap">{{date .Date}}</td>
-					<td>
-						<span class="entry__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}{{if .Voided}} <span class="pill-off">storniert</span>{{end}}{{if index $.Stale .ID}} <span class="pill-warn" title="Preis weicht von der aktuellen Grundlage ab">Grundlage geändert</span>{{end}}</span>
-						<span class="entry__detail muted small">{{.TractorLabel}} · {{.LoadLabel}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}</span>
-						<span class="entry__detail muted small">{{num .Hours}} h × {{money .HourlyRate}}/h{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
-					</td>
-					<td class="num">{{num .Hours}}</td>
-					<td class="num strong">{{money .Cost}}</td>
-					<td class="num">
-						{{if not $.Completed}}
-						<div class="rowactions">
-							{{if .Voided}}
-							<form method="post" action="/entries/{{.ID}}/void">
-								<input type="hidden" name="voided" value="false">
-								<button class="btn btn--ghost btn--sm" type="submit" title="Stornierung aufheben">↺</button>
-							</form>
-							{{else}}
-							<a class="btn btn--ghost btn--icon" href="/entries/{{.ID}}/edit" aria-label="Bearbeiten" title="Bearbeiten">✎</a>
-							<form method="post" action="/entries/{{.ID}}/void"
-								data-confirm="Buchung stornieren? (bleibt sichtbar, zählt nicht mehr)"
-								data-confirm-reason="Grund der Stornierung (optional)">
-								<input type="hidden" name="voided" value="true">
-								<input type="hidden" name="reason" value="">
-								<button class="btn btn--ghost btn--icon" type="submit" aria-label="Stornieren" title="Stornieren">⊘</button>
-							</form>
-							<form method="post" action="/entries/{{.ID}}/delete" data-confirm="Buchung endgültig löschen?">
-								<button class="btn btn--ghost btn--icon btn--danger" type="submit" aria-label="Löschen" title="Löschen">🗑</button>
-							</form>
-							{{end}}
-						</div>
-						{{end}}
-					</td>
-				</tr>
+	<div class="bookcards">
+		{{range .Entries}}
+		<div class="bcard {{if .Voided}}bcard--void{{end}}">
+			<div class="bcard__top">
+				<span class="bcard__date">{{date .Date}}</span>
+				<span class="bcard__badges">
+					{{if .Voided}}<span class="chip2 chip2--void"><span class="chip2__g">⊘</span>Storniert</span>{{end}}
+					{{if index $.Stale .ID}}<span class="chip2 chip2--stale" title="Preis weicht von der aktuellen Grundlage ab"><span class="chip2__g">⚠</span>Grundlage geändert</span>{{end}}
+				</span>
+			</div>
+			<div>
+				<div class="bcard__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}</div>
+				<div class="bcard__detail">{{.TractorLabel}} · {{.LoadLabel}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</div>
+			</div>
+			<div class="bcard__calc">
+				<span class="bcard__formula">{{num .Hours}} h × {{money .HourlyRate}}/h</span>
+				<span class="bcard__cost">{{money .Cost}}</span>
+			</div>
+			{{if not $.Completed}}
+			<div class="bcard__actions">
+				{{if .Voided}}
+				<form method="post" action="/entries/{{.ID}}/void">
+					<input type="hidden" name="voided" value="false">
+					<button class="actbtn" type="submit">↺ Storno aufheben</button>
+				</form>
 				{{else}}
-				<tr><td colspan="5" class="muted center">Noch keine Buchungen in diesem Jahr.</td></tr>
+				<a class="actbtn" href="/entries/{{.ID}}/edit">✎ Bearbeiten</a>
+				<form method="post" action="/entries/{{.ID}}/void"
+					data-confirm="Buchung stornieren? (bleibt sichtbar, zählt nicht mehr)"
+					data-confirm-reason="Grund der Stornierung (optional)">
+					<input type="hidden" name="voided" value="true">
+					<input type="hidden" name="reason" value="">
+					<button class="actbtn" type="submit">⊘ Stornieren</button>
+				</form>
+				<form method="post" action="/entries/{{.ID}}/delete" data-confirm="Buchung endgültig löschen?">
+					<button class="actbtn actbtn--danger" type="submit">🗑 Löschen</button>
+				</form>
 				{{end}}
-			</tbody>
-			{{if .Entries}}
-			<tfoot>
-				<tr>
-					<th>Gesamt</th>
-					<th></th>
-					<th class="num">{{num .TotalHours}}</th>
-					<th class="num">{{money .TotalCost}}</th>
-					<th></th>
-				</tr>
-			</tfoot>
+			</div>
 			{{end}}
-		</table>
+		</div>
+		{{else}}
+		<p class="muted card center">Noch keine Buchungen in diesem Jahr.</p>
+		{{end}}
 	</div>
+	{{if .Entries}}
+	<div class="bcard__summary"><span class="muted">Gesamt · {{num .TotalHours}} h</span><span>{{money .TotalCost}}</span></div>
+	{{end}}
 
 	<h2 class="section-title">Konto / Verrechnung</h2>
 	<p class="muted small">Manuelle Positionen, die mit den Buchungen verrechnet werden.
 		„Ich schulde" reduziert den Saldo, „Zusatzforderung" erhöht ihn.</p>
-	<div class="card tablewrap">
-		<table class="dtable dtable--entries dtable--zebra">
-			<thead>
-				<tr>
-					<th>Datum</th><th>Beschreibung</th>
-					<th class="num">Betrag</th><th aria-label="Aktion"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{{range .Ledger}}
-				<tr {{if .Voided}}class="is-voided"{{end}}>
-					<td class="nowrap">{{date .Date}}</td>
-					<td>
-						<span class="entry__task">{{if .Amount.IsNegative}}Ich schulde{{else}}Zusatzforderung{{end}}{{if .Voided}} <span class="pill-off">storniert</span>{{end}}</span>
-						<span class="entry__detail muted small">{{if .Description}}{{.Description}}{{else}}—{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
-					</td>
-					<td class="num strong">{{money .Amount}}</td>
-					<td class="num">
-						{{if not $.Completed}}
-						<div class="rowactions">
-							{{if .Voided}}
-							<form method="post" action="/ledger/{{.ID}}/void">
-								<input type="hidden" name="voided" value="false">
-								<button class="btn btn--ghost btn--sm" type="submit" title="Stornierung aufheben">↺</button>
-							</form>
-							{{else}}
-							<a class="btn btn--ghost btn--icon" href="/ledger/{{.ID}}/edit" aria-label="Bearbeiten" title="Bearbeiten">✎</a>
-							<form method="post" action="/ledger/{{.ID}}/void"
-								data-confirm="Position stornieren? (bleibt sichtbar, zählt nicht mehr)"
-								data-confirm-reason="Grund der Stornierung (optional)">
-								<input type="hidden" name="voided" value="true">
-								<input type="hidden" name="reason" value="">
-								<button class="btn btn--ghost btn--icon" type="submit" aria-label="Stornieren" title="Stornieren">⊘</button>
-							</form>
-							<form method="post" action="/ledger/{{.ID}}/delete" data-confirm="Position endgültig löschen?">
-								<button class="btn btn--ghost btn--icon btn--danger" type="submit" aria-label="Löschen" title="Löschen">🗑</button>
-							</form>
-							{{end}}
-						</div>
-						{{end}}
-					</td>
-				</tr>
+	<div class="bookcards">
+		{{range .Ledger}}
+		<div class="bcard {{if .Voided}}bcard--void{{end}}">
+			<div class="bcard__top">
+				<span class="bcard__date">{{date .Date}}</span>
+				<span class="bcard__badges">
+					<span class="chip2 {{if .Amount.IsNegative}}chip2--owe{{else}}chip2--open{{end}}"><span class="chip2__g">{{if .Amount.IsNegative}}↺{{else}}＋{{end}}</span>{{if .Amount.IsNegative}}Ich schulde{{else}}Zusatzforderung{{end}}</span>
+					{{if .Voided}}<span class="chip2 chip2--void"><span class="chip2__g">⊘</span>Storniert</span>{{end}}
+				</span>
+			</div>
+			<div class="bcard__calc">
+				<span class="bcard__formula">{{if .Description}}{{.Description}}{{else}}—{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
+				<span class="bcard__cost">{{money .Amount}}</span>
+			</div>
+			{{if not $.Completed}}
+			<div class="bcard__actions">
+				{{if .Voided}}
+				<form method="post" action="/ledger/{{.ID}}/void">
+					<input type="hidden" name="voided" value="false">
+					<button class="actbtn" type="submit">↺ Storno aufheben</button>
+				</form>
 				{{else}}
-				<tr><td colspan="4" class="muted center">Keine Positionen.</td></tr>
+				<a class="actbtn" href="/ledger/{{.ID}}/edit">✎ Bearbeiten</a>
+				<form method="post" action="/ledger/{{.ID}}/void"
+					data-confirm="Position stornieren? (bleibt sichtbar, zählt nicht mehr)"
+					data-confirm-reason="Grund der Stornierung (optional)">
+					<input type="hidden" name="voided" value="true">
+					<input type="hidden" name="reason" value="">
+					<button class="actbtn" type="submit">⊘ Stornieren</button>
+				</form>
+				<form method="post" action="/ledger/{{.ID}}/delete" data-confirm="Position endgültig löschen?">
+					<button class="actbtn actbtn--danger" type="submit">🗑 Löschen</button>
+				</form>
 				{{end}}
-			</tbody>
-			{{if .Ledger}}
-			<tfoot>
-				<tr>
-					<th>Verrechnung</th><th></th>
-					<th class="num">{{money .LedgerSum}}</th><th></th>
-				</tr>
-				<tr>
-					<th>Saldo</th><th></th>
-					<th class="num">{{money .Saldo}}</th><th></th>
-				</tr>
-			</tfoot>
+			</div>
 			{{end}}
-		</table>
+		</div>
+		{{else}}
+		<p class="muted card center">Keine Positionen.</p>
+		{{end}}
 	</div>
+	{{if .Ledger}}
+	<div class="bcard__summary"><span class="muted">Verrechnung</span><span>{{money .LedgerSum}}</span></div>
+	<div class="bcard__summary"><span>Saldo</span><span>{{money .Saldo}}</span></div>
+	{{end}}
 
 	{{if not .Completed}}
 	<details class="card disclosure">
@@ -311,6 +286,8 @@
 			</form>
 		</details>
 		{{end}}
+
+	{{if not .Completed}}<a class="fab" href="#neue-buchung" aria-label="Neue Buchung" title="Neue Buchung">＋</a>{{end}}
 </section>
 {{end}}
 
