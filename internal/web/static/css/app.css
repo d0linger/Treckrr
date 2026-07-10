@@ -646,12 +646,15 @@ em { font-style: normal; color: var(--muted); }
 	padding: .5rem .7rem; display: flex; flex-direction: column; gap: .25rem; box-shadow: var(--shadow); }
 .bcard--void { background: var(--surface-2); }
 .bcard--void .bcard__task, .bcard--void .bcard__cost { text-decoration: line-through; color: var(--muted); }
-.bcard__head { display: flex; align-items: center; gap: .5rem; }
+/* The head may wrap on very narrow cards: the task keeps a readable minimum
+   (so it ellipsizes instead of vanishing), badges/cost move to the next line
+   when the fixed parts alone don't fit, and the cost stays right-aligned. */
+.bcard__head { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .5rem; }
 .bcard__date { font-size: .74rem; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.bcard__task { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.bcard__task { flex: 1 1 auto; min-width: 6ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 	font-weight: 700; font-size: .92rem; }
-.bcard__badges { display: flex; gap: .3rem; flex: 0 0 auto; }
-.bcard__cost { flex: 0 0 auto; font-weight: 800; font-size: .98rem; font-variant-numeric: tabular-nums; white-space: nowrap; letter-spacing: -.01em; }
+.bcard__badges { display: flex; gap: .3rem; flex-wrap: wrap; flex: 0 1 auto; min-width: 0; }
+.bcard__cost { flex: 0 0 auto; margin-left: auto; font-weight: 800; font-size: .98rem; font-variant-numeric: tabular-nums; white-space: nowrap; letter-spacing: -.01em; }
 .bcard__foot { display: flex; align-items: center; gap: .5rem; }
 .bcard__detail { flex: 1 1 auto; min-width: 0; font-size: .76rem; color: var(--muted); line-height: 1.4; }
 .bcard__acts { display: flex; gap: .25rem; flex: 0 0 auto; align-self: flex-end; }
