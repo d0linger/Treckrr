@@ -15,13 +15,25 @@
 		</div>
 	</div>
 
-	{{if and (not .Completed) .StaleCount}}
-	<div class="card statusrow statusrow--warn">
-		<div class="statusrow__info">
-			<strong>{{.StaleCount}} Buchung(en) weichen von der aktuellen Grundlage ab.</strong>
-			<span class="muted small">Grundlage {{.Year.Base.Year}} wurde geändert – die Buchungen behalten ihren alten Satz.</span>
+	{{if or (and (not .Completed) .StaleCount) (and .Completed .OpenCount)}}
+	<div>
+		<h2 class="section-title">Zu erledigen</h2>
+		<div class="attn">
+			{{if and (not .Completed) .StaleCount}}
+			<a class="attn__row attn__row--warn" href="/years/{{.Year.ID}}/recalc">
+				<span class="attn__ic attn__ic--warn">⚠</span>
+				<span class="attn__txt"><strong>{{.StaleCount}} Buchung(en)</strong> nach Grundlagen-Änderung neu zu berechnen</span>
+				<span class="attn__go">›</span>
+			</a>
+			{{end}}
+			{{if and .Completed .OpenCount}}
+			<a class="attn__row attn__row--owe" href="#nachbarn">
+				<span class="attn__ic attn__ic--owe">€</span>
+				<span class="attn__txt"><strong>{{.OpenCount}} Nachbar(n)</strong> mit offener Zahlung · {{money .OpenCost}}</span>
+				<span class="attn__go">›</span>
+			</a>
+			{{end}}
 		</div>
-		<a class="btn btn--primary btn--sm" href="/years/{{.Year.ID}}/recalc">Alle neu berechnen</a>
 	</div>
 	{{end}}
 
@@ -54,7 +66,7 @@
 		{{end}}
 	</div>
 
-	<h2 class="section-title">Nachbarn im Jahr {{.Year.Year}}</h2>
+	<h2 class="section-title" id="nachbarn">Nachbarn im Jahr {{.Year.Year}}</h2>
 	{{if .Summaries}}
 	<input class="input" type="search" placeholder="Nachbar suchen …" data-search="[data-nb-item]" aria-label="Nachbar suchen">
 	{{end}}

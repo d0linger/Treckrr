@@ -36,6 +36,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	var summaries []neighborSummary
 	var grandCost, grandHours, paidCost, openCost decimal.Decimal
+	openCount := 0
 	for _, n := range neighbors {
 		cost, hours, err := s.store.NeighborTotal(r.Context(), n.ID, year.ID)
 		if err != nil {
@@ -64,6 +65,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			paidCost = paidCost.Add(net)
 		} else {
 			openCost = openCost.Add(net)
+			if net.IsPositive() {
+				openCount++
+			}
 		}
 	}
 
@@ -108,6 +112,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	data["Completed"] = year.Completed()
 	data["PaidCost"] = paidCost
 	data["OpenCost"] = openCost
+	data["OpenCount"] = openCount
 	// How many bookings are out of sync with the current basis (open years only).
 	staleCount := 0
 	if !year.Completed() {

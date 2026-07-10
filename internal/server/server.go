@@ -79,6 +79,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /stats/all", s.auth(s.handleStatsAll))
 	mux.Handle("GET /neighbors/{id}", s.auth(s.handleNeighborDetail))
 	mux.Handle("GET /neighbors/{id}/overview", s.auth(s.handleNeighborOverview))
+	mux.Handle("GET /neighbors/{id}/beleg", s.auth(s.handleNeighborBeleg))
 	mux.Handle("GET /neighbors", s.auth(s.handleNeighborsManage))
 	mux.Handle("POST /neighbors/create", s.auth(s.handleNeighborManageCreate))
 	mux.Handle("POST /neighbors/{id}/update", s.auth(s.handleNeighborUpdate))
