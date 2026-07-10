@@ -116,12 +116,21 @@ func (s *Store) AuthenticateUser(ctx context.Context, username, password string)
 		`SELECT `+userCols+`, password_hash FROM users WHERE username=$1`, username).
 		Scan(&u.ID, &u.Username, &u.Role, &u.IsAdmin, &u.MustChangePassword,
 			&u.TotpEnabled, &u.CreatedAt, &hash)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
+
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
+
+	// Mitigation: if the user was not found, perform a dummy bcrypt comparison
+	// anyway. This makes the response time similar for both existing and
+	// non-existent usernames, preventing username enumeration via timing.
+	if errors.Is(err, sql.ErrNoRows) {
+		// A hardcoded dummy hash (cost 10).
+		const dummy = "$2a$10$KOzr2pVHoGzHnk12ftvS/u0vPyHMDxZpy/.KV/3DZK2AqKfftv1mi"
+		_ = auth.CheckPassword(dummy, password)
+		return nil, ErrNotFound
+	}
+
 	if !auth.CheckPassword(hash, password) {
 		return nil, ErrNotFound
 	}
