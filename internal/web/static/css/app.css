@@ -756,7 +756,7 @@ em { font-style: normal; color: var(--muted); }
 	background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--pay);
 	border-radius: 12px; padding: .6rem .75rem; font-size: .88rem; font-weight: 600;
 	box-shadow: 0 10px 26px rgba(0, 0, 0, .22);
-	animation: toastIn .22s ease-out; }
+	animation: toast-in .22s ease-out; }
 .toast::before { content: "✓"; flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
 	display: grid; place-items: center; font-size: .75rem; font-weight: 800;
 	background: color-mix(in srgb, var(--pay) 18%, transparent); color: var(--pay); }
@@ -764,7 +764,7 @@ em { font-style: normal; color: var(--muted); }
 .toast--error::before { content: "!"; background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
 .toast--info { border-left-color: var(--accent); }
 .toast--info::before { content: "i"; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
-@keyframes toastIn { from { opacity: 0; transform: translateY(10px); } }
+@keyframes toast-in { from { opacity: 0; transform: translateY(10px); } }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 
 /* Small derivation line under a collapsed cost item (Grundlagen · vor dem
