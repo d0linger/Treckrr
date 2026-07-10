@@ -63,11 +63,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		grandHours = grandHours.Add(hours)
 		if paid {
 			paidCost = paidCost.Add(net)
-		} else {
+		} else if net.IsPositive() {
+			// "Offen" = what neighbors still owe. Negative unpaid nets (I owe
+			// them) are excluded from both count and sum so the attention strip
+			// reports a consistent pair.
 			openCost = openCost.Add(net)
-			if net.IsPositive() {
-				openCount++
-			}
+			openCount++
 		}
 	}
 
