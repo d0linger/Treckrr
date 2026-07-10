@@ -148,13 +148,18 @@ em { font-style: normal; color: var(--muted); }
 }
 .drawer.is-open { transform: translateX(0); }
 .drawer__head {
-	display: flex; flex-direction: column; gap: .1rem;
-	padding: 1.1rem 1.15rem .85rem;
+	display: flex; align-items: center; gap: .7rem;
+	padding: 1rem 1.15rem .85rem;
 	border-bottom: 1px solid var(--border);
 }
-.drawer__user { font-weight: 700; font-size: 1.05rem; }
+.drawer__avatar { width: 40px; height: 40px; border-radius: 50%; flex: 0 0 auto;
+	display: grid; place-items: center; font-weight: 800; font-size: .95rem;
+	background: var(--primary-tint); color: var(--primary); }
+.drawer__id { display: flex; flex-direction: column; gap: .05rem; min-width: 0; }
+.drawer__user { font-weight: 700; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .drawer__role { font-size: .85rem; }
 .drawer__nav { display: flex; flex-direction: column; padding: .5rem; gap: .1rem; }
+.drawer__sep { height: 1px; background: var(--border); margin: .3rem .4rem; }
 .drawer__logout { margin: 0; }
 .drawer__item {
 	display: flex; align-items: center; gap: .8rem;
@@ -166,7 +171,10 @@ em { font-style: normal; color: var(--muted); }
 .drawer__item:hover { background: var(--surface-2); }
 .drawer__item.is-active { background: var(--primary-tint); color: var(--primary-strong); font-weight: 600; }
 .drawer__item--danger { color: var(--danger); }
-.drawer__ico { width: 1.4rem; text-align: center; font-size: 1.1rem; }
+.drawer__ico { width: 1.4rem; display: grid; place-items: center; }
+.drawer__ico svg { width: 20px; height: 20px; display: block; color: var(--muted); }
+.drawer__item.is-active .drawer__ico svg { color: var(--primary-strong); }
+.drawer__item--danger .drawer__ico svg { color: var(--danger); }
 .backlink { color: var(--primary); font-weight: 600; font-size: .9rem; display: inline-block; }
 
 /* ---- Base selector ---------------------------------------------------- */
@@ -637,6 +645,7 @@ em { font-style: normal; color: var(--muted); }
 .chip2--void { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
 .chip2--stale { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 .chip2--owe { color: var(--owe); background: color-mix(in srgb, var(--owe) 14%, transparent); border-color: color-mix(in srgb, var(--owe) 30%, transparent); }
+.chip2--prog { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 
 /* ---- Booking / ledger cards (mobile-first, replace the sideways table) - */
 /* Two compact lines per card: date · task · badges · cost on top, the
@@ -714,6 +723,49 @@ em { font-style: normal; color: var(--muted); }
 .beleg__foot--sub strong { color: var(--text); }
 .beleg__foot--owe { color: var(--owe); }
 .beleg__foot--owe strong { color: var(--owe); }
+
+/* ---- Empty states ------------------------------------------------------ */
+/* A dashed invitation instead of a grey sentence: small illustration, one
+   line of text, and (where a next step exists) a direct CTA. */
+.empty { display: flex; flex-direction: column; align-items: center; gap: .45rem;
+	padding: 1.3rem .8rem; background: var(--surface); border: 1px dashed var(--border);
+	border-radius: var(--radius); text-align: center; }
+.empty svg { width: 76px; height: 44px; color: var(--muted); opacity: .85; }
+.empty__title { font-weight: 700; font-size: .9rem; }
+.empty__sub { font-size: .78rem; color: var(--muted); margin-top: -.25rem; }
+.empty .btn { margin-top: .35rem; }
+.empty--slim { padding: .8rem; }
+
+/* ---- Neighbor history as year cards ------------------------------------ */
+.yearcards { display: flex; flex-direction: column; gap: .5rem; }
+.yearcard { display: flex; align-items: center; gap: .6rem; background: var(--surface);
+	border: 1px solid var(--border); border-radius: var(--radius); padding: .6rem .75rem;
+	box-shadow: var(--shadow); color: var(--text); text-decoration: none; min-height: var(--tap); }
+.yearcard:hover { background: var(--surface-2); }
+.yearcard__year { font-weight: 800; font-size: 1.02rem; font-variant-numeric: tabular-nums; }
+.yearcard__meta { flex: 1 1 auto; min-width: 0; font-size: .74rem; color: var(--muted); }
+.yearcard__value { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---- Toast (server flash, shown above the tab bar) --------------------- */
+/* Same server flash mechanism, repositioned near the thumb: accent edge +
+   glyph per kind, slides up once. Inline info boxes keep using .flash. */
+.toast { position: fixed; left: .8rem; right: .8rem; z-index: 40;
+	bottom: calc(64px + env(safe-area-inset-bottom));
+	max-width: calc(var(--maxw) - 2rem); margin: 0 auto;
+	display: flex; gap: .55rem; align-items: center;
+	background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--pay);
+	border-radius: 12px; padding: .6rem .75rem; font-size: .88rem; font-weight: 600;
+	box-shadow: 0 10px 26px rgba(0, 0, 0, .22);
+	animation: toastIn .22s ease-out; }
+.toast::before { content: "✓"; flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
+	display: grid; place-items: center; font-size: .75rem; font-weight: 800;
+	background: color-mix(in srgb, var(--pay) 18%, transparent); color: var(--pay); }
+.toast--error { border-left-color: var(--danger); }
+.toast--error::before { content: "!"; background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+.toast--info { border-left-color: var(--accent); }
+.toast--info::before { content: "i"; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 
 /* Small derivation line under a collapsed cost item (Grundlagen · vor dem
    Aufklappen) — screenshot-friendly. */

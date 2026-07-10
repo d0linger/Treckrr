@@ -139,8 +139,9 @@
 		});
 	});
 
-	// Auto-hide flash messages after a short delay.
-	var flash = document.querySelector(".flash");
+	// Auto-hide the server-flash toast after a short delay. Scoped to .toast so
+	// static inline .flash info boxes are never faded out by mistake.
+	var flash = document.querySelector(".toast");
 	if (flash) {
 		setTimeout(function () {
 			flash.style.transition = "opacity .4s";
