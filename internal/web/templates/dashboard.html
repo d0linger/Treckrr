@@ -98,7 +98,15 @@
 			{{end}}
 		</div>
 		{{else}}
-		<p class="muted card">Noch keine Nachbarn in diesem Jahr. Füge unten welche hinzu.</p>
+		<div class="empty">
+			<svg viewBox="0 0 76 44" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<circle cx="30" cy="15" r="7"/><path d="M17 38c0-7 5.5-11 13-11s13 4 13 11"/>
+				<circle cx="52" cy="17" r="5.4"/><path d="M50 26.5c5.7.8 9 4.6 9 10.5"/>
+			</svg>
+			<span class="empty__title">Noch keine Nachbarn in {{.Year.Year}}</span>
+			<span class="empty__sub">Unten übernehmen oder hinzufügen — neue Nachbarn legst du im Reiter Nachbarn an.</span>
+			<a class="btn btn--primary btn--sm" href="/neighbors">Nachbarn verwalten</a>
+		</div>
 		{{end}}
 	</div>
 

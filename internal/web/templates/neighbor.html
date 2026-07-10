@@ -202,7 +202,18 @@
 			</div>
 		</div>
 		{{else}}
-		<p class="muted card center">Noch keine Buchungen in diesem Jahr.</p>
+		<div class="empty">
+			<svg viewBox="0 0 76 44" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<circle cx="24" cy="30" r="8"/><circle cx="48" cy="33" r="5"/>
+				<path d="M17 22v-11h13l4.2 11"/><path d="M34.5 22h9.5v6"/><path d="M32 30h11"/>
+				<path d="M4 41h68" stroke-dasharray="2 5"/>
+			</svg>
+			<span class="empty__title">Noch keine Buchungen in {{.Year.Year}}</span>
+			{{if not .Completed}}
+			<span class="empty__sub">Die erste Fahrt ist schnell erfasst.</span>
+			<a class="btn btn--primary btn--sm" href="#neue-buchung">＋ Erste Buchung erfassen</a>
+			{{end}}
+		</div>
 		{{end}}
 	</div>
 	{{if .Entries}}
@@ -250,7 +261,10 @@
 			</div>
 		</div>
 		{{else}}
-		<p class="muted card center">Keine Positionen.</p>
+		<div class="empty empty--slim">
+			<span class="empty__title">Keine Verrechnungspositionen</span>
+			{{if not .Completed}}<span class="empty__sub">Unten über „+ Position hinzufügen" erfassen.</span>{{end}}
+		</div>
 		{{end}}
 	</div>
 	{{if .Ledger}}

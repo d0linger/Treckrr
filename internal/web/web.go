@@ -115,6 +115,15 @@ func funcMap() template.FuncMap {
 			}
 			return p.StringFixed(1) + "%"
 		},
+		// initials returns the first two runes of a name, uppercased — the
+		// drawer's avatar badge.
+		"initials": func(s string) string {
+			r := []rune(strings.TrimSpace(s))
+			if len(r) > 2 {
+				r = r[:2]
+			}
+			return strings.ToUpper(string(r))
+		},
 		// split breaks a string on sep — used to render multi-part audit details
 		// (fields joined by " · ") on separate lines.
 		"split": func(sep, s string) []string {
