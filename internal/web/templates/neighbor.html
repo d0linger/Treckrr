@@ -164,43 +164,42 @@
 	<div class="bookcards">
 		{{range .Entries}}
 		<div class="bcard {{if .Voided}}bcard--void{{end}}">
-			<div class="bcard__top">
+			<div class="bcard__head">
 				<span class="bcard__date">{{date .Date}}</span>
+				<span class="bcard__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}</span>
+				{{if or .Voided (index $.Stale .ID)}}
 				<span class="bcard__badges">
 					{{if .Voided}}<span class="chip2 chip2--void"><span class="chip2__g">⊘</span>Storniert</span>{{end}}
-					{{if index $.Stale .ID}}<span class="chip2 chip2--stale" title="Preis weicht von der aktuellen Grundlage ab"><span class="chip2__g">⚠</span>Grundlage geändert</span>{{end}}
+					{{if index $.Stale .ID}}<span class="chip2 chip2--stale" title="Preis weicht von der aktuellen Grundlage ab"><span class="chip2__g">⚠</span>Grundlage</span>{{end}}
 				</span>
-			</div>
-			<div>
-				<div class="bcard__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}</div>
-				<div class="bcard__detail">{{.TractorLabel}} · {{.LoadLabel}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</div>
-			</div>
-			<div class="bcard__calc">
-				<span class="bcard__formula">{{num .Hours}} h × {{money .HourlyRate}}/h</span>
+				{{end}}
 				<span class="bcard__cost">{{money .Cost}}</span>
 			</div>
-			{{if not $.Completed}}
-			<div class="bcard__actions">
-				{{if .Voided}}
-				<form method="post" action="/entries/{{.ID}}/void">
-					<input type="hidden" name="voided" value="false">
-					<button class="actbtn" type="submit">↺ Storno aufheben</button>
-				</form>
-				{{else}}
-				<a class="actbtn" href="/entries/{{.ID}}/edit">✎ Bearbeiten</a>
-				<form method="post" action="/entries/{{.ID}}/void"
-					data-confirm="Buchung stornieren? (bleibt sichtbar, zählt nicht mehr)"
-					data-confirm-reason="Grund der Stornierung (optional)">
-					<input type="hidden" name="voided" value="true">
-					<input type="hidden" name="reason" value="">
-					<button class="actbtn" type="submit">⊘ Stornieren</button>
-				</form>
-				<form method="post" action="/entries/{{.ID}}/delete" data-confirm="Buchung endgültig löschen?">
-					<button class="actbtn actbtn--danger" type="submit">🗑 Löschen</button>
-				</form>
+			<div class="bcard__foot">
+				<span class="bcard__detail">{{num .Hours}} h × {{money .HourlyRate}}/h · {{.TractorLabel}} · {{.LoadLabel}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
+				{{if not $.Completed}}
+				<span class="bcard__acts">
+					{{if .Voided}}
+					<form method="post" action="/entries/{{.ID}}/void">
+						<input type="hidden" name="voided" value="false">
+						<button class="iconact" type="submit" title="Stornierung aufheben" aria-label="Stornierung aufheben">↺</button>
+					</form>
+					{{else}}
+					<a class="iconact" href="/entries/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">✎</a>
+					<form method="post" action="/entries/{{.ID}}/void"
+						data-confirm="Buchung stornieren? (bleibt sichtbar, zählt nicht mehr)"
+						data-confirm-reason="Grund der Stornierung (optional)">
+						<input type="hidden" name="voided" value="true">
+						<input type="hidden" name="reason" value="">
+						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">⊘</button>
+					</form>
+					<form method="post" action="/entries/{{.ID}}/delete" data-confirm="Buchung endgültig löschen?">
+						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">🗑</button>
+					</form>
+					{{end}}
+				</span>
 				{{end}}
 			</div>
-			{{end}}
 		</div>
 		{{else}}
 		<p class="muted card center">Noch keine Buchungen in diesem Jahr.</p>
@@ -216,39 +215,39 @@
 	<div class="bookcards">
 		{{range .Ledger}}
 		<div class="bcard {{if .Voided}}bcard--void{{end}}">
-			<div class="bcard__top">
+			<div class="bcard__head">
 				<span class="bcard__date">{{date .Date}}</span>
-				<span class="bcard__badges">
-					<span class="chip2 {{if .Amount.IsNegative}}chip2--owe{{else}}chip2--open{{end}}"><span class="chip2__g">{{if .Amount.IsNegative}}↺{{else}}＋{{end}}</span>{{if .Amount.IsNegative}}Ich schulde{{else}}Zusatzforderung{{end}}</span>
-					{{if .Voided}}<span class="chip2 chip2--void"><span class="chip2__g">⊘</span>Storniert</span>{{end}}
-				</span>
-			</div>
-			<div class="bcard__calc">
-				<span class="bcard__formula">{{if .Description}}{{.Description}}{{else}}—{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
+				<span class="bcard__task">{{if .Amount.IsNegative}}Ich schulde{{else}}Zusatzforderung{{end}}</span>
+				{{if .Voided}}
+				<span class="bcard__badges"><span class="chip2 chip2--void"><span class="chip2__g">⊘</span>Storniert</span></span>
+				{{end}}
 				<span class="bcard__cost">{{money .Amount}}</span>
 			</div>
-			{{if not $.Completed}}
-			<div class="bcard__actions">
-				{{if .Voided}}
-				<form method="post" action="/ledger/{{.ID}}/void">
-					<input type="hidden" name="voided" value="false">
-					<button class="actbtn" type="submit">↺ Storno aufheben</button>
-				</form>
-				{{else}}
-				<a class="actbtn" href="/ledger/{{.ID}}/edit">✎ Bearbeiten</a>
-				<form method="post" action="/ledger/{{.ID}}/void"
-					data-confirm="Position stornieren? (bleibt sichtbar, zählt nicht mehr)"
-					data-confirm-reason="Grund der Stornierung (optional)">
-					<input type="hidden" name="voided" value="true">
-					<input type="hidden" name="reason" value="">
-					<button class="actbtn" type="submit">⊘ Stornieren</button>
-				</form>
-				<form method="post" action="/ledger/{{.ID}}/delete" data-confirm="Position endgültig löschen?">
-					<button class="actbtn actbtn--danger" type="submit">🗑 Löschen</button>
-				</form>
+			<div class="bcard__foot">
+				<span class="bcard__detail">{{if .Description}}{{.Description}}{{else}}—{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
+				{{if not $.Completed}}
+				<span class="bcard__acts">
+					{{if .Voided}}
+					<form method="post" action="/ledger/{{.ID}}/void">
+						<input type="hidden" name="voided" value="false">
+						<button class="iconact" type="submit" title="Stornierung aufheben" aria-label="Stornierung aufheben">↺</button>
+					</form>
+					{{else}}
+					<a class="iconact" href="/ledger/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">✎</a>
+					<form method="post" action="/ledger/{{.ID}}/void"
+						data-confirm="Position stornieren? (bleibt sichtbar, zählt nicht mehr)"
+						data-confirm-reason="Grund der Stornierung (optional)">
+						<input type="hidden" name="voided" value="true">
+						<input type="hidden" name="reason" value="">
+						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">⊘</button>
+					</form>
+					<form method="post" action="/ledger/{{.ID}}/delete" data-confirm="Position endgültig löschen?">
+						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">🗑</button>
+					</form>
+					{{end}}
+				</span>
 				{{end}}
 			</div>
-			{{end}}
 		</div>
 		{{else}}
 		<p class="muted card center">Keine Positionen.</p>
