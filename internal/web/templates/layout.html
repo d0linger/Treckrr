@@ -82,16 +82,24 @@
 
 	<nav class="tabbar">
 		<a class="tabbar__item {{if eq .Active "dashboard"}}is-active{{end}}" href="/">
-			<span class="tabbar__icon">🏠</span><span>Übersicht</span>
+			<svg class="tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M3 11l9-8 9 8"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/>
+			</svg><span>Übersicht</span>
 		</a>
 		<a class="tabbar__item {{if eq .Active "years"}}is-active{{end}}" href="/years">
-			<span class="tabbar__icon">📅</span><span>Jahre</span>
+			<svg class="tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><line x1="3.5" y1="10" x2="20.5" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/>
+			</svg><span>Jahre</span>
 		</a>
 		<a class="tabbar__item {{if eq .Active "neighbors"}}is-active{{end}}" href="/neighbors">
-			<span class="tabbar__icon">👤</span><span>Nachbarn</span>
+			<svg class="tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.1 2.4-5 5.5-5s5.5 1.9 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16.5 15.3c2.5.4 4 2.1 4 4.7"/>
+			</svg><span>Nachbarn</span>
 		</a>
 		<a class="tabbar__item {{if or (eq .Active "bases") (eq .Active "prices") (eq .Active "gespanne")}}is-active{{end}}" href="/bases">
-			<span class="tabbar__icon">🚜</span><span>Grundlagen</span>
+			<svg class="tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<circle cx="7.5" cy="16.5" r="3.8"/><circle cx="18" cy="18" r="2.4"/><path d="M11.3 16.5h4.3"/><path d="M4.3 12.7V6.5h5.9l2 6.2"/><path d="M12.2 12.7h4.6V15.6"/>
+			</svg><span>Grundlagen</span>
 		</a>
 	</nav>
 {{end}}

@@ -426,7 +426,7 @@ em { font-style: normal; color: var(--muted); }
 	color: var(--muted);
 	min-height: var(--tap);
 }
-.tabbar__icon { font-size: 1.15rem; line-height: 1; }
+.tabbar__icon { width: 22px; height: 22px; display: block; }
 .tabbar__item.is-active { color: var(--primary); font-weight: 700; }
 
 .tabbar__item span:last-child { white-space: nowrap; }
