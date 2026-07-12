@@ -7,3 +7,8 @@
 *Vulnerability:* CSV Injection (Formula Injection) in the audit trail export. While the main billing export was protected, the audit log export lacked sanitization for user-controlled fields.
 *Learning:* Security mitigations must be applied to all export paths, not just the primary ones. Attackers can use usernames or audit details to trigger malicious formulas in spreadsheet software.
 *Prevention:* Always use the `csvSafe` helper when exporting user-provided text to CSV files. Ensure that any new export functionality follows the established sanitization pattern.
+
+## 2026-07-08 - [Distributed Brute-Force Risk in TOTP Login]
+*Vulnerability:* The TOTP verification step (second step of login) was only protected by IP-based rate limiting. An attacker with a compromised password could use a botnet to brute-force the 6-digit TOTP code across many IPs.
+*Learning:* IP-based rate limiting is insufficient for secondary authentication factors. Once a user is identified (e.g., after a successful password check), per-user rate limiting must be applied to all subsequent sensitive steps.
+*Prevention:* Apply per-user rate limiting (e.g., using `sensitiveBlocked`) to the TOTP/recovery-code verification flow. Failures should be recorded against the specific user account to mitigate distributed attacks.

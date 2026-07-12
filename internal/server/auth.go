@@ -119,6 +119,12 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
+	// Also enforce per-user rate limiting to mitigate distributed brute-force
+	// attacks against the TOTP code.
+	if s.sensitiveBlocked(w, r, userID, "/login") {
+		return
+	}
+
 	user, err := s.store.GetUser(r.Context(), userID)
 	if err != nil {
 		s.clearPending2FA(w, r)
@@ -138,12 +144,14 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		s.setFlash(w, r, "info", "Mit Wiederherstellungscode angemeldet. Noch "+itoa(remaining)+" Code(s) übrig.")
 	default:
 		s.logins.fail(r.Context(), rlKey)
+		s.sensitiveFail(r, userID)
 		s.auditLogin(r, user.Username, "login_2fa_failed", "")
 		s.setFlash(w, r, "error", "Code ungültig. Bitte erneut versuchen.")
 		redirect(w, r, "/login") // pending cookie stays -> 2FA step shown again
 		return
 	}
 	s.logins.reset(r.Context(), rlKey)
+	s.sensitiveReset(r, userID)
 	s.clearPending2FA(w, r)
 	s.establishSession(w, r, user)
 }
