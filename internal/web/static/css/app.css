@@ -4,7 +4,7 @@
 	--surface: #ffffff;
 	--surface-2: #eef1ee;
 	--text: #1c231e;
-	--muted: #6b756d;
+	--muted: #666f68; /* was #6b756d — nudged darker to pass 4.5:1 on the page bg */
 	--border: #dbe0db;
 	--primary: #2f6f4f;
 	--primary-strong: #245840;
@@ -12,6 +12,12 @@
 	--danger: #b4442f;
 	--danger-tint: #f7e3df;
 	--accent: #c8891f;
+	/* Darker amber used only where amber is TEXT (links, warn chips, status tags):
+	   passes 4.5:1 in light mode where the vivid --accent does not. In dark mode it
+	   equals --accent, which already passes. */
+	--accent-text: #8a5e12;
+	/* High-contrast keyboard-focus ring (WCAG 2.4.7). */
+	--focus: #1f6feb;
 	/* chart marks: a touch more chroma than the brand green so a bar doesn't read
 	   grey; owe/pay are the diverging poles for signed (Verrechnung) charts. */
 	--data: #2f8457;
@@ -42,6 +48,8 @@
 		--danger: #e06a52;
 		--danger-tint: #33201c;
 		--accent: #e0a640;
+		--accent-text: #e0a640;
+		--focus: #5b9bff;
 		--data: #52b184;
 		--data-track: #26302a;
 		--pay: #52b184;
@@ -62,6 +70,8 @@
 	--danger: #e06a52;
 	--danger-tint: #33201c;
 	--accent: #e0a640;
+	--accent-text: #e0a640;
+	--focus: #5b9bff;
 	--shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .35);
 }
 
@@ -236,7 +246,7 @@ em { font-style: normal; color: var(--muted); }
 .stack--tight { gap: .6rem; }
 .disclosure--plain { border: 0; padding: 0; background: none; }
 .center { text-align: center; }
-.link { color: var(--accent, #2f6f4f); font-weight: 600; text-decoration: none; }
+.link { color: var(--accent-text); font-weight: 600; text-decoration: none; }
 .link:hover { text-decoration: underline; }
 
 /* ---- Entries ---------------------------------------------------------- */
@@ -269,6 +279,10 @@ em { font-style: normal; color: var(--muted); }
 	transition: border-color .15s, box-shadow .15s;
 }
 .input:focus, .select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-tint); }
+/* Visible keyboard focus for every interactive element (WCAG 2.4.7). Only shows
+   on keyboard navigation — a mouse click does not trigger :focus-visible. Text
+   inputs keep their box-shadow ring above (higher specificity wins). */
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .select {
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236b756d' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
 	background-repeat: no-repeat;
@@ -335,7 +349,7 @@ em { font-style: normal; color: var(--muted); }
 }
 .check input[type="checkbox"]:checked { background: var(--primary); border-color: var(--primary); }
 .check input[type="checkbox"]:checked::before { transform: scale(1); }
-.check input[type="checkbox"]:focus-visible { outline: 3px solid var(--primary-tint); }
+.check input[type="checkbox"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* ---- Segmented control ------------------------------------------------ */
 .segmented { display: flex; background: var(--surface-2); border-radius: 999px; padding: 4px; gap: 4px; }
@@ -358,7 +372,7 @@ em { font-style: normal; color: var(--muted); }
 /* ---- Chips ------------------------------------------------------------ */
 .ratechips { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .6rem; }
 .chip { background: var(--surface-2); border-radius: 999px; padding: .2rem .6rem; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-.chip--accent { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); font-weight: 700; }
+.chip--accent { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent-text); font-weight: 700; }
 
 /* ---- Disclosure ------------------------------------------------------- */
 .disclosure > summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
@@ -373,7 +387,7 @@ em { font-style: normal; color: var(--muted); }
 /* Deactivated pricing items are dimmed but still visible for traceability. */
 .is-inactive { opacity: .55; }
 .pill-off { font-size: .7rem; font-weight: 700; color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: .05rem .5rem; margin-left: .4rem; }
-.pill-warn { font-size: .7rem; font-weight: 700; color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 999px; padding: .05rem .5rem; margin-left: .4rem; white-space: nowrap; }
+.pill-warn { font-size: .7rem; font-weight: 700; color: var(--accent-text); background: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 999px; padding: .05rem .5rem; margin-left: .4rem; white-space: nowrap; }
 
 /* ---- Modal dialog ----------------------------------------------------- */
 .modal {
@@ -397,7 +411,7 @@ em { font-style: normal; color: var(--muted); }
 /* ---- Status / payment tags ------------------------------------------- */
 .tag { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; font-weight: 700;
 	border-radius: 999px; padding: .12rem .55rem; white-space: nowrap; }
-.tag--progress { background: color-mix(in srgb, #d89b00 20%, transparent); color: #a06f00; }
+.tag--progress { background: color-mix(in srgb, #d89b00 20%, transparent); color: var(--accent-text); }
 .tag--done { background: var(--primary-tint); color: var(--primary-strong); }
 .tag--paid { background: var(--primary-tint); color: var(--primary-strong); }
 .tag--open { background: var(--danger-tint); color: var(--danger); }
@@ -516,7 +530,7 @@ em { font-style: normal; color: var(--muted); }
 	cursor: pointer; min-height: var(--tap); border: 1.5px solid transparent; white-space: nowrap;
 }
 .paychip--paid { background: var(--primary); color: #fff; border-color: var(--primary); }
-.paychip--open { background: transparent; color: #a06f00; border-color: color-mix(in srgb, #d89b00 55%, transparent); }
+.paychip--open { background: transparent; color: var(--accent-text); border-color: color-mix(in srgb, #d89b00 55%, transparent); }
 .paychip--open:hover { background: color-mix(in srgb, #d89b00 12%, transparent); }
 .carryover strong { display: block; }
 .carryover .muted { font-size: .82rem; }
@@ -643,9 +657,9 @@ em { font-style: normal; color: var(--muted); }
 .chip2--paid { color: var(--pay); background: color-mix(in srgb, var(--pay) 14%, transparent); border-color: color-mix(in srgb, var(--pay) 30%, transparent); }
 .chip2--open { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
 .chip2--void { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
-.chip2--stale { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.chip2--stale { color: var(--accent-text); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 .chip2--owe { color: var(--owe); background: color-mix(in srgb, var(--owe) 14%, transparent); border-color: color-mix(in srgb, var(--owe) 30%, transparent); }
-.chip2--prog { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.chip2--prog { color: var(--accent-text); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 
 /* ---- Booking / ledger cards (mobile-first, replace the sideways table) - */
 /* Two compact lines per card: date · task · badges · cost on top, the
@@ -687,7 +701,7 @@ em { font-style: normal; color: var(--muted); }
 .attn__row--owe { border-color: color-mix(in srgb, var(--owe) 40%, var(--border)); background: color-mix(in srgb, var(--owe) 7%, var(--surface)); }
 .attn__ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
 	font-size: .9rem; font-weight: 800; flex: 0 0 auto; }
-.attn__ic--warn { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+.attn__ic--warn { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent-text); }
 .attn__ic--owe { background: color-mix(in srgb, var(--owe) 18%, transparent); color: var(--owe); }
 .attn__ic--pay { background: color-mix(in srgb, var(--pay) 18%, transparent); color: var(--pay); }
 .attn__txt { flex: 1; font-size: .85rem; }
@@ -763,7 +777,7 @@ em { font-style: normal; color: var(--muted); }
 .toast--error { border-left-color: var(--danger); }
 .toast--error::before { content: "!"; background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
 .toast--info { border-left-color: var(--accent); }
-.toast--info::before { content: "i"; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.toast--info::before { content: "i"; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-text); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 
@@ -776,3 +790,20 @@ em { font-style: normal; color: var(--muted); }
    webfont): tabular digits and a touch of negative tracking give them presence
    without shouting. */
 .summary-card__value { font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+
+/* ---- Skip link (WCAG 2.4.1) ------------------------------------------- */
+/* First focusable element; off-screen until focused, then jumps to #main. */
+.skip { position: absolute; left: 8px; top: -60px; z-index: 100;
+	background: var(--primary); color: #fff; font-weight: 700; text-decoration: none;
+	padding: .55rem .9rem; border-radius: 8px; transition: top .15s ease; }
+.skip:focus { top: 8px; }
+.main:focus { outline: none; } /* programmatic focus target for the skip link */
+@media (prefers-reduced-motion: reduce) { .skip { transition: none; } }
+
+/* ---- Print: drop the app chrome so a page (e.g. recovery codes, a Beleg)
+   prints as a clean document. ------------------------------------------- */
+@media print {
+	.appbar, .yearbar, .tabbar, .drawer, .drawer__scrim, .toast, .fab, .skip { display: none !important; }
+	.main { max-width: none; padding: 0; }
+	body { background: #fff; }
+}

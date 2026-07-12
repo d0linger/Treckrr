@@ -13,6 +13,7 @@
 </head>
 <body>
 {{if .User}}
+	<a class="skip" href="#main">Zum Inhalt springen</a>
 	<div class="topstack">
 		<header class="appbar">
 			<a class="appbar__brand" href="/">
@@ -35,25 +36,25 @@
 		</header>
 
 		{{if .Years}}
-		<div class="yearbar" role="tablist" aria-label="Abrechnungsjahr wählen">
+		<nav class="yearbar" aria-label="Abrechnungsjahr wählen">
 			{{$active := .Year}}
 			{{range .Years}}
 				<a class="yearpill {{if and $active (eq .ID $active.ID)}}is-active{{end}}"
-					href="{{$.BasePath}}?year={{.ID}}" role="tab"
-					{{if and $active (eq .ID $active.ID)}}aria-selected="true"{{end}}>{{.Year}}</a>
+					href="{{$.BasePath}}?year={{.ID}}"
+					{{if and $active (eq .ID $active.ID)}}aria-current="page"{{end}}>{{.Year}}</a>
 			{{end}}
-			<a class="yearpill yearpill--manage" href="/years" title="Abrechnungsjahre verwalten">＋</a>
-		</div>
+			<a class="yearpill yearpill--manage" href="/years" title="Abrechnungsjahre verwalten" aria-label="Abrechnungsjahre verwalten">＋</a>
+		</nav>
 		{{end}}
 	</div>
 {{end}}
 
-	<main class="main">
+	<main class="main" id="main" tabindex="-1">
 		{{block "content" .}}{{end}}
 	</main>
 
 	{{if .FlashMessage}}
-		<div class="toast toast--{{.FlashKind}}" role="status">{{.FlashMessage}}</div>
+		<div class="toast toast--{{.FlashKind}}" role="{{if eq .FlashKind "error"}}alert{{else}}status{{end}}">{{.FlashMessage}}</div>
 	{{end}}
 
 {{if .User}}

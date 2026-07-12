@@ -150,6 +150,29 @@
 		}, 4000);
 	}
 
+	// Copy recovery codes to the clipboard (one per line).
+	document.querySelectorAll("[data-copy-codes]").forEach(function (btn) {
+		btn.addEventListener("click", function () {
+			var list = document.querySelector("[data-codes]");
+			if (!list) return;
+			var codes = Array.prototype.map.call(list.querySelectorAll("code"), function (c) {
+				return c.textContent.trim();
+			}).join("\n");
+			if (navigator.clipboard && navigator.clipboard.writeText) {
+				navigator.clipboard.writeText(codes).then(function () {
+					var prev = btn.textContent;
+					btn.textContent = "Kopiert ✓";
+					setTimeout(function () { btn.textContent = prev; }, 1500);
+				}).catch(function () { /* clipboard denied */ });
+			}
+		});
+	});
+
+	// Print trigger (CSP-safe replacement for an inline onclick handler).
+	document.querySelectorAll("[data-print]").forEach(function (btn) {
+		btn.addEventListener("click", function () { window.print(); });
+	});
+
 	// Side drawer (menu) open/close.
 	(function () {
 		var drawer = document.getElementById("drawer");
