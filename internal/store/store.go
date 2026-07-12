@@ -172,6 +172,22 @@ func (s *Store) SetTotp(ctx context.Context, userID int64, enabled bool, secret 
 	return err
 }
 
+// AcceptTotpStep records a just-matched TOTP time-step for replay protection.
+// It is an atomic compare-and-set: the step is stored (and true returned) only
+// when it is strictly newer than the last accepted one, so a code replayed
+// within its validity window — even concurrently — is rejected exactly once.
+func (s *Store) AcceptTotpStep(ctx context.Context, userID int64, step uint64) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE users SET totp_last_step = $2
+		  WHERE id = $1 AND (totp_last_step IS NULL OR totp_last_step < $2)`,
+		userID, int64(step)) //nosec G115 -- TOTP step (unix/30) fits int64 for millennia
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
 // GetUser returns a user by id.
 func (s *Store) GetUser(ctx context.Context, id int64) (*models.User, error) {
 	u, err := scanUser(s.db.QueryRowContext(ctx,

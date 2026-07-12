@@ -52,14 +52,22 @@ func code(secret string, counter uint64) (string, error) {
 // Validate reports whether the supplied code matches the secret within a ±1
 // step window (to tolerate clock skew).
 func Validate(secret, input string) bool {
+	_, ok := ValidateStep(secret, input)
+	return ok
+}
+
+// ValidateStep is like Validate but also returns the matched time-step counter
+// on success. The caller can persist it to reject a replay of the same code
+// within its validity window (see store.AcceptTotpStep).
+func ValidateStep(secret, input string) (uint64, bool) {
 	// Fail closed: an empty or undecryptable secret would decode to an empty
 	// HMAC key, whose code an attacker can compute — it must never authenticate.
 	if strings.TrimSpace(secret) == "" {
-		return false
+		return 0, false
 	}
 	input = strings.TrimSpace(input)
 	if len(input) != digits {
-		return false
+		return 0, false
 	}
 	counter := uint64(time.Now().Unix() / period) //nosec G115 -- Unix time is non-negative
 	for delta := -1; delta <= 1; delta++ {
@@ -70,10 +78,10 @@ func Validate(secret, input string) bool {
 			probe += uint64(delta) //nosec G115 -- delta is 0 or 1 (non-negative)
 		}
 		if c, err := code(secret, probe); err == nil && c == input {
-			return true
+			return probe, true
 		}
 	}
-	return false
+	return 0, false
 }
 
 // ProvisioningURI builds the otpauth:// URI for manual entry / QR codes.
