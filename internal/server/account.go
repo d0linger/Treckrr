@@ -67,7 +67,7 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := s.store.UpdatePassword(r.Context(), user.ID, next); err != nil {
-		s.serverError(w, r.URL.Path, err)
+		s.serverError(w, "password change: update", err)
 		return
 	}
 	s.sensitiveReset(r, user.ID)
@@ -97,11 +97,11 @@ func (s *Server) handleTwoFactor(w http.ResponseWriter, r *http.Request) {
 		if err != nil || secret == "" {
 			secret, err = totp.GenerateSecret()
 			if err != nil {
-				s.serverError(w, r.URL.Path, err)
+				s.serverError(w, "2fa setup: generate secret", err)
 				return
 			}
 			if err := s.store.SetTotp(r.Context(), user.ID, false, secret); err != nil {
-				s.serverError(w, r.URL.Path, err)
+				s.serverError(w, "2fa setup: persist secret", err)
 				return
 			}
 		}
@@ -110,7 +110,7 @@ func (s *Server) handleTwoFactor(w http.ResponseWriter, r *http.Request) {
 	} else {
 		remaining, err := s.store.CountUnusedRecoveryCodes(r.Context(), user.ID)
 		if err != nil {
-			s.serverError(w, r.URL.Path, err)
+			s.serverError(w, "2fa: count recovery codes", err)
 			return
 		}
 		data["RecoveryRemaining"] = remaining
@@ -132,7 +132,7 @@ func (s *Server) handleTwoFactorQR(w http.ResponseWriter, r *http.Request) {
 	}
 	png, err := qrPNG(totp.ProvisioningURI(secret, user.Username, "Treckrr"))
 	if err != nil {
-		s.serverError(w, r.URL.Path, err)
+		s.serverError(w, "2fa: render QR", err)
 		return
 	}
 	w.Header().Set("Content-Type", "image/png")
@@ -163,7 +163,7 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 	}
 	s.sensitiveReset(r, user.ID)
 	if err := s.store.SetTotp(r.Context(), user.ID, true, secret); err != nil {
-		s.serverError(w, r.URL.Path, err)
+		s.serverError(w, "2fa enable: set totp", err)
 		return
 	}
 	s.audit(r, "2fa_enable", "user", user.ID, "")
@@ -202,11 +202,11 @@ func (s *Server) handleRecoveryRegenerate(w http.ResponseWriter, r *http.Request
 func (s *Server) issueAndShowRecoveryCodes(w http.ResponseWriter, r *http.Request, userID int64, notice string) {
 	plain, hashes, err := auth.GenerateRecoveryCodes(recoveryCodeCount)
 	if err != nil {
-		s.serverError(w, r.URL.Path, err)
+		s.serverError(w, "2fa: generate recovery codes", err)
 		return
 	}
 	if err := s.store.ReplaceRecoveryCodes(r.Context(), userID, hashes); err != nil {
-		s.serverError(w, r.URL.Path, err)
+		s.serverError(w, "2fa: store recovery codes", err)
 		return
 	}
 	data := s.newPage(w, r, "Zwei‑Faktor", "profile")
@@ -235,7 +235,7 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 	}
 	s.sensitiveReset(r, user.ID)
 	if err := s.store.SetTotp(r.Context(), user.ID, false, ""); err != nil {
-		s.serverError(w, r.URL.Path, err)
+		s.serverError(w, "2fa disable: clear totp", err)
 		return
 	}
 	_ = s.store.ClearRecoveryCodes(r.Context(), user.ID)
