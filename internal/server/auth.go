@@ -81,6 +81,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	s.logins.reset(r.Context(), rlKey)
 
 	if user.TotpEnabled {
+		// Mitigation: Check per-user rate limit before showing the 2FA step.
+		// This prevents users who are already locked out from even seeing the
+		// 2FA form, and protects against 2FA brute-forcing.
+		if s.sensitiveBlocked(w, r, user.ID, "/login") {
+			return
+		}
 		s.setCookie(w, r, &http.Cookie{
 			Name:     pending2FACookie,
 			Value:    s.signPending2FA(user.ID),
@@ -113,6 +119,11 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
+	// Mitigation: Enforce per-user rate limiting on the 2FA step to protect
+	// against distributed brute-force attacks on the 6-digit TOTP code.
+	if s.sensitiveBlocked(w, r, userID, "/login") {
+		return
+	}
 	rlKey := s.clientIP(r)
 	if s.logins.blocked(r.Context(), rlKey) {
 		s.setFlash(w, r, "error", "Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen.")
@@ -138,12 +149,16 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		s.setFlash(w, r, "info", "Mit Wiederherstellungscode angemeldet. Noch "+itoa(remaining)+" Code(s) übrig.")
 	default:
 		s.logins.fail(r.Context(), rlKey)
+		// Mitigation: Record a failure in the per-user limiter to prevent
+		// brute-forcing across multiple IP addresses.
+		s.sensitiveFail(r, userID)
 		s.auditLogin(r, user.Username, "login_2fa_failed", "")
 		s.setFlash(w, r, "error", "Code ungültig. Bitte erneut versuchen.")
 		redirect(w, r, "/login") // pending cookie stays -> 2FA step shown again
 		return
 	}
 	s.logins.reset(r.Context(), rlKey)
+	s.sensitiveReset(r, userID)
 	s.clearPending2FA(w, r)
 	s.establishSession(w, r, user)
 }
