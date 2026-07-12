@@ -160,7 +160,7 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 	user := userFromCtx(r)
 	creds, err := s.store.ListWebauthnCredentials(r.Context(), user.ID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	data := s.newPage(w, r, "Passkeys", "profile")
@@ -190,7 +190,7 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 	user := userFromCtx(r)
 	wu, err := s.webauthnUserFor(r, user)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	creation, sd, err := s.wa.BeginRegistration(wu,
@@ -217,7 +217,7 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 	s.clearWASession(w, r)
 	wu, err := s.webauthnUserFor(r, user)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	cred, err := s.wa.FinishRegistration(wu, *sd, r)
@@ -231,7 +231,7 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 	}
 	name := deviceName(r.UserAgent())
 	if err := s.store.AddWebauthnCredential(r.Context(), user.ID, fromWACred(cred, name)); err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	s.audit(r, "passkey_add", "user", user.ID, name)

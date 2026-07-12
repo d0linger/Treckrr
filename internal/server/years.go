@@ -10,12 +10,12 @@ import (
 func (s *Server) handleYears(w http.ResponseWriter, r *http.Request) {
 	years, err := s.store.ListBillingYears(r.Context())
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	bases, err := s.store.ListBases(r.Context())
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 
@@ -32,7 +32,7 @@ func (s *Server) handleYears(w http.ResponseWriter, r *http.Request) {
 	for _, y := range years {
 		count, err := s.store.CountEntriesForYear(r.Context(), y.ID)
 		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		baseName := ""
@@ -108,7 +108,7 @@ func (s *Server) handleYearUpdate(w http.ResponseWriter, r *http.Request) {
 	// booked tractor/machine references would point at a different basis.
 	count, err := s.store.CountEntriesForYear(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	if count > 0 {
@@ -152,7 +152,7 @@ func (s *Server) handleYearStatus(w http.ResponseWriter, r *http.Request) {
 	} else if status == models.YearCompleted {
 		// Every neighbor starts as "open" when the year is closed for billing.
 		if err := s.store.ResetYearPayments(r.Context(), id); err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		s.audit(r, "complete", "year", id, "Jahr "+s.yearLabel(r, id))
@@ -176,7 +176,7 @@ func (s *Server) handleYearDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	count, err := s.store.CountEntriesForYear(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	if count > 0 {

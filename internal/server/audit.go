@@ -23,7 +23,7 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 
 	total, err := s.store.CountAudit(r.Context(), q, action)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	totalPages := (total + auditPageSize - 1) / auditPageSize
@@ -41,12 +41,12 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := s.store.ListAuditFiltered(r.Context(), q, action, auditPageSize, offset)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	actions, err := s.store.AuditActions(r.Context())
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 
@@ -76,7 +76,7 @@ func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 	filtered, err := s.store.ListAuditFiltered(r.Context(),
 		r.URL.Query().Get("q"), r.URL.Query().Get("action"), 0, 0)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 

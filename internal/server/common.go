@@ -27,7 +27,7 @@ func (s *Server) resolveYear(w http.ResponseWriter, r *http.Request) (*models.Bi
 		return nil, false
 	}
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return nil, false
 	}
 	return year, true
@@ -63,7 +63,7 @@ func (s *Server) resolveBase(w http.ResponseWriter, r *http.Request) (*models.Pr
 		return nil, false
 	}
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return nil, false
 	}
 	return base, true

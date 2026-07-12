@@ -16,14 +16,14 @@ type baseView struct {
 func (s *Server) handleBases(w http.ResponseWriter, r *http.Request) {
 	bases, err := s.store.ListBases(r.Context())
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	views := make([]baseView, 0, len(bases))
 	for _, b := range bases {
 		inUse, err := s.store.BaseInUse(r.Context(), b.ID)
 		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		views = append(views, baseView{Base: b, InUse: inUse})
@@ -113,7 +113,7 @@ func (s *Server) handleBaseDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	inUse, err := s.store.BaseInUse(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	if inUse {

@@ -126,7 +126,7 @@ type yearStat struct {
 func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 	years, err := s.store.ListBillingYears(r.Context())
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 
@@ -137,7 +137,7 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 	for _, y := range years {
 		entries, err := s.store.ListEntriesByYear(r.Context(), y.ID)
 		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		var cost, hours decimal.Decimal
@@ -150,12 +150,12 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 		}
 		paid, open, err := s.store.YearPaymentTotals(r.Context(), y.ID)
 		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		led, err := s.store.YearLedgerSum(r.Context(), y.ID)
 		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		if !led.IsZero() {
@@ -195,7 +195,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := s.store.ListEntriesByYear(r.Context(), year.ID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 
@@ -228,7 +228,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	// Payment split (paid vs open), computed in a single query.
 	paidCost, openCost, err := s.store.YearPaymentTotals(r.Context(), year.ID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	// Per-neighbor Verrechnung: fetch unconditionally and derive the total, the
@@ -236,7 +236,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	// across neighbors (e.g. +50/-50) still shows the chart instead of vanishing.
 	results, err := s.store.YearNeighborResults(r.Context(), year.ID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	var ledgerSum, ledgerMax decimal.Decimal
@@ -280,7 +280,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 	data := s.newPage(w, r, "Statistik", "stats")
 	if err := s.withYearSelector(r, data, year); err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	data["TotalCost"] = totalCost

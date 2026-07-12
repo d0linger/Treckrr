@@ -47,7 +47,7 @@ func passwordPolicyError(pw string) string {
 func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := s.store.ListUsers(r.Context())
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	data := s.newPage(w, r, "Benutzerverwaltung", "admin")

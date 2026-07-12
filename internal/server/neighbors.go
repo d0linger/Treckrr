@@ -19,19 +19,19 @@ type neighborStat struct {
 func (s *Server) handleNeighborsManage(w http.ResponseWriter, r *http.Request) {
 	neighbors, err := s.store.ListNeighbors(r.Context())
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	var stats []neighborStat
 	for _, n := range neighbors {
 		years, err := s.store.CountYearsForNeighbor(r.Context(), n.ID)
 		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		entries, err := s.store.CountEntriesForNeighbor(r.Context(), n.ID)
 		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		stats = append(stats, neighborStat{Neighbor: n, Years: years, Entries: entries})
@@ -84,7 +84,7 @@ func (s *Server) handleCarryOverNeighbors(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 
@@ -92,7 +92,7 @@ func (s *Server) handleCarryOverNeighbors(w http.ResponseWriter, r *http.Request
 	prevMembers := map[int64]bool{}
 	pm, err := s.store.ListYearNeighbors(r.Context(), prev.ID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	for _, n := range pm {
@@ -113,14 +113,14 @@ func (s *Server) handleCarryOverNeighbors(w http.ResponseWriter, r *http.Request
 		}
 		in, err := s.store.NeighborInYear(r.Context(), year.ID, id)
 		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		if in {
 			continue
 		}
 		if err := s.store.AddNeighborToYear(r.Context(), year.ID, id); err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		added++

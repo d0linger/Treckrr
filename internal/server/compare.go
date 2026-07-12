@@ -88,7 +88,7 @@ func (s *Server) handlePriceCompare(w http.ResponseWriter, r *http.Request) {
 	}
 	bases, err := s.store.ListBases(r.Context())
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 
