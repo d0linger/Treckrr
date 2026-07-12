@@ -5,12 +5,36 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode"
 
 	"github.com/shopspring/decimal"
 
 	"treckrr/internal/models"
 	"treckrr/internal/web"
 )
+
+// sanitizeFilename reduces a user-supplied name to characters safe inside a
+// quoted Content-Disposition filename: Unicode letters/digits and . - _ are
+// kept, everything else (spaces, quotes, backslashes, path separators, control
+// chars, header-param punctuation) becomes an underscore. Prevents a name like
+// `a"; …` from breaking the header's quoting. Empty/stripped input falls back
+// to "export".
+func sanitizeFilename(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r), r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	out := strings.Trim(b.String(), "._")
+	if out == "" {
+		return "export"
+	}
+	return out
+}
 
 // handleExportYear exports all entries of a billing year as CSV.
 func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
@@ -60,8 +84,7 @@ func (s *Server) handleExportNeighbor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	names := map[int64]string{neighbor.ID: neighbor.Name}
-	safeName := strings.ReplaceAll(neighbor.Name, " ", "_")
-	filename := fmt.Sprintf("treckrr_%s_%d.csv", safeName, year.Year)
+	filename := fmt.Sprintf("treckrr_%s_%d.csv", sanitizeFilename(neighbor.Name), year.Year)
 	s.writeCSV(w, filename, entries, names)
 }
 
