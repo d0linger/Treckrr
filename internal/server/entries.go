@@ -33,18 +33,18 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := s.store.ListEntries(r.Context(), neighbor.ID, year.ID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	cost, hours, err := s.store.NeighborTotal(r.Context(), neighbor.ID, year.ID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	// Bidirectional ledger: manual postings that net against the bookings.
 	ledger, err := s.store.ListNeighborLedger(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	ledgerSum := decimal.Zero
@@ -79,7 +79,7 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["TaskSummary"] = summarizeByTask(entries)
 	data["Completed"] = year.Completed()
 	if err := s.withYearSelector(r, data, year); err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	data["Base"] = base
@@ -274,7 +274,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 
 	newID, err := s.store.CreateEntry(r.Context(), entry, machineIDs)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	s.audit(r, "create", "entry", newID, fmt.Sprintf("%s · %s, %s h × %s = %s €",
@@ -404,7 +404,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	entry.ID = id
 	if err := s.store.UpdateEntry(r.Context(), entry, machineIDs); err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	s.audit(r, "update", "entry", id, entryUpdateDetail(existing, entry))

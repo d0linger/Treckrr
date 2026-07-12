@@ -22,65 +22,44 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	neighbors, err := s.store.ListYearNeighbors(r.Context(), year.ID)
+	// One query for the whole per-neighbor breakdown (net, hours, count, paid),
+	// replacing a 2+3N round-trip fan-out. Totals are summed in memory below.
+	summaryRows, err := s.store.YearNeighborSummaries(r.Context(), year.ID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, "dashboard: year neighbor summaries", err)
 		return
 	}
 
-	payments, err := s.store.YearPayments(r.Context(), year.ID)
-	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
-		return
-	}
-
-	var summaries []neighborSummary
+	summaries := make([]neighborSummary, 0, len(summaryRows))
 	var grandCost, grandHours, paidCost, openCost decimal.Decimal
 	openCount := 0
-	for _, n := range neighbors {
-		cost, hours, err := s.store.NeighborTotal(r.Context(), n.ID, year.ID)
-		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
-			return
-		}
-		count, err := s.store.CountEntriesForNeighborYear(r.Context(), year.ID, n.ID)
-		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
-			return
-		}
-		// Net what the neighbor owes = work bookings + signed ledger postings.
-		led, err := s.store.NeighborLedgerSum(r.Context(), year.ID, n.ID)
-		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
-			return
-		}
-		net := cost.Add(led)
-		paid := payments[n.ID]
+	for _, row := range summaryRows {
 		summaries = append(summaries, neighborSummary{
-			Neighbor: n, Cost: net, Hours: hours, Entries: count, Paid: paid,
+			Neighbor: models.Neighbor{ID: row.NeighborID, Name: row.Name},
+			Cost:     row.Cost, Hours: row.Hours, Entries: row.Entries, Paid: row.Paid,
 		})
-		grandCost = grandCost.Add(net)
-		grandHours = grandHours.Add(hours)
-		if paid {
-			paidCost = paidCost.Add(net)
-		} else if net.IsPositive() {
+		grandCost = grandCost.Add(row.Cost)
+		grandHours = grandHours.Add(row.Hours)
+		if row.Paid {
+			paidCost = paidCost.Add(row.Cost)
+		} else if row.Cost.IsPositive() {
 			// "Offen" = what neighbors still owe. Negative unpaid nets (I owe
 			// them) are excluded from both count and sum so the attention strip
 			// reports a consistent pair.
-			openCost = openCost.Add(net)
+			openCost = openCost.Add(row.Cost)
 			openCount++
 		}
 	}
 
 	available, err := s.store.ListNeighborsNotInYear(r.Context(), year.ID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, "dashboard: available neighbors", err)
 		return
 	}
 
 	data := s.newPage(w, r, "Übersicht", "dashboard")
 	if err := s.withYearSelector(r, data, year); err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, "dashboard: year selector", err)
 		return
 	}
 	// Offer "carry over neighbors from the previous year" when one exists and
@@ -92,7 +71,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		prevMembers, err := s.store.ListYearNeighbors(r.Context(), prev.ID)
 		if err != nil {
-			http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+			s.serverError(w, "dashboard: previous-year members", err)
 			return
 		}
 		var candidates []models.Neighbor
@@ -143,7 +122,7 @@ func (s *Server) handleYearAddNeighbor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.AddNeighborToYear(r.Context(), yearID, neighborID); err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, "add neighbor to year", err)
 		return
 	}
 	s.audit(r, "add_neighbor", "year", yearID, s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID))
@@ -268,7 +247,7 @@ func (s *Server) handleNeighborDelete(w http.ResponseWriter, r *http.Request) {
 	// They can be deactivated instead.
 	count, err := s.store.CountEntriesForNeighbor(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, "neighbor delete: count entries", err)
 		return
 	}
 	if count > 0 {

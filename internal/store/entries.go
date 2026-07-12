@@ -217,6 +217,56 @@ func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open
 	return
 }
 
+// YearNeighborSummary is one dashboard row for a neighbor in a billing year:
+// the net owed (non-voided bookings + signed ledger), hours, the entry count
+// (voided included, matching CountEntriesForNeighborYear) and the payment flag.
+type YearNeighborSummary struct {
+	NeighborID int64
+	Name       string
+	Cost       decimal.Decimal
+	Hours      decimal.Decimal
+	Entries    int
+	Paid       bool
+}
+
+// YearNeighborSummaries returns one row per neighbor in the year in a single
+// query, replacing the dashboard's per-neighbor NeighborTotal +
+// CountEntriesForNeighborYear + NeighborLedgerSum fan-out (2+3N round-trips).
+// Aggregates ride in scalar subqueries so joins can't multiply rows. Ordered by
+// name to match the dashboard list.
+func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]YearNeighborSummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT n.id, n.name, byn.paid,
+		  COALESCE((SELECT SUM(e.cost) FROM entries e
+		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id
+		               AND NOT e.voided), 0)
+		  + COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
+		               WHERE l.neighbor_id = n.id AND l.billing_year_id = byn.billing_year_id
+		                 AND NOT l.voided), 0) AS net,
+		  COALESCE((SELECT SUM(e.hours) FROM entries e
+		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id
+		               AND NOT e.voided), 0) AS hours,
+		  (SELECT count(*) FROM entries e
+		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id) AS entries
+		FROM billing_year_neighbors byn
+		JOIN neighbors n ON n.id = byn.neighbor_id
+		WHERE byn.billing_year_id = $1
+		ORDER BY n.name`, yearID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []YearNeighborSummary
+	for rows.Next() {
+		var r YearNeighborSummary
+		if err := rows.Scan(&r.NeighborID, &r.Name, &r.Paid, &r.Cost, &r.Hours, &r.Entries); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // UpdateEntry replaces the editable fields (and pricing snapshot) of an entry
 // and its machine links.
 func (s *Store) UpdateEntry(ctx context.Context, e *models.Entry, machineIDs []int64) error {

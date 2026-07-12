@@ -75,7 +75,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	s.logins.reset(r.Context(), rlKey)
@@ -195,7 +195,7 @@ func (s *Server) establishSession(w http.ResponseWriter, r *http.Request, user *
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *models.User) bool {
 	token, err := s.store.CreateSession(r.Context(), user.ID, sessionTTL, r.UserAgent(), s.clientIP(r))
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return false
 	}
 	s.setCookie(w, r, &http.Cookie{
@@ -260,7 +260,7 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	user := userFromCtx(r)
 	sessions, err := s.store.ListSessionsForUser(r.Context(), user.ID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	// Sessions carry the stored token *hash*; hash the current cookie to match.

@@ -50,12 +50,12 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := s.store.ListEntriesByYear(r.Context(), year.ID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	names, err := s.neighborNames(r)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	filename := fmt.Sprintf("treckrr_%d.csv", year.Year)
@@ -80,7 +80,7 @@ func (s *Server) handleExportNeighbor(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := s.store.ListEntries(r.Context(), neighbor.ID, year.ID)
 	if err != nil {
-		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	names := map[int64]string{neighbor.ID: neighbor.Name}
