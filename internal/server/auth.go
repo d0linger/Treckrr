@@ -139,8 +139,19 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 	input := r.FormValue("totp")
 	secret, _ := s.store.GetTotpSecret(r.Context(), userID)
 
+	// Validate the TOTP code, then enforce replay protection: a matched code is
+	// only accepted if its time-step hasn't been consumed before (atomic
+	// compare-and-set), so an observed/echoed code cannot be reused within its
+	// ~30-90s window.
+	totpOK := false
+	if step, ok := totp.ValidateStep(secret, input); ok {
+		if accepted, err := s.store.AcceptTotpStep(r.Context(), userID, step); err == nil && accepted {
+			totpOK = true
+		}
+	}
+
 	switch {
-	case totp.Validate(secret, input):
+	case totpOK:
 		// authenticator code accepted
 	case auth.LooksLikeRecoveryCode(input) && s.consumeRecovery(r, userID, input):
 		// one-time recovery code accepted
@@ -252,12 +263,13 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
-	currentToken := ""
+	// Sessions carry the stored token *hash*; hash the current cookie to match.
+	currentHash := ""
 	if c, err := r.Cookie(sessionCookie); err == nil {
-		currentToken = c.Value
+		currentHash = store.HashToken(c.Value)
 	}
 	for i := range sessions {
-		sessions[i].Current = sessions[i].Token == currentToken
+		sessions[i].Current = sessions[i].Token == currentHash
 	}
 	data := s.newPage(w, r, "Profil", "profile")
 	data["Sessions"] = sessions

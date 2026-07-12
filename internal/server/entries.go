@@ -393,9 +393,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if year, err := s.store.GetBillingYear(r.Context(), existing.BillingYearID); err == nil && year.Completed() {
-		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr geändert werden.")
-		redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
+	if !s.entryYearOpen(w, r, existing, "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr geändert werden.") {
 		return
 	}
 	entry, machineIDs, msg := s.resolveEntryFromForm(r)
@@ -431,9 +429,7 @@ func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if year, err := s.store.GetBillingYear(r.Context(), entry.BillingYearID); err == nil && year.Completed() {
-		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
-		redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
+	if !s.entryYearOpen(w, r, entry, "Das Abrechnungsjahr ist abgeschlossen.") {
 		return
 	}
 	void := r.FormValue("voided") == "true"
@@ -484,6 +480,24 @@ func (s *Server) ledgerYearOpen(w http.ResponseWriter, r *http.Request, yearID, 
 	if year.Completed() {
 		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
 		redirect(w, r, neighborURL(neighborID, yearID))
+		return false
+	}
+	return true
+}
+
+// entryYearOpen reports whether the entry's billing year is still open. Like
+// ledgerYearOpen it fails closed: a year-lookup error blocks the mutation
+// instead of silently proceeding on a possibly-completed (settled) year.
+func (s *Server) entryYearOpen(w http.ResponseWriter, r *http.Request, e *models.Entry, blockedMsg string) bool {
+	year, err := s.store.GetBillingYear(r.Context(), e.BillingYearID)
+	if err != nil {
+		s.setFlash(w, r, "error", "Abrechnungsjahr konnte nicht geladen werden.")
+		redirect(w, r, neighborURL(e.NeighborID, e.BillingYearID))
+		return false
+	}
+	if year.Completed() {
+		s.setFlash(w, r, "error", blockedMsg)
+		redirect(w, r, neighborURL(e.NeighborID, e.BillingYearID))
 		return false
 	}
 	return true
@@ -825,9 +839,7 @@ func (s *Server) handleEntryDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if year, err := s.store.GetBillingYear(r.Context(), entry.BillingYearID); err == nil && year.Completed() {
-		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr gelöscht werden.")
-		redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
+	if !s.entryYearOpen(w, r, entry, "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr gelöscht werden.") {
 		return
 	}
 	if err := s.store.DeleteEntry(r.Context(), id); err != nil {

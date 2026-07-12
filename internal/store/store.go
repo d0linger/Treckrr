@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
@@ -171,6 +172,22 @@ func (s *Store) SetTotp(ctx context.Context, userID int64, enabled bool, secret 
 	return err
 }
 
+// AcceptTotpStep records a just-matched TOTP time-step for replay protection.
+// It is an atomic compare-and-set: the step is stored (and true returned) only
+// when it is strictly newer than the last accepted one, so a code replayed
+// within its validity window — even concurrently — is rejected exactly once.
+func (s *Store) AcceptTotpStep(ctx context.Context, userID int64, step uint64) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE users SET totp_last_step = $2
+		  WHERE id = $1 AND (totp_last_step IS NULL OR totp_last_step < $2)`,
+		userID, int64(step)) //nosec G115 -- TOTP step (unix/30) fits int64 for millennia
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
 // GetUser returns a user by id.
 func (s *Store) GetUser(ctx context.Context, id int64) (*models.User, error) {
 	u, err := scanUser(s.db.QueryRowContext(ctx,
@@ -205,7 +222,18 @@ func (s *Store) ListUsers(ctx context.Context) ([]models.User, error) {
 
 // ---- Sessions ------------------------------------------------------------
 
-// CreateSession stores a new session token for a user with client metadata.
+// HashToken maps a raw session token to the value stored in the database. The
+// raw token lives only in the user's cookie; the DB keeps its SHA-256 so a read
+// of the sessions table (backup leak, replica, SQL injection) cannot yield a
+// usable cookie. A raw 256-bit token has full entropy, so an unsalted hash is
+// sufficient (same rationale as recovery-code hashing).
+func HashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// CreateSession stores a new session token for a user with client metadata. The
+// raw token is returned to the caller (for the cookie); only its hash is stored.
 func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Duration, userAgent, ip string) (string, error) {
 	token, err := auth.NewToken()
 	if err != nil {
@@ -214,7 +242,7 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Durati
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO sessions (token, user_id, expires_at, user_agent, ip)
 		 VALUES ($1,$2,$3,$4,$5)`,
-		token, userID, time.Now().Add(ttl), userAgent, ip)
+		HashToken(token), userID, time.Now().Add(ttl), userAgent, ip)
 	return token, err
 }
 
@@ -223,10 +251,11 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Durati
 // actively-used session stays alive (rolling window) and only expires after
 // slideTTL of inactivity.
 func (s *Store) UserFromSession(ctx context.Context, token string, slideTTL time.Duration) (*models.User, error) {
+	th := HashToken(token)
 	u, err := scanUser(s.db.QueryRowContext(ctx,
 		`SELECT u.id, u.username, u.role, u.is_admin, u.must_change_password, u.totp_enabled, u.created_at
 		   FROM sessions s JOIN users u ON u.id = s.user_id
-		  WHERE s.token=$1 AND s.expires_at > now()`, token))
+		  WHERE s.token=$1 AND s.expires_at > now()`, th))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -235,7 +264,7 @@ func (s *Store) UserFromSession(ctx context.Context, token string, slideTTL time
 	}
 	_, _ = s.db.ExecContext(ctx,
 		`UPDATE sessions SET last_seen=now(), expires_at=now() + make_interval(secs => $2) WHERE token=$1`,
-		token, slideTTL.Seconds())
+		th, slideTTL.Seconds())
 	return &u, nil
 }
 
@@ -261,23 +290,33 @@ func (s *Store) ListSessionsForUser(ctx context.Context, userID int64) ([]models
 	return out, rows.Err()
 }
 
-// DeleteUserSessionsExcept ends all of a user's sessions except one token.
+// DeleteUserSessionsExcept ends all of a user's sessions except the one holding
+// the given raw token. An empty keep deletes every session (used by admin
+// reset / role change). keep is a raw cookie token, so it is hashed to match
+// the stored value.
 func (s *Store) DeleteUserSessionsExcept(ctx context.Context, userID int64, keep string) error {
+	keepHash := keep
+	if keep != "" {
+		keepHash = HashToken(keep)
+	}
 	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM sessions WHERE user_id=$1 AND token <> $2`, userID, keep)
+		`DELETE FROM sessions WHERE user_id=$1 AND token <> $2`, userID, keepHash)
 	return err
 }
 
-// DeleteSessionForUser removes one session belonging to the given user.
-func (s *Store) DeleteSessionForUser(ctx context.Context, userID int64, token string) error {
+// DeleteSessionForUser removes one session belonging to the given user. The
+// identifier is the stored token hash (as surfaced by ListSessionsForUser and
+// posted back from the profile page), so it is matched as-is — never a raw
+// token. Scoped by userID, so a user can only revoke their own sessions.
+func (s *Store) DeleteSessionForUser(ctx context.Context, userID int64, tokenHash string) error {
 	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM sessions WHERE user_id=$1 AND token=$2`, userID, token)
+		`DELETE FROM sessions WHERE user_id=$1 AND token=$2`, userID, tokenHash)
 	return err
 }
 
-// DeleteSession removes a session (logout).
+// DeleteSession removes a session (logout). token is the raw cookie value.
 func (s *Store) DeleteSession(ctx context.Context, token string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token=$1`, token)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token=$1`, HashToken(token))
 	return err
 }
 

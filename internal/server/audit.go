@@ -162,14 +162,18 @@ func (s *Server) auditLogin(r *http.Request, username, action, detail string) {
 }
 
 // clientIP returns the best-effort client IP. Behind a trusted reverse proxy
-// (TRUST_PROXY=true) the left-most X-Forwarded-For entry is used; otherwise the
-// direct connection address is used (so a directly-exposed app cannot be
-// spoofed via a forged header).
+// (TRUST_PROXY=true) the *right-most* X-Forwarded-For entry is used: a proxy
+// appends the address it actually observed, so earlier entries are supplied by
+// the client and must not be trusted (using the left-most one lets an attacker
+// forge the IP to rotate past IP-keyed rate limits and to poison audit logs).
+// This assumes exactly one trusted proxy hop; for N chained proxies take the
+// entry N positions from the right. When not behind a trusted proxy the direct
+// connection address is used so a forged header is ignored entirely.
 func (s *Server) clientIP(r *http.Request) string {
 	if s.cfg.TrustProxy {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if i := strings.IndexByte(xff, ','); i >= 0 {
-				return strings.TrimSpace(xff[:i])
+			if i := strings.LastIndexByte(xff, ','); i >= 0 {
+				return strings.TrimSpace(xff[i+1:])
 			}
 			return strings.TrimSpace(xff)
 		}

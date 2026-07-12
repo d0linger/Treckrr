@@ -23,6 +23,12 @@ func passwordPolicyError(pw string) string {
 	if len(pw) < 8 {
 		return "Passwort muss mindestens 8 Zeichen haben."
 	}
+	// bcrypt silently truncates input beyond 72 bytes, so anything longer would
+	// have unused tail bytes (and, with GenerateFromPassword, error out). Reject
+	// it explicitly instead of hashing a silently-shortened password.
+	if len(pw) > 72 {
+		return "Passwort darf höchstens 72 Zeichen lang sein."
+	}
 	var hasLetter, hasDigit bool
 	for _, c := range pw {
 		switch {
