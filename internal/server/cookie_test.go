@@ -49,3 +49,36 @@ func TestCSVSafe(t *testing.T) {
 		}
 	}
 }
+
+func TestSecurityHeaders(t *testing.T) {
+	s := testServer()
+	h := s.securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	rr := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	h.ServeHTTP(rr, r)
+
+	if got := rr.Header().Get("X-XSS-Protection"); got != "0" {
+		t.Errorf("X-XSS-Protection = %q, want 0", got)
+	}
+	if got := rr.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+}
+
+func TestAuthMiddlewareHeaders(t *testing.T) {
+	s := testServer()
+	// Middleware requires a user in context or it redirects.
+	// But we only want to test that it sets the header.
+	h := s.auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+
+	rr := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	h.ServeHTTP(rr, r)
+
+	if got := rr.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
+}

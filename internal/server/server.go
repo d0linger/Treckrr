@@ -170,6 +170,7 @@ func (s *Server) Handler() http.Handler {
 // forced-password-change flow and read-only (viewer) restrictions.
 func (s *Server) auth(h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		user := s.currentUser(r)
 		if user == nil {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -200,6 +201,7 @@ func isSelfServicePath(p string) bool {
 // admin wraps a handler requiring an authenticated admin user.
 func (s *Server) admin(h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		user := s.currentUser(r)
 		if user == nil {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -272,6 +274,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-XSS-Protection", "0")
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		h.Set("Cross-Origin-Resource-Policy", "same-origin")
