@@ -185,19 +185,19 @@
 					{{if .Voided}}
 					<form method="post" action="/entries/{{.ID}}/void">
 						<input type="hidden" name="voided" value="false">
-						<button class="iconact" type="submit" title="Stornierung aufheben" aria-label="Stornierung aufheben">↺</button>
+						<button class="iconact" type="submit" title="Stornierung aufheben" aria-label="Stornierung aufheben">{{template "ic-undo"}}</button>
 					</form>
 					{{else}}
-					<a class="iconact" href="/entries/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">✎</a>
+					<a class="iconact" href="/entries/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">{{template "ic-edit"}}</a>
 					<form method="post" action="/entries/{{.ID}}/void"
 						data-confirm="Buchung stornieren? (bleibt sichtbar, zählt nicht mehr)"
 						data-confirm-reason="Grund der Stornierung (optional)">
 						<input type="hidden" name="voided" value="true">
 						<input type="hidden" name="reason" value="">
-						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">⊘</button>
+						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">{{template "ic-void"}}</button>
 					</form>
 					<form method="post" action="/entries/{{.ID}}/delete" data-confirm="Buchung endgültig löschen?">
-						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">🗑</button>
+						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
 					{{end}}
 				</span>
@@ -244,19 +244,19 @@
 					{{if .Voided}}
 					<form method="post" action="/ledger/{{.ID}}/void">
 						<input type="hidden" name="voided" value="false">
-						<button class="iconact" type="submit" title="Stornierung aufheben" aria-label="Stornierung aufheben">↺</button>
+						<button class="iconact" type="submit" title="Stornierung aufheben" aria-label="Stornierung aufheben">{{template "ic-undo"}}</button>
 					</form>
 					{{else}}
-					<a class="iconact" href="/ledger/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">✎</a>
+					<a class="iconact" href="/ledger/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">{{template "ic-edit"}}</a>
 					<form method="post" action="/ledger/{{.ID}}/void"
 						data-confirm="Position stornieren? (bleibt sichtbar, zählt nicht mehr)"
 						data-confirm-reason="Grund der Stornierung (optional)">
 						<input type="hidden" name="voided" value="true">
 						<input type="hidden" name="reason" value="">
-						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">⊘</button>
+						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">{{template "ic-void"}}</button>
 					</form>
 					<form method="post" action="/ledger/{{.ID}}/delete" data-confirm="Position endgültig löschen?">
-						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">🗑</button>
+						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
 					{{end}}
 				</span>
@@ -303,7 +303,7 @@
 		</details>
 		{{end}}
 
-	{{if not .Completed}}<a class="fab" href="#neue-buchung" aria-label="Neue Buchung" title="Neue Buchung">＋</a>{{end}}
+	{{if not .Completed}}<a class="fab" href="#neue-buchung" aria-label="Neue Buchung" title="Neue Buchung">{{template "ic-plus"}}</a>{{end}}
 </section>
 {{end}}
 

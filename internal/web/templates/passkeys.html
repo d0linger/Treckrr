@@ -15,7 +15,7 @@
 	<div class="list">
 		{{range .Passkeys}}
 		<div class="card disclosure--row">
-			<span class="list__title">🔐 {{.Name}}
+			<span class="list__title">{{template "ic-key"}} {{.Name}}
 				<span class="list__sub muted">seit {{date .Created}}{{if .LastUsed}} · schon verwendet{{end}}</span>
 			</span>
 			<form method="post" action="/account/passkeys/{{.ID}}/delete"

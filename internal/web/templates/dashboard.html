@@ -93,7 +93,7 @@
 				data-confirm="{{.Neighbor.Name}} aus diesem Jahr entfernen?">
 				<input type="hidden" name="year_id" value="{{$.Year.ID}}">
 				<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
-				<button class="btn btn--ghost btn--icon" type="submit" title="Aus Jahr entfernen" aria-label="Aus Jahr entfernen">✕</button>
+				<button class="btn btn--ghost btn--icon" type="submit" title="Aus Jahr entfernen" aria-label="Aus Jahr entfernen">{{template "ic-x"}}</button>
 			</form>
 			{{end}}
 		</div>
