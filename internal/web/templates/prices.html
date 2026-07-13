@@ -6,7 +6,7 @@
 	{{end}}
 
 	<!-- Belastungsstufen --------------------------------------------------->
-	<h2 class="section-title">Belastungsstufen <span class="muted">(€ / PS · h)</span></h2>
+	<h2 class="section-title">Belastungsstufen <span class="badge">{{len .Loads}}</span> <span class="muted">(€ / PS · h)</span></h2>
 	<div class="list">
 		{{range .Loads}}
 		<details class="card disclosure disclosure--row">
@@ -51,7 +51,7 @@
 	{{end}}
 
 	<!-- Traktoren ---------------------------------------------------------->
-	<h2 class="section-title">Traktoren <span class="muted">(Stundensatz = PS × €/PS·h)</span></h2>
+	<h2 class="section-title">Traktoren <span class="badge">{{len .TractorViews}}</span> <span class="muted">(Stundensatz = PS × €/PS·h)</span></h2>
 	<div class="list">
 		{{range .TractorViews}}
 		<details class="card disclosure disclosure--row {{if not .Tractor.Active}}is-inactive{{end}}">
@@ -111,7 +111,7 @@
 	{{end}}
 
 	<!-- Maschinen ---------------------------------------------------------->
-	<h2 class="section-title">Maschinen <span class="muted">(Stundensatz = AB × €/AB·h)</span></h2>
+	<h2 class="section-title">Maschinen <span class="badge">{{len .MachineViews}}</span> <span class="muted">(Stundensatz = AB × €/AB·h)</span></h2>
 	<datalist id="machine-cats">
 		{{range .Categories}}<option value="{{.}}"></option>{{end}}
 	</datalist>

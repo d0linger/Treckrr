@@ -79,6 +79,13 @@ func (s *Store) CountYearsForNeighbor(ctx context.Context, neighborID int64) (in
 	return n, err
 }
 
+// AnyNeighbors reports whether at least one neighbor exists (onboarding state).
+func (s *Store) AnyNeighbors(ctx context.Context) (bool, error) {
+	var exists bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM neighbors)`).Scan(&exists)
+	return exists, err
+}
+
 // CountEntriesForNeighbor returns the total entries a neighbor has (all years).
 func (s *Store) CountEntriesForNeighbor(ctx context.Context, neighborID int64) (int, error) {
 	var n int
