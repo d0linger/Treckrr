@@ -37,7 +37,7 @@
 	</div>
 	{{if not .Locked}}
 	<details class="card disclosure">
-		<summary>+ Belastungsstufe hinzufügen</summary>
+		<summary>{{template "ic-plus"}} Belastungsstufe hinzufügen</summary>
 		<form method="post" action="/prices/loadlevels" class="form">
 			<input type="hidden" name="base_id" value="{{.Base.ID}}">
 			<div class="form__grid">
@@ -96,7 +96,7 @@
 	</div>
 	{{if not .Locked}}
 	<details class="card disclosure">
-		<summary>+ Traktor hinzufügen</summary>
+		<summary>{{template "ic-plus"}} Traktor hinzufügen</summary>
 		<form method="post" action="/prices/tractors" class="form">
 			<input type="hidden" name="base_id" value="{{.Base.ID}}">
 			<div class="form__grid">
@@ -169,7 +169,7 @@
 	</div>
 	{{if not .Locked}}
 	<details class="card disclosure">
-		<summary>+ Maschine hinzufügen</summary>
+		<summary>{{template "ic-plus"}} Maschine hinzufügen</summary>
 		<form method="post" action="/prices/machines" class="form">
 			<input type="hidden" name="base_id" value="{{.Base.ID}}">
 			<div class="form__grid">

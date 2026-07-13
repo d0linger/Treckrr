@@ -269,6 +269,43 @@
 		});
 	});
 
+	// Login 2FA: toggle the single second-factor field between authenticator
+	// code (numeric, 6 digits) and backup/recovery code (alphanumeric). Same
+	// field name ("totp") — the server accepts either, so no round trip needed.
+	(function () {
+		var toggle = document.querySelector("[data-2fa-toggle]");
+		var input = document.querySelector("[data-2fa-input]");
+		if (!toggle || !input) return;
+		var label = document.querySelector("[data-2fa-label]");
+		var hint = document.querySelector("[data-2fa-hint]");
+		var recovery = false;
+		var apply = function (refocus) {
+			input.classList.remove("otp", "otp2");
+			if (recovery) {
+				input.classList.add("otp2");
+				input.setAttribute("inputmode", "text");
+				input.removeAttribute("pattern");
+				input.removeAttribute("maxlength");
+				input.placeholder = input.getAttribute("data-recovery-placeholder");
+				if (label) label.textContent = "Backup‑Code";
+				if (hint) hint.textContent = hint.getAttribute("data-recovery-hint");
+				toggle.textContent = toggle.getAttribute("data-to-app");
+			} else {
+				input.classList.add("otp");
+				input.setAttribute("inputmode", "numeric");
+				input.setAttribute("pattern", "[0-9]*");
+				input.setAttribute("maxlength", "6");
+				input.placeholder = input.getAttribute("data-app-placeholder");
+				if (label) label.textContent = "Zwei‑Faktor‑Code";
+				if (hint) hint.textContent = hint.getAttribute("data-app-hint");
+				toggle.textContent = toggle.getAttribute("data-to-recovery");
+			}
+			if (refocus) { input.value = ""; input.focus(); }
+		};
+		apply(false); // enhance the default (app) mode with numeric constraints
+		toggle.addEventListener("click", function () { recovery = !recovery; apply(true); });
+	})();
+
 	// Server-flash toast. Status toasts auto-hide after 4s; error toasts
 	// (role="alert") persist until the user dismisses them (keyboard-operable
 	// close button) or navigates away, so an error cannot vanish unnoticed.

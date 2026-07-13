@@ -1,7 +1,10 @@
 {{define "content"}}
 <section class="stack">
-	<a class="backlink" href="{{.BackURL}}">‹ Zurück</a>
-	<h2 class="section-title">Kosten neu berechnen · {{.YearLabel}}{{if not .YearScope}} · {{.Scope}}{{end}}</h2>
+	<div class="pagehead">
+		<a class="backbtn" href="{{.BackURL}}" aria-label="Zurück">{{template "ic-back"}}</a>
+		<h1 class="pagehead__t">Kosten neu berechnen</h1>
+	</div>
+	<p class="muted small">{{.YearLabel}}{{if not .YearScope}} · {{.Scope}}{{end}}</p>
 
 	{{if .Count}}
 	<p class="sub muted">Die aktuelle Grundlage ergibt für <strong>{{.Count}}</strong> Buchung(en) andere Kosten (gleiche Traktoren/Maschinen wie gebucht, aber aktuelle Preise). Prüfe die Änderungen und übernimm sie.</p>
@@ -9,37 +12,25 @@
 	<div class="flash flash--info">Achtung: In diesem Umfang sind bereits Nachbarn als <strong>bezahlt</strong> markiert – eine Neuberechnung ändert deren Beträge nachträglich.</div>
 	{{end}}
 
-	<div class="card tablewrap">
-		<table class="dtable dtable--zebra">
-			<thead>
-				<tr>
-					<th>Datum</th>
-					{{if .YearScope}}<th>Nachbar</th>{{end}}
-					<th>Tätigkeit</th>
-					<th class="num">Std</th>
-					<th class="num">Satz alt → neu</th>
-					<th class="num">Kosten alt → neu</th>
-				</tr>
-			</thead>
-			<tbody>
-				{{range .Rows}}{{if .Changed}}
-				<tr>
-					<td class="nowrap">{{date .Date}}</td>
-					{{if $.YearScope}}<td>{{.NeighborName}}</td>{{end}}
-					<td>{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}</td>
-					<td class="num">{{num .Hours}}</td>
-					<td class="num nowrap"><span class="muted">{{money .OldRate}}</span> → <strong>{{money .NewRate}}</strong></td>
-					<td class="num nowrap"><span class="muted">{{money .OldCost}}</span> → <strong>{{money .NewCost}}</strong></td>
-				</tr>
-				{{end}}{{end}}
-			</tbody>
-			<tfoot>
-				<tr>
-					<th {{if .YearScope}}colspan="5"{{else}}colspan="4"{{end}}>Summe · Differenz {{if .Diff.IsPositive}}+{{end}}{{money .Diff}}</th>
-					<th class="num nowrap"><span class="muted">{{money .OldTotal}}</span> → {{money .NewTotal}}</th>
-				</tr>
-			</tfoot>
-		</table>
+	<div class="rcards">
+		{{range .Rows}}{{if .Changed}}
+		<div class="rcard">
+			<div class="rcard__top">
+				<span class="rcard__date">{{date .Date}}</span>
+				<span class="rcard__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}</span>
+				{{if $.YearScope}}<span class="rcard__nb">{{.NeighborName}}</span>{{end}}
+			</div>
+			<div class="rcard__grid">
+				<span class="rcard__k">Stunden</span><span class="rcard__v">{{num .Hours}} h</span>
+				<span class="rcard__k">Satz</span><span class="rcard__v"><span class="old">{{money .OldRate}}</span> <span class="arr">→</span> <strong>{{money .NewRate}}</strong></span>
+				<span class="rcard__k">Kosten</span><span class="rcard__v"><span class="old">{{money .OldCost}}</span> <span class="arr">→</span> <strong>{{money .NewCost}}</strong></span>
+			</div>
+		</div>
+		{{end}}{{end}}
+		<div class="rsum">
+			<span class="rsum__diff">Differenz {{if .Diff.IsPositive}}+{{end}}{{money .Diff}}</span>
+			<span class="rsum__tot"><span class="old">{{money .OldTotal}}</span> <span class="arr">→</span> <strong>{{money .NewTotal}}</strong></span>
+		</div>
 	</div>
 
 	<form method="post" action="{{.ApplyURL}}" data-confirm="{{.Count}} Buchungen mit der aktuellen Grundlage neu berechnen? Die eingefrorenen Preise dieser Buchungen werden überschrieben.">
@@ -51,7 +42,6 @@
 	</form>
 	{{else}}
 	<div class="card"><p class="muted center">Alle Buchungen sind bereits auf dem Stand der aktuellen Grundlage – nichts zu tun.</p></div>
-	<a class="btn btn--ghost btn--sm" href="{{.BackURL}}">Zurück</a>
 	{{end}}
 </section>
 {{end}}

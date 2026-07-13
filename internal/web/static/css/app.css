@@ -107,6 +107,22 @@ html { overflow-x: hidden; }
 }
 
 a { color: var(--primary); text-decoration: none; }
+.linkbtn { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: var(--primary);
+	font-weight: 600; cursor: pointer; text-decoration: underline; }
+.linkbtn:hover { color: var(--primary-strong); }
+.twofa-alt { margin: -.2rem 0 .3rem; }
+/* One-time-code fields: large centred digits (app code) / grouped code (backup). */
+.otp { width: 100%; text-align: center; font-family: inherit; font-size: 1.9rem; font-weight: 800;
+	letter-spacing: .5em; padding: .7rem .3rem .7rem .8rem; font-variant-numeric: tabular-nums;
+	border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); }
+.otp::placeholder { letter-spacing: .5em; color: color-mix(in srgb, var(--muted) 70%, transparent); font-weight: 700; }
+/* Backup code: full format is four 4-char groups (e.g. N6YD-DBNN-UPXT-PB67 =
+   19 chars). Monospace keeps every glyph the same width so the whole code fits
+   at 390px regardless of which letters it contains. */
+.otp2 { width: 100%; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+	font-size: .95rem; font-weight: 700; letter-spacing: .02em; padding: .72rem .35rem; text-transform: uppercase;
+	border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); }
+.otp2::placeholder { letter-spacing: .02em; color: color-mix(in srgb, var(--muted) 70%, transparent); font-weight: 700; }
 h1, h2, h3 { margin: 0; }
 .muted { color: var(--muted); font-size: .9rem; }
 .small { font-size: .78rem; }
@@ -994,3 +1010,20 @@ em { font-style: normal; color: var(--muted); }
 .pkrow__t { font-weight: 700; overflow-wrap: anywhere; }
 .pkrow__s { color: var(--muted); font-size: .82rem; font-variant-numeric: tabular-nums; }
 .pkrow form { margin-left: auto; flex: 0 0 auto; margin-bottom: 0; }
+
+/* ---- Recalc as cards (replaces the 6-column sideways table) ----------- */
+.rcards { display: flex; flex-direction: column; gap: .5rem; }
+.rcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .6rem .75rem; box-shadow: var(--shadow); }
+.rcard__top { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+.rcard__date { font-weight: 700; font-variant-numeric: tabular-nums; }
+.rcard__task { color: var(--muted); font-size: var(--fs-sm); }
+.rcard__nb { margin-left: auto; font-size: var(--fs-xs); color: var(--muted); }
+.rcard__grid { display: grid; grid-template-columns: auto 1fr; gap: .15rem .8rem; margin-top: .4rem;
+	padding-top: .35rem; border-top: 1px dashed var(--border); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.rcard__k { color: var(--muted); }
+.rcard__v .old { color: var(--muted); }
+.rcard__v .arr { color: var(--muted); margin: 0 .15rem; }
+.rsum { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: .7rem .8rem;
+	display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.rsum__diff { font-weight: 800; color: var(--accent-text); }
+.rsum__tot .old { color: var(--muted); } .rsum__tot .arr { color: var(--muted); margin: 0 .15rem; }
