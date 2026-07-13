@@ -54,7 +54,10 @@
 	</main>
 
 	{{if .FlashMessage}}
-		<div class="toast toast--{{.FlashKind}}" role="{{if eq .FlashKind "error"}}alert{{else}}status{{end}}">{{.FlashMessage}}</div>
+		<div class="toast toast--{{.FlashKind}}" role="{{if eq .FlashKind "error"}}alert{{else}}status{{end}}">
+			<span class="toast__msg">{{.FlashMessage}}</span>
+			<button class="toast__close" type="button" data-toast-dismiss aria-label="Meldung schließen">✕</button>
+		</div>
 	{{end}}
 
 {{if .User}}

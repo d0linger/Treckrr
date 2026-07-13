@@ -140,8 +140,8 @@
 	});
 
 	// Server-flash toast. Status toasts auto-hide after 4s; error toasts
-	// (role="alert") persist until the user dismisses them or navigates away, so
-	// an error cannot vanish unnoticed. Any toast can be clicked to dismiss.
+	// (role="alert") persist until the user dismisses them (keyboard-operable
+	// close button) or navigates away, so an error cannot vanish unnoticed.
 	// (Copying recovery codes is handled by the page-scoped recovery.js.)
 	var flash = document.querySelector(".toast");
 	if (flash) {
@@ -150,7 +150,8 @@
 			flash.style.opacity = "0";
 			setTimeout(function () { flash.remove(); }, 300);
 		};
-		flash.addEventListener("click", dismissToast);
+		var closeBtn = flash.querySelector("[data-toast-dismiss]");
+		if (closeBtn) closeBtn.addEventListener("click", dismissToast);
 		if (flash.getAttribute("role") !== "alert") {
 			setTimeout(dismissToast, 4000);
 		}
