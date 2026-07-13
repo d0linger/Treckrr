@@ -104,7 +104,13 @@ func (s *Server) handleTwoFactor(w http.ResponseWriter, r *http.Request) {
 	data := s.newPage(w, r, "Zwei‑Faktor einrichten", "profile")
 	data["Enabled"] = false
 	secret, err := s.store.GetTotpSecret(r.Context(), user.ID)
-	if err != nil || secret == "" {
+	if err != nil {
+		// A read/decrypt failure must surface, not be masked by minting a fresh
+		// secret and overwriting the stored one on a failed read.
+		s.serverError(w, "2fa setup: load secret", err)
+		return
+	}
+	if secret == "" {
 		secret, err = totp.GenerateSecret()
 		if err != nil {
 			s.serverError(w, "2fa setup: generate secret", err)
