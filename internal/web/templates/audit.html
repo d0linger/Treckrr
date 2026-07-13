@@ -25,27 +25,20 @@
 	</form>
 	<p class="muted small">{{if .Total}}{{.RangeFrom}}–{{.RangeTo}} von {{.Total}} Einträgen · Seite {{.Page}}/{{.TotalPages}}{{else}}Keine Einträge.{{end}}</p>
 
-	<div class="card tablewrap">
-		<table class="dtable dtable--zebra dtable--audit">
-			<thead>
-				<tr><th>Zeitpunkt</th><th>Benutzer</th><th>Aktion</th><th>Objekt</th><th>Detail</th><th>IP</th></tr>
-			</thead>
-			<tbody>
-				{{range .Entries}}
-				<tr>
-					<td class="nowrap small">{{.Created.Format "02.01.2006 15:04:05"}}</td>
-					<td class="small">{{if .Username}}{{.Username}}{{else}}—{{end}}</td>
-					<td class="small"><strong>{{.Action}}</strong></td>
-					<td class="small nowrap">{{.Entity}}{{if .EntityID}} #{{.EntityID}}{{end}}</td>
-					<td class="small detailcell">{{if .Detail}}{{range $i, $p := split " · " .Detail}}{{if $i}}<br>{{end}}{{$p}}{{end}}{{else}}—{{end}}</td>
-					<td class="small nowrap">{{.IP}}</td>
-				</tr>
-				{{else}}
-				<tr><td colspan="6" class="muted center">Noch keine Einträge.</td></tr>
-				{{end}}
-			</tbody>
-		</table>
-	</div>
+	<ol class="logcards" aria-label="Protokolleinträge">
+		{{range .Entries}}
+		<li class="logcard">
+			<div class="logcard__top">
+				<span class="abadge">{{.Action}}</span>
+				<time class="logcard__time" datetime="{{.Created.Format "2006-01-02T15:04:05"}}">{{.Created.Format "02.01.2006 15:04:05"}}</time>
+			</div>
+			{{if .Detail}}<div class="logcard__detail">{{range $i, $p := split " · " .Detail}}{{if $i}}<br>{{end}}{{$p}}{{end}}</div>{{end}}
+			<div class="logcard__meta">{{if .Username}}{{.Username}}{{else}}—{{end}}{{if .Entity}} · {{.Entity}}{{if .EntityID}} #{{.EntityID}}{{end}}{{end}} · <span class="ip">{{.IP}}</span></div>
+		</li>
+		{{else}}
+		<li class="muted center card">Noch keine Einträge.</li>
+		{{end}}
+	</ol>
 
 	{{if gt .TotalPages 1}}
 	<div class="btnrow btnrow--split">
