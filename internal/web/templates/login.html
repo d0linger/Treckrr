@@ -8,17 +8,23 @@
 		</div>
 
 		{{if .ShowTotp}}
+		{{/* One field for both factors (the server accepts either). A link toggles
+		     the input between authenticator code (numeric, 6 digits) and backup
+		     code (alphanumeric). Progressive: without JS it stays a plain field
+		     that still accepts both. */}}
 		<form method="post" action="/login/2fa" class="form">
-			<p class="muted">Zwei‑Faktor‑Bestätigung: Gib den 6‑stelligen Code deiner
-				Authenticator‑App ein.</p>
 			<label class="field">
-				<span>Code</span>
-				<input class="input" type="text" name="totp"
-					autocomplete="one-time-code" placeholder="123456" required autofocus>
+				<span data-2fa-label>Zwei‑Faktor‑Code</span>
+				<input class="otp" type="text" name="totp" inputmode="numeric"
+					autocomplete="one-time-code" placeholder="––––––" required autofocus
+					data-2fa-input data-app-placeholder="––––––" data-recovery-placeholder="ABCD‑EFGH">
 			</label>
-			<p class="muted small">Kein Zugriff auf die App? Gib stattdessen einen
-				<strong>Wiederherstellungscode</strong> ein.</p>
-			<button class="btn btn--primary btn--block" type="submit">Bestätigen</button>
+			<p class="twofa-alt"><button type="button" class="linkbtn" data-2fa-toggle
+				data-to-recovery="Backup‑Code verwenden" data-to-app="Stattdessen App‑Code">Backup‑Code verwenden</button></p>
+			<p class="muted small" data-2fa-hint
+				data-app-hint="6‑stelliger Code aus der App – oder ein Backup‑Code, falls kein Handy zur Hand."
+				data-recovery-hint="Einmal‑Code aus deiner Backup‑Liste (Format ABCD‑EFGH).">6‑stelliger Code aus der App – oder ein Backup‑Code, falls kein Handy zur Hand.</p>
+			<button class="btn btn--primary btn--block" type="submit">Anmelden</button>
 			<p class="center"><a class="link" href="/login?cancel=1">Abbrechen</a></p>
 		</form>
 		{{else}}
