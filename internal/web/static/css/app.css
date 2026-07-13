@@ -770,6 +770,7 @@ em { font-style: normal; color: var(--muted); }
 	background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--pay);
 	border-radius: 12px; padding: .6rem .75rem; font-size: .88rem; font-weight: 600;
 	box-shadow: 0 10px 26px rgba(0, 0, 0, .22);
+	cursor: pointer; /* click anywhere to dismiss (esp. persistent error toasts) */
 	animation: toast-in .22s ease-out; }
 .toast::before { content: "✓"; flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
 	display: grid; place-items: center; font-size: .75rem; font-weight: 800;
@@ -797,7 +798,10 @@ em { font-style: normal; color: var(--muted); }
 	background: var(--primary); color: #fff; font-weight: 700; text-decoration: none;
 	padding: .55rem .9rem; border-radius: 8px; transition: top .15s ease; }
 .skip:focus { top: 8px; }
-.main:focus { outline: none; } /* programmatic focus target for the skip link */
+/* The skip link moves focus to <main> (a programmatic, non-:focus-visible
+   focus) — suppress the outline only there, so it doesn't box the whole content
+   area. A genuine keyboard :focus-visible on main still shows the global ring. */
+.main:focus:not(:focus-visible) { outline: none; }
 @media (prefers-reduced-motion: reduce) { .skip { transition: none; } }
 
 /* ---- Print: drop the app chrome so a page (e.g. recovery codes, a Beleg)
