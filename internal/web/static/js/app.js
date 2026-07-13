@@ -240,19 +240,27 @@
 			var target = document.querySelector(btn.getAttribute("data-copy"));
 			if (!target) return;
 			var text = target.textContent.trim();
-			var done = function () {
+			var flash = function (label) {
 				var prev = btn.innerHTML;
-				btn.textContent = "Kopiert ✓";
+				btn.textContent = label;
 				setTimeout(function () { btn.innerHTML = prev; }, 1500);
 			};
+			var done = function () { flash("Kopiert ✓"); };
+			// Fallback for non-secure (plain-HTTP) contexts. Only report success
+			// when execCommand actually copied; a false return or a thrown error
+			// shows a failure message instead of a misleading "Kopiert ✓".
 			var fallback = function () {
 				var ta = document.createElement("textarea");
 				ta.value = text; document.body.appendChild(ta); ta.select();
-				try { document.execCommand("copy"); } catch (e) { /* ignore */ }
-				document.body.removeChild(ta); done();
+				var ok = false;
+				try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+				document.body.removeChild(ta);
+				ok ? done() : flash("Fehlgeschlagen");
 			};
 			if (navigator.clipboard && navigator.clipboard.writeText) {
-				navigator.clipboard.writeText(text).then(done, fallback);
+				try {
+					navigator.clipboard.writeText(text).then(done, fallback);
+				} catch (e) { fallback(); }
 			} else { fallback(); }
 		});
 	});
