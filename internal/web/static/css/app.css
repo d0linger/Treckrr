@@ -373,9 +373,9 @@ em { font-style: normal; color: var(--muted); }
 	border-radius: var(--radius); padding: .65rem .85rem; box-shadow: var(--shadow);
 }
 .rate-preview__main { display: flex; flex-direction: column; gap: .05rem; }
-.rate-preview__lbl { font-size: .62rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 800; opacity: .85; }
-.rate-preview__cost { font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
-.rate-preview__rate { font-size: .82rem; opacity: .92; text-align: right; }
+.rate-preview__lbl { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; font-weight: 800; opacity: .85; }
+.rate-preview__cost { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+.rate-preview__rate { font-size: var(--fs-sm); opacity: .92; text-align: right; }
 .rate-preview strong { font-variant-numeric: tabular-nums; font-weight: 700; }
 
 /* ---- Chips ------------------------------------------------------------ */
