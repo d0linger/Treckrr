@@ -18,52 +18,40 @@
 		{{template "bar-chart" (dict "Rows" .Revenue "Max" .RevenueMax "Money" true)}}
 	</div>
 
-	<div class="card">
+	<div>
 		<h2 class="section-title">Jahresübersicht</h2>
-		<div class="tablewrap">
-			<table class="dtable dtable--zebra">
-				<thead>
-					<tr>
-						<th>Jahr</th>
-						<th class="num">Leistungen</th>
-						<th class="num">Verrechnung</th>
-						<th class="num">Netto</th>
-						<th class="num">Stunden</th>
-						<th class="num">Bezahlt</th>
-						<th class="num">Offen</th>
-						<th>Status</th>
-					</tr>
-				</thead>
-				<tbody>
-					{{range .Stats}}
-					<tr>
-						<td><a class="link strong" href="/stats?year={{.YearID}}">{{.Year}}</a></td>
-						<td class="num">{{money .Cost}}</td>
-						<td class="num">{{money .Ledger}}</td>
-						<td class="num strong">{{money .Net}}</td>
-						<td class="num">{{num .Hours}} h</td>
-						<td class="num">{{money .PaidCost}}</td>
-						<td class="num">{{money .OpenCost}}</td>
-						<td>{{if .Completed}}<span class="badge">abgeschlossen</span>{{else}}<span class="muted">offen</span>{{end}}</td>
-					</tr>
-					{{else}}
-					<tr><td colspan="8" class="muted center">Noch keine Abrechnungsjahre.</td></tr>
-					{{end}}
-				</tbody>
-				<tfoot>
-					<tr>
-						<th>Summe</th>
-						<th class="num">{{money .GrandCost}}</th>
-						<th class="num">{{money .GrandLedger}}</th>
-						<th class="num">{{money .GrandNet}}</th>
-						<th class="num">{{num .GrandHours}} h</th>
-						<th class="num">{{money .GrandPaid}}</th>
-						<th class="num">{{money .GrandOpen}}</th>
-						<th></th>
-					</tr>
-				</tfoot>
-			</table>
+		<div class="yearstats">
+			{{range .Stats}}
+			<div class="yearstat">
+				<div class="yearstat__head">
+					<a class="link yearstat__yr" href="/stats?year={{.YearID}}">{{.Year}}</a>
+					{{if .Completed}}<span class="badge">abgeschlossen</span>{{else}}<span class="badge">offen</span>{{end}}
+					<span class="yearstat__net">{{money .Net}}</span>
+				</div>
+				<div class="yearstat__grid">
+					<span>Leistungen <b>{{money .Cost}}</b></span>
+					<span>Verrechnung <b>{{money .Ledger}}</b></span>
+					<span>Stunden <b>{{num .Hours}} h</b></span>
+					<span>Bezahlt <b>{{money .PaidCost}}</b></span>
+					<span>Offen <b>{{money .OpenCost}}</b></span>
+				</div>
+			</div>
+			{{else}}
+			<p class="muted center">Noch keine Abrechnungsjahre.</p>
+			{{end}}
 		</div>
+		{{if .Stats}}
+		<div class="yearstat yearstat--sum" style="margin-top:.5rem;">
+			<div class="yearstat__head"><span class="yearstat__yr">Summe</span><span class="yearstat__net">{{money .GrandNet}}</span></div>
+			<div class="yearstat__grid">
+				<span>Leistungen <b>{{money .GrandCost}}</b></span>
+				<span>Verrechnung <b>{{money .GrandLedger}}</b></span>
+				<span>Stunden <b>{{num .GrandHours}} h</b></span>
+				<span>Bezahlt <b>{{money .GrandPaid}}</b></span>
+				<span>Offen <b>{{money .GrandOpen}}</b></span>
+			</div>
+		</div>
+		{{end}}
 	</div>
 </section>
 {{end}}

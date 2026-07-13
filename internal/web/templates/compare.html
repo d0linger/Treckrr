@@ -31,25 +31,21 @@
 
 {{define "diff-table"}}
 <h2 class="section-title">{{.Title}}</h2>
-<div class="card tablewrap">
-	<table class="dtable dtable--zebra">
-		<thead><tr><th>Position</th><th class="num">Neu</th><th class="num">Alt</th><th class="num">Diff</th><th class="num">%</th></tr></thead>
-		<tbody>
-			{{$money := .Money}}
-			{{range .Rows}}
-			<tr>
-				<td>{{.Label}}</td>
-				<td class="num">{{if $money}}{{money .A}}{{else}}{{num .A}}{{end}}</td>
-				<td class="num muted">{{if $money}}{{money .B}}{{else}}{{num .B}}{{end}}</td>
-				<td class="num {{if .Up}}diff-up{{else if .Down}}diff-down{{end}}">
-					{{if .Up}}+{{end}}{{if $money}}{{money .Diff}}{{else}}{{num .Diff}}{{end}}</td>
-				<td class="num {{if .Up}}diff-up{{else if .Down}}diff-down{{end}}">
-					{{if .Up}}+{{end}}{{num .Pct}} %</td>
-			</tr>
-			{{else}}
-			<tr><td colspan="5" class="muted center">Keine vergleichbaren Positionen.</td></tr>
-			{{end}}
-		</tbody>
-	</table>
+<div class="cmprows">
+	{{$money := .Money}}
+	{{range .Rows}}
+	<div class="cmprow">
+		<div class="cmprow__top">
+			<span class="cmprow__pos">{{.Label}}</span>
+			<span class="cmprow__new">{{if $money}}{{money .A}}{{else}}{{num .A}}{{end}}</span>
+		</div>
+		<div class="cmprow__meta">
+			<span>alt {{if $money}}{{money .B}}{{else}}{{num .B}}{{end}}</span>
+			<span class="{{if .Up}}diff-up{{else if .Down}}diff-down{{end}}">{{if .Up}}▲ +{{else if .Down}}▼ {{end}}{{if $money}}{{money .Diff}}{{else}}{{num .Diff}}{{end}} ({{if .Up}}+{{end}}{{num .Pct}} %)</span>
+		</div>
+	</div>
+	{{else}}
+	<p class="muted card center">Keine vergleichbaren Positionen.</p>
+	{{end}}
 </div>
 {{end}}

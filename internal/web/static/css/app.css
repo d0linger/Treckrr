@@ -839,3 +839,34 @@ em { font-style: normal; color: var(--muted); }
 	.main { max-width: none; padding: 0; }
 	body { background: #fff; }
 }
+
+/* ---- Audit log as cards (replaces the 6-column sideways table) -------- */
+.logcards { display: flex; flex-direction: column; gap: .5rem; list-style: none; margin: 0; padding: 0; }
+.logcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+	padding: .55rem .7rem; display: flex; flex-direction: column; gap: .3rem; box-shadow: var(--shadow); }
+.logcard__top { display: flex; align-items: center; gap: .5rem; }
+.logcard__time { margin-left: auto; font-size: var(--fs-xs); color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.logcard__detail { font-size: var(--fs-sm); line-height: 1.4; overflow-wrap: break-word; }
+.logcard__meta { font-size: var(--fs-xs); color: var(--muted); overflow-wrap: break-word; }
+.logcard__meta .ip { font-variant-numeric: tabular-nums; }
+.abadge { display: inline-flex; align-items: center; font-size: var(--fs-xs); font-weight: 800;
+	padding: .12rem .5rem; border-radius: 999px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); white-space: nowrap; }
+
+/* ---- Per-year stats as cards (replaces the 8-column Jahresübersicht) -- */
+.yearstats { display: flex; flex-direction: column; gap: .5rem; }
+.yearstat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .6rem .7rem; box-shadow: var(--shadow); }
+.yearstat--sum { background: var(--surface-2); }
+.yearstat__head { display: flex; align-items: center; gap: .5rem; }
+.yearstat__yr { font-weight: 800; font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
+.yearstat__net { margin-left: auto; font-weight: 800; font-size: var(--fs-lg); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.yearstat__grid { display: grid; grid-template-columns: 1fr 1fr; gap: .1rem .8rem; margin-top: .4rem;
+	padding-top: .35rem; border-top: 1px dashed var(--border); font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.yearstat__grid b { color: var(--text); font-weight: 700; }
+
+/* ---- Price comparison as rows (replaces the 5-column Vergleich table) - */
+.cmprows { display: flex; flex-direction: column; gap: .45rem; }
+.cmprow { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .55rem .7rem; box-shadow: var(--shadow); }
+.cmprow__top { display: flex; align-items: baseline; gap: .5rem; }
+.cmprow__pos { font-weight: 700; font-size: var(--fs-sm); }
+.cmprow__new { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; }
+.cmprow__meta { display: flex; gap: .6rem; flex-wrap: wrap; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; margin-top: .15rem; }
