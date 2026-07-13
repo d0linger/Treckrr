@@ -211,7 +211,10 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 // ---- Signed pending-2FA token (survives step 1 -> step 2, no DB state) ----
 
 func (s *Server) signPending2FA(userID int64) string {
-	payload := fmt.Sprintf("%d|%d", userID, time.Now().Add(pending2FATTL).Unix())
+	// The "2fa:" prefix binds the HMAC to this context, so a pending-2FA token
+	// can never be replayed as another value signed with the same secret
+	// (mirrors the "csrf:" prefix in csrf.go).
+	payload := fmt.Sprintf("2fa:%d|%d", userID, time.Now().Add(pending2FATTL).Unix())
 	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
 	mac.Write([]byte(payload))
 	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + hex.EncodeToString(mac.Sum(nil))
@@ -232,7 +235,7 @@ func (s *Server) verifyPending2FA(value string) (int64, bool) {
 		return 0, false
 	}
 	var uid, exp int64
-	if _, err := fmt.Sscanf(string(raw), "%d|%d", &uid, &exp); err != nil {
+	if _, err := fmt.Sscanf(string(raw), "2fa:%d|%d", &uid, &exp); err != nil {
 		return 0, false
 	}
 	if time.Now().Unix() > exp {
