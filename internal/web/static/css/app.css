@@ -914,6 +914,10 @@ em { font-style: normal; color: var(--muted); }
 	.list, .bookcards, .logcards, .yearcards, .yearstats {
 		display: grid; grid-template-columns: 1fr 1fr; align-items: start;
 	}
+	/* Opt back out of two columns (admin users list, audit log): these read
+	   better as a single top-to-bottom column. Placed after the rule above so
+	   it wins the cascade. */
+	.list--onecol, .logcards--onecol { grid-template-columns: 1fr; }
 }
 
 /* ---- Account security flows (2FA setup, password, backup codes) -------- */

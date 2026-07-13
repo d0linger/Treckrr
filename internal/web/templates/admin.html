@@ -4,11 +4,7 @@
 		<a class="backbtn" href="/" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
 		<h1 class="pagehead__t">Benutzer <span class="badge">{{len .Users}}</span></h1>
 	</div>
-	<div class="btnrow">
-		<a class="btn btn--primary btn--sm" href="/admin/users">Benutzer</a>
-		<a class="btn btn--ghost btn--sm" href="/admin/audit">Protokoll</a>
-	</div>
-	<div class="list">
+	<div class="list list--onecol">
 		{{range .Users}}
 		<details class="card disclosure disclosure--row">
 			<summary>
