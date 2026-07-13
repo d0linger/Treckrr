@@ -1,0 +1,6 @@
+Retrigger CI for PR #55
+
+This file was added to force GitHub Actions to re-run checks.
+
+Triggered by: GitHub Copilot on behalf of d0linger
+Timestamp: 2026-07-13T13:XX:00Z

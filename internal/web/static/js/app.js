@@ -186,6 +186,89 @@
 		});
 	});
 
+	// Recovery-code gate: "Fertig" stays disabled until the user confirms they
+	// saved the codes. Without JS the link works normally (no lockout).
+	(function () {
+		var chk = document.querySelector("[data-gate-check]");
+		var done = document.querySelector("[data-gate-done]");
+		if (!chk || !done) return;
+		function sync() {
+			done.classList.toggle("is-disabled", !chk.checked);
+			done.setAttribute("aria-disabled", chk.checked ? "false" : "true");
+		}
+		done.addEventListener("click", function (e) { if (!chk.checked) e.preventDefault(); });
+		chk.addEventListener("change", sync);
+		sync();
+	})();
+
+	// Password visibility toggles (the "eye").
+	document.querySelectorAll("[data-pw-toggle]").forEach(function (btn) {
+		btn.addEventListener("click", function () {
+			var wrap = btn.closest(".pwwrap");
+			var input = wrap && wrap.querySelector("input");
+			if (!input) return;
+			var show = input.type === "password";
+			input.type = show ? "text" : "password";
+			btn.setAttribute("aria-pressed", show ? "true" : "false");
+			btn.setAttribute("aria-label", show ? "Passwort verbergen" : "Passwort anzeigen");
+		});
+	});
+
+	// Live "passwords match" indicator on the change-password form. The server
+	// re-checks the match; this is comfort feedback only.
+	(function () {
+		var np = document.querySelector("[data-pw-new]");
+		var cp = document.querySelector("[data-pw-confirm]");
+		var out = document.querySelector("[data-pw-match]");
+		if (!np || !cp || !out) return;
+		function check() {
+			if (!cp.value) { out.textContent = ""; out.className = "pw-match"; cp.setCustomValidity(""); return; }
+			var ok = np.value === cp.value;
+			out.textContent = ok ? "Stimmt überein" : "Passwörter stimmen nicht überein";
+			out.className = "pw-match " + (ok ? "pw-match--ok" : "pw-match--no");
+			cp.setCustomValidity(ok ? "" : "Die Passwörter stimmen nicht überein.");
+		}
+		np.addEventListener("input", check);
+		cp.addEventListener("input", check);
+	})();
+
+	// Generic copy-to-clipboard: [data-copy="#target"] copies the target's text.
+	// Falls back to execCommand for non-secure (plain-HTTP) contexts where the
+	// async clipboard API is unavailable — same pattern as recovery.js.
+	document.querySelectorAll("[data-copy]").forEach(function (btn) {
+		// Capture the original label once, so a second click within the flash
+		// window restores it rather than pinning a transient "Kopiert ✓".
+		var orig = btn.innerHTML;
+		var timer = null;
+		var flash = function (label) {
+			btn.textContent = label;
+			if (timer) clearTimeout(timer);
+			timer = setTimeout(function () { btn.innerHTML = orig; timer = null; }, 1500);
+		};
+		btn.addEventListener("click", function () {
+			var target = document.querySelector(btn.getAttribute("data-copy"));
+			if (!target) return;
+			var text = target.textContent.trim();
+			var done = function () { flash("Kopiert ✓"); };
+			// Fallback for non-secure (plain-HTTP) contexts. Only report success
+			// when execCommand actually copied; a false return or a thrown error
+			// shows a failure message instead of a misleading "Kopiert ✓".
+			var fallback = function () {
+				var ta = document.createElement("textarea");
+				ta.value = text; document.body.appendChild(ta); ta.select();
+				var ok = false;
+				try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+				document.body.removeChild(ta);
+				ok ? done() : flash("Fehlgeschlagen");
+			};
+			if (navigator.clipboard && navigator.clipboard.writeText) {
+				try {
+					navigator.clipboard.writeText(text).then(done, fallback);
+				} catch (e) { fallback(); }
+			} else { fallback(); }
+		});
+	});
+
 	// Server-flash toast. Status toasts auto-hide after 4s; error toasts
 	// (role="alert") persist until the user dismisses them (keyboard-operable
 	// close button) or navigates away, so an error cannot vanish unnoticed.

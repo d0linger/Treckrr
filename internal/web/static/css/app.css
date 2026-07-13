@@ -899,3 +899,26 @@ em { font-style: normal; color: var(--muted); }
 		display: grid; grid-template-columns: 1fr 1fr; align-items: start;
 	}
 }
+
+/* ---- Account security flows (2FA setup, password, backup codes) -------- */
+.setup-steps { list-style: none; counter-reset: step; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1.1rem; }
+.setup-steps > li { counter-increment: step; position: relative; padding-left: 2.6rem; }
+.setup-steps > li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 1.8rem; height: 1.8rem;
+	display: grid; place-items: center; border-radius: 50%; background: var(--primary); color: #fff; font-weight: 800; font-size: .85rem; }
+.setup-step__t { font-weight: 700; font-size: var(--fs-md); margin-bottom: .3rem; }
+.copyrow { display: flex; gap: .5rem; align-items: stretch; }
+.copyrow .secretkey { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.copyrow .btn { flex: 0 0 auto; white-space: nowrap; }
+
+.pwwrap { position: relative; display: flex; }
+.pwwrap .input { flex: 1; padding-right: 2.9rem; }
+.pw-toggle { position: absolute; right: 4px; top: 4px; bottom: 4px; width: 2.3rem; display: grid; place-items: center;
+	border: 0; background: transparent; color: var(--muted); cursor: pointer; border-radius: 7px; }
+.pw-toggle:hover { color: var(--text); background: var(--surface-2); }
+.pw-toggle .ic { width: 18px; height: 18px; }
+.pw-match { display: block; font-size: var(--fs-xs); font-weight: 700; margin-top: .15rem; min-height: 1em; }
+.pw-match--ok { color: var(--pay); } .pw-match--ok::before { content: "\2713\00a0"; }
+.pw-match--no { color: var(--danger); } .pw-match--no::before { content: "\2715\00a0"; }
+
+.savedcheck { margin: .4rem 0 .6rem; }
+.btn.is-disabled { opacity: .5; pointer-events: none; }
