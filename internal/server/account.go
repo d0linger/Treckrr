@@ -61,6 +61,11 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 		redirect(w, r, "/account/password")
 		return
 	}
+	if next != r.FormValue("new_password_confirm") {
+		s.setFlash(w, r, "error", "Die beiden neuen Passwörter stimmen nicht überein.")
+		redirect(w, r, "/account/password")
+		return
+	}
 	if msg := passwordPolicyError(next); msg != "" {
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, "/account/password")

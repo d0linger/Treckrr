@@ -13,8 +13,12 @@
 		<div class="btnrow">
 			<button class="btn btn--primary btn--sm" type="button" data-copy-codes>Kopieren</button>
 			<button class="btn btn--ghost btn--sm" type="button" data-print>Drucken</button>
-			<a class="btn btn--ghost btn--sm" href="/profile">Fertig</a>
 		</div>
+		<label class="check savedcheck">
+			<input type="checkbox" data-gate-check>
+			<span>Ich habe die Codes an einem sicheren Ort gespeichert.</span>
+		</label>
+		<a class="btn btn--primary btn--block" href="/profile" data-gate-done>Fertig</a>
 	</div>
 	{{else}}
 	<div class="card">
@@ -44,23 +48,33 @@
 			</form>
 		</details>
 		{{else}}
-		<p class="muted">Scanne den QR‑Code mit einer Authenticator‑App (z. B. Aegis, FreeOTP,
-			Google Authenticator) und bestätige anschließend mit einem Code.</p>
-		<div class="qrwrap"><img class="qr" src="/account/2fa/qr.png" alt="QR‑Code zum Einrichten" width="220" height="220"></div>
-		<div class="field">
-			<span>Kann nicht scannen? Schlüssel manuell eingeben:</span>
-			<code class="secretkey">{{.Secret}}</code>
-		</div>
-		<details class="disclosure disclosure--plain">
-			<summary>otpauth‑URL anzeigen</summary>
-			<code class="secretkey small">{{.URI}}</code>
-		</details>
-		<form method="post" action="/account/2fa/confirm" class="form">
-			<label class="field"><span>Code aus der App</span>
-				<input class="input" name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6"
-					autocomplete="one-time-code" placeholder="123456" required></label>
-			<button class="btn btn--primary" type="submit">2FA aktivieren</button>
-		</form>
+		<ol class="setup-steps">
+			<li>
+				<div class="setup-step__t">Mit einer Authenticator‑App scannen</div>
+				<p class="muted small">z. B. Aegis, FreeOTP oder Google Authenticator.</p>
+				<div class="qrwrap"><img class="qr" src="/account/2fa/qr.png" alt="QR‑Code zum Einrichten" width="220" height="220"></div>
+				<div class="field">
+					<span>Kann nicht scannen? Schlüssel manuell eingeben:</span>
+					<div class="copyrow">
+						<code class="secretkey" id="totp-secret">{{.Secret}}</code>
+						<button class="btn btn--ghost btn--sm" type="button" data-copy="#totp-secret" aria-label="Schlüssel kopieren">{{template "ic-copy"}} Kopieren</button>
+					</div>
+				</div>
+				<details class="disclosure disclosure--plain">
+					<summary>otpauth‑URL anzeigen</summary>
+					<code class="secretkey small">{{.URI}}</code>
+				</details>
+			</li>
+			<li>
+				<div class="setup-step__t">6‑stelligen Code eingeben &amp; aktivieren</div>
+				<form method="post" action="/account/2fa/confirm" class="form">
+					<label class="field"><span>Code aus der App</span>
+						<input class="input" name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+							autocomplete="one-time-code" placeholder="123456" required></label>
+					<button class="btn btn--primary" type="submit">2FA aktivieren</button>
+				</form>
+			</li>
+		</ol>
 		{{end}}
 	</div>
 	{{end}}
