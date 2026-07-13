@@ -561,6 +561,20 @@ em { font-style: normal; color: var(--muted); }
 .rowactions { display: inline-flex; gap: .25rem; justify-content: flex-end; }
 .rowactions form { margin: 0; }
 .is-invalid { border-color: var(--danger) !important; box-shadow: 0 0 0 2px var(--danger-tint); }
+/* Inline validation error (created by app.js; wired via aria-describedby). */
+.field__err { display: block; font-size: var(--fs-xs); color: var(--danger); font-weight: 600; margin-top: .15rem; }
+/* Required-field marker — CSS-only via :has, no per-template change. */
+.field:has(input[required]) > span::after,
+.field:has(select[required]) > span::after,
+.field:has(textarea[required]) > span::after { content: " *"; color: var(--danger); font-weight: 800; }
+/* Submit "saving" state: keeps the label, adds a spinner. currentColor matches
+   the button text (white on a primary button). */
+.btn.is-submitting { opacity: .85; pointer-events: none; }
+.btn.is-submitting::before { content: ""; width: 1em; height: 1em; margin-right: .45rem; flex: 0 0 auto;
+	border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%;
+	display: inline-block; vertical-align: -.15em; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .btn.is-submitting::before { animation: none; } }
 /* ---- KPIs & charts ---------------------------------------------------- */
 /* KPI tiles: a role-coloured accent edge, a larger tabular value, and an
    optional trend chip. Colour the edge with .kpi--<role>. */
@@ -696,6 +710,10 @@ em { font-style: normal; color: var(--muted); }
 	cursor: pointer; text-decoration: none; }
 .iconact:hover { background: var(--surface-2); color: var(--text); }
 .iconact--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+/* Inline SVG icon (see ic-* partials): inherits colour and follows the text
+   size, so control icons match the theme, hover and focus states. */
+.ic { width: 1.15em; height: 1.15em; display: inline-block; vertical-align: -.18em; flex: 0 0 auto; }
+.iconact .ic { width: 18px; height: 18px; vertical-align: 0; }
 .bcard__summary { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem;
 	padding: .15rem .3rem 0; font-weight: 800; font-variant-numeric: tabular-nums; }
 .bcard__summary .muted { font-weight: 600; }
@@ -870,3 +888,14 @@ em { font-style: normal; color: var(--muted); }
 .cmprow__pos { font-weight: 700; font-size: var(--fs-sm); }
 .cmprow__new { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; }
 .cmprow__meta { display: flex; gap: .6rem; flex-wrap: wrap; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; margin-top: .15rem; }
+
+/* ---- Desktop: use the width -----------------------------------------------
+   Placed at the end so it wins the cascade over the single-column base rules
+   (.list/.bookcards/… are display:flex above). The content area widens and the
+   stacked card lists flow into two columns; mobile stays single-column. */
+@media (min-width: 900px) {
+	.main { max-width: 940px; padding: 1.25rem; }
+	.list, .bookcards, .logcards, .yearcards, .yearstats {
+		display: grid; grid-template-columns: 1fr 1fr; align-items: start;
+	}
+}

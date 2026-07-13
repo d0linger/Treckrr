@@ -43,7 +43,7 @@
 					href="{{$.BasePath}}?year={{.ID}}"
 					{{if and $active (eq .ID $active.ID)}}aria-current="page"{{end}}>{{.Year}}</a>
 			{{end}}
-			<a class="yearpill yearpill--manage" href="/years" title="Abrechnungsjahre verwalten" aria-label="Abrechnungsjahre verwalten">＋</a>
+			<a class="yearpill yearpill--manage" href="/years" title="Abrechnungsjahre verwalten" aria-label="Abrechnungsjahre verwalten">{{template "ic-plus"}}</a>
 		</nav>
 		{{end}}
 	</div>
@@ -56,7 +56,7 @@
 	{{if .FlashMessage}}
 		<div class="toast toast--{{.FlashKind}}" role="{{if eq .FlashKind "error"}}alert{{else}}status{{end}}">
 			<span class="toast__msg">{{.FlashMessage}}</span>
-			<button class="toast__close" type="button" data-toast-dismiss aria-label="Meldung schließen">✕</button>
+			<button class="toast__close" type="button" data-toast-dismiss aria-label="Meldung schließen">{{template "ic-x"}}</button>
 		</div>
 	{{end}}
 

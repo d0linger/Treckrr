@@ -66,21 +66,60 @@
 		});
 	});
 
-	// Client-side validation: German messages + highlight invalid fields.
+	// Client-side validation: German messages, an inline error element and ARIA
+	// wiring so screen readers announce the problem (not just a transient native
+	// bubble that vanishes on the next click).
 	document.querySelectorAll("input, select, textarea").forEach(function (el) {
-		el.addEventListener("invalid", function () {
-			el.classList.add("is-invalid");
-			if (el.validity.valueMissing) {
-				el.setCustomValidity("Bitte dieses Feld ausfüllen.");
-			} else if (el.validity.rangeUnderflow || el.validity.badInput) {
-				el.setCustomValidity("Bitte einen gültigen Wert eingeben.");
-			} else if (el.validity.tooShort) {
-				el.setCustomValidity("Eingabe ist zu kurz.");
-			}
-		});
-		el.addEventListener("input", function () {
+		function clear() {
 			el.classList.remove("is-invalid");
+			el.removeAttribute("aria-invalid");
 			el.setCustomValidity("");
+			var host = el.closest(".field") || el.parentNode;
+			var box = host && host.querySelector(".field__err");
+			if (box) { box.remove(); el.removeAttribute("aria-describedby"); }
+		}
+		el.addEventListener("invalid", function (e) {
+			// Suppress the native validation bubble; the inline .field__err below
+			// (wired via aria-describedby) is the visible message. The field stays
+			// invalid, so the form still won't submit.
+			e.preventDefault();
+			var msg = "Bitte dieses Feld ausfüllen.";
+			if (!el.validity.valueMissing) {
+				msg = el.validity.tooShort ? "Eingabe ist zu kurz." : "Bitte einen gültigen Wert eingeben.";
+			}
+			el.setCustomValidity(msg);
+			el.classList.add("is-invalid");
+			el.setAttribute("aria-invalid", "true");
+			var host = el.closest(".field") || el.parentNode;
+			var box = host.querySelector(".field__err");
+			if (!box) {
+				box = document.createElement("span");
+				box.className = "field__err";
+				box.setAttribute("role", "alert");
+				if (!el.id) el.id = "f" + Math.random().toString(36).slice(2, 8);
+				box.id = el.id + "-err";
+				el.setAttribute("aria-describedby", box.id);
+				host.appendChild(box);
+			}
+			box.textContent = msg;
+		});
+		el.addEventListener("input", clear);
+		el.addEventListener("change", clear);
+	});
+
+	// Submit feedback: a POST form that passes validation shows a spinning state
+	// on its primary button. Submission still proceeds; the server redirects.
+	// Skipped for data-confirm forms (the modal drives those via form.submit()).
+	document.querySelectorAll("form").forEach(function (form) {
+		if ((form.getAttribute("method") || "").toLowerCase() !== "post") return;
+		form.addEventListener("submit", function (e) {
+			if (form.hasAttribute("data-confirm") && form.dataset.confirmed !== "1") return;
+			// Block a second submission (double-click or double-Enter) while the
+			// first POST is in flight — the server redirects, so this navigates away.
+			if (form.dataset.submitting === "1") { e.preventDefault(); return; }
+			form.dataset.submitting = "1";
+			var btn = form.querySelector("button.btn--primary[type='submit'], button[type='submit'].btn--primary");
+			if (btn) { btn.classList.add("is-submitting"); btn.setAttribute("aria-busy", "true"); btn.disabled = true; }
 		});
 	});
 
@@ -124,6 +163,14 @@
 			e.preventDefault();
 			pendingForm = form;
 			if (msgEl) msgEl.textContent = message;
+			// Colour the confirm button by intent: irreversible deletes get red,
+			// everything else keeps the primary colour.
+			var okBtn = modal.querySelector("[data-modal-ok]");
+			if (okBtn) {
+				var danger = /löschen|entfernen|endgültig/i.test(message);
+				okBtn.classList.toggle("btn--danger", danger);
+				okBtn.classList.toggle("btn--primary", !danger);
+			}
 			if (inputEl) {
 				if (reasonLabel !== null) {
 					inputEl.hidden = false;
