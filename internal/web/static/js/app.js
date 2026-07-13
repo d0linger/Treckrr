@@ -78,7 +78,11 @@
 			var box = host && host.querySelector(".field__err");
 			if (box) { box.remove(); el.removeAttribute("aria-describedby"); }
 		}
-		el.addEventListener("invalid", function () {
+		el.addEventListener("invalid", function (e) {
+			// Suppress the native validation bubble; the inline .field__err below
+			// (wired via aria-describedby) is the visible message. The field stays
+			// invalid, so the form still won't submit.
+			e.preventDefault();
 			var msg = "Bitte dieses Feld ausfüllen.";
 			if (!el.validity.valueMissing) {
 				msg = el.validity.tooShort ? "Eingabe ist zu kurz." : "Bitte einen gültigen Wert eingeben.";
@@ -108,10 +112,14 @@
 	// Skipped for data-confirm forms (the modal drives those via form.submit()).
 	document.querySelectorAll("form").forEach(function (form) {
 		if ((form.getAttribute("method") || "").toLowerCase() !== "post") return;
-		form.addEventListener("submit", function () {
+		form.addEventListener("submit", function (e) {
 			if (form.hasAttribute("data-confirm") && form.dataset.confirmed !== "1") return;
+			// Block a second submission (double-click or double-Enter) while the
+			// first POST is in flight — the server redirects, so this navigates away.
+			if (form.dataset.submitting === "1") { e.preventDefault(); return; }
+			form.dataset.submitting = "1";
 			var btn = form.querySelector("button.btn--primary[type='submit'], button[type='submit'].btn--primary");
-			if (btn) { btn.classList.add("is-submitting"); btn.setAttribute("aria-busy", "true"); }
+			if (btn) { btn.classList.add("is-submitting"); btn.setAttribute("aria-busy", "true"); btn.disabled = true; }
 		});
 	});
 
