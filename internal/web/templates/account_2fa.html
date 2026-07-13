@@ -22,32 +22,63 @@
 	</div>
 	{{else}}
 	<div class="card">
-		<h2 class="section-title">Zwei‑Faktor‑Authentifizierung</h2>
 		{{if .Enabled}}
-		<p>2FA ist <strong>aktiviert</strong>. Zum Anmelden benötigst du zusätzlich den
-			6‑stelligen Code deiner Authenticator‑App (oder einen Wiederherstellungscode).</p>
-		<p class="muted small">Verbleibende Wiederherstellungscodes: <strong>{{.RecoveryRemaining}}</strong>{{if lt .RecoveryRemaining 3}} — bitte bald neu erstellen{{end}}.</p>
+		<div class="tfa-head">
+			<span class="tfa-head__ic">{{template "ic-shield"}}</span>
+			<h2 class="section-title tfa-head__t">Zwei‑Faktor</h2>
+			<span class="chip2 chip2--ok">{{template "ic-check"}} Aktiv</span>
+		</div>
+		<p class="muted small">Beim Anmelden brauchst du zusätzlich den 6‑stelligen Code deiner
+			Authenticator‑App (oder einen Wiederherstellungscode).</p>
 
-		<details class="disclosure disclosure--plain">
-			<summary>Wiederherstellungscodes neu erstellen</summary>
-			<form method="post" action="/account/2fa/recovery" class="form"
-				data-confirm="Neue Codes erstellen? Die alten werden ungültig.">
-				<label class="field"><span>Passwort bestätigen</span>
-					<input class="input" type="password" name="password" autocomplete="current-password" required></label>
-				<button class="btn btn--primary btn--sm" type="submit">Neue Codes erstellen</button>
-			</form>
-		</details>
+		<div class="tfa-rows">
+			<details class="arow-d">
+				<summary class="arow">
+					<span class="arow__ic">{{template "ic-key"}}</span>
+					<span class="arow__txt">
+						<span class="arow__t">Wiederherstellungscodes</span>
+						<span class="arow__s">Ersatzcodes für den Notfall</span>
+					</span>
+					<span class="arow__end">
+						<span class="chip2 {{if lt .RecoveryRemaining 3}}chip2--stale{{else}}chip2--ok{{end}}">{{.RecoveryRemaining}} übrig</span>
+						{{template "ic-chevron"}}
+					</span>
+				</summary>
+				<div class="arow__body">
+					{{if lt .RecoveryRemaining 3}}<p class="muted small">Nur noch wenige Codes übrig – bitte bald neu erstellen.</p>{{end}}
+					<form method="post" action="/account/2fa/recovery" class="form"
+						data-confirm="Neue Codes erstellen? Die alten werden ungültig.">
+						<label class="field"><span>Passwort bestätigen</span>
+							<input class="input" type="password" name="password" autocomplete="current-password" required></label>
+						<button class="btn btn--primary btn--sm" type="submit">Neue Codes erstellen</button>
+					</form>
+				</div>
+			</details>
+		</div>
 
-		<details class="disclosure disclosure--plain">
-			<summary>2FA deaktivieren</summary>
-			<form method="post" action="/account/2fa/disable" class="form"
-				data-confirm="Zwei‑Faktor wirklich deaktivieren?">
-				<label class="field"><span>Passwort bestätigen</span>
-					<input class="input" type="password" name="password" autocomplete="current-password" required></label>
-				<button class="btn btn--danger btn--sm" type="submit">2FA deaktivieren</button>
-			</form>
-		</details>
+		<div class="dangerzone">
+			<div class="dangerzone__lbl">{{template "ic-warn"}} Gefahrenzone</div>
+			<details class="arow-d arow-d--danger">
+				<summary class="arow">
+					<span class="arow__ic">{{template "ic-power"}}</span>
+					<span class="arow__txt">
+						<span class="arow__t">2FA deaktivieren</span>
+						<span class="arow__s">Entfernt den zweiten Faktor von deinem Konto</span>
+					</span>
+					<span class="arow__end">{{template "ic-chevron"}}</span>
+				</summary>
+				<div class="arow__body">
+					<form method="post" action="/account/2fa/disable" class="form"
+						data-confirm="Zwei‑Faktor wirklich deaktivieren?">
+						<label class="field"><span>Passwort bestätigen</span>
+							<input class="input" type="password" name="password" autocomplete="current-password" required></label>
+						<button class="btn btn--danger btn--sm" type="submit">2FA deaktivieren</button>
+					</form>
+				</div>
+			</details>
+		</div>
 		{{else}}
+		<h2 class="section-title">Zwei‑Faktor‑Authentifizierung</h2>
 		<ol class="setup-steps">
 			<li>
 				<div class="setup-step__t">Mit einer Authenticator‑App scannen</div>
