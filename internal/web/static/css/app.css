@@ -922,3 +922,46 @@ em { font-style: normal; color: var(--muted); }
 
 .savedcheck { margin: .4rem 0 .6rem; }
 .btn.is-disabled { opacity: .5; pointer-events: none; }
+
+/* ---- Two-factor status page: header chip, action rows, danger zone ----
+   The two management actions are native <details> restyled as tappable
+   settings rows (icon + label + subtext + chevron); the destructive one is
+   demoted into a separate, tinted danger zone. No JS — CSP-safe. */
+.chip2--ok { color: var(--pay); background: color-mix(in srgb, var(--pay) 14%, transparent); border-color: color-mix(in srgb, var(--pay) 30%, transparent); }
+.chip2 .ic { width: .9em; height: .9em; }
+
+.tfa-head { display: flex; align-items: center; gap: .55rem; margin-bottom: .3rem; }
+.tfa-head__ic { color: var(--primary); display: inline-flex; }
+.tfa-head__ic .ic { width: 1.5em; height: 1.5em; }
+.tfa-head__t { margin: 0; flex: 1 1 auto; min-width: 0; }
+.tfa-head .chip2 { margin-left: auto; flex: 0 0 auto; }
+
+.tfa-rows { display: flex; flex-direction: column; gap: .6rem; margin-top: 1rem; }
+.arow-d { border: 0; }
+.arow-d > summary.arow { list-style: none; cursor: pointer; }
+.arow-d > summary.arow::-webkit-details-marker { display: none; }
+.arow { display: flex; align-items: center; gap: .7rem; padding: .8rem .85rem;
+	border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
+	transition: border-color .12s, background .12s; }
+.arow:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); }
+.arow-d > summary.arow:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.arow__ic { color: var(--primary); display: inline-flex; flex: 0 0 auto; }
+.arow__ic .ic { width: 1.4em; height: 1.4em; }
+.arow__txt { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.arow__t { font-weight: 700; font-size: var(--fs-md); }
+.arow__s { color: var(--muted); font-size: var(--fs-xs); }
+.arow__end { margin-left: auto; display: flex; align-items: center; gap: .5rem; flex: 0 0 auto; }
+.arow__end .chev { color: var(--muted); transition: transform .15s; }
+.arow-d[open] > summary.arow .chev { transform: rotate(90deg); }
+.arow__body { padding: .85rem .1rem .2rem; }
+.arow__body .form { margin: 0; }
+
+.dangerzone { margin-top: 1.15rem; padding-top: 1rem;
+	border-top: 1px dashed color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.dangerzone__lbl { display: flex; align-items: center; gap: .35rem; font-size: var(--fs-xs); font-weight: 800;
+	letter-spacing: .05em; text-transform: uppercase; color: var(--danger); margin-bottom: .55rem; }
+.dangerzone__lbl .ic { width: 1em; height: 1em; }
+.arow-d--danger > summary.arow { background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+	border-color: color-mix(in srgb, var(--danger) 25%, var(--border)); }
+.arow-d--danger > summary.arow:hover { border-color: color-mix(in srgb, var(--danger) 50%, var(--border)); }
+.arow-d--danger .arow__ic { color: var(--danger); }
