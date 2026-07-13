@@ -94,32 +94,35 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 // enabled it generates (and persists as pending) a secret to display.
 func (s *Server) handleTwoFactor(w http.ResponseWriter, r *http.Request) {
 	user := userFromCtx(r)
-	data := s.newPage(w, r, "Zwei‑Faktor", "profile")
-	data["Enabled"] = user.TotpEnabled
-
-	if !user.TotpEnabled {
-		secret, err := s.store.GetTotpSecret(r.Context(), user.ID)
-		if err != nil || secret == "" {
-			secret, err = totp.GenerateSecret()
-			if err != nil {
-				s.serverError(w, "2fa setup: generate secret", err)
-				return
-			}
-			if err := s.store.SetTotp(r.Context(), user.ID, false, secret); err != nil {
-				s.serverError(w, "2fa setup: persist secret", err)
-				return
-			}
-		}
-		data["Secret"] = secret
-		data["URI"] = totp.ProvisioningURI(secret, user.Username, "Treckrr")
-	} else {
-		remaining, err := s.store.CountUnusedRecoveryCodes(r.Context(), user.ID)
+	// 2FA management (enabled state) now lives inline on the Einstellungen
+	// overview; this page only drives the setup flow for users who haven't
+	// enabled it yet.
+	if user.TotpEnabled {
+		redirect(w, r, "/profile")
+		return
+	}
+	data := s.newPage(w, r, "Zwei‑Faktor einrichten", "profile")
+	data["Enabled"] = false
+	secret, err := s.store.GetTotpSecret(r.Context(), user.ID)
+	if err != nil {
+		// A read/decrypt failure must surface, not be masked by minting a fresh
+		// secret and overwriting the stored one on a failed read.
+		s.serverError(w, "2fa setup: load secret", err)
+		return
+	}
+	if secret == "" {
+		secret, err = totp.GenerateSecret()
 		if err != nil {
-			s.serverError(w, "2fa: count recovery codes", err)
+			s.serverError(w, "2fa setup: generate secret", err)
 			return
 		}
-		data["RecoveryRemaining"] = remaining
+		if err := s.store.SetTotp(r.Context(), user.ID, false, secret); err != nil {
+			s.serverError(w, "2fa setup: persist secret", err)
+			return
+		}
 	}
+	data["Secret"] = secret
+	data["URI"] = totp.ProvisioningURI(secret, user.Username, "Treckrr")
 	s.render(w, r, "account_2fa", data)
 }
 

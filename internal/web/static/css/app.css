@@ -965,3 +965,32 @@ em { font-style: normal; color: var(--muted); }
 	border-color: color-mix(in srgb, var(--danger) 25%, var(--border)); }
 .arow-d--danger > summary.arow:hover { border-color: color-mix(in srgb, var(--danger) 50%, var(--border)); }
 .arow-d--danger .arow__ic { color: var(--danger); }
+
+/* ---- Settings overview: page header w/ back button, account rows, passkeys -
+   The Einstellungen page unifies account, 2FA and passkey management; sub-pages
+   (password, 2FA setup) share the same header so a back button exists app-wide. */
+.pagehead { display: flex; align-items: center; gap: .8rem; }
+.backbtn { width: 2.4rem; height: 2.4rem; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%;
+	background: var(--surface-2); border: 1px solid var(--border); color: var(--text); }
+.backbtn:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); color: var(--primary); }
+.backbtn .ic { width: 1.3em; height: 1.3em; }
+.pagehead__t { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.02em; margin: 0; }
+
+.kv { display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+	padding: .55rem 0; border-bottom: 1px solid var(--border); }
+.card > .kv:first-child { padding-top: 0; }
+.kv--last { border-bottom: 0; }
+.kv__k { color: var(--muted); font-size: .92rem; }
+.kv__v { font-weight: 700; text-align: right; overflow-wrap: anywhere; }
+.kv__v--mail { color: var(--primary); }
+.card-cta { margin-top: .9rem; }
+
+.pklist { display: flex; flex-direction: column; margin-top: .3rem; }
+.pkrow { display: flex; align-items: center; gap: .7rem; padding: .7rem 0; border-bottom: 1px solid var(--border); }
+.pkrow:last-child { border-bottom: 0; }
+.pkrow__ic { color: var(--primary); display: inline-flex; flex: 0 0 auto; }
+.pkrow__ic .ic { width: 1.25em; height: 1.25em; }
+.pkrow__txt { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.pkrow__t { font-weight: 700; overflow-wrap: anywhere; }
+.pkrow__s { color: var(--muted); font-size: .82rem; font-variant-numeric: tabular-nums; }
+.pkrow form { margin-left: auto; flex: 0 0 auto; margin-bottom: 0; }
