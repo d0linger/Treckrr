@@ -236,15 +236,19 @@
 	// Falls back to execCommand for non-secure (plain-HTTP) contexts where the
 	// async clipboard API is unavailable — same pattern as recovery.js.
 	document.querySelectorAll("[data-copy]").forEach(function (btn) {
+		// Capture the original label once, so a second click within the flash
+		// window restores it rather than pinning a transient "Kopiert ✓".
+		var orig = btn.innerHTML;
+		var timer = null;
+		var flash = function (label) {
+			btn.textContent = label;
+			if (timer) clearTimeout(timer);
+			timer = setTimeout(function () { btn.innerHTML = orig; timer = null; }, 1500);
+		};
 		btn.addEventListener("click", function () {
 			var target = document.querySelector(btn.getAttribute("data-copy"));
 			if (!target) return;
 			var text = target.textContent.trim();
-			var flash = function (label) {
-				var prev = btn.innerHTML;
-				btn.textContent = label;
-				setTimeout(function () { btn.innerHTML = prev; }, 1500);
-			};
 			var done = function () { flash("Kopiert ✓"); };
 			// Fallback for non-secure (plain-HTTP) contexts. Only report success
 			// when execCommand actually copied; a false return or a thrown error
