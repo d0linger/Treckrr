@@ -67,16 +67,23 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
-// TestAuthMiddlewareNoStore ensures authenticated responses are non-cacheable.
-// The header is set before the auth check, so it is present even on the
-// unauthenticated redirect to /login.
+// TestAuthMiddlewareNoStore ensures both authenticated-area middlewares mark
+// responses non-cacheable. The header is set as the first statement of each
+// wrapper — before the auth check — so an unauthenticated request through
+// either one already carries it. (A genuinely authenticated pass-through would
+// need a DB-backed session, which these unit tests deliberately avoid; it runs
+// the identical header code either way.)
 func TestAuthMiddlewareNoStore(t *testing.T) {
 	s := testServer()
-	h := s.auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
-
-	if got := rr.Header().Get("Cache-Control"); got != "no-store" {
-		t.Errorf("Cache-Control = %q, want no-store", got)
+	noop := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	for name, h := range map[string]http.Handler{
+		"auth":  s.auth(noop),
+		"admin": s.admin(noop),
+	} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+		if got := rr.Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("%s middleware: Cache-Control = %q, want no-store", name, got)
+		}
 	}
 }
