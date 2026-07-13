@@ -50,10 +50,30 @@ func (s *Server) handleYears(w http.ResponseWriter, r *http.Request) {
 		nextYear = years[0].Year + 1 // list is ordered newest first
 	}
 
+	// First-run guidance: show a "getting started" checklist until the four
+	// setup steps (basis, year, neighbor, first booking) are all done.
+	hasEntries := false
+	for _, rw := range rows {
+		if rw.Entries > 0 {
+			hasEntries = true
+			break
+		}
+	}
+	hasNeighbors, err := s.store.AnyNeighbors(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+
 	data := s.newPage(w, r, "Abrechnungsjahre", "years")
 	data["Rows"] = rows
 	data["Bases"] = bases
 	data["HasBases"] = len(bases) > 0
+	data["HasYears"] = len(rows) > 0
+	data["HasNeighbors"] = hasNeighbors
+	data["HasEntries"] = hasEntries
+	setupComplete := len(bases) > 0 && len(rows) > 0 && hasNeighbors && hasEntries
+	data["Onboarding"] = !setupComplete
 	data["NextYear"] = nextYear
 	s.render(w, r, "years", data)
 }

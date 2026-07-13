@@ -26,6 +26,9 @@
 	--owe: #c05635;
 	--radius: 14px;
 	--radius-sm: 9px;
+	/* Modular type scale (theme-independent) — one system instead of ~15 ad-hoc sizes. */
+	--fs-xs: .75rem; --fs-sm: .8125rem; --fs-base: 1rem; --fs-md: 1.0625rem;
+	--fs-lg: 1.25rem; --fs-xl: 1.5rem; --fs-2xl: 1.9rem;
 	--shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 4px 16px rgba(0, 0, 0, .05);
 	--tap: 44px;
 	--maxw: 720px;
@@ -202,7 +205,7 @@ em { font-style: normal; color: var(--muted); }
 /* ---- Layout ----------------------------------------------------------- */
 .main { max-width: var(--maxw); margin: 0 auto; padding: 1rem; }
 .stack { display: flex; flex-direction: column; gap: 1rem; }
-.section-title { font-size: 1rem; font-weight: 700; margin-top: .25rem; }
+.section-title { font-size: var(--fs-lg); font-weight: 800; letter-spacing: -.01em; margin-top: .6rem; }
 
 .card {
 	background: var(--surface);
@@ -362,12 +365,18 @@ em { font-style: normal; color: var(--muted); }
 .segmented__item input:checked + span { background: var(--surface); color: var(--primary); box-shadow: var(--shadow); }
 
 /* ---- Rate preview ----------------------------------------------------- */
+/* Live cost result of the booking form — the hero feedback: big cost, small
+   rate. Values are filled in by entry-form.js via [data-cost] / [data-rate]. */
 .rate-preview {
-	display: flex; justify-content: space-between; gap: 1rem;
-	background: var(--primary-tint); color: var(--primary-strong);
-	border-radius: var(--radius-sm); padding: .6rem .9rem; font-size: .9rem;
+	display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+	background: linear-gradient(135deg, var(--primary), var(--primary-strong)); color: #fff;
+	border-radius: var(--radius); padding: .65rem .85rem; box-shadow: var(--shadow);
 }
-.rate-preview strong { font-variant-numeric: tabular-nums; }
+.rate-preview__main { display: flex; flex-direction: column; gap: .05rem; }
+.rate-preview__lbl { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; font-weight: 800; opacity: .85; }
+.rate-preview__cost { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+.rate-preview__rate { font-size: var(--fs-sm); opacity: .92; text-align: right; }
+.rate-preview strong { font-variant-numeric: tabular-nums; font-weight: 700; }
 
 /* ---- Chips ------------------------------------------------------------ */
 .ratechips { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .6rem; }
@@ -794,6 +803,22 @@ em { font-style: normal; color: var(--muted); }
    webfont): tabular digits and a touch of negative tracking give them presence
    without shouting. */
 .summary-card__value { font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+
+/* ---- First-run onboarding checklist ---------------------------------- */
+.onboard { display: flex; flex-direction: column; gap: .55rem; }
+.onboard__eyebrow { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .09em; font-weight: 800; color: var(--accent-text); }
+.onboard__title { font-size: var(--fs-lg); font-weight: 800; letter-spacing: -.01em; margin: 0; }
+.steps { display: flex; flex-direction: column; gap: .5rem; }
+.step { display: flex; align-items: center; gap: .6rem; background: var(--surface);
+	border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .5rem .6rem; box-shadow: var(--shadow); }
+.step__n { width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto; display: grid; place-items: center;
+	font-weight: 800; font-size: .8rem; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+.step__t { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--text); text-decoration: none; }
+.step__t small { display: block; font-weight: 400; color: var(--muted); font-size: var(--fs-xs); }
+.step__go { color: var(--muted); font-size: 1.1rem; line-height: 1; flex: 0 0 auto; }
+.step--done .step__n { background: var(--pay); color: #fff; border-color: var(--pay); }
+.step--now { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
+.step--now .step__n { background: var(--primary); color: #fff; border-color: var(--primary); }
 
 /* ---- Skip link (WCAG 2.4.1) ------------------------------------------- */
 /* First focusable element; off-screen until focused, then jumps to #main. */

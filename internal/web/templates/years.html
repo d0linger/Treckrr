@@ -1,5 +1,36 @@
 {{define "content"}}
 <section class="stack">
+	{{if .Onboarding}}
+	<div class="onboard">
+		<div>
+			<span class="onboard__eyebrow">Willkommen</span>
+			<h2 class="onboard__title">Erste Schritte</h2>
+		</div>
+		<div class="steps">
+			<div class="step {{if .HasBases}}step--done{{else}}step--now{{end}}">
+				<span class="step__n">{{if .HasBases}}✓{{else}}1{{end}}</span>
+				<a class="step__t" href="/bases">Bemessungsgrundlage anlegen<small>Preise für Traktoren &amp; Maschinen</small></a>
+				<span class="step__go">›</span>
+			</div>
+			<div class="step {{if .HasYears}}step--done{{else if .HasBases}}step--now{{end}}">
+				<span class="step__n">{{if .HasYears}}✓{{else}}2{{end}}</span>
+				<a class="step__t" href="#neues-jahr">Abrechnungsjahr eröffnen<small>Zeitraum + passende Grundlage</small></a>
+				<span class="step__go">›</span>
+			</div>
+			<div class="step {{if .HasNeighbors}}step--done{{else if and .HasBases .HasYears}}step--now{{end}}">
+				<span class="step__n">{{if .HasNeighbors}}✓{{else}}3{{end}}</span>
+				<a class="step__t" href="/neighbors">Nachbarn hinzufügen</a>
+				<span class="step__go">›</span>
+			</div>
+			<div class="step {{if .HasEntries}}step--done{{else if and .HasNeighbors .HasYears}}step--now{{end}}">
+				<span class="step__n">{{if .HasEntries}}✓{{else}}4{{end}}</span>
+				<a class="step__t" href="/">Erste Buchung erfassen</a>
+				<span class="step__go">›</span>
+			</div>
+		</div>
+	</div>
+	{{end}}
+
 	<p class="muted">Ein <strong>Abrechnungsjahr</strong> legst du selbst an und wählst dazu
 		die passende <strong>Bemessungsgrundlage</strong> (erscheint nur alle paar Jahre neu).
 		Danach fügst du in der Übersicht die Nachbarn hinzu und erfasst die Buchungen.</p>
@@ -60,7 +91,7 @@
 		{{end}}
 	</div>
 
-	<details class="card disclosure" {{if not .Rows}}open{{end}}>
+	<details class="card disclosure" id="neues-jahr" {{if not .Rows}}open{{end}}>
 		<summary>+ Neues Abrechnungsjahr</summary>
 		{{if .HasBases}}
 		<form method="post" action="/years" class="form">

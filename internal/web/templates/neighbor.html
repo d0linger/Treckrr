@@ -83,17 +83,20 @@
 			</fieldset>
 		</div>
 
-		<div class="rate-preview" data-rate-preview>
-			<span>Stundensatz: <strong data-rate>–</strong></span>
-			<span>Kosten: <strong data-cost>–</strong></span>
-		</div>
-
 		<div class="form__grid">
 			<label class="field"><span>Datum</span>
 				<input class="input" type="date" name="entry_date" value="{{.Today}}" required></label>
 			<label class="field"><span>Stunden</span>
 				<input class="input" type="number" step="0.001" min="0" name="hours"
 					inputmode="decimal" data-hours required></label>
+		</div>
+
+		<div class="rate-preview" data-rate-preview aria-live="polite" aria-atomic="true">
+			<span class="rate-preview__main">
+				<span class="rate-preview__lbl">Kosten</span>
+				<strong class="rate-preview__cost" data-cost>–</strong>
+			</span>
+			<span class="rate-preview__rate">Satz <strong data-rate>–</strong></span>
 		</div>
 		<label class="field"><span>Tätigkeit (optional)</span>
 			<input class="input" type="text" name="task_label" placeholder="z. B. Mähen"></label>
