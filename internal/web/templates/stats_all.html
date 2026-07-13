@@ -39,19 +39,19 @@
 			{{else}}
 			<p class="muted center">Noch keine Abrechnungsjahre.</p>
 			{{end}}
-		</div>
-		{{if .Stats}}
-		<div class="yearstat yearstat--sum" style="margin-top:.5rem;">
-			<div class="yearstat__head"><span class="yearstat__yr">Summe</span><span class="yearstat__net">{{money .GrandNet}}</span></div>
-			<div class="yearstat__grid">
-				<span>Leistungen <b>{{money .GrandCost}}</b></span>
-				<span>Verrechnung <b>{{money .GrandLedger}}</b></span>
-				<span>Stunden <b>{{num .GrandHours}} h</b></span>
-				<span>Bezahlt <b>{{money .GrandPaid}}</b></span>
-				<span>Offen <b>{{money .GrandOpen}}</b></span>
+			{{if .Stats}}
+			<div class="yearstat yearstat--sum">
+				<div class="yearstat__head"><span class="yearstat__yr">Summe</span><span class="yearstat__net">{{money .GrandNet}}</span></div>
+				<div class="yearstat__grid">
+					<span>Leistungen <b>{{money .GrandCost}}</b></span>
+					<span>Verrechnung <b>{{money .GrandLedger}}</b></span>
+					<span>Stunden <b>{{num .GrandHours}} h</b></span>
+					<span>Bezahlt <b>{{money .GrandPaid}}</b></span>
+					<span>Offen <b>{{money .GrandOpen}}</b></span>
+				</div>
 			</div>
+			{{end}}
 		</div>
-		{{end}}
 	</div>
 </section>
 {{end}}
