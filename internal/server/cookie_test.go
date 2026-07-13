@@ -49,3 +49,34 @@ func TestCSVSafe(t *testing.T) {
 		}
 	}
 }
+
+// TestSecurityHeaders locks the hardening headers set on every response.
+func TestSecurityHeaders(t *testing.T) {
+	s := testServer()
+	h := s.securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if got := rr.Header().Get("X-XSS-Protection"); got != "0" {
+		t.Errorf("X-XSS-Protection = %q, want 0", got)
+	}
+	if got := rr.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+}
+
+// TestAuthMiddlewareNoStore ensures authenticated responses are non-cacheable.
+// The header is set before the auth check, so it is present even on the
+// unauthenticated redirect to /login.
+func TestAuthMiddlewareNoStore(t *testing.T) {
+	s := testServer()
+	h := s.auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if got := rr.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
+}

@@ -170,6 +170,9 @@ func (s *Server) Handler() http.Handler {
 // forced-password-change flow and read-only (viewer) restrictions.
 func (s *Server) auth(h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Authenticated pages carry per-user data — keep them out of the browser
+		// cache so they can't be recovered via the back button after logout.
+		w.Header().Set("Cache-Control", "no-store")
 		user := s.currentUser(r)
 		if user == nil {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -200,6 +203,7 @@ func isSelfServicePath(p string) bool {
 // admin wraps a handler requiring an authenticated admin user.
 func (s *Server) admin(h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		user := s.currentUser(r)
 		if user == nil {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -272,6 +276,9 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
+		// Explicitly disable the legacy XSS auditor (buggy in old browsers); the
+		// strict CSP is the real XSS defense. "0" is the OWASP-recommended value.
+		h.Set("X-XSS-Protection", "0")
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		h.Set("Cross-Origin-Resource-Policy", "same-origin")
