@@ -96,6 +96,13 @@ func funcMap() template.FuncMap {
 		"money": Money,
 		"num":   Num,
 		"date":  Date,
+		// pdate formats an optional time (nil -> ""), e.g. a passkey's LastUsed.
+		"pdate": func(t *time.Time) string {
+			if t == nil {
+				return ""
+			}
+			return Date(*t)
+		},
 		"dateInput": func(t time.Time) string {
 			if t.IsZero() {
 				return ""

@@ -156,16 +156,10 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 // ---- passkey management page --------------------------------------------
 
+// handlePasskeys previously rendered a standalone page; passkey management now
+// lives inline on the Einstellungen overview, so this route just redirects.
 func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
-	user := userFromCtx(r)
-	creds, err := s.store.ListWebauthnCredentials(r.Context(), user.ID)
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
-	}
-	data := s.newPage(w, r, "Passkeys", "profile")
-	data["Passkeys"] = creds
-	s.render(w, r, "passkeys", data)
+	redirect(w, r, "/profile")
 }
 
 func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +175,7 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "passkey_delete", "user", user.ID, "")
 		s.setFlash(w, r, "success", "Passkey entfernt.")
 	}
-	redirect(w, r, "/account/passkeys")
+	redirect(w, r, "/profile")
 }
 
 // ---- registration ceremony (authenticated) ------------------------------

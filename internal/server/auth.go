@@ -274,7 +274,24 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	for i := range sessions {
 		sessions[i].Current = sessions[i].Token == currentHash
 	}
-	data := s.newPage(w, r, "Profil", "profile")
+	data := s.newPage(w, r, "Einstellungen", "profile")
 	data["Sessions"] = sessions
+	// Passkeys are managed inline on this page.
+	creds, err := s.store.ListWebauthnCredentials(r.Context(), user.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data["Passkeys"] = creds
+	// Remaining recovery codes drive the 2FA card's count chip (only when 2FA
+	// is enabled; the setup flow lives on its own focused page).
+	if user.TotpEnabled {
+		remaining, err := s.store.CountUnusedRecoveryCodes(r.Context(), user.ID)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+		data["RecoveryRemaining"] = remaining
+	}
 	s.render(w, r, "profile", data)
 }

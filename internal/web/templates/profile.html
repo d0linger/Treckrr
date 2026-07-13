@@ -1,18 +1,100 @@
 {{define "content"}}
 <section class="stack">
-	<div class="card">
-		<h2 class="section-title">Konto</h2>
-		<p><strong>{{.User.Username}}</strong> · {{.User.RoleLabel}}</p>
+	<div class="pagehead">
+		<a class="backbtn" href="/" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
+		<h1 class="pagehead__t">Einstellungen</h1>
 	</div>
 
-	<div class="card stack stack--tight">
-		<h2 class="section-title">Sicherheit</h2>
-		<div class="btnrow">
-			<a class="btn btn--primary btn--sm" href="/account/password">Passwort ändern</a>
-			<a class="btn {{if .User.TotpEnabled}}btn--ghost{{else}}btn--primary{{end}} btn--sm" href="/account/2fa">
-				2FA {{if .User.TotpEnabled}}verwalten ✓{{else}}einrichten{{end}}</a>
-			<a class="btn btn--ghost btn--sm" href="/account/passkeys">{{template "ic-key"}} Passkeys</a>
+	<div class="card">
+		<div class="kv"><span class="kv__k">Angemeldet als</span><span class="kv__v kv__v--mail">{{.User.Username}}</span></div>
+		<div class="kv kv--last"><span class="kv__k">Rolle</span><span class="kv__v">{{.User.RoleLabel}}</span></div>
+		<a class="btn btn--ghost btn--block card-cta" href="/account/password">Passwort ändern</a>
+	</div>
+
+	<div class="card">
+		<div class="tfa-head">
+			<span class="tfa-head__ic">{{template "ic-shield"}}</span>
+			<h2 class="section-title tfa-head__t">Zwei‑Faktor</h2>
+			{{if .User.TotpEnabled}}<span class="chip2 chip2--ok">{{template "ic-check"}} Aktiv</span>
+			{{else}}<span class="chip2 chip2--open">Inaktiv</span>{{end}}
 		</div>
+		{{if .User.TotpEnabled}}
+		<p class="muted small">Beim Anmelden brauchst du zusätzlich den 6‑stelligen Code deiner
+			Authenticator‑App (oder einen Wiederherstellungscode).</p>
+
+		<div class="tfa-rows">
+			<details class="arow-d">
+				<summary class="arow">
+					<span class="arow__ic">{{template "ic-key"}}</span>
+					<span class="arow__txt">
+						<span class="arow__t">Wiederherstellungscodes</span>
+						<span class="arow__s">Ersatzcodes für den Notfall</span>
+					</span>
+					<span class="arow__end">
+						<span class="chip2 {{if lt .RecoveryRemaining 3}}chip2--stale{{else}}chip2--ok{{end}}">{{.RecoveryRemaining}} übrig</span>
+						{{template "ic-chevron"}}
+					</span>
+				</summary>
+				<div class="arow__body">
+					{{if lt .RecoveryRemaining 3}}<p class="muted small">Nur noch wenige Codes übrig – bitte bald neu erstellen.</p>{{end}}
+					<form method="post" action="/account/2fa/recovery" class="form"
+						data-confirm="Neue Codes erstellen? Die alten werden ungültig.">
+						<label class="field"><span>Passwort bestätigen</span>
+							<input class="input" type="password" name="password" autocomplete="current-password" required></label>
+						<button class="btn btn--primary btn--sm" type="submit">Neue Codes erstellen</button>
+					</form>
+				</div>
+			</details>
+		</div>
+
+		<div class="dangerzone">
+			<div class="dangerzone__lbl">{{template "ic-warn"}} Gefahrenzone</div>
+			<details class="arow-d arow-d--danger">
+				<summary class="arow">
+					<span class="arow__ic">{{template "ic-power"}}</span>
+					<span class="arow__txt">
+						<span class="arow__t">2FA deaktivieren</span>
+						<span class="arow__s">Entfernt den zweiten Faktor von deinem Konto</span>
+					</span>
+					<span class="arow__end">{{template "ic-chevron"}}</span>
+				</summary>
+				<div class="arow__body">
+					<form method="post" action="/account/2fa/disable" class="form"
+						data-confirm="Zwei‑Faktor wirklich deaktivieren?">
+						<label class="field"><span>Passwort bestätigen</span>
+							<input class="input" type="password" name="password" autocomplete="current-password" required></label>
+						<button class="btn btn--danger btn--sm" type="submit">2FA deaktivieren</button>
+					</form>
+				</div>
+			</details>
+		</div>
+		{{else}}
+		<p class="muted small">Schütze dein Konto mit einem zweiten Faktor aus einer Authenticator‑App.</p>
+		<a class="btn btn--primary btn--block card-cta" href="/account/2fa">2FA einrichten</a>
+		{{end}}
+	</div>
+
+	<div class="card">
+		<h2 class="section-title">Passkeys</h2>
+		<p class="muted small">Anmeldung per Fingerabdruck/Gesichtserkennung – ohne Passwort.</p>
+		<div class="pklist">
+			{{range .Passkeys}}
+			<div class="pkrow">
+				<span class="pkrow__ic">{{template "ic-key"}}</span>
+				<span class="pkrow__txt">
+					<span class="pkrow__t">{{.Name}}</span>
+					<span class="pkrow__s">seit {{date .Created}}{{if .LastUsed}} · zuletzt {{pdate .LastUsed}}{{end}}</span>
+				</span>
+				<form method="post" action="/account/passkeys/{{.ID}}/delete"
+					data-confirm="Diesen Passkey entfernen?">
+					<button class="btn btn--danger btn--sm" type="submit">Entfernen</button>
+				</form>
+			</div>
+			{{else}}
+			<p class="muted small center">Noch keine Passkeys eingerichtet.</p>
+			{{end}}
+		</div>
+		<button id="passkey-register" type="button" class="btn btn--primary btn--block card-cta">{{template "ic-plus"}} Passkey hinzufügen</button>
 	</div>
 
 	<div class="card stack stack--tight">
