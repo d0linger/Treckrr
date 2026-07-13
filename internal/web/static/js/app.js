@@ -139,16 +139,28 @@
 		});
 	});
 
-	// Auto-hide the server-flash toast after a short delay. Scoped to .toast so
-	// static inline .flash info boxes are never faded out by mistake.
+	// Server-flash toast. Status toasts auto-hide after 4s; error toasts
+	// (role="alert") persist until the user dismisses them (keyboard-operable
+	// close button) or navigates away, so an error cannot vanish unnoticed.
+	// (Copying recovery codes is handled by the page-scoped recovery.js.)
 	var flash = document.querySelector(".toast");
 	if (flash) {
-		setTimeout(function () {
-			flash.style.transition = "opacity .4s";
+		var dismissToast = function () {
+			flash.style.transition = "opacity .3s";
 			flash.style.opacity = "0";
-			setTimeout(function () { flash.remove(); }, 400);
-		}, 4000);
+			setTimeout(function () { flash.remove(); }, 300);
+		};
+		var closeBtn = flash.querySelector("[data-toast-dismiss]");
+		if (closeBtn) closeBtn.addEventListener("click", dismissToast);
+		if (flash.getAttribute("role") !== "alert") {
+			setTimeout(dismissToast, 4000);
+		}
 	}
+
+	// Print trigger (CSP-safe replacement for an inline onclick handler).
+	document.querySelectorAll("[data-print]").forEach(function (btn) {
+		btn.addEventListener("click", function () { window.print(); });
+	});
 
 	// Side drawer (menu) open/close.
 	(function () {
