@@ -236,4 +236,3 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 			time.Since(start).Round(time.Millisecond), sanitizeLog(user), sanitizeLog(s.clientIP(r)))
 	})
 }
-
