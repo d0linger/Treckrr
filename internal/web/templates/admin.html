@@ -15,6 +15,14 @@
 				<span class="list__sub muted">seit {{date .CreatedAt}}</span>
 			</summary>
 
+			<form method="post" action="/admin/users/{{.ID}}/update" class="form">
+				<label class="field"><span>Benutzername</span>
+					<input class="input" name="username" value="{{.Username}}" autocomplete="off" required></label>
+				<label class="field"><span>E‑Mail</span>
+					<input class="input" type="email" name="email" value="{{.Email}}" placeholder="name@example.at" autocomplete="off"></label>
+				<div class="form__row"><button class="btn btn--primary btn--sm" type="submit">Zugangsdaten speichern</button></div>
+			</form>
+
 			<form method="post" action="/admin/users/{{.ID}}/role" class="form">
 				<label class="field"><span>Rolle</span>
 					<select class="select" name="role">
@@ -34,6 +42,7 @@
 				<div class="form__row"><button class="btn btn--primary btn--sm" type="submit">Passwort setzen</button></div>
 			</form>
 
+			{{if ne .ID $.User.ID}}
 			<div class="dangerzone">
 				<div class="dangerzone__lbl">{{template "ic-warn"}} Gefahrenzone</div>
 				<div class="btnrow">
@@ -48,6 +57,9 @@
 					</form>
 				</div>
 			</div>
+			{{else}}
+			<p class="muted small">Dein eigenes Konto kannst du hier nicht löschen. Passwort, 2FA &amp; Passkeys verwaltest du unter <a class="link" href="/profile">Einstellungen</a>.</p>
+			{{end}}
 		</details>
 		{{end}}
 	</div>

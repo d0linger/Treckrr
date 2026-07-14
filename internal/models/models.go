@@ -18,6 +18,7 @@ const (
 type User struct {
 	ID                 int64
 	Username           string
+	Email              string
 	Role               string
 	IsAdmin            bool // derived: Role == admin (kept for templates/handlers)
 	MustChangePassword bool
