@@ -254,10 +254,10 @@ func userFromCtx(r *http.Request) *models.User {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.PurgeExpiredSessions(r.Context()); err != nil {
-		log.Printf("purge sessions: %v", err)
+		log.Printf("purge sessions: %v", sanitizeLog(err.Error()))
 	}
 	if err := s.store.PurgeStaleRateLimits(r.Context()); err != nil {
-		log.Printf("purge rate limits: %v", err)
+		log.Printf("purge rate limits: %v", sanitizeLog(err.Error()))
 	}
 	w.Header().Set("Content-Type", "text/plain")
 	_, _ = w.Write([]byte("ok"))
@@ -323,4 +323,10 @@ func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, c *http.Cooki
 	}
 	c.Secure = s.cookieSecure(r)
 	http.SetCookie(w, c) //nosec G124 -- attributes are set dynamically or by caller
+}
+
+// sanitizeLog strips CR/LF from request-derived values so they cannot forge
+// additional log lines (log injection).
+func sanitizeLog(s string) string {
+	return strings.NewReplacer("\n", " ", "\r", " ").Replace(s)
 }

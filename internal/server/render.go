@@ -38,7 +38,11 @@ func (s *Server) newPage(w http.ResponseWriter, r *http.Request, title, active s
 // production failure leaves a diagnosable trace (which call failed, and why)
 // without leaking internals to the client.
 func (s *Server) serverError(w http.ResponseWriter, what string, err error) {
-	log.Printf("internal error (%s): %v", what, err)
+	errMsg := ""
+	if err != nil {
+		errMsg = err.Error()
+	}
+	log.Printf("internal error (%s): %v", sanitizeLog(what), sanitizeLog(errMsg))
 	http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 }
 
@@ -56,7 +60,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 	// Render to a buffer first so a template error does not emit a half page.
 	var buf bytes.Buffer
 	if err := tpl.ExecuteTemplate(&buf, "layout", data); err != nil {
-		log.Printf("render %s: %v", page, err)
+		log.Printf("render %s: %v", sanitizeLog(page), sanitizeLog(err.Error()))
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
