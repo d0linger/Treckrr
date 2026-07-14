@@ -159,6 +159,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /admin/users", s.admin(s.handleUsers))
 	mux.Handle("POST /admin/users", s.admin(s.handleUserCreate))
 	mux.Handle("POST /admin/users/{id}/password", s.admin(s.handleUserPassword))
+	mux.Handle("POST /admin/users/{id}/update", s.admin(s.handleUserUpdate))
 	mux.Handle("POST /admin/users/{id}/role", s.admin(s.handleUserRole))
 	mux.Handle("POST /admin/users/{id}/reset-2fa", s.admin(s.handleUserResetTotp))
 	mux.Handle("POST /admin/users/{id}/delete", s.admin(s.handleUserDelete))

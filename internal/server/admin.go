@@ -156,6 +156,40 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/admin/users")
 }
 
+// handleUserUpdate changes a user's username and e-mail. The username is unique,
+// so a clash is reported rather than swallowed.
+func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	target, err := s.store.GetUser(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	username := trimmed(r, "username")
+	email := trimmed(r, "email")
+	if username == "" {
+		s.setFlash(w, r, "error", "Benutzername darf nicht leer sein.")
+		redirect(w, r, "/admin/users")
+		return
+	}
+	if err := s.store.UpdateUserAccount(r.Context(), id, username, email); err != nil {
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen (Benutzername bereits vergeben?).")
+		redirect(w, r, "/admin/users")
+		return
+	}
+	detail := "Zugangsdaten aktualisiert"
+	if username != target.Username {
+		detail = "Benutzername: " + target.Username + " → " + username
+	}
+	s.audit(r, "update", "user", id, detail)
+	s.setFlash(w, r, "success", "Zugangsdaten aktualisiert.")
+	redirect(w, r, "/admin/users")
+}
+
 // handleUserResetTotp lets an admin disable & clear a user's 2FA (e.g. when the
 // user lost their authenticator device and their recovery codes).
 func (s *Server) handleUserResetTotp(w http.ResponseWriter, r *http.Request) {

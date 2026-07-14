@@ -32,11 +32,11 @@ func New(db *sql.DB, encryptionKey string) *Store {
 // ---- Users ---------------------------------------------------------------
 
 // userCols is the shared column list for scanning a models.User.
-const userCols = `id, username, role, is_admin, must_change_password, totp_enabled, created_at`
+const userCols = `id, username, email, role, is_admin, must_change_password, totp_enabled, created_at`
 
 func scanUser(sc scanner) (models.User, error) {
 	var u models.User
-	if err := sc.Scan(&u.ID, &u.Username, &u.Role, &u.IsAdmin,
+	if err := sc.Scan(&u.ID, &u.Username, &u.Email, &u.Role, &u.IsAdmin,
 		&u.MustChangePassword, &u.TotpEnabled, &u.CreatedAt); err != nil {
 		return u, err
 	}
@@ -63,6 +63,14 @@ func (s *Store) CreateUser(ctx context.Context, username, password, role string)
 func (s *Store) SetRole(ctx context.Context, userID int64, role string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE users SET role=$1, is_admin=$2 WHERE id=$3`, role, role == models.RoleAdmin, userID)
+	return err
+}
+
+// UpdateUserAccount updates a user's username and e-mail. Returns an error if
+// the username is already taken (the users.username UNIQUE constraint).
+func (s *Store) UpdateUserAccount(ctx context.Context, userID int64, username, email string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE users SET username=$1, email=$2 WHERE id=$3`, username, email, userID)
 	return err
 }
 
@@ -115,7 +123,7 @@ func (s *Store) AuthenticateUser(ctx context.Context, username, password string)
 	)
 	err := s.db.QueryRowContext(ctx,
 		`SELECT `+userCols+`, password_hash FROM users WHERE username=$1`, username).
-		Scan(&u.ID, &u.Username, &u.Role, &u.IsAdmin, &u.MustChangePassword,
+		Scan(&u.ID, &u.Username, &u.Email, &u.Role, &u.IsAdmin, &u.MustChangePassword,
 			&u.TotpEnabled, &u.CreatedAt, &hash)
 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -253,7 +261,7 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Durati
 func (s *Store) UserFromSession(ctx context.Context, token string, slideTTL time.Duration) (*models.User, error) {
 	th := HashToken(token)
 	u, err := scanUser(s.db.QueryRowContext(ctx,
-		`SELECT u.id, u.username, u.role, u.is_admin, u.must_change_password, u.totp_enabled, u.created_at
+		`SELECT u.id, u.username, u.email, u.role, u.is_admin, u.must_change_password, u.totp_enabled, u.created_at
 		   FROM sessions s JOIN users u ON u.id = s.user_id
 		  WHERE s.token=$1 AND s.expires_at > now()`, th))
 	if errors.Is(err, sql.ErrNoRows) {
