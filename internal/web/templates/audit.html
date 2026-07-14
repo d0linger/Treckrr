@@ -1,8 +1,8 @@
 {{define "content"}}
 <section class="stack">
-	<div class="btnrow">
-		<a class="btn btn--primary btn--sm" href="/admin/users">Benutzer</a>
-		<a class="btn btn--ghost btn--sm" href="/admin/audit">Protokoll</a>
+	<div class="pagehead">
+		<a class="backbtn" href="/" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
+		<h1 class="pagehead__t">Audit‑Log</h1>
 	</div>
 	<p class="muted">Zusätzlich wird jeder Zugriff in den Server‑Logs
 		(<code>docker compose logs app</code>) protokolliert.</p>
@@ -25,7 +25,7 @@
 	</form>
 	<p class="muted small">{{if .Total}}{{.RangeFrom}}–{{.RangeTo}} von {{.Total}} Einträgen · Seite {{.Page}}/{{.TotalPages}}{{else}}Keine Einträge.{{end}}</p>
 
-	<ol class="logcards" aria-label="Protokolleinträge">
+	<ol class="logcards logcards--onecol" aria-label="Protokolleinträge">
 		{{range .Entries}}
 		<li class="logcard">
 			<div class="logcard__top">
