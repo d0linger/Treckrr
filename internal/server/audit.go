@@ -236,9 +236,3 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 			time.Since(start).Round(time.Millisecond), sanitizeLog(user), sanitizeLog(s.clientIP(r)))
 	})
 }
-
-// sanitizeLog strips CR/LF from request-derived values so they cannot forge
-// additional log lines (log injection).
-func sanitizeLog(s string) string {
-	return strings.NewReplacer("\n", " ", "\r", " ").Replace(s)
-}
