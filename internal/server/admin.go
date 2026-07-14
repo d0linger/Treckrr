@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"net/mail"
 	"strings"
 
 	"treckrr/internal/models"
@@ -176,14 +177,36 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/users")
 		return
 	}
+	// E-mail is optional, but if present it must be a valid address (the client
+	// type="email" is bypassable, so validate server-side too).
+	if email != "" {
+		if _, err := mail.ParseAddress(email); err != nil {
+			s.setFlash(w, r, "error", "Ungültige E‑Mail‑Adresse.")
+			redirect(w, r, "/admin/users")
+			return
+		}
+	}
 	if err := s.store.UpdateUserAccount(r.Context(), id, username, email); err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen (Benutzername bereits vergeben?).")
 		redirect(w, r, "/admin/users")
 		return
 	}
-	detail := "Zugangsdaten aktualisiert"
+	disp := func(v string) string {
+		if v == "" {
+			return "(leer)"
+		}
+		return v
+	}
+	var parts []string
 	if username != target.Username {
-		detail = "Benutzername: " + target.Username + " → " + username
+		parts = append(parts, "Benutzername: "+target.Username+" → "+username)
+	}
+	if email != target.Email {
+		parts = append(parts, "E‑Mail: "+disp(target.Email)+" → "+disp(email))
+	}
+	detail := "Zugangsdaten aktualisiert"
+	if len(parts) > 0 {
+		detail = strings.Join(parts, "; ")
 	}
 	s.audit(r, "update", "user", id, detail)
 	s.setFlash(w, r, "success", "Zugangsdaten aktualisiert.")
