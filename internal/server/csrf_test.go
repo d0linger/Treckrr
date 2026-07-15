@@ -62,6 +62,13 @@ func TestCSRFMiddleware(t *testing.T) {
 		return r
 	}
 
+	// Token for the pending 2FA step.
+	token2FA := func() string {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.AddCookie(&http.Cookie{Name: pending2FACookie, Value: "2fa-val"})
+		return s.csrfToken(r)
+	}()
+
 	cases := []struct {
 		name string
 		req  *http.Request
@@ -71,6 +78,16 @@ func TestCSRFMiddleware(t *testing.T) {
 		{"session + valid token passes", newPost(true, token), http.StatusOK},
 		{"session + missing token rejected", newPost(true, ""), http.StatusForbidden},
 		{"session + wrong token rejected", newPost(true, "nope"), http.StatusForbidden},
+		{"pending 2FA + valid token passes", func() *http.Request {
+			r := newPost(false, token2FA)
+			r.AddCookie(&http.Cookie{Name: pending2FACookie, Value: "2fa-val"})
+			return r
+		}(), http.StatusOK},
+		{"pending 2FA + missing token rejected", func() *http.Request {
+			r := newPost(false, "")
+			r.AddCookie(&http.Cookie{Name: pending2FACookie, Value: "2fa-val"})
+			return r
+		}(), http.StatusForbidden},
 		{"safe GET passes", func() *http.Request {
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
 			r.AddCookie(&http.Cookie{Name: sessionCookie, Value: sessionValue})
