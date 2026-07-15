@@ -18,18 +18,24 @@ const (
 // and method="dialog" forms are deliberately left untouched.
 var formOpenTag = regexp.MustCompile(`(?i)<form\b[^>]*\bmethod\s*=\s*["']post["'][^>]*>`)
 
-// csrfToken derives a stateless, per-session CSRF token by signing the session
-// token with the app secret. An attacker cannot read the HttpOnly session
-// cookie, so cannot compute a matching token for a cross-site request. Returns
-// "" when there is no session yet (nothing to protect).
+// csrfToken derives a stateless CSRF token by signing the value of either the
+// session cookie or the pending-2FA cookie with the app secret. An attacker
+// cannot read the HttpOnly cookies, so cannot compute a matching token for a
+// cross-site request. Returns "" when no qualifying cookie is present.
 func (s *Server) csrfToken(r *http.Request) string {
-	c, err := r.Cookie(sessionCookie)
-	if err != nil || c.Value == "" {
-		return ""
+	// Priority 1: established session.
+	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
+		mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
+		mac.Write([]byte("csrf:" + c.Value))
+		return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	}
-	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
-	mac.Write([]byte("csrf:" + c.Value))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	// Priority 2: pending 2FA step.
+	if c, err := r.Cookie(pending2FACookie); err == nil && c.Value != "" {
+		mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
+		mac.Write([]byte("csrf2fa:" + c.Value))
+		return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	}
+	return ""
 }
 
 // csrf rejects unsafe requests that lack a valid CSRF token once a session is
