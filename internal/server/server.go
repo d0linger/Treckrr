@@ -241,7 +241,7 @@ func (s *Server) refreshSessionCookie(w http.ResponseWriter, r *http.Request) {
 		s.setCookie(w, r, &http.Cookie{
 			Name:   sessionCookie,
 			Value:  c.Value,
-			MaxAge:   int(sessionTTL.Seconds()),
+			MaxAge: int(sessionTTL.Seconds()),
 		})
 	}
 }
