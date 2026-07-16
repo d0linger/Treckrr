@@ -75,10 +75,9 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 
 func (s *Server) setFlash(w http.ResponseWriter, r *http.Request, kind, msg string) {
 	s.setCookie(w, r, &http.Cookie{
-		Name:     flashCookie,
-		Value:    kind + "|" + url.QueryEscape(msg),
-		HttpOnly: true,
-		MaxAge:   30,
+		Name:   flashCookie,
+		Value:  kind + "|" + url.QueryEscape(msg),
+		MaxAge: 30,
 	})
 }
 

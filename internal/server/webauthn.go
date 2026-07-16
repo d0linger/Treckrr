@@ -117,7 +117,7 @@ func (s *Server) saveWASession(w http.ResponseWriter, r *http.Request, sd *webau
 	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
 	mac.Write(b)
 	val := base64.RawURLEncoding.EncodeToString(b) + "." + hex.EncodeToString(mac.Sum(nil))
-	s.setCookie(w, r, &http.Cookie{Name: waCookie, Value: val, HttpOnly: true, MaxAge: 300})
+	s.setCookie(w, r, &http.Cookie{Name: waCookie, Value: val, MaxAge: 300})
 }
 
 func (s *Server) loadWASession(r *http.Request) (*webauthn.SessionData, bool) {
