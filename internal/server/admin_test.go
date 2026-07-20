@@ -100,7 +100,7 @@ func TestHandleUserCreate_UsernameTooLong(t *testing.T) {
 	}
 
 	cookie := rr.Header().Get("Set-Cookie")
-	if !strings.Contains(cookie, "Benutzername+darf+h%C3%B6chstens+100+Zeichen+lang+sein.") {
+	if !strings.Contains(cookie, "Benutzername+darf+maximal+100+Zeichen+lang+sein.") {
 		t.Fatalf("expected error flash cookie, got %s", cookie)
 	}
 }
@@ -138,7 +138,7 @@ func TestHandleUserUpdate_UsernameTooLong(t *testing.T) {
 	}
 
 	cookie := rr.Header().Get("Set-Cookie")
-	if !strings.Contains(cookie, "Benutzername+darf+h%C3%B6chstens+100+Zeichen+lang+sein.") {
+	if !strings.Contains(cookie, "Benutzername+darf+maximal+100+Zeichen+lang+sein.") {
 		t.Fatalf("expected error flash cookie, got %s", cookie)
 	}
 }
@@ -177,7 +177,7 @@ func TestHandleUserUpdate_EmailTooLong(t *testing.T) {
 	}
 
 	cookie := rr.Header().Get("Set-Cookie")
-	if !strings.Contains(cookie, "E-Mail-Adresse+darf+h%C3%B6chstens+254+Zeichen+lang+sein.") {
+	if !strings.Contains(cookie, "E%E2%80%91Mail%E2%80%91Adresse+darf+maximal+254+Zeichen+lang+sein.") {
 		t.Fatalf("expected error flash cookie, got %s", cookie)
 	}
 }

@@ -73,8 +73,9 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/users")
 		return
 	}
+	// Security improvement: Validate input length limits to prevent DoS/buffer exhaustion.
 	if len(username) > 100 {
-		s.setFlash(w, r, "error", "Benutzername darf höchstens 100 Zeichen lang sein.")
+		s.setFlash(w, r, "error", "Benutzername darf maximal 100 Zeichen lang sein.")
 		redirect(w, r, "/admin/users")
 		return
 	}
@@ -182,19 +183,20 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/users")
 		return
 	}
+	// Security improvement: Validate input length limits to prevent DoS/buffer exhaustion.
 	if len(username) > 100 {
-		s.setFlash(w, r, "error", "Benutzername darf höchstens 100 Zeichen lang sein.")
+		s.setFlash(w, r, "error", "Benutzername darf maximal 100 Zeichen lang sein.")
+		redirect(w, r, "/admin/users")
+		return
+	}
+	if len(email) > 254 {
+		s.setFlash(w, r, "error", "E‑Mail‑Adresse darf maximal 254 Zeichen lang sein.")
 		redirect(w, r, "/admin/users")
 		return
 	}
 	// E-mail is optional, but if present it must be a valid address (the client
 	// type="email" is bypassable, so validate server-side too).
 	if email != "" {
-		if len(email) > 254 {
-			s.setFlash(w, r, "error", "E-Mail-Adresse darf höchstens 254 Zeichen lang sein.")
-			redirect(w, r, "/admin/users")
-			return
-		}
 		if _, err := mail.ParseAddress(email); err != nil {
 			s.setFlash(w, r, "error", "Ungültige E‑Mail‑Adresse.")
 			redirect(w, r, "/admin/users")
