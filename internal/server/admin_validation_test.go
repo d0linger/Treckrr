@@ -45,7 +45,7 @@ type mockAdminStmt struct {
 	query string
 }
 
-func (s *mockAdminStmt) Close() error { return nil }
+func (s *mockAdminStmt) Close() error  { return nil }
 func (s *mockAdminStmt) NumInput() int { return -1 }
 
 func (s *mockAdminStmt) Exec(args []driver.Value) (driver.Result, error) {
@@ -88,9 +88,7 @@ func (r *mockAdminRows) Next(dest []driver.Value) error {
 	if r.cursor >= len(r.values) {
 		return io.EOF
 	}
-	for i, v := range r.values[r.cursor] {
-		dest[i] = v
-	}
+	copy(dest, r.values[r.cursor])
 	r.cursor++
 	return nil
 }
