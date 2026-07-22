@@ -28,7 +28,7 @@ func (c *mockConnAdmin) Prepare(query string) (driver.Stmt, error) {
 	return &mockStmtAdmin{query: query}, nil
 }
 
-func (c *mockConnAdmin) Close() error               { return nil }
+func (c *mockConnAdmin) Close() error              { return nil }
 func (c *mockConnAdmin) Begin() (driver.Tx, error) { return &mockTxAdmin{}, nil }
 
 type mockTxAdmin struct{}
@@ -40,7 +40,7 @@ type mockStmtAdmin struct {
 	query string
 }
 
-func (s *mockStmtAdmin) Close() error   { return nil }
+func (s *mockStmtAdmin) Close() error  { return nil }
 func (s *mockStmtAdmin) NumInput() int { return -1 }
 
 func (s *mockStmtAdmin) Exec(args []driver.Value) (driver.Result, error) {
@@ -90,9 +90,7 @@ func (r *mockRowsAdmin) Next(dest []driver.Value) error {
 	if r.index >= len(r.data) {
 		return io.EOF
 	}
-	for i, val := range r.data[r.index] {
-		dest[i] = val
-	}
+	copy(dest, r.data[r.index])
 	r.index++
 	return nil
 }
