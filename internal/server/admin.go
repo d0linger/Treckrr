@@ -73,6 +73,11 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/users")
 		return
 	}
+	if len(username) > 100 {
+		s.setFlash(w, r, "error", "Benutzername darf höchstens 100 Zeichen lang sein.")
+		redirect(w, r, "/admin/users")
+		return
+	}
 	if msg := passwordPolicyError(password); msg != "" {
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, "/admin/users")
@@ -174,6 +179,16 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request) {
 	email := trimmed(r, "email")
 	if username == "" {
 		s.setFlash(w, r, "error", "Benutzername darf nicht leer sein.")
+		redirect(w, r, "/admin/users")
+		return
+	}
+	if len(username) > 100 {
+		s.setFlash(w, r, "error", "Benutzername darf höchstens 100 Zeichen lang sein.")
+		redirect(w, r, "/admin/users")
+		return
+	}
+	if len(email) > 254 {
+		s.setFlash(w, r, "error", "E‑Mail‑Adresse darf höchstens 254 Zeichen lang sein.")
 		redirect(w, r, "/admin/users")
 		return
 	}
