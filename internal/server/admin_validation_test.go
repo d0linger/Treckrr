@@ -38,7 +38,9 @@ type mockStmt struct {
 func (s *mockStmt) Close() error                                    { return nil }
 func (s *mockStmt) NumInput() int                                   { return -1 }
 func (s *mockStmt) Exec(args []driver.Value) (driver.Result, error) { return &mockResult{}, nil }
-func (s *mockStmt) Query(args []driver.Value) (driver.Rows, error)   { return &mockRows{query: s.query}, nil }
+func (s *mockStmt) Query(args []driver.Value) (driver.Rows, error) {
+	return &mockRows{query: s.query}, nil
+}
 
 type mockResult struct{}
 
