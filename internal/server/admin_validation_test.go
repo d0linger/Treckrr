@@ -71,9 +71,7 @@ func (r *mockRows) Next(dest []driver.Value) error {
 	if r.index >= len(r.data) {
 		return io.EOF
 	}
-	for i, v := range r.data[r.index] {
-		dest[i] = v
-	}
+	copy(dest, r.data[r.index])
 	r.index++
 	return nil
 }
