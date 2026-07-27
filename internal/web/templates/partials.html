@@ -88,6 +88,10 @@
 	point strings). Points ride on SVG attributes — CSP-safe. */}}
 {{define "spark"}}<svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><polygon class="spark__area" points="{{.Area}}"></polygon><polyline class="spark__line" points="{{.Line}}"></polyline></svg>{{end}}
 
+{{/* "barpair" is the previous-vs-current mini chart shown on a KPI tile when
+	there aren't yet 3 years for a trend line. Geometry precomputed in Go. */}}
+{{define "barpair"}}<svg class="barpair" viewBox="0 0 40 34" preserveAspectRatio="none" aria-hidden="true"><rect class="bp bp--prev" x="6" width="12" rx="3" y="{{.PrevY}}" height="{{.PrevH}}"></rect><rect class="bp bp--cur" x="22" width="12" rx="3" y="{{.CurY}}" height="{{.CurH}}"></rect></svg>{{end}}
+
 {{/* Inline icon set (currentColor, aria-hidden) — replaces emoji so control
 	icons follow the theme, hover and focus colour and read consistently across
 	platforms. Sized via the .ic class (1.15em). */}}

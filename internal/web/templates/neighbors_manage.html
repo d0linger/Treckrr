@@ -53,7 +53,11 @@
 			</details>
 		</div>
 		{{else}}
-		<p class="muted card">Noch keine Nachbarn angelegt.</p>
+		<div class="card empty empty--slim">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.1 2.4-5 5.5-5s5.5 1.9 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16.5 15.3c2.5.4 4 2.1 4 4.7"/></svg>
+			<span class="empty__title">Noch keine Nachbarn angelegt.</span>
+			<span class="empty__sub">Lege unten den ersten Nachbarn an.</span>
+		</div>
 		{{end}}
 	</div>
 

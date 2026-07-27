@@ -250,6 +250,16 @@ em { font-style: normal; color: var(--muted); }
 
 /* ---- Layout ----------------------------------------------------------- */
 .main { max-width: var(--maxw); margin: 0 auto; padding: 1rem; }
+/* Micro-interactions: content fades in on load; list cards lift subtly on hover.
+   Both disabled under prefers-reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+	.main { animation: page-in .32s cubic-bezier(.22, .61, .36, 1) both; }
+	.bcard:hover, .logcard:hover, .cmprow:hover, .rcard:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 2px 4px rgba(0, 0, 0, .10), 0 14px 30px rgba(0, 0, 0, .14);
+	}
+}
+@keyframes page-in { from { opacity: 0; transform: translateY(6px); } }
 .stack { display: flex; flex-direction: column; gap: 1rem; }
 .section-title { font-size: var(--fs-lg); font-weight: 800; letter-spacing: -.01em; margin-top: .6rem; }
 
@@ -321,13 +331,13 @@ em { font-style: normal; color: var(--muted); }
 	padding: .55rem .7rem;
 	font-size: 1rem;
 	color: var(--text);
-	background: var(--surface);
+	background: var(--surface-2);
 	border: 1px solid var(--border);
-	border-radius: var(--radius-sm);
+	border-radius: 11px;
 	appearance: none;
 	transition: border-color .15s, box-shadow .15s;
 }
-.input:focus, .select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-tint); }
+.input:focus, .select:focus { outline: none; border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent); }
 /* Visible keyboard focus for every interactive element (WCAG 2.4.7). Only shows
    on keyboard navigation — a mouse click does not trigger :focus-visible. Text
    inputs keep their box-shadow ring above (higher specificity wins). */
@@ -450,9 +460,9 @@ em { font-style: normal; color: var(--muted); }
 	max-width: min(420px, 92vw); width: 100%;
 	color: var(--text);
 }
-.modal::backdrop { background: rgba(0, 0, 0, .45); }
+.modal::backdrop { background: rgba(0, 0, 0, .45); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
 .modal__card {
-	margin: 0; background: var(--surface); border-radius: var(--radius);
+	margin: 0; background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius);
 	padding: 1.25rem; box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
 	display: flex; flex-direction: column; gap: 1.1rem;
 }
@@ -462,6 +472,24 @@ em { font-style: normal; color: var(--muted); }
 .modal__actions { display: flex; gap: .6rem; justify-content: flex-end; }
 .modal[open] { animation: modal-in .16s ease-out; }
 @keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+/* Bottom-sheet on phones: dock the confirm dialog to the bottom with a grab
+   handle and slide-up; on wider screens it stays a centered card. */
+@media (max-width: 640px) {
+	.modal { max-width: 100%; width: 100%; margin: auto 0 0; }
+	.modal__card {
+		border-radius: 20px 20px 0 0;
+		padding: .7rem 1.1rem calc(1.1rem + env(safe-area-inset-bottom));
+		box-shadow: 0 -16px 44px rgba(0, 0, 0, .4);
+	}
+	.modal__card::before {
+		content: ""; align-self: center; margin-bottom: -.5rem;
+		width: 36px; height: 4px; border-radius: 4px; background: var(--border);
+	}
+	.modal__actions .btn { flex: 1; }
+	.modal[open] { animation: sheet-up .24s cubic-bezier(.22, .61, .36, 1); }
+}
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) { .modal[open] { animation: none; } }
 
 /* ---- Status / payment tags ------------------------------------------- */
 .tag { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; font-weight: 700;
@@ -553,7 +581,8 @@ em { font-style: normal; color: var(--muted); }
 /* ---- Basis workspace header ------------------------------------------- */
 .workspace {
 	display: flex; flex-direction: column; gap: .5rem;
-	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+	background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius);
+	box-shadow: var(--card-shadow);
 	padding: .7rem .9rem;
 }
 .workspace__back { text-decoration: none; color: var(--muted); font-weight: 600; font-size: .85rem; align-self: flex-start; }
@@ -667,6 +696,9 @@ em { font-style: normal; color: var(--muted); }
    keeps its 2px weight. */
 .spark { display: block; width: 100%; height: 28px; margin-top: .5rem; color: var(--kpi-accent, var(--data)); overflow: visible; }
 .spark__area { fill: currentColor; opacity: .13; stroke: none; }
+.barpair { display: block; width: 100%; height: 30px; margin-top: .5rem; overflow: visible; }
+.barpair .bp--prev { fill: color-mix(in srgb, var(--kpi-accent, var(--data)) 38%, var(--surface-2)); }
+.barpair .bp--cur { fill: var(--kpi-accent, var(--data)); }
 .spark__line { fill: none; stroke: currentColor; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Horizontal bar chart. Rendered as inline SVG so bar widths ride on SVG
@@ -677,8 +709,12 @@ em { font-style: normal; color: var(--muted); }
 .barchart__label { font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .barchart__val { font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bchart { display: block; width: 100%; height: 10px; }
+.gradient-defs { position: absolute; width: 0; height: 0; }
+.gs-strong { stop-color: var(--primary-strong); }
+.gs-data { stop-color: var(--data); }
+.gs-pay { stop-color: var(--pay); }
 .bchart__track { fill: var(--data-track); }
-.bchart__fill { fill: var(--data); transform-box: fill-box; transform-origin: left center;
+.bchart__fill { fill: url(#barGrad); transform-box: fill-box; transform-origin: left center;
 	animation: barGrow .7s cubic-bezier(.22, .61, .36, 1) both; transition: filter .15s ease; }
 .barchart__row:hover .bchart__fill { filter: brightness(1.08); }
 .barchart__row:hover .barchart__label { color: var(--text); }
@@ -702,7 +738,7 @@ em { font-style: normal; color: var(--muted); }
 .dchart__fill { transform-box: fill-box; animation: barGrow .7s cubic-bezier(.22, .61, .36, 1) both; transition: filter .15s ease; }
 .dchart__row:hover .dchart__fill { filter: brightness(1.08); }
 .dchart__fill--owe { fill: var(--owe); transform-origin: right center; }
-.dchart__fill--pay { fill: var(--pay); transform-origin: left center; }
+.dchart__fill--pay { fill: url(#payGrad); transform-origin: left center; }
 .dchart__val { font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dchart__val--owe { color: var(--owe); }
 .dchart__val--pay { color: var(--pay); }
@@ -754,8 +790,9 @@ em { font-style: normal; color: var(--muted); }
 /* Two compact lines per card: date · task · badges · cost on top, the
    derivation/details plus small icon actions below. */
 .bookcards { display: flex; flex-direction: column; gap: .45rem; }
-.bcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-	padding: .5rem .7rem; display: flex; flex-direction: column; gap: .25rem; box-shadow: var(--shadow); }
+.bcard { background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius);
+	padding: .5rem .7rem; display: flex; flex-direction: column; gap: .25rem; box-shadow: var(--card-shadow);
+	transition: transform .14s ease, box-shadow .14s ease; }
 .bcard--void { background: var(--surface-2); }
 .bcard--void .bcard__task, .bcard--void .bcard__cost { text-decoration: line-through; color: var(--muted); }
 /* The head may wrap on very narrow cards: the task keeps a readable minimum
@@ -926,8 +963,9 @@ em { font-style: normal; color: var(--muted); }
 
 /* ---- Audit log as cards (replaces the 6-column sideways table) -------- */
 .logcards { display: flex; flex-direction: column; gap: .5rem; list-style: none; margin: 0; padding: 0; }
-.logcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-	padding: .55rem .7rem; display: flex; flex-direction: column; gap: .3rem; box-shadow: var(--shadow); }
+.logcard { background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius);
+	padding: .55rem .7rem; display: flex; flex-direction: column; gap: .3rem; box-shadow: var(--card-shadow);
+	transition: transform .14s ease, box-shadow .14s ease; }
 .logcard__top { display: flex; align-items: center; gap: .5rem; }
 .logcard__time { margin-left: auto; font-size: var(--fs-xs); color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .logcard__detail { font-size: var(--fs-sm); line-height: 1.4; overflow-wrap: break-word; }
@@ -938,18 +976,29 @@ em { font-style: normal; color: var(--muted); }
 
 /* ---- Per-year stats as cards (replaces the 8-column Jahresübersicht) -- */
 .yearstats { display: flex; flex-direction: column; gap: .5rem; }
-.yearstat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .6rem .7rem; box-shadow: var(--shadow); }
-.yearstat--sum { background: var(--surface-2); }
+.yearstat { position: relative; overflow: hidden; background: var(--card-grad); border: 1px solid var(--card-hairline);
+	border-radius: var(--radius); padding: .7rem .8rem .8rem; box-shadow: var(--card-shadow); }
+.yearstat::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--sacc, var(--primary)); }
+.yearstat--open { --sacc: var(--accent); }
+.yearstat--done { --sacc: var(--primary); }
+.yearstat--sum { --sacc: var(--primary-strong); background: var(--surface-2); }
 .yearstat__head { display: flex; align-items: center; gap: .5rem; }
-.yearstat__yr { font-weight: 800; font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
+.yearstat__yr { font-weight: 800; font-size: var(--fs-md); font-variant-numeric: tabular-nums; text-decoration: none; }
 .yearstat__net { margin-left: auto; font-weight: 800; font-size: var(--fs-lg); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-.yearstat__grid { display: grid; grid-template-columns: 1fr 1fr; gap: .1rem .8rem; margin-top: .4rem;
-	padding-top: .35rem; border-top: 1px dashed var(--border); font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
-.yearstat__grid b { color: var(--text); font-weight: 700; }
+.yearstat__sub { display: flex; gap: 1rem; flex-wrap: wrap; color: var(--muted); font-size: var(--fs-sm);
+	margin: .35rem 0 .55rem; font-variant-numeric: tabular-nums; }
+.yearstat__sub b { color: var(--text); font-weight: 700; }
+.yearstat__pay { display: flex; flex-direction: column; gap: .2rem; }
+.paybar { display: block; width: 100%; height: 8px; }
+.paybar__track { fill: color-mix(in srgb, var(--accent) 24%, var(--surface-2)); }
+.paybar__paid { fill: var(--primary); }
+.paybar__l { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--muted); }
+.paybar__l b { color: var(--text); font-weight: 700; }
+.paybar__l .paybar__open { color: var(--accent-text); }
 
 /* ---- Price comparison as rows (replaces the 5-column Vergleich table) - */
 .cmprows { display: flex; flex-direction: column; gap: .45rem; }
-.cmprow { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .55rem .7rem; box-shadow: var(--shadow); }
+.cmprow { background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius); padding: .55rem .7rem; box-shadow: var(--card-shadow); transition: transform .14s ease, box-shadow .14s ease; }
 .cmprow__top { display: flex; align-items: baseline; gap: .5rem; }
 .cmprow__pos { font-weight: 700; font-size: var(--fs-sm); }
 .cmprow__new { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -1067,7 +1116,7 @@ em { font-style: normal; color: var(--muted); }
 
 /* ---- Recalc as cards (replaces the 6-column sideways table) ----------- */
 .rcards { display: flex; flex-direction: column; gap: .5rem; }
-.rcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .6rem .75rem; box-shadow: var(--shadow); }
+.rcard { background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius); padding: .6rem .75rem; box-shadow: var(--card-shadow); transition: transform .14s ease, box-shadow .14s ease; }
 .rcard__top { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
 .rcard__date { font-weight: 700; font-variant-numeric: tabular-nums; }
 .rcard__task { color: var(--muted); font-size: var(--fs-sm); }

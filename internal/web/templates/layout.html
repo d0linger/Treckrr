@@ -12,6 +12,12 @@
 	<link rel="stylesheet" href="/static/css/app.css?v={{.AssetVersion}}">
 </head>
 <body>
+{{/* Shared SVG gradient defs for chart bars (referenced via fill: url(#…) in
+    app.css). Stop colours are set by CSS class so they follow the theme. */}}
+<svg class="gradient-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs>
+	<linearGradient id="barGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" class="gs-strong"/><stop offset="1" class="gs-data"/></linearGradient>
+	<linearGradient id="payGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" class="gs-strong"/><stop offset="1" class="gs-pay"/></linearGradient>
+</defs></svg>
 {{if .User}}
 	<a class="skip" href="#main">Zum Inhalt springen</a>
 	<div class="topstack">
