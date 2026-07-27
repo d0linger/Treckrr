@@ -460,9 +460,9 @@ em { font-style: normal; color: var(--muted); }
 	max-width: min(420px, 92vw); width: 100%;
 	color: var(--text);
 }
-.modal::backdrop { background: rgba(0, 0, 0, .45); }
+.modal::backdrop { background: rgba(0, 0, 0, .45); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
 .modal__card {
-	margin: 0; background: var(--surface); border-radius: var(--radius);
+	margin: 0; background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius);
 	padding: 1.25rem; box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
 	display: flex; flex-direction: column; gap: 1.1rem;
 }
@@ -472,6 +472,24 @@ em { font-style: normal; color: var(--muted); }
 .modal__actions { display: flex; gap: .6rem; justify-content: flex-end; }
 .modal[open] { animation: modal-in .16s ease-out; }
 @keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+/* Bottom-sheet on phones: dock the confirm dialog to the bottom with a grab
+   handle and slide-up; on wider screens it stays a centered card. */
+@media (max-width: 640px) {
+	.modal { max-width: 100%; width: 100%; margin: auto 0 0; }
+	.modal__card {
+		border-radius: 20px 20px 0 0;
+		padding: .7rem 1.1rem calc(1.1rem + env(safe-area-inset-bottom));
+		box-shadow: 0 -16px 44px rgba(0, 0, 0, .4);
+	}
+	.modal__card::before {
+		content: ""; align-self: center; margin-bottom: -.5rem;
+		width: 36px; height: 4px; border-radius: 4px; background: var(--border);
+	}
+	.modal__actions .btn { flex: 1; }
+	.modal[open] { animation: sheet-up .24s cubic-bezier(.22, .61, .36, 1); }
+}
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) { .modal[open] { animation: none; } }
 
 /* ---- Status / payment tags ------------------------------------------- */
 .tag { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; font-weight: 700;
