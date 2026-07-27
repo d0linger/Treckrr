@@ -706,8 +706,12 @@ em { font-style: normal; color: var(--muted); }
 .barchart__label { font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .barchart__val { font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bchart { display: block; width: 100%; height: 10px; }
+.gradient-defs { position: absolute; width: 0; height: 0; }
+.gs-strong { stop-color: var(--primary-strong); }
+.gs-data { stop-color: var(--data); }
+.gs-pay { stop-color: var(--pay); }
 .bchart__track { fill: var(--data-track); }
-.bchart__fill { fill: var(--data); transform-box: fill-box; transform-origin: left center;
+.bchart__fill { fill: url(#barGrad); transform-box: fill-box; transform-origin: left center;
 	animation: barGrow .7s cubic-bezier(.22, .61, .36, 1) both; transition: filter .15s ease; }
 .barchart__row:hover .bchart__fill { filter: brightness(1.08); }
 .barchart__row:hover .barchart__label { color: var(--text); }
@@ -731,7 +735,7 @@ em { font-style: normal; color: var(--muted); }
 .dchart__fill { transform-box: fill-box; animation: barGrow .7s cubic-bezier(.22, .61, .36, 1) both; transition: filter .15s ease; }
 .dchart__row:hover .dchart__fill { filter: brightness(1.08); }
 .dchart__fill--owe { fill: var(--owe); transform-origin: right center; }
-.dchart__fill--pay { fill: var(--pay); transform-origin: left center; }
+.dchart__fill--pay { fill: url(#payGrad); transform-origin: left center; }
 .dchart__val { font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dchart__val--owe { color: var(--owe); }
 .dchart__val--pay { color: var(--pay); }
