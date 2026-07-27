@@ -159,6 +159,7 @@ em { font-style: normal; color: var(--muted); }
 	position: sticky;
 	top: 0;
 	z-index: 20;
+	background: var(--primary); /* opaque fallback where color-mix() is unsupported */
 	background: color-mix(in srgb, var(--primary) 86%, transparent);
 	-webkit-backdrop-filter: blur(14px) saturate(1.3);
 	backdrop-filter: blur(14px) saturate(1.3);
