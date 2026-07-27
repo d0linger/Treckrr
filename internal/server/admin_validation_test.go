@@ -156,6 +156,27 @@ func TestHandleUserCreateValidation(t *testing.T) {
 		}
 	})
 
+	t.Run("exactly 100-char username accepted", func(t *testing.T) {
+		form := url.Values{}
+		form.Set("username", strings.Repeat("a", 100))
+		form.Set("password", "SecurePassword123")
+		form.Set("role", "editor")
+
+		req := httptest.NewRequest(http.MethodPost, "/admin/users", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rr := httptest.NewRecorder()
+
+		s.handleUserCreate(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := rr.Header().Get("Set-Cookie")
+		if !strings.Contains(flashCookie, url.QueryEscape("Benutzer angelegt.")) {
+			t.Errorf("expected success flash for 100-char username, got cookie: %q", flashCookie)
+		}
+	})
+
 	t.Run("valid input accepted", func(t *testing.T) {
 		form := url.Values{}
 		form.Set("username", "gooduser")
@@ -222,6 +243,28 @@ func TestHandleUserUpdateValidation(t *testing.T) {
 		flashCookie := rr.Header().Get("Set-Cookie")
 		if !strings.Contains(flashCookie, url.QueryEscape("E‑Mail‑Adresse darf höchstens 254 Zeichen lang sein.")) {
 			t.Errorf("expected long email flash message, got cookie: %q", flashCookie)
+		}
+	})
+
+	t.Run("exactly 100-char username and 254-char email accepted", func(t *testing.T) {
+		maxEmail := strings.Repeat("a", 242) + "@example.com" // 254 chars, valid address
+		form := url.Values{}
+		form.Set("username", strings.Repeat("a", 100))
+		form.Set("email", maxEmail)
+
+		req := httptest.NewRequest(http.MethodPost, "/admin/users/123/update", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("id", "123")
+		rr := httptest.NewRecorder()
+
+		s.handleUserUpdate(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := rr.Header().Get("Set-Cookie")
+		if !strings.Contains(flashCookie, url.QueryEscape("Zugangsdaten aktualisiert.")) {
+			t.Errorf("expected success flash for boundary input, got cookie: %q", flashCookie)
 		}
 	})
 
