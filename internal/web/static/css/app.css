@@ -250,6 +250,16 @@ em { font-style: normal; color: var(--muted); }
 
 /* ---- Layout ----------------------------------------------------------- */
 .main { max-width: var(--maxw); margin: 0 auto; padding: 1rem; }
+/* Micro-interactions: content fades in on load; list cards lift subtly on hover.
+   Both disabled under prefers-reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+	.main { animation: page-in .32s cubic-bezier(.22, .61, .36, 1) both; }
+	.bcard:hover, .logcard:hover, .cmprow:hover, .rcard:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 2px 4px rgba(0, 0, 0, .10), 0 14px 30px rgba(0, 0, 0, .14);
+	}
+}
+@keyframes page-in { from { opacity: 0; transform: translateY(6px); } }
 .stack { display: flex; flex-direction: column; gap: 1rem; }
 .section-title { font-size: var(--fs-lg); font-weight: 800; letter-spacing: -.01em; margin-top: .6rem; }
 
@@ -321,13 +331,13 @@ em { font-style: normal; color: var(--muted); }
 	padding: .55rem .7rem;
 	font-size: 1rem;
 	color: var(--text);
-	background: var(--surface);
+	background: var(--surface-2);
 	border: 1px solid var(--border);
-	border-radius: var(--radius-sm);
+	border-radius: 11px;
 	appearance: none;
 	transition: border-color .15s, box-shadow .15s;
 }
-.input:focus, .select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-tint); }
+.input:focus, .select:focus { outline: none; border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent); }
 /* Visible keyboard focus for every interactive element (WCAG 2.4.7). Only shows
    on keyboard navigation — a mouse click does not trigger :focus-visible. Text
    inputs keep their box-shadow ring above (higher specificity wins). */
@@ -553,7 +563,8 @@ em { font-style: normal; color: var(--muted); }
 /* ---- Basis workspace header ------------------------------------------- */
 .workspace {
 	display: flex; flex-direction: column; gap: .5rem;
-	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+	background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius);
+	box-shadow: var(--card-shadow);
 	padding: .7rem .9rem;
 }
 .workspace__back { text-decoration: none; color: var(--muted); font-weight: 600; font-size: .85rem; align-self: flex-start; }
@@ -754,8 +765,9 @@ em { font-style: normal; color: var(--muted); }
 /* Two compact lines per card: date · task · badges · cost on top, the
    derivation/details plus small icon actions below. */
 .bookcards { display: flex; flex-direction: column; gap: .45rem; }
-.bcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-	padding: .5rem .7rem; display: flex; flex-direction: column; gap: .25rem; box-shadow: var(--shadow); }
+.bcard { background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius);
+	padding: .5rem .7rem; display: flex; flex-direction: column; gap: .25rem; box-shadow: var(--card-shadow);
+	transition: transform .14s ease, box-shadow .14s ease; }
 .bcard--void { background: var(--surface-2); }
 .bcard--void .bcard__task, .bcard--void .bcard__cost { text-decoration: line-through; color: var(--muted); }
 /* The head may wrap on very narrow cards: the task keeps a readable minimum
@@ -926,8 +938,9 @@ em { font-style: normal; color: var(--muted); }
 
 /* ---- Audit log as cards (replaces the 6-column sideways table) -------- */
 .logcards { display: flex; flex-direction: column; gap: .5rem; list-style: none; margin: 0; padding: 0; }
-.logcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-	padding: .55rem .7rem; display: flex; flex-direction: column; gap: .3rem; box-shadow: var(--shadow); }
+.logcard { background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius);
+	padding: .55rem .7rem; display: flex; flex-direction: column; gap: .3rem; box-shadow: var(--card-shadow);
+	transition: transform .14s ease, box-shadow .14s ease; }
 .logcard__top { display: flex; align-items: center; gap: .5rem; }
 .logcard__time { margin-left: auto; font-size: var(--fs-xs); color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .logcard__detail { font-size: var(--fs-sm); line-height: 1.4; overflow-wrap: break-word; }
@@ -949,7 +962,7 @@ em { font-style: normal; color: var(--muted); }
 
 /* ---- Price comparison as rows (replaces the 5-column Vergleich table) - */
 .cmprows { display: flex; flex-direction: column; gap: .45rem; }
-.cmprow { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .55rem .7rem; box-shadow: var(--shadow); }
+.cmprow { background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius); padding: .55rem .7rem; box-shadow: var(--card-shadow); transition: transform .14s ease, box-shadow .14s ease; }
 .cmprow__top { display: flex; align-items: baseline; gap: .5rem; }
 .cmprow__pos { font-weight: 700; font-size: var(--fs-sm); }
 .cmprow__new { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -1067,7 +1080,7 @@ em { font-style: normal; color: var(--muted); }
 
 /* ---- Recalc as cards (replaces the 6-column sideways table) ----------- */
 .rcards { display: flex; flex-direction: column; gap: .5rem; }
-.rcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .6rem .75rem; box-shadow: var(--shadow); }
+.rcard { background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius); padding: .6rem .75rem; box-shadow: var(--card-shadow); transition: transform .14s ease, box-shadow .14s ease; }
 .rcard__top { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
 .rcard__date { font-weight: 700; font-variant-numeric: tabular-nums; }
 .rcard__task { color: var(--muted); font-size: var(--fs-sm); }
