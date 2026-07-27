@@ -148,6 +148,24 @@ type yearStat struct {
 	PaidCost  decimal.Decimal
 	OpenCost  decimal.Decimal
 	Completed bool
+	PaidPct   string // paid share of (paid+open), e.g. "43.0%", for the pay bar
+}
+
+// payPct returns the paid share of (paid+open) as an SVG-width string clamped
+// to 0–100%.
+func payPct(paid, open decimal.Decimal) string {
+	total := paid.Add(open)
+	if total.IsZero() {
+		return "0%"
+	}
+	p := paid.Div(total).Mul(decimal.NewFromInt(100))
+	if p.GreaterThan(decimal.NewFromInt(100)) {
+		p = decimal.NewFromInt(100)
+	}
+	if p.IsNegative() {
+		p = decimal.Zero
+	}
+	return p.StringFixed(1) + "%"
 }
 
 // handleStatsAll renders a cross-year overview: per-year revenue, hours and
@@ -194,6 +212,7 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 			Year: y.Year, YearID: y.ID, Cost: cost, Hours: hours,
 			Ledger: led, Net: cost.Add(led),
 			PaidCost: paid, OpenCost: open, Completed: y.Completed(),
+			PaidPct: payPct(paid, open),
 		})
 		revenue = append(revenue, aggRow{Label: strconv.Itoa(y.Year), Hours: hours, Cost: cost})
 		grandCost = grandCost.Add(cost)
@@ -214,6 +233,7 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 	data["HasLedger"] = hasLedger
 	data["GrandPaid"] = grandPaid
 	data["GrandOpen"] = grandOpen
+	data["GrandPaidPct"] = payPct(grandPaid, grandOpen)
 	s.render(w, r, "stats_all", data)
 }
 

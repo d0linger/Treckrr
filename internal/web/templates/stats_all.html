@@ -22,18 +22,20 @@
 		<h2 class="section-title">Jahresübersicht</h2>
 		<div class="yearstats">
 			{{range .Stats}}
-			<div class="yearstat">
+			<div class="yearstat yearstat--{{if .Completed}}done{{else}}open{{end}}">
 				<div class="yearstat__head">
 					<a class="link yearstat__yr" href="/stats?year={{.YearID}}">{{.Year}}</a>
-					{{if .Completed}}<span class="badge">abgeschlossen</span>{{else}}<span class="badge">offen</span>{{end}}
+					{{if .Completed}}<span class="chip2 chip2--paid">abgeschlossen</span>{{else}}<span class="chip2 chip2--prog">offen</span>{{end}}
 					<span class="yearstat__net">{{money .Net}}</span>
 				</div>
-				<div class="yearstat__grid">
+				<div class="yearstat__sub">
 					<span>Leistungen <b>{{money .Cost}}</b></span>
-					<span>Verrechnung <b>{{money .Ledger}}</b></span>
 					<span>Stunden <b>{{num .Hours}} h</b></span>
-					<span>Bezahlt <b>{{money .PaidCost}}</b></span>
-					<span>Offen <b>{{money .OpenCost}}</b></span>
+					{{if not .Ledger.IsZero}}<span>Verrechnung <b>{{money .Ledger}}</b></span>{{end}}
+				</div>
+				<div class="yearstat__pay">
+					<svg class="paybar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="paybar__track" x="0" y="0" width="100%" height="8" rx="4"></rect><rect class="paybar__paid" x="0" y="0" width="{{.PaidPct}}" height="8" rx="4"></rect></svg>
+					<div class="paybar__l"><span>Bezahlt <b>{{money .PaidCost}}</b></span><span class="paybar__open">Offen <b>{{money .OpenCost}}</b></span></div>
 				</div>
 			</div>
 			{{else}}
@@ -42,12 +44,14 @@
 			{{if .Stats}}
 			<div class="yearstat yearstat--sum">
 				<div class="yearstat__head"><span class="yearstat__yr">Summe</span><span class="yearstat__net">{{money .GrandNet}}</span></div>
-				<div class="yearstat__grid">
+				<div class="yearstat__sub">
 					<span>Leistungen <b>{{money .GrandCost}}</b></span>
-					<span>Verrechnung <b>{{money .GrandLedger}}</b></span>
 					<span>Stunden <b>{{num .GrandHours}} h</b></span>
-					<span>Bezahlt <b>{{money .GrandPaid}}</b></span>
-					<span>Offen <b>{{money .GrandOpen}}</b></span>
+					{{if .HasLedger}}<span>Verrechnung <b>{{money .GrandLedger}}</b></span>{{end}}
+				</div>
+				<div class="yearstat__pay">
+					<svg class="paybar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="paybar__track" x="0" y="0" width="100%" height="8" rx="4"></rect><rect class="paybar__paid" x="0" y="0" width="{{.GrandPaidPct}}" height="8" rx="4"></rect></svg>
+					<div class="paybar__l"><span>Bezahlt <b>{{money .GrandPaid}}</b></span><span class="paybar__open">Offen <b>{{money .GrandOpen}}</b></span></div>
 				</div>
 			</div>
 			{{end}}
