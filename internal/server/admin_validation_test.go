@@ -26,7 +26,7 @@ type mockConn struct{}
 func (c *mockConn) Prepare(query string) (driver.Stmt, error) {
 	return &mockStmt{query: query}, nil
 }
-func (c *mockConn) Close() error               { return nil }
+func (c *mockConn) Close() error              { return nil }
 func (c *mockConn) Begin() (driver.Tx, error) { return &mockTx{}, nil }
 
 type mockTx struct{}
@@ -38,7 +38,7 @@ type mockStmt struct {
 	query string
 }
 
-func (s *mockStmt) Close() error   { return nil }
+func (s *mockStmt) Close() error  { return nil }
 func (s *mockStmt) NumInput() int { return -1 }
 func (s *mockStmt) Exec(args []driver.Value) (driver.Result, error) {
 	return &mockResult{}, nil
