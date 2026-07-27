@@ -56,7 +56,11 @@
 			</details>
 		</div>
 		{{else}}
-		<p class="muted card">Noch keine Bemessungsgrundlage vorhanden.</p>
+		<div class="card empty empty--slim">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="16.5" r="3.8"/><circle cx="18" cy="18" r="2.4"/><path d="M11.3 16.5h4.3"/><path d="M4.3 12.7V6.5h5.9l2 6.2"/></svg>
+			<span class="empty__title">Noch keine Bemessungsgrundlage.</span>
+			<span class="empty__sub">Lege unten die erste Grundlage an.</span>
+		</div>
 		{{end}}
 	</div>
 
