@@ -703,9 +703,13 @@ em { font-style: normal; color: var(--muted); }
    keeps its 2px weight. */
 .spark { display: block; width: 100%; height: 28px; margin-top: .5rem; color: var(--kpi-accent, var(--data)); overflow: visible; }
 .spark__area { fill: currentColor; opacity: .13; stroke: none; }
-.barpair { display: block; width: 100%; height: 30px; margin-top: .5rem; overflow: visible; }
-.barpair .bp--prev { fill: color-mix(in srgb, var(--kpi-accent, var(--data)) 38%, var(--surface-2)); }
-.barpair .bp--cur { fill: var(--kpi-accent, var(--data)); }
+.barpair { display: flex; gap: .7rem; align-items: flex-end; margin-top: .5rem; }
+.barpair__col { display: flex; flex-direction: column; align-items: center; gap: .12rem; }
+.barpair__v { font-size: .62rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.barpair__bar { width: 14px; height: 28px; overflow: visible; }
+.barpair__yr { font-size: .58rem; color: var(--muted); font-weight: 700; }
+.bp--prev { fill: color-mix(in srgb, var(--kpi-accent, var(--data)) 38%, var(--surface-2)); }
+.bp--cur { fill: var(--kpi-accent, var(--data)); }
 .spark__line { fill: none; stroke: currentColor; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Horizontal bar chart. Rendered as inline SVG so bar widths ride on SVG

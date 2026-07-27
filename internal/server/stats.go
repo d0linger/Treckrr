@@ -11,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"treckrr/internal/models"
+	"treckrr/internal/web"
 )
 
 // sparkView holds SVG polygon/polyline point strings for a tile's trend
@@ -59,10 +60,11 @@ func makeSpark(vals []decimal.Decimal) *sparkView {
 // style is needed.
 type barPair struct {
 	PrevH, PrevY, CurH, CurY string
+	PrevVal, CurVal          string // formatted labels (money / hours)
 	PrevYear, CurYear        int
 }
 
-func makeBarPair(prev, cur decimal.Decimal, prevYear, curYear int) *barPair {
+func makeBarPair(prev, cur decimal.Decimal, prevYear, curYear int, fmtVal func(decimal.Decimal) string) *barPair {
 	pf, _ := prev.Float64()
 	cf, _ := cur.Float64()
 	max := math.Max(pf, cf)
@@ -76,6 +78,7 @@ func makeBarPair(prev, cur decimal.Decimal, prevYear, curYear int) *barPair {
 	return &barPair{
 		PrevH: f(ph), PrevY: f(base - ph),
 		CurH: f(ch), CurY: f(base - ch),
+		PrevVal: fmtVal(prev), CurVal: fmtVal(cur),
 		PrevYear: prevYear, CurYear: curYear,
 	}
 }
@@ -367,8 +370,8 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		data["PrevYear"] = prev.Year
 		data["PrevCost"] = pc
 		data["PrevHours"] = ph
-		data["RevPair"] = makeBarPair(pc, totalCost, prev.Year, year.Year)
-		data["HoursPair"] = makeBarPair(ph, totalHours, prev.Year, year.Year)
+		data["RevPair"] = makeBarPair(pc, totalCost, prev.Year, year.Year, web.Money)
+		data["HoursPair"] = makeBarPair(ph, totalHours, prev.Year, year.Year, func(v decimal.Decimal) string { return web.Num(v) + " h" })
 		data["DiffCost"] = diff
 		// Sign as booleans: templates must not compare a decimal to a float.
 		data["DiffUp"] = diff.IsPositive()
