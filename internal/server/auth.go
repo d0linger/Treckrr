@@ -88,10 +88,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.setCookie(w, r, &http.Cookie{
-			Name:     pending2FACookie,
-			Value:    s.signPending2FA(user.ID),
-			HttpOnly: true,
-			MaxAge:   int(pending2FATTL.Seconds()),
+			Name:   pending2FACookie,
+			Value:  s.signPending2FA(user.ID),
+			MaxAge: int(pending2FATTL.Seconds()),
 		})
 		s.setFlash(w, r, "info", "Bitte den 6‑stelligen Code deiner Authenticator‑App eingeben.")
 		redirect(w, r, "/login")
@@ -199,10 +198,9 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 		return false
 	}
 	s.setCookie(w, r, &http.Cookie{
-		Name:     sessionCookie,
-		Value:    token,
-		HttpOnly: true,
-		MaxAge:   int(sessionTTL.Seconds()),
+		Name:   sessionCookie,
+		Value:  token,
+		MaxAge: int(sessionTTL.Seconds()),
 	})
 	_ = s.store.AddAudit(r.Context(), &user.ID, user.Username, "login", "auth", "", "", s.clientIP(r))
 	return true

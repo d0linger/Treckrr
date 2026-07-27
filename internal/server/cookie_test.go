@@ -15,7 +15,7 @@ func TestSetCookieAppliesDefaults(t *testing.T) {
 	rr := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 
-	s.setCookie(rr, r, &http.Cookie{Name: "treckrr_session", Value: "tok", HttpOnly: true, MaxAge: 3600})
+	s.setCookie(rr, r, &http.Cookie{Name: "treckrr_session", Value: "tok", MaxAge: 3600})
 
 	sc := rr.Header().Get("Set-Cookie")
 	if !strings.Contains(sc, "SameSite=Lax") {
