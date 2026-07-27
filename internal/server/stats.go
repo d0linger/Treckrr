@@ -21,10 +21,12 @@ type sparkView struct {
 }
 
 // makeSpark normalises a value series into an SVG sparkline. Returns nil for
-// fewer than two points (nothing to trend).
+// fewer than three points — two years is a single straight segment that adds
+// nothing the delta chip doesn't, so the KPI falls back to a prev-vs-current
+// bar pair (makeBarPair) instead.
 func makeSpark(vals []decimal.Decimal) *sparkView {
 	n := len(vals)
-	if n < 2 {
+	if n < 3 {
 		return nil
 	}
 	fs := make([]float64, n)
@@ -49,6 +51,33 @@ func makeSpark(vals []decimal.Decimal) *sparkView {
 	}
 	line := b.String()
 	return &sparkView{Line: line, Area: line + " 100.0,32 0.0,32"}
+}
+
+// barPair is a two-bar "previous vs current" mini chart for a KPI tile, shown
+// when there aren't yet enough years for a trend line. Geometry is precomputed
+// (SVG viewBox 0 0 40 34, bars grow up from y=32) so no CSP-blocked inline
+// style is needed.
+type barPair struct {
+	PrevH, PrevY, CurH, CurY string
+	PrevYear, CurYear        int
+}
+
+func makeBarPair(prev, cur decimal.Decimal, prevYear, curYear int) *barPair {
+	pf, _ := prev.Float64()
+	cf, _ := cur.Float64()
+	max := math.Max(pf, cf)
+	if max <= 0 {
+		max = 1
+	}
+	const base, maxH = 32.0, 28.0
+	ph := math.Max(2, pf/max*maxH)
+	ch := math.Max(2, cf/max*maxH)
+	f := func(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
+	return &barPair{
+		PrevH: f(ph), PrevY: f(base - ph),
+		CurH: f(ch), CurY: f(base - ch),
+		PrevYear: prevYear, CurYear: curYear,
+	}
 }
 
 // aggRow is one aggregated statistic line (used for KPI lists and bar charts).
@@ -318,6 +347,8 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		data["PrevYear"] = prev.Year
 		data["PrevCost"] = pc
 		data["PrevHours"] = ph
+		data["RevPair"] = makeBarPair(pc, totalCost, prev.Year, year.Year)
+		data["HoursPair"] = makeBarPair(ph, totalHours, prev.Year, year.Year)
 		data["DiffCost"] = diff
 		// Sign as booleans: templates must not compare a decimal to a float.
 		data["DiffUp"] = diff.IsPositive()
