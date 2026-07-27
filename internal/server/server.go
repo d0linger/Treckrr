@@ -239,10 +239,9 @@ func (s *Server) currentUser(r *http.Request) *models.User {
 func (s *Server) refreshSessionCookie(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
 		s.setCookie(w, r, &http.Cookie{
-			Name:     sessionCookie,
-			Value:    c.Value,
-			HttpOnly: true,
-			MaxAge:   int(sessionTTL.Seconds()),
+			Name:   sessionCookie,
+			Value:  c.Value,
+			MaxAge: int(sessionTTL.Seconds()),
 		})
 	}
 }
@@ -311,11 +310,15 @@ func staticServer() http.Handler {
 }
 
 // setCookie wraps http.SetCookie to apply consistent security defaults (Secure,
-// SameSite).
+// HttpOnly, SameSite).
 func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, c *http.Cookie) { //nosec G124
 	if c.Path == "" {
 		c.Path = "/"
 	}
+	// Default every cookie to HttpOnly; no client-side script reads a cookie
+	// (theme uses localStorage, CSRF a meta tag, the rest are server-side), so
+	// enforcing it centrally means a future cookie cannot accidentally omit it.
+	c.HttpOnly = true
 	// A cookie literal that omits the SameSite field carries the zero value (0),
 	// NOT http.SameSiteDefaultMode (1). Default the unset case to Lax so the
 	// attribute is actually written to the Set-Cookie header.

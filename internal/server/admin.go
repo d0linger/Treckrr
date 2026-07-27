@@ -4,8 +4,17 @@ import (
 	"net/http"
 	"net/mail"
 	"strings"
+	"unicode/utf8"
 
 	"treckrr/internal/models"
+)
+
+// Input-length ceilings on the admin user endpoints (defense against oversized-
+// payload abuse). Username is bounded by code points to match the "Zeichen"
+// wording; e-mail by octets, the natural unit for RFC 5321's 254-char limit.
+const (
+	maxUsernameLen = 100
+	maxEmailLen    = 254
 )
 
 // validRole reports whether the given role string is one of the known roles.
@@ -70,6 +79,11 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if username == "" {
 		s.setFlash(w, r, "error", "Benutzername ist erforderlich.")
+		redirect(w, r, "/admin/users")
+		return
+	}
+	if utf8.RuneCountInString(username) > maxUsernameLen {
+		s.setFlash(w, r, "error", "Benutzername darf höchstens 100 Zeichen lang sein.")
 		redirect(w, r, "/admin/users")
 		return
 	}
@@ -174,6 +188,19 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request) {
 	email := trimmed(r, "email")
 	if username == "" {
 		s.setFlash(w, r, "error", "Benutzername darf nicht leer sein.")
+		redirect(w, r, "/admin/users")
+		return
+	}
+	// Bound input size on this admin endpoint (defense against oversized-payload
+	// abuse); the username column and RFC 5321's 254-char address limit are the
+	// natural ceilings.
+	if utf8.RuneCountInString(username) > maxUsernameLen {
+		s.setFlash(w, r, "error", "Benutzername darf höchstens 100 Zeichen lang sein.")
+		redirect(w, r, "/admin/users")
+		return
+	}
+	if len(email) > maxEmailLen {
+		s.setFlash(w, r, "error", "E‑Mail‑Adresse darf höchstens 254 Zeichen lang sein.")
 		redirect(w, r, "/admin/users")
 		return
 	}
