@@ -99,6 +99,13 @@
 	--glass: rgba(15, 20, 17, .62);
 	--glass-border: rgba(255, 255, 255, .08);
 	--btn-glow: rgba(76, 157, 115, .30);
+	/* Chart-mark tokens must be redeclared here too: forcing dark via the theme
+	   toggle on a light system does not match the prefers-dark media query, so
+	   without these the bars/tracks/sparklines fall back to light values. */
+	--data: #52b184;
+	--data-track: #26302a;
+	--pay: #52b184;
+	--owe: #e0805f;
 }
 
 * { box-sizing: border-box; }
