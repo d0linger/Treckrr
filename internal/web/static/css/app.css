@@ -144,8 +144,17 @@ body {
 	background-image: var(--glow);
 	background-repeat: no-repeat;
 	background-attachment: fixed;
+}
+/* Reserve space for the fixed bottom tab bar — only on pages that render it
+   (authenticated). Without this scope, the login/offline pages (no tab bar) get
+   an extra 72px below a 100dvh container and show a phantom vertical scrollbar. */
+body.has-nav {
 	padding-bottom: calc(72px + env(safe-area-inset-bottom));
 }
+/* Full-height, self-centering pages without the nav (login, offline) provide
+   their own padding via .auth, so drop the .main gutter — otherwise it stacks
+   on top of a 100dvh child and forces a phantom scrollbar at every size. */
+body:not(.has-nav) .main { padding: 0; }
 
 /* The off-canvas side drawer is fixed and parked just off the right edge when
    closed. On iOS Safari a fixed element beyond the viewport becomes pannable,
