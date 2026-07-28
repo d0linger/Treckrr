@@ -1,17 +1,21 @@
 {{define "content"}}
 <div class="auth">
-	<div class="auth__card card">
-		<div class="auth__brand">
-			<img src="/static/icons/favicon.svg" alt="" width="48" height="48">
-			<h1>Treckrr</h1>
-			<p class="muted">Maschinen- &amp; Traktorkosten-Abrechnung</p>
-		</div>
+	<div class="auth__brand">
+		<span class="auth__logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#m-traktor"/></svg></span>
+		<h1>Treckrr</h1>
+		<p class="auth__kick">Maschinen · Abrechnung</p>
+	</div>
 
+	<div class="auth__card card">
 		{{if .ShowTotp}}
 		{{/* One field for both factors (the server accepts either). A link toggles
 		     the input between authenticator code (numeric, 6 digits) and backup
 		     code (alphanumeric). Progressive: without JS it stays a plain field
 		     that still accepts both. */}}
+		<div class="auth__head">
+			<h2>Zwei‑Faktor</h2>
+			<p class="muted">Bestätige die Anmeldung mit deinem zweiten Faktor.</p>
+		</div>
 		<form method="post" action="/login/2fa" class="form">
 			<label class="field">
 				<span data-2fa-label>Zwei‑Faktor‑Code</span>
@@ -28,6 +32,10 @@
 			<p class="center"><a class="link" href="/login?cancel=1">Abbrechen</a></p>
 		</form>
 		{{else}}
+		<div class="auth__head">
+			<h2>Anmelden</h2>
+			<p class="muted">Melde dich an, um Buchungen und Abrechnungen zu verwalten.</p>
+		</div>
 		<form method="post" action="/login" class="form">
 			<label class="field">
 				<span>Benutzername</span>
@@ -39,6 +47,7 @@
 			</label>
 			<button class="btn btn--primary btn--block" type="submit">Anmelden</button>
 		</form>
+		<div class="auth__or">oder</div>
 		<div class="auth__alt">
 			<button id="passkey-login" type="button" class="btn btn--ghost btn--block">{{template "ic-key"}} Mit Passkey anmelden</button>
 		</div>

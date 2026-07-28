@@ -29,8 +29,8 @@
 	// load — and a new one on the next open). The Traktor anchors a first-ever
 	// visit; a new session never repeats the previous session's mark.
 	(function () {
-		var use = document.querySelector(".appbar__brand use");
-		if (!use) return;
+		var uses = document.querySelectorAll(".appbar__brand use, .auth__logo use");
+		if (!uses.length) return;
 		var MARKS = [
 			"m-traktor", "m-anhaenger", "m-kipper", "m-pritsche", "m-rueckewagen",
 			"m-ladewagen", "m-mulcher", "m-quad", "m-guellefass", "m-frontlader",
@@ -53,7 +53,7 @@
 			try { sessionStorage.setItem(SKEY, pick); } catch (e) {}
 			try { localStorage.setItem(LKEY, pick); } catch (e) {}
 		}
-		use.setAttribute("href", "#" + pick);
+		uses.forEach(function (u) { u.setAttribute("href", "#" + pick); });
 	})();
 
 	// Live text search: filter items matching [data-search]'s target selector.
