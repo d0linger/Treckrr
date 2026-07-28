@@ -1227,16 +1227,16 @@ em { font-style: normal; color: var(--muted); }
 .auth { flex-direction: column; gap: 0; }
 .auth__brand { margin-bottom: 1.4rem; }
 .auth__logo { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center;
-	background: var(--brand-grad); color: #fff; box-shadow: 0 14px 30px -14px rgba(17,86,56,.7); margin-bottom: .4rem; }
-:root[data-theme="dark"] .auth__logo { color: var(--on-primary); }
+	background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 14px 30px -14px rgba(17,86,56,.7); margin-bottom: .4rem; }
 .auth__logo svg { width: 34px; height: 34px; display: block; }
 .auth__brand h1 { font-size: 1.9rem; color: var(--primary); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .auth__brand h1 { color: var(--text); } }
 :root[data-theme="dark"] .auth__brand h1 { color: var(--text); }
 .auth__kick { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .2em; font-size: .7rem; font-weight: 700; color: var(--muted); margin: 0; }
 .auth__head { margin-bottom: .2rem; }
 .auth__head h2 { font-size: 1.55rem; letter-spacing: -.01em; }
 .auth__head p { margin: .3rem 0 0; font-size: .9rem; }
 .auth .field > span { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .04em; font-size: .72rem; font-weight: 700; color: var(--muted); }
-.auth__or { display: flex; align-items: center; gap: 12px; margin: .2rem 0 -.2rem; color: var(--faint);
+.auth__or { display: flex; align-items: center; gap: 12px; margin: .2rem 0 -.2rem; color: var(--muted);
 	font-family: var(--font-mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; }
 .auth__or::before, .auth__or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
