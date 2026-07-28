@@ -48,7 +48,7 @@
 	--fs-lg: 1.25rem; --fs-xl: 1.5rem; --fs-2xl: 1.9rem;
 	--shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 4px 16px rgba(0, 0, 0, .05);
 	/* Depth/modernization (light): gradient cards, ambient glow, gradient buttons, glass bars. */
-	--card-grad: linear-gradient(180deg, #ffffff 0%, #fbfcfb 100%);
+	--card-grad: var(--surface); /* flat card surface (was a subtle vertical gradient) */
 	--card-hairline: rgba(20, 40, 30, .07);
 	--card-shadow: 0 1px 2px rgba(24, 45, 35, .06), 0 12px 28px rgba(24, 45, 35, .09);
 	--glow: radial-gradient(120% 70% at 50% -8%, rgba(47, 111, 79, .09), transparent 60%);
@@ -85,7 +85,7 @@
 		--pay: #52b184;
 		--owe: #e0805f;
 		--shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .35);
-		--card-grad: linear-gradient(180deg, #1c261f 0%, #141b16 100%);
+		--card-grad: var(--surface); /* flat card surface (was a subtle vertical gradient) */
 		--card-hairline: rgba(255, 255, 255, .06);
 		--card-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 30px rgba(0, 0, 0, .28);
 		--glow: radial-gradient(120% 70% at 50% -8%, rgba(76, 157, 115, .16), transparent 60%);
@@ -111,7 +111,7 @@
 	--accent-text: #e0a640;
 	--focus: #5b9bff;
 	--shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .35);
-	--card-grad: linear-gradient(180deg, #1c261f 0%, #141b16 100%);
+	--card-grad: var(--surface); /* flat card surface (was a subtle vertical gradient) */
 	--card-hairline: rgba(255, 255, 255, .06);
 	--card-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 30px rgba(0, 0, 0, .28);
 	--glow: radial-gradient(120% 70% at 50% -8%, rgba(76, 157, 115, .16), transparent 60%);

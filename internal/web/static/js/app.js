@@ -24,38 +24,45 @@
 		});
 	})();
 
-	// Brand mark: pick one farm-machine symbol per app session (stable while the
-	// user navigates — this is a server-rendered app, so every page is a fresh
-	// load — and a new one on the next open). The Traktor anchors a first-ever
-	// visit; a new session never repeats the previous session's mark.
+	// Brand mark: pick one farm-machine symbol and keep it — stable across
+	// refreshes and in-app navigation. It only changes when the stored mark is
+	// missing (e.g. the browser cache / site data was cleared), where a fresh
+	// random machine is chosen. The browser-tab favicon is kept in sync with it.
 	(function () {
 		var uses = document.querySelectorAll(".appbar__brand use, .auth__logo use");
-		if (!uses.length) return;
 		var MARKS = [
 			"m-traktor", "m-anhaenger", "m-kipper", "m-pritsche", "m-rueckewagen",
 			"m-ladewagen", "m-mulcher", "m-quad", "m-guellefass", "m-frontlader",
 			"m-miststreuer", "m-ballenpresse", "m-feldspritze", "m-saemaschine",
 			"m-teleskoplader", "m-kreiselschwader"
 		];
-		var LKEY = "treckrr-mark"; // previous mark (localStorage) so a re-roll never repeats
-		// Re-roll on every page load, so a refresh always shows a new machine (and
-		// bfcache restores too). No navigation-type sniffing — every load rolls.
-		// The very first visit anchors on the Traktor.
-		function roll() {
-			var prev = null;
-			try { prev = localStorage.getItem(LKEY); } catch (e) { /* storage unavailable */ }
-			var pick;
-			if (prev == null) {
-				pick = "m-traktor"; // recognizable anchor on the very first visit
-			} else {
-				do { pick = MARKS[Math.floor(Math.random() * MARKS.length)]; }
-				while (pick === prev && MARKS.length > 1);
-			}
+		var LKEY = "treckrr-mark";
+		var pick = null;
+		try { pick = localStorage.getItem(LKEY); } catch (e) { /* storage unavailable */ }
+		if (!pick || MARKS.indexOf(pick) < 0) {
+			pick = MARKS[Math.floor(Math.random() * MARKS.length)];
 			try { localStorage.setItem(LKEY, pick); } catch (e) {}
-			uses.forEach(function (u) { u.setAttribute("href", "#" + pick); });
 		}
-		roll();
-		window.addEventListener("pageshow", function (e) { if (e.persisted) roll(); });
+		uses.forEach(function (u) { u.setAttribute("href", "#" + pick); });
+
+		// Favicon: render the same machine as a green tile with white lines, so the
+		// browser tab matches the in-app logo. Replaces the <link rel="icon"> node
+		// (forces browsers to re-read it). data: URI is allowed by img-src.
+		try {
+			var sym = document.getElementById(pick);
+			if (sym) {
+				var fav = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+					+ '<rect width="24" height="24" rx="6" fill="#115638"/>'
+					+ '<g fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+					+ sym.innerHTML + '</g></svg>';
+				var href = "data:image/svg+xml," + encodeURIComponent(fav);
+				var old = document.querySelector('link[rel="icon"]');
+				if (old && old.parentNode) old.parentNode.removeChild(old);
+				var link = document.createElement("link");
+				link.rel = "icon"; link.type = "image/svg+xml"; link.href = href;
+				document.head.appendChild(link);
+			}
+		} catch (e) { /* keep the static favicon */ }
 	})();
 
 	// Live text search: filter items matching [data-search]'s target selector.
