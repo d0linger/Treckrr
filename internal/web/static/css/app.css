@@ -718,7 +718,7 @@ em { font-style: normal; color: var(--muted); }
 .kpi--paid { --kpi-accent: var(--primary); }
 .kpi--open { --kpi-accent: var(--accent); }
 .kpi__label { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
-.kpi__value { font-size: clamp(1.3rem, 3.4vw, 1.6rem); font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: .12rem; }
+.kpi__value { font-size: clamp(1rem, 4.2vw, 1.5rem); font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: .12rem; white-space: nowrap; }
 .delta { display: inline-flex; align-items: center; gap: .22rem; align-self: flex-start; font-size: .72rem; font-weight: 700;
 	margin-top: .35rem; padding: .08rem .42rem; border-radius: 999px; }
 .delta--up { color: var(--data); background: color-mix(in srgb, var(--data) 15%, transparent); }
@@ -1194,8 +1194,8 @@ em { font-style: normal; color: var(--muted); }
 /* Card list rows get a subtle left accent stripe (dashboard neighbours, etc.). */
 .list__row.card { position: relative; overflow: hidden; }
 .list__row.card::before {
-	content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-	background: color-mix(in srgb, var(--primary) 55%, transparent);
+	content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+	background: var(--primary);
 }
 
 /* Eyebrow / KPI labels in the mono face, uppercase — the "technical" tag look. */
