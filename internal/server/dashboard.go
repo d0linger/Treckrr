@@ -2,7 +2,6 @@ package server
 
 import (
 	"net/http"
-	"unicode/utf8"
 
 	"github.com/shopspring/decimal"
 
@@ -214,13 +213,11 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborReturnURL(r, id))
 		return
 	}
-	if utf8.RuneCountInString(name) > maxNeighborNameLen {
-		s.setFlash(w, r, "error", "Name darf höchstens 100 Zeichen lang sein.")
+	if s.tooLong(w, r, "Name", name, maxNameLen) {
 		redirect(w, r, neighborReturnURL(r, id))
 		return
 	}
-	if utf8.RuneCountInString(note) > maxNeighborNoteLen {
-		s.setFlash(w, r, "error", "Notiz darf höchstens 500 Zeichen lang sein.")
+	if s.tooLong(w, r, "Notiz", note, maxNoteLen) {
 		redirect(w, r, neighborReturnURL(r, id))
 		return
 	}

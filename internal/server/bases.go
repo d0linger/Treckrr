@@ -55,6 +55,10 @@ func (s *Server) handleBaseCreate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/bases")
 		return
 	}
+	if s.tooLong(w, r, "Name", name, maxNameLen) {
+		redirect(w, r, "/bases")
+		return
+	}
 	if name == "" {
 		name = "Bemessungsgrundlage " + strconv.Itoa(year)
 	}
@@ -92,6 +96,10 @@ func (s *Server) handleBaseUpdate(w http.ResponseWriter, r *http.Request) {
 	year := formInt(r, "year")
 	if name == "" || year < 1900 || year > 3000 {
 		s.setFlash(w, r, "error", "Bitte Name und gültiges Jahr angeben.")
+		redirect(w, r, "/bases")
+		return
+	}
+	if s.tooLong(w, r, "Name", name, maxNameLen) {
 		redirect(w, r, "/bases")
 		return
 	}
