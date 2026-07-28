@@ -3,9 +3,17 @@ package server
 import (
 	"errors"
 	"net/http"
+	"unicode/utf8"
 
 	"treckrr/internal/models"
 	"treckrr/internal/store"
+)
+
+// Input-length ceilings for neighbor fields (code points, matching the
+// "Zeichen" wording). Defense against oversized-payload abuse.
+const (
+	maxNeighborNameLen = 100
+	maxNeighborNoteLen = 500
 )
 
 // neighborStat is a neighbor with aggregate counts for the central list.
@@ -54,7 +62,18 @@ func (s *Server) handleNeighborManageCreate(w http.ResponseWriter, r *http.Reque
 		redirect(w, r, "/neighbors")
 		return
 	}
-	id, err := s.store.CreateNeighbor(r.Context(), name, trimmed(r, "note"))
+	if utf8.RuneCountInString(name) > maxNeighborNameLen {
+		s.setFlash(w, r, "error", "Name darf höchstens 100 Zeichen lang sein.")
+		redirect(w, r, "/neighbors")
+		return
+	}
+	note := trimmed(r, "note")
+	if utf8.RuneCountInString(note) > maxNeighborNoteLen {
+		s.setFlash(w, r, "error", "Notiz darf höchstens 500 Zeichen lang sein.")
+		redirect(w, r, "/neighbors")
+		return
+	}
+	id, err := s.store.CreateNeighbor(r.Context(), name, note)
 	if err != nil {
 		s.setFlash(w, r, "error", "Anlegen fehlgeschlagen (Name bereits vergeben?).")
 	} else {
