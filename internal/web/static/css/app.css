@@ -1224,7 +1224,7 @@ em { font-style: normal; color: var(--muted); }
 
 /* Login — brand lockup above the card, gradient logo tile (rotating machine
    mark), mono kicker + field labels, and an "oder" divider before passkey. */
-.auth { flex-direction: column; gap: 0; }
+.auth { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; }
 .auth__brand { margin-bottom: 1.4rem; }
 .auth__logo { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center;
 	background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 14px 30px -14px rgba(17,86,56,.7); margin-bottom: .4rem; }
