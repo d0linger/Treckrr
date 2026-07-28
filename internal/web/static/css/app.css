@@ -1,13 +1,29 @@
 /* Treckrr — mobile-first PWA styles. All assets served locally. */
+
+/* Self-hosted brand typefaces (served same-origin, allowed by the CSP).
+   Manrope = display/headings & KPI values, Hanken Grotesk = body text,
+   JetBrains Mono = caps labels & one-time codes. */
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:400;font-display:swap;src:url('/static/fonts/hanken-400.woff2') format('woff2');}
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:500;font-display:swap;src:url('/static/fonts/hanken-500.woff2') format('woff2');}
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:600;font-display:swap;src:url('/static/fonts/hanken-600.woff2') format('woff2');}
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/hanken-700.woff2') format('woff2');}
+@font-face{font-family:'Manrope';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/manrope-700.woff2') format('woff2');}
+@font-face{font-family:'Manrope';font-style:normal;font-weight:800;font-display:swap;src:url('/static/fonts/manrope-800.woff2') format('woff2');}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:500;font-display:swap;src:url('/static/fonts/jetbrainsmono-500.woff2') format('woff2');}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/jetbrainsmono-700.woff2') format('woff2');}
+
 :root {
-	--bg: #f4f6f4;
+	--font-body: 'Hanken Grotesk', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--font-display: 'Manrope', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	--bg: #eef2ea;
 	--surface: #ffffff;
-	--surface-2: #eef1ee;
-	--text: #1c231e;
-	--muted: #666f68; /* was #6b756d — nudged darker to pass 4.5:1 on the page bg */
-	--border: #dbe0db;
-	--primary: #2f6f4f;
-	--primary-strong: #245840;
+	--surface-2: #f2f4ef;
+	--text: #191c1a;
+	--muted: #5b655d; /* Agro-Modernist on-surface-variant; passes 4.5:1 on the bg */
+	--border: #dfe4dd;
+	--primary: #115638;        /* Agro-Modernist deep "Treckrr green" */
+	--primary-strong: #2f6f4f; /* mid green — the lighter end of hero/button gradients */
 	--primary-tint: #e3efe8;
 	--danger: #b4442f;
 	--danger-tint: #f7e3df;
@@ -25,7 +41,7 @@
 	--pay: #2f8457;
 	--owe: #c05635;
 	--radius: 14px;
-	--radius-sm: 9px;
+	--radius-sm: 11px;
 	/* Modular type scale (theme-independent) — one system instead of ~15 ad-hoc sizes. */
 	--fs-xs: .75rem; --fs-sm: .8125rem; --fs-base: 1rem; --fs-md: 1.0625rem;
 	--fs-lg: 1.25rem; --fs-xl: 1.5rem; --fs-2xl: 1.9rem;
@@ -35,9 +51,9 @@
 	--card-hairline: rgba(20, 40, 30, .07);
 	--card-shadow: 0 1px 2px rgba(24, 45, 35, .06), 0 12px 28px rgba(24, 45, 35, .09);
 	--glow: radial-gradient(120% 70% at 50% -8%, rgba(47, 111, 79, .09), transparent 60%);
-	--glass: rgba(244, 246, 244, .72);
+	--glass: rgba(238, 242, 234, .72);
 	--glass-border: rgba(20, 40, 30, .08);
-	--btn-glow: rgba(47, 111, 79, .20);
+	--btn-glow: rgba(17, 86, 56, .22);
 	--brand-grad: linear-gradient(135deg, var(--primary), var(--primary-strong));
 	--tap: 44px;
 	--maxw: 720px;
@@ -48,12 +64,12 @@
    user forced light), and always when the user forced dark. */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme="light"]) {
-		--bg: #0f1411;
-		--surface: #182019;
-		--surface-2: #202a22;
-		--text: #e7ede8;
-		--muted: #9aa89e;
-		--border: #2a352c;
+		--bg: #0c1511;
+		--surface: #19221d;
+		--surface-2: #232c28;
+		--text: #dbe5de;
+		--muted: #a2ada4;
+		--border: #2b332d;
 		--primary: #4c9d73;
 		--primary-strong: #3c8460;
 		--primary-tint: #1b2a22;
@@ -71,18 +87,18 @@
 		--card-hairline: rgba(255, 255, 255, .06);
 		--card-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 30px rgba(0, 0, 0, .28);
 		--glow: radial-gradient(120% 70% at 50% -8%, rgba(76, 157, 115, .16), transparent 60%);
-		--glass: rgba(15, 20, 17, .62);
+		--glass: rgba(12, 21, 17, .62);
 		--glass-border: rgba(255, 255, 255, .08);
 		--btn-glow: rgba(76, 157, 115, .30);
 	}
 }
 :root[data-theme="dark"] {
-	--bg: #0f1411;
-	--surface: #182019;
-	--surface-2: #202a22;
-	--text: #e7ede8;
-	--muted: #9aa89e;
-	--border: #2a352c;
+	--bg: #0c1511;
+	--surface: #19221d;
+	--surface-2: #232c28;
+	--text: #dbe5de;
+	--muted: #a2ada4;
+	--border: #2b332d;
 	--primary: #4c9d73;
 	--primary-strong: #3c8460;
 	--primary-tint: #1b2a22;
@@ -96,7 +112,7 @@
 	--card-hairline: rgba(255, 255, 255, .06);
 	--card-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 30px rgba(0, 0, 0, .28);
 	--glow: radial-gradient(120% 70% at 50% -8%, rgba(76, 157, 115, .16), transparent 60%);
-	--glass: rgba(15, 20, 17, .62);
+	--glass: rgba(12, 21, 17, .62);
 	--glass-border: rgba(255, 255, 255, .08);
 	--btn-glow: rgba(76, 157, 115, .30);
 	/* Chart-mark tokens must be redeclared here too: forcing dark via the theme
@@ -115,7 +131,7 @@ html, body {
 	padding: 0;
 	background: var(--bg);
 	color: var(--text);
-	font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+	font-family: var(--font-body);
 	line-height: 1.45;
 	-webkit-text-size-adjust: 100%;
 }
@@ -152,11 +168,16 @@ a { color: var(--primary); text-decoration: none; }
 /* Backup code: full format is four 4-char groups (e.g. N6YD-DBNN-UPXT-PB67 =
    19 chars). Monospace keeps every glyph the same width so the whole code fits
    at 390px regardless of which letters it contains. */
-.otp2 { width: 100%; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+.otp2 { width: 100%; text-align: center; font-family: var(--font-mono);
 	font-size: .95rem; font-weight: 700; letter-spacing: .02em; padding: .72rem .35rem; text-transform: uppercase;
 	border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); }
 .otp2::placeholder { letter-spacing: .02em; color: color-mix(in srgb, var(--muted) 70%, transparent); font-weight: 700; }
 h1, h2, h3 { margin: 0; }
+/* Display face on headings and the big numeric readouts. */
+h1, h2, h3, .section-title, .summary-card__value, .summary-card__label,
+.appbar__title, .kpi__value, .kpi__label, .barpair__v, .stat__value {
+	font-family: var(--font-display); letter-spacing: -.01em;
+}
 .muted { color: var(--muted); font-size: .9rem; }
 .small { font-size: .78rem; }
 em { font-style: normal; color: var(--muted); }
@@ -370,8 +391,8 @@ em { font-style: normal; color: var(--muted); }
 	min-height: var(--tap);
 	padding: .6rem 1.1rem;
 	font-size: 1rem;
-	font-weight: 600;
-	font-family: inherit;
+	font-weight: 700;
+	font-family: var(--font-display);
 	color: var(--text);
 	background: var(--surface-2);
 	border: 1px solid transparent;
