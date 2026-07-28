@@ -99,6 +99,13 @@
 	--glass: rgba(15, 20, 17, .62);
 	--glass-border: rgba(255, 255, 255, .08);
 	--btn-glow: rgba(76, 157, 115, .30);
+	/* Chart-mark tokens must be redeclared here too: forcing dark via the theme
+	   toggle on a light system does not match the prefers-dark media query, so
+	   without these the bars/tracks/sparklines fall back to light values. */
+	--data: #52b184;
+	--data-track: #26302a;
+	--pay: #52b184;
+	--owe: #e0805f;
 }
 
 * { box-sizing: border-box; }
@@ -696,10 +703,20 @@ em { font-style: normal; color: var(--muted); }
    keeps its 2px weight. */
 .spark { display: block; width: 100%; height: 28px; margin-top: .5rem; color: var(--kpi-accent, var(--data)); overflow: visible; }
 .spark__area { fill: currentColor; opacity: .13; stroke: none; }
-.barpair { display: block; width: 100%; height: 30px; margin-top: .5rem; overflow: visible; }
-.barpair .bp--prev { fill: color-mix(in srgb, var(--kpi-accent, var(--data)) 38%, var(--surface-2)); }
-.barpair .bp--cur { fill: var(--kpi-accent, var(--data)); }
+.barpair { display: flex; gap: .7rem; align-items: flex-end; margin-top: .5rem; }
+.barpair__col { display: flex; flex-direction: column; align-items: center; gap: .12rem; }
+.barpair__v { font-size: .62rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.barpair__bar { width: 14px; height: 28px; overflow: visible; }
+.barpair__yr { font-size: .58rem; color: var(--muted); font-weight: 700; }
+.bp--prev { fill: color-mix(in srgb, var(--kpi-accent, var(--data)) 38%, var(--surface-2)); }
+.bp--cur { fill: var(--kpi-accent, var(--data)); }
 .spark__line { fill: none; stroke: currentColor; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+.spark__dot { fill: currentColor; pointer-events: none; }
+.spark__hit { fill: transparent; cursor: pointer; }
+.sparktip { position: fixed; z-index: 60; transform: translate(-50%, -100%); background: var(--text); color: var(--bg);
+	font-size: .66rem; font-weight: 800; padding: .15rem .42rem; border-radius: 6px; white-space: nowrap;
+	pointer-events: none; opacity: 0; transition: opacity .1s ease; box-shadow: 0 4px 12px rgba(0, 0, 0, .3); }
+.sparktip.is-on { opacity: 1; }
 
 /* Horizontal bar chart. Rendered as inline SVG so bar widths ride on SVG
    geometry attributes (CSP-safe) rather than a CSP-blocked inline style; the

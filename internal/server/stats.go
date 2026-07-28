@@ -11,20 +11,29 @@ import (
 	"github.com/shopspring/decimal"
 
 	"treckrr/internal/models"
+	"treckrr/internal/web"
 )
 
-// sparkView holds SVG polygon/polyline point strings for a tile's trend
-// sparkline (viewBox 0 0 100 32). Points ride on SVG attributes — CSP-safe.
+// sparkView holds the SVG geometry for a tile's trend sparkline (viewBox
+// 0 0 100 32). Everything rides on SVG attributes — CSP-safe. End marks the
+// current (last) year for the endpoint dot; Points carry per-year tooltip
+// labels and a full-height hit column for hover/tap.
 type sparkView struct {
-	Line string // polyline points
-	Area string // polygon points (line + baseline corners)
+	Line, Area string
+	EndX, EndY string
+	Points     []sparkPoint
+}
+
+type sparkPoint struct {
+	X, Y, Tip  string
+	HitX, HitW string // full-height hover/tap column around the point
 }
 
 // makeSpark normalises a value series into an SVG sparkline. Returns nil for
 // fewer than three points — two years is a single straight segment that adds
 // nothing the delta chip doesn't, so the KPI falls back to a prev-vs-current
-// bar pair (makeBarPair) instead.
-func makeSpark(vals []decimal.Decimal) *sparkView {
+// bar pair (makeBarPair). years/fmtVal build the per-point tooltip.
+func makeSpark(vals []decimal.Decimal, years []int, fmtVal func(decimal.Decimal) string) *sparkView {
 	n := len(vals)
 	if n < 3 {
 		return nil
@@ -37,7 +46,10 @@ func makeSpark(vals []decimal.Decimal) *sparkView {
 		lo, hi = math.Min(lo, f), math.Max(hi, f)
 	}
 	rng := hi - lo
+	half := 50.0 / float64(n-1)
 	var b strings.Builder
+	pts := make([]sparkPoint, n)
+	var lastX, lastY float64
 	for i, f := range fs {
 		x := float64(i) / float64(n-1) * 100
 		y := 15.5 // a flat (no-variance) series draws a centered line
@@ -48,9 +60,23 @@ func makeSpark(vals []decimal.Decimal) *sparkView {
 			b.WriteByte(' ')
 		}
 		fmt.Fprintf(&b, "%.1f,%.1f", x, y)
+		tip := ""
+		if i < len(years) {
+			tip = strconv.Itoa(years[i]) + " · " + fmtVal(vals[i])
+		}
+		hx := math.Max(0, x-half)
+		pts[i] = sparkPoint{
+			X: fmt.Sprintf("%.1f", x), Y: fmt.Sprintf("%.1f", y), Tip: tip,
+			HitX: fmt.Sprintf("%.1f", hx), HitW: fmt.Sprintf("%.1f", math.Min(100, x+half)-hx),
+		}
+		lastX, lastY = x, y
 	}
 	line := b.String()
-	return &sparkView{Line: line, Area: line + " 100.0,32 0.0,32"}
+	return &sparkView{
+		Line: line, Area: line + " 100.0,32 0.0,32",
+		EndX: fmt.Sprintf("%.1f", lastX), EndY: fmt.Sprintf("%.1f", lastY),
+		Points: pts,
+	}
 }
 
 // barPair is a two-bar "previous vs current" mini chart for a KPI tile, shown
@@ -59,10 +85,11 @@ func makeSpark(vals []decimal.Decimal) *sparkView {
 // style is needed.
 type barPair struct {
 	PrevH, PrevY, CurH, CurY string
+	PrevVal, CurVal          string // formatted labels (money / hours)
 	PrevYear, CurYear        int
 }
 
-func makeBarPair(prev, cur decimal.Decimal, prevYear, curYear int) *barPair {
+func makeBarPair(prev, cur decimal.Decimal, prevYear, curYear int, fmtVal func(decimal.Decimal) string) *barPair {
 	pf, _ := prev.Float64()
 	cf, _ := cur.Float64()
 	max := math.Max(pf, cf)
@@ -76,6 +103,7 @@ func makeBarPair(prev, cur decimal.Decimal, prevYear, curYear int) *barPair {
 	return &barPair{
 		PrevH: f(ph), PrevY: f(base - ph),
 		CurH: f(ch), CurY: f(base - ch),
+		PrevVal: fmtVal(prev), CurVal: fmtVal(cur),
 		PrevYear: prevYear, CurYear: curYear,
 	}
 }
@@ -317,14 +345,19 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	// Mini trend sparklines from the per-year series (decorative — a failure
 	// here simply omits them rather than failing the page).
 	var revSpark, hoursSpark, netSpark *sparkView
-	if totals, err := s.store.YearlyTotals(r.Context()); err == nil && len(totals) >= 2 {
+	if totals, err := s.store.YearlyTotals(r.Context()); err == nil && len(totals) >= 3 {
 		rev := make([]decimal.Decimal, len(totals))
 		hrs := make([]decimal.Decimal, len(totals))
 		net := make([]decimal.Decimal, len(totals))
+		years := make([]int, len(totals))
 		for i, t := range totals {
 			rev[i], hrs[i], net[i] = t.Cost, t.Hours, t.Cost.Add(t.Ledger)
+			years[i] = t.Year
 		}
-		revSpark, hoursSpark, netSpark = makeSpark(rev), makeSpark(hrs), makeSpark(net)
+		hoursFmt := func(v decimal.Decimal) string { return web.Num(v) + " h" }
+		revSpark = makeSpark(rev, years, web.Money)
+		hoursSpark = makeSpark(hrs, years, hoursFmt)
+		netSpark = makeSpark(net, years, web.Money)
 	}
 
 	data := s.newPage(w, r, "Statistik", "stats")
@@ -367,8 +400,8 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		data["PrevYear"] = prev.Year
 		data["PrevCost"] = pc
 		data["PrevHours"] = ph
-		data["RevPair"] = makeBarPair(pc, totalCost, prev.Year, year.Year)
-		data["HoursPair"] = makeBarPair(ph, totalHours, prev.Year, year.Year)
+		data["RevPair"] = makeBarPair(pc, totalCost, prev.Year, year.Year, web.Money)
+		data["HoursPair"] = makeBarPair(ph, totalHours, prev.Year, year.Year, func(v decimal.Decimal) string { return web.Num(v) + " h" })
 		data["DiffCost"] = diff
 		// Sign as booleans: templates must not compare a decimal to a float.
 		data["DiffUp"] = diff.IsPositive()

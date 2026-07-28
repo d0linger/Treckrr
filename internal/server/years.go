@@ -97,6 +97,10 @@ func (s *Server) handleYearCreate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/years")
 		return
 	}
+	if s.tooLong(w, r, "Bezeichnung", label, maxNameLen) {
+		redirect(w, r, "/years")
+		return
+	}
 	if label == "" {
 		label = "Abrechnung " + strconv.Itoa(year)
 	}
@@ -123,6 +127,10 @@ func (s *Server) handleYearUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	baseID := formInt64(r, "base_id")
 	label := trimmed(r, "label")
+	if s.tooLong(w, r, "Bezeichnung", label, maxNameLen) {
+		redirect(w, r, "/years")
+		return
+	}
 
 	// Changing the basis is only safe while no entries are booked, otherwise the
 	// booked tractor/machine references would point at a different basis.

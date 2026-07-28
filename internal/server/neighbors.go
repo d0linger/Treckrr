@@ -54,7 +54,16 @@ func (s *Server) handleNeighborManageCreate(w http.ResponseWriter, r *http.Reque
 		redirect(w, r, "/neighbors")
 		return
 	}
-	id, err := s.store.CreateNeighbor(r.Context(), name, trimmed(r, "note"))
+	if s.tooLong(w, r, "Name", name, maxNameLen) {
+		redirect(w, r, "/neighbors")
+		return
+	}
+	note := trimmed(r, "note")
+	if s.tooLong(w, r, "Notiz", note, maxNoteLen) {
+		redirect(w, r, "/neighbors")
+		return
+	}
+	id, err := s.store.CreateNeighbor(r.Context(), name, note)
 	if err != nil {
 		s.setFlash(w, r, "error", "Anlegen fehlgeschlagen (Name bereits vergeben?).")
 	} else {

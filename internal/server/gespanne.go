@@ -148,6 +148,10 @@ func (s *Server) handleGespannSave(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, gespanneURL(baseID))
 		return
 	}
+	if s.tooLong(w, r, "Name", name, maxNameLen) {
+		redirect(w, r, gespanneURL(baseID))
+		return
+	}
 	var err error
 	if id == 0 {
 		var newID int64

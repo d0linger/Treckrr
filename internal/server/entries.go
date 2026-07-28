@@ -335,6 +335,13 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	if err != nil {
 		entryDate = time.Now()
 	}
+	if msg := lenError("Tätigkeit", taskLabel, maxNameLen); msg != "" {
+		return nil, nil, msg
+	}
+	note := trimmed(r, "note")
+	if msg := lenError("Notiz", note, maxNoteLen); msg != "" {
+		return nil, nil, msg
+	}
 	rate := calc.GespannRate(*tractor, *load, machines)
 	names := make([]string, 0, len(machines))
 	ids := make([]int64, 0, len(machines))
@@ -354,7 +361,7 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 		Hours:         hours,
 		HourlyRate:    rate,
 		Cost:          calc.Cost(hours, rate),
-		Note:          trimmed(r, "note"),
+		Note:          note,
 	}, ids, ""
 }
 
@@ -434,6 +441,10 @@ func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 	}
 	void := r.FormValue("voided") == "true"
 	reason := trimmed(r, "reason")
+	if s.tooLong(w, r, "Grund", reason, maxNoteLen) {
+		redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
+		return
+	}
 	nb := s.neighborName(r, entry.NeighborID)
 	if err := s.store.SetEntryVoided(r.Context(), id, void, reason); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
@@ -460,6 +471,9 @@ func ledgerFormValues(r *http.Request) (amount decimal.Decimal, description stri
 		amount = amount.Neg() // I owe the neighbor → reduces the balance
 	}
 	description = trimmed(r, "description")
+	if msg := lenError("Beschreibung", description, maxNoteLen); msg != "" {
+		return amount, "", date, msg
+	}
 	date, err := time.Parse("2006-01-02", trimmed(r, "posting_date"))
 	if err != nil {
 		date = time.Now()
@@ -641,6 +655,10 @@ func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
 	}
 	void := r.FormValue("voided") == "true"
 	reason := trimmed(r, "reason")
+	if s.tooLong(w, r, "Grund", reason, maxNoteLen) {
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
 	if err := s.store.SetLedgerVoided(r.Context(), id, void, reason); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if void {

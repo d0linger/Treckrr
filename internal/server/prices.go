@@ -95,6 +95,10 @@ func (s *Server) handleLoadLevelSave(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, pricesURL(baseID))
 		return
 	}
+	if s.tooLong(w, r, "Name", name, maxNameLen) {
+		redirect(w, r, pricesURL(baseID))
+		return
+	}
 	var err error
 	action := "update"
 	if id == 0 {
@@ -151,6 +155,14 @@ func (s *Server) handleTractorSave(w http.ResponseWriter, r *http.Request) {
 	sortOrder := formInt(r, "sort_order")
 	if ident == "" || !ps.IsPositive() {
 		s.setFlash(w, r, "error", "Bezeichnung und PS (> 0) sind erforderlich.")
+		redirect(w, r, pricesURL(baseID))
+		return
+	}
+	if s.tooLong(w, r, "Bezeichnung", ident, maxNameLen) {
+		redirect(w, r, pricesURL(baseID))
+		return
+	}
+	if s.tooLong(w, r, "Name", name, maxNameLen) {
 		redirect(w, r, pricesURL(baseID))
 		return
 	}
@@ -239,6 +251,14 @@ func (s *Server) handleMachineSave(w http.ResponseWriter, r *http.Request) {
 	sortOrder := formInt(r, "sort_order")
 	if name == "" || !width.IsPositive() {
 		s.setFlash(w, r, "error", "Name und Arbeitsbreite (> 0) sind erforderlich.")
+		redirect(w, r, pricesURL(baseID))
+		return
+	}
+	if s.tooLong(w, r, "Name", name, maxNameLen) {
+		redirect(w, r, pricesURL(baseID))
+		return
+	}
+	if s.tooLong(w, r, "Kategorie", category, maxNameLen) {
 		redirect(w, r, pricesURL(baseID))
 		return
 	}

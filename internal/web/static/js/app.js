@@ -306,6 +306,38 @@
 		toggle.addEventListener("click", function () { recovery = !recovery; apply(true); });
 	})();
 
+	// Sparkline value tooltip. Native <title> covers desktop hover; a tap (or
+	// hover) on a point's hit column also shows a small positioned bubble so the
+	// value is reachable on touch. element.style is CSSOM (allowed by the CSP).
+	(function () {
+		var hits = document.querySelectorAll(".spark__hit[data-tip]");
+		if (!hits.length) return;
+		var tip = null;
+		var show = function (el) {
+			var t = el.getAttribute("data-tip");
+			if (!t) return;
+			if (!tip) {
+				tip = document.createElement("span");
+				tip.className = "sparktip";
+				document.body.appendChild(tip);
+			}
+			tip.textContent = t;
+			var r = el.getBoundingClientRect();
+			tip.style.left = (r.left + r.width / 2) + "px";
+			tip.style.top = (r.top - 4) + "px";
+			tip.classList.add("is-on");
+		};
+		var hide = function () { if (tip) tip.classList.remove("is-on"); };
+		hits.forEach(function (el) {
+			el.addEventListener("click", function (e) { e.stopPropagation(); show(el); });
+			el.addEventListener("mouseenter", function () { show(el); });
+			el.addEventListener("mouseleave", hide);
+			el.addEventListener("focus", function () { show(el); });
+			el.addEventListener("blur", hide);
+		});
+		document.addEventListener("click", hide);
+	})();
+
 	// Server-flash toast. Status toasts auto-hide after 4s; error toasts
 	// (role="alert") persist until the user dismisses them (keyboard-operable
 	// close button) or navigates away, so an error cannot vanish unnoticed.
