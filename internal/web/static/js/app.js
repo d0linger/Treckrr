@@ -37,14 +37,18 @@
 			"m-miststreuer", "m-ballenpresse", "m-feldspritze", "m-saemaschine",
 			"m-teleskoplader", "m-kreiselschwader"
 		];
-		var SKEY = "treckrr-mark";      // this session's mark (sessionStorage)
-		var LKEY = "treckrr-mark-prev"; // last session's mark (localStorage) — avoid repeat
+		var SKEY = "treckrr-mark";      // current mark (sessionStorage) — stable across in-app navigation
+		var LKEY = "treckrr-mark-prev"; // previous mark (localStorage) so a re-roll never repeats
+		// A full page reload re-rolls the mark; clicking around the app keeps it.
+		// The very first visit anchors on the Traktor.
+		var navType = "navigate";
+		try { var e0 = performance.getEntriesByType("navigation")[0]; if (e0) navType = e0.type; } catch (e) {}
 		var pick = null;
 		try { pick = sessionStorage.getItem(SKEY); } catch (e) { /* storage unavailable */ }
-		if (!pick) {
-			var prev = null;
-			try { prev = localStorage.getItem(LKEY); } catch (e) {}
-			if (prev === null) {
+		if (!pick || navType === "reload") {
+			var prev = pick; // on reload, avoid repeating the one just shown
+			if (prev == null) { try { prev = localStorage.getItem(LKEY); } catch (e) {} }
+			if (prev == null) {
 				pick = "m-traktor"; // recognizable anchor on the very first visit
 			} else {
 				do { pick = MARKS[Math.floor(Math.random() * MARKS.length)]; }

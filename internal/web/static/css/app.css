@@ -1205,11 +1205,11 @@ em { font-style: normal; color: var(--muted); }
 
 /* Noir year pills: muted inactive + mint active (not aggressive bright white). */
 @media (prefers-color-scheme: dark) {
-	:root:not([data-theme="light"]) .yearpill { color: var(--muted); background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.09); }
+	:root:not([data-theme="light"]) .yearpill { color: color-mix(in srgb, var(--text) 82%, transparent); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.12); }
 	:root:not([data-theme="light"]) .yearpill.is-active { background: var(--primary); color: var(--onp); border-color: var(--primary); }
 	:root:not([data-theme="light"]) .yearpill--manage { color: var(--muted); }
 }
-:root[data-theme="dark"] .yearpill { color: var(--muted); background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.09); }
+:root[data-theme="dark"] .yearpill { color: color-mix(in srgb, var(--text) 82%, transparent); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.12); }
 :root[data-theme="dark"] .yearpill.is-active { background: var(--primary); color: var(--onp); border-color: var(--primary); }
 :root[data-theme="dark"] .yearpill--manage { color: var(--muted); }
 
