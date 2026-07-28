@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"unicode/utf8"
 
 	"github.com/shopspring/decimal"
 
@@ -208,6 +209,21 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	name := trimmed(r, "name")
 	note := trimmed(r, "note")
+	if name == "" {
+		s.setFlash(w, r, "error", "Name darf nicht leer sein.")
+		redirect(w, r, neighborReturnURL(r, id))
+		return
+	}
+	if utf8.RuneCountInString(name) > 100 {
+		s.setFlash(w, r, "error", "Name darf höchstens 100 Zeichen lang sein.")
+		redirect(w, r, neighborReturnURL(r, id))
+		return
+	}
+	if utf8.RuneCountInString(note) > 500 {
+		s.setFlash(w, r, "error", "Notiz darf höchstens 500 Zeichen lang sein.")
+		redirect(w, r, neighborReturnURL(r, id))
+		return
+	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
 	if err := s.store.UpdateNeighbor(r.Context(), id, name, note); err != nil {
 		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")

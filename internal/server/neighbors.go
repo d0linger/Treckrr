@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	"unicode/utf8"
 
 	"treckrr/internal/models"
 	"treckrr/internal/store"
@@ -54,7 +55,18 @@ func (s *Server) handleNeighborManageCreate(w http.ResponseWriter, r *http.Reque
 		redirect(w, r, "/neighbors")
 		return
 	}
-	id, err := s.store.CreateNeighbor(r.Context(), name, trimmed(r, "note"))
+	if utf8.RuneCountInString(name) > 100 {
+		s.setFlash(w, r, "error", "Name darf höchstens 100 Zeichen lang sein.")
+		redirect(w, r, "/neighbors")
+		return
+	}
+	note := trimmed(r, "note")
+	if utf8.RuneCountInString(note) > 500 {
+		s.setFlash(w, r, "error", "Notiz darf höchstens 500 Zeichen lang sein.")
+		redirect(w, r, "/neighbors")
+		return
+	}
+	id, err := s.store.CreateNeighbor(r.Context(), name, note)
 	if err != nil {
 		s.setFlash(w, r, "error", "Anlegen fehlgeschlagen (Name bereits vergeben?).")
 	} else {
