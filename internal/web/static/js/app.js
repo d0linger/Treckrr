@@ -24,6 +24,32 @@
 		});
 	})();
 
+	// Random brand mark on load: swap the appbar logo to one of the farm-machine
+	// symbols each startup. The Traktor is the anchor on a first-ever visit; on
+	// later loads we pick at random but never the same mark twice in a row.
+	(function () {
+		var use = document.querySelector(".appbar__brand use");
+		if (!use) return;
+		var MARKS = [
+			"m-traktor", "m-anhaenger", "m-kipper", "m-pritsche", "m-rueckewagen",
+			"m-ladewagen", "m-mulcher", "m-quad", "m-guellefass", "m-frontlader",
+			"m-miststreuer", "m-ballenpresse", "m-feldspritze", "m-saemaschine",
+			"m-teleskoplader", "m-kreiselschwader"
+		];
+		var KEY = "treckrr-mark";
+		var prev = null;
+		try { prev = localStorage.getItem(KEY); } catch (e) { /* storage unavailable */ }
+		var pick;
+		if (prev === null) {
+			pick = "m-traktor"; // recognizable anchor on the very first visit
+		} else {
+			do { pick = MARKS[Math.floor(Math.random() * MARKS.length)]; }
+			while (pick === prev && MARKS.length > 1);
+		}
+		use.setAttribute("href", "#" + pick);
+		try { localStorage.setItem(KEY, pick); } catch (e) {}
+	})();
+
 	// Live text search: filter items matching [data-search]'s target selector.
 	document.querySelectorAll("[data-search]").forEach(function (input) {
 		var sel = input.getAttribute("data-search");

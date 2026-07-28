@@ -18,12 +18,33 @@
 	<linearGradient id="barGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" class="gs-strong"/><stop offset="1" class="gs-data"/></linearGradient>
 	<linearGradient id="payGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" class="gs-strong"/><stop offset="1" class="gs-pay"/></linearGradient>
 </defs></svg>
+{{/* Brand mark sprite: line-art farm machines. app.js picks one at random on
+    load (Traktor anchored on first visit, no immediate repeat) via the
+    <use> in .appbar__brand. Stroke props inherit from that <svg>. */}}
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute"><defs>
+	<symbol id="m-traktor" viewBox="0 0 24 24"><circle cx="7.5" cy="16.5" r="3.8"/><circle cx="18" cy="18" r="2.4"/><path d="M11.3 16.5h4.3"/><path d="M4.3 12.7V6.5h5.9l2 6.2"/><path d="M12.2 12.7h4.6V15.6"/></symbol>
+	<symbol id="m-anhaenger" viewBox="0 0 24 24"><circle cx="5.6" cy="17.4" r="2.5"/><circle cx="15" cy="18" r="1.9"/><circle cx="19.6" cy="18" r="1.9"/><path d="M3.2 15V9.4h4l1.1 3.6"/><path d="M8.3 15h4.4v-3.2h8.5V15"/><path d="M12.7 12h-1.3"/></symbol>
+	<symbol id="m-kipper" viewBox="0 0 24 24"><circle cx="8.5" cy="18.4" r="2"/><circle cx="15.5" cy="18.4" r="2"/><path d="M4 15.8h13"/><path d="M4 15.8 1.6 16.4"/><path d="M6.6 6.8 17 10.6 15.4 14 5 10.2z"/><path d="M9.6 15.6 8.9 11.4"/><path d="M16.2 13.8l2.1 1"/></symbol>
+	<symbol id="m-pritsche" viewBox="0 0 24 24"><circle cx="8" cy="17.8" r="2"/><circle cx="16" cy="17.8" r="2"/><path d="M3 13.4h17v1.4H3z"/><path d="M3 13.4V9.4"/><path d="M6 15.8h4M14 15.8h4"/></symbol>
+	<symbol id="m-rueckewagen" viewBox="0 0 24 24"><circle cx="7" cy="18" r="1.9"/><circle cx="11.5" cy="18" r="1.9"/><path d="M3.5 15.5h11"/><circle cx="6" cy="13.2" r="1.3"/><circle cx="8.8" cy="13.2" r="1.3"/><circle cx="7.4" cy="10.9" r="1.3"/><path d="M16 15.5V6.5"/><path d="M16 6.5h3.3"/><path d="M19.3 6.5 17.6 10.4"/><path d="M17.6 10.4l-1 1.6M17.6 10.4l1.2 1.2"/></symbol>
+	<symbol id="m-ladewagen" viewBox="0 0 24 24"><circle cx="8.4" cy="18" r="2"/><circle cx="15.8" cy="18" r="2"/><path d="M4.2 15.5 6 7.4h11v8.1z"/><path d="M4.2 15.5h12.8"/><path d="M2 16.5c1.1-1.1 2.7-1.1 3.8 0"/></symbol>
+	<symbol id="m-mulcher" viewBox="0 0 24 24"><path d="M4.5 10.3h15v4.2h-15z"/><path d="M4.7 14.5 6.6 16.6 8.5 14.5 10.4 16.6 12.3 14.5 14.2 16.6 16.1 14.5 18 16.6 19.4 15"/><path d="M8.5 10.3 12 6.6 15.5 10.3"/><path d="M12 6.6V5.1"/><path d="M4.5 12.4H2.6"/></symbol>
+	<symbol id="m-quad" viewBox="0 0 24 24"><circle cx="6.5" cy="16.5" r="2.6"/><circle cx="17.5" cy="16.5" r="2.6"/><path d="M4 14c.5-1.7 2.1-2.7 4.2-2.7h3.1l1.4-2h2.1l1.1 2c2.1.2 3.4 1.3 3.9 2.7"/><path d="M8.8 11.2 6.7 7.9H4.4"/><path d="M4.4 7.9h3.2"/><path d="M15.5 11.8h4"/></symbol>
+	<symbol id="m-guellefass" viewBox="0 0 24 24"><circle cx="9" cy="18" r="2"/><circle cx="16" cy="18" r="2"/><rect x="4" y="9.4" width="16" height="5.8" rx="2.9"/><path d="M4 12.3H1.5"/><path d="M17.4 9.6v5.4"/></symbol>
+	<symbol id="m-frontlader" viewBox="0 0 24 24"><circle cx="9" cy="17.2" r="2.8"/><circle cx="17.6" cy="17.8" r="1.9"/><path d="M6.5 14.6V9.6h4l1.4 3.8"/><path d="M11.5 14.6H18.2v-3"/><path d="M8 10.2 3.6 6.2"/><path d="M3.6 6.2 2 7l.4 2.3 2.5.2"/></symbol>
+	<symbol id="m-miststreuer" viewBox="0 0 24 24"><circle cx="8" cy="18" r="2"/><circle cx="13.5" cy="18" r="2"/><path d="M3.4 9.4v6.1h11"/><path d="M14.4 15.5V9.4"/><path d="M1.5 12.4h1.9"/><path d="M15.6 8.6v8.2M17.4 8.6v8.2"/><path d="M19 9.4l1.4-.6M19.4 12.4H21M19 15.4l1.4.6"/></symbol>
+	<symbol id="m-ballenpresse" viewBox="0 0 24 24"><circle cx="8" cy="18.2" r="1.9"/><circle cx="16" cy="18.2" r="1.9"/><circle cx="12" cy="10.6" r="5.2"/><circle cx="12" cy="10.6" r="2"/><path d="M6.9 12 2.4 13.4"/><path d="M2.4 13.4v1.5"/></symbol>
+	<symbol id="m-feldspritze" viewBox="0 0 24 24"><circle cx="8" cy="18" r="1.9"/><circle cx="13.5" cy="18" r="1.9"/><path d="M5.5 15.4V10a1.6 1.6 0 0 1 1.6-1.6h5.3A1.6 1.6 0 0 1 14 10v5.4"/><path d="M5.5 15.4h9"/><path d="M3.6 12.4H5.5"/><path d="M2 6.6h20"/><path d="M4 6.6v1.8M7 6.6v1.8M13 6.6v1.8M16 6.6v1.8M20 6.6v1.8"/></symbol>
+	<symbol id="m-saemaschine" viewBox="0 0 24 24"><circle cx="6.5" cy="18" r="1.9"/><circle cx="17.5" cy="18" r="1.9"/><path d="M4.5 8.6h15l-1.8 5.4H6.3z"/><path d="M6.3 8.6 7.3 6.6h9.4l1 2"/><path d="M4 14.4h16"/><path d="M6 14.4v2.7M9 14.4v3.1M12 14.4v2.7M15 14.4v3.1M18 14.4v2.7"/></symbol>
+	<symbol id="m-teleskoplader" viewBox="0 0 24 24"><circle cx="7" cy="17.6" r="2.4"/><circle cx="16.5" cy="17.6" r="2.4"/><path d="M4.4 15.2V10h4.4v5.2"/><path d="M5.6 11h2v2.1h-2z"/><path d="M8.8 15.2h8.9v-3"/><path d="M6.9 10.4 20.4 6"/><path d="M20.4 6 19.1 8.9"/><path d="M18.3 8.9h3M18.8 8.9v2.5M20.9 8.4v2.5"/></symbol>
+	<symbol id="m-kreiselschwader" viewBox="0 0 24 24"><circle cx="12.7" cy="10.3" r="1.3"/><path d="M12.7 10.3C12.7 6.8 14.4 4.9 17.4 4.8"/><path d="M12.7 10.3C16.2 10.3 18.1 12 18.2 15"/><path d="M12.7 10.3C12.7 13.8 11 15.7 8 15.8"/><path d="M12.7 10.3C9.2 10.3 7.3 8.6 7.2 5.6"/><path d="M7.9 13.6 3.6 15.2"/><circle cx="5.3" cy="18.3" r="1.5"/><path d="M7.9 13.6 6.1 16.9"/></symbol>
+</defs></svg>
 {{if .User}}
 	<a class="skip" href="#main">Zum Inhalt springen</a>
 	<div class="topstack">
 		<header class="appbar">
 			<a class="appbar__brand" href="/">
-				<img src="/static/icons/favicon.svg" alt="" width="24" height="24">
+				<svg class="appbar__brand-mark" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#m-traktor"/></svg>
 				<span>Treckrr</span>
 			</a>
 			<h1 class="appbar__title">{{.Title}}</h1>
