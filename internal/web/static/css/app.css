@@ -1192,11 +1192,13 @@ em { font-style: normal; color: var(--muted); }
 }
 
 /* Card list rows get a subtle left accent stripe (dashboard neighbours, etc.). */
-.list__row.card, .disclosure--row.card { position: relative; overflow: hidden; }
+.list__row.card, .disclosure--row.card { position: relative; overflow: hidden; background: var(--surface); }
 .list__row.card::before, .disclosure--row.card::before {
-	content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
-	background: var(--primary);
+	content: ""; position: absolute; left: 9px; top: 13px; bottom: 13px; width: 3px;
+	border-radius: 999px; background: var(--primary);
 }
+/* Give the label room so it clears the inset accent bar. */
+.list__row.card > .list__main, .disclosure--row.card > summary { padding-left: .55rem; }
 
 /* Eyebrow / KPI labels in the mono face, uppercase — the "technical" tag look. */
 .summary-card__label, .kpi__label, .onboard__eyebrow {
@@ -1206,11 +1208,11 @@ em { font-style: normal; color: var(--muted); }
 /* Noir year pills: muted inactive + mint active (not aggressive bright white). */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme="light"]) .yearpill { color: color-mix(in srgb, var(--text) 82%, transparent); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.12); }
-	:root:not([data-theme="light"]) .yearpill.is-active { background: var(--primary); color: var(--onp); border-color: var(--primary); }
+	:root:not([data-theme="light"]) .yearpill.is-active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 800; }
 	:root:not([data-theme="light"]) .yearpill--manage { color: var(--muted); }
 }
 :root[data-theme="dark"] .yearpill { color: color-mix(in srgb, var(--text) 82%, transparent); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.12); }
-:root[data-theme="dark"] .yearpill.is-active { background: var(--primary); color: var(--onp); border-color: var(--primary); }
+:root[data-theme="dark"] .yearpill.is-active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 800; }
 :root[data-theme="dark"] .yearpill--manage { color: var(--muted); }
 
 /* Login — brand lockup above the card, gradient logo tile (rotating machine
@@ -1219,7 +1221,7 @@ em { font-style: normal; color: var(--muted); }
 .auth__brand { margin-bottom: 1.4rem; }
 .auth__logo { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center;
 	background: var(--brand-grad); color: #fff; box-shadow: 0 14px 30px -14px rgba(17,86,56,.7); margin-bottom: .4rem; }
-:root[data-theme="dark"] .auth__logo { color: var(--onp); }
+:root[data-theme="dark"] .auth__logo { color: var(--on-primary); }
 .auth__logo svg { width: 34px; height: 34px; display: block; }
 .auth__brand h1 { font-size: 1.9rem; color: var(--primary); }
 :root[data-theme="dark"] .auth__brand h1 { color: var(--text); }
