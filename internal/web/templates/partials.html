@@ -86,7 +86,7 @@
 
 {{/* "spark" renders a tile trend sparkline from a *sparkView (Line/Area SVG
 	point strings). Points ride on SVG attributes — CSP-safe. */}}
-{{define "spark"}}<svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><polygon class="spark__area" points="{{.Area}}"></polygon><polyline class="spark__line" points="{{.Line}}"></polyline>{{range .Points}}<rect class="spark__hit" x="{{.HitX}}" y="0" width="{{.HitW}}" height="32" data-tip="{{.Tip}}"><title>{{.Tip}}</title></rect>{{end}}<circle class="spark__dot" cx="{{.EndX}}" cy="{{.EndY}}" r="2.6"></circle></svg>{{end}}
+{{define "spark"}}<svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none"><polygon class="spark__area" points="{{.Area}}"></polygon><polyline class="spark__line" points="{{.Line}}"></polyline>{{range .Points}}<rect class="spark__hit" x="{{.HitX}}" y="0" width="{{.HitW}}" height="32" data-tip="{{.Tip}}" tabindex="0" aria-label="{{.Tip}}"><title>{{.Tip}}</title></rect>{{end}}<circle class="spark__dot" cx="{{.EndX}}" cy="{{.EndY}}" r="2.6"></circle></svg>{{end}}
 
 {{/* "barpair" is the previous-vs-current mini chart shown on a KPI tile when
 	there aren't yet 3 years for a trend line. Geometry precomputed in Go. */}}

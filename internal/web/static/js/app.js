@@ -332,6 +332,8 @@
 			el.addEventListener("click", function (e) { e.stopPropagation(); show(el); });
 			el.addEventListener("mouseenter", function () { show(el); });
 			el.addEventListener("mouseleave", hide);
+			el.addEventListener("focus", function () { show(el); });
+			el.addEventListener("blur", hide);
 		});
 		document.addEventListener("click", hide);
 	})();
