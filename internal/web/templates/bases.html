@@ -13,7 +13,7 @@
 				<div class="list__main">
 					<span class="list__title">{{$b.Year}} — {{$b.Name}}</span>
 					<span class="list__sub">
-						{{if $b.Locked}}🔒 gesperrt{{else}}✏️ bearbeitbar{{end}}
+						{{if $b.Locked}}🔒 gesperrt{{else}}{{template "ic-edit"}} bearbeitbar{{end}}
 						{{if .InUse}} · in Verwendung{{else}} · nicht verwendet{{end}}
 					</span>
 				</div>

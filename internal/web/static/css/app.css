@@ -1,14 +1,31 @@
 /* Treckrr — mobile-first PWA styles. All assets served locally. */
+
+/* Self-hosted brand typefaces (served same-origin, allowed by the CSP).
+   Manrope = display/headings & KPI values, Hanken Grotesk = body text,
+   JetBrains Mono = caps labels & one-time codes. */
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:400;font-display:swap;src:url('/static/fonts/hanken-400.woff2') format('woff2');}
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:500;font-display:swap;src:url('/static/fonts/hanken-500.woff2') format('woff2');}
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:600;font-display:swap;src:url('/static/fonts/hanken-600.woff2') format('woff2');}
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/hanken-700.woff2') format('woff2');}
+@font-face{font-family:'Manrope';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/manrope-700.woff2') format('woff2');}
+@font-face{font-family:'Manrope';font-style:normal;font-weight:800;font-display:swap;src:url('/static/fonts/manrope-800.woff2') format('woff2');}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:500;font-display:swap;src:url('/static/fonts/jetbrainsmono-500.woff2') format('woff2');}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/jetbrainsmono-700.woff2') format('woff2');}
+
 :root {
-	--bg: #f4f6f4;
+	--font-body: 'Hanken Grotesk', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--font-display: 'Manrope', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	--bg: #eef2ea;
 	--surface: #ffffff;
-	--surface-2: #eef1ee;
-	--text: #1c231e;
-	--muted: #666f68; /* was #6b756d — nudged darker to pass 4.5:1 on the page bg */
-	--border: #dbe0db;
-	--primary: #2f6f4f;
-	--primary-strong: #245840;
+	--surface-2: #f2f4ef;
+	--text: #191c1a;
+	--muted: #5b655d; /* Agro-Modernist on-surface-variant; passes 4.5:1 on the bg */
+	--border: #dfe4dd;
+	--primary: #115638;        /* Agro-Modernist deep "Treckrr green" */
+	--primary-strong: #2f6f4f; /* mid green — the lighter end of hero/button gradients */
 	--primary-tint: #e3efe8;
+	--on-primary: #ffffff; /* text/icon on a solid primary surface (dark in Noir) */
 	--danger: #b4442f;
 	--danger-tint: #f7e3df;
 	--accent: #c8891f;
@@ -25,19 +42,19 @@
 	--pay: #2f8457;
 	--owe: #c05635;
 	--radius: 14px;
-	--radius-sm: 9px;
+	--radius-sm: 11px;
 	/* Modular type scale (theme-independent) — one system instead of ~15 ad-hoc sizes. */
 	--fs-xs: .75rem; --fs-sm: .8125rem; --fs-base: 1rem; --fs-md: 1.0625rem;
 	--fs-lg: 1.25rem; --fs-xl: 1.5rem; --fs-2xl: 1.9rem;
 	--shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 4px 16px rgba(0, 0, 0, .05);
 	/* Depth/modernization (light): gradient cards, ambient glow, gradient buttons, glass bars. */
-	--card-grad: linear-gradient(180deg, #ffffff 0%, #fbfcfb 100%);
+	--card-grad: var(--surface); /* flat card surface (was a subtle vertical gradient) */
 	--card-hairline: rgba(20, 40, 30, .07);
 	--card-shadow: 0 1px 2px rgba(24, 45, 35, .06), 0 12px 28px rgba(24, 45, 35, .09);
 	--glow: radial-gradient(120% 70% at 50% -8%, rgba(47, 111, 79, .09), transparent 60%);
-	--glass: rgba(244, 246, 244, .72);
+	--glass: rgba(238, 242, 234, .72);
 	--glass-border: rgba(20, 40, 30, .08);
-	--btn-glow: rgba(47, 111, 79, .20);
+	--btn-glow: rgba(17, 86, 56, .22);
 	--brand-grad: linear-gradient(135deg, var(--primary), var(--primary-strong));
 	--tap: 44px;
 	--maxw: 720px;
@@ -48,15 +65,16 @@
    user forced light), and always when the user forced dark. */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme="light"]) {
-		--bg: #0f1411;
-		--surface: #182019;
-		--surface-2: #202a22;
-		--text: #e7ede8;
-		--muted: #9aa89e;
-		--border: #2a352c;
-		--primary: #4c9d73;
-		--primary-strong: #3c8460;
+		--bg: #0c1511;
+		--surface: #19221d;
+		--surface-2: #232c28;
+		--text: #dbe5de;
+		--muted: #a2ada4;
+		--border: #2b332d;
+		--primary: #85d7a9;        /* Noir: vibrant mint accent */
+		--primary-strong: #63c192; /* mint gradient end (buttons/pills) */
 		--primary-tint: #1b2a22;
+		--on-primary: #04170e;     /* dark text/icon on the mint accent */
 		--danger: #e06a52;
 		--danger-tint: #33201c;
 		--accent: #e0a640;
@@ -67,36 +85,37 @@
 		--pay: #52b184;
 		--owe: #e0805f;
 		--shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .35);
-		--card-grad: linear-gradient(180deg, #1c261f 0%, #141b16 100%);
+		--card-grad: var(--surface); /* flat card surface (was a subtle vertical gradient) */
 		--card-hairline: rgba(255, 255, 255, .06);
 		--card-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 30px rgba(0, 0, 0, .28);
 		--glow: radial-gradient(120% 70% at 50% -8%, rgba(76, 157, 115, .16), transparent 60%);
-		--glass: rgba(15, 20, 17, .62);
+		--glass: rgba(12, 21, 17, .62);
 		--glass-border: rgba(255, 255, 255, .08);
 		--btn-glow: rgba(76, 157, 115, .30);
 	}
 }
 :root[data-theme="dark"] {
-	--bg: #0f1411;
-	--surface: #182019;
-	--surface-2: #202a22;
-	--text: #e7ede8;
-	--muted: #9aa89e;
-	--border: #2a352c;
-	--primary: #4c9d73;
-	--primary-strong: #3c8460;
+	--bg: #0c1511;
+	--surface: #19221d;
+	--surface-2: #232c28;
+	--text: #dbe5de;
+	--muted: #a2ada4;
+	--border: #2b332d;
+	--primary: #85d7a9;        /* Noir: vibrant mint accent */
+	--primary-strong: #63c192; /* mint gradient end (buttons/pills) */
 	--primary-tint: #1b2a22;
+	--on-primary: #04170e;     /* dark text/icon on the mint accent */
 	--danger: #e06a52;
 	--danger-tint: #33201c;
 	--accent: #e0a640;
 	--accent-text: #e0a640;
 	--focus: #5b9bff;
 	--shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .35);
-	--card-grad: linear-gradient(180deg, #1c261f 0%, #141b16 100%);
+	--card-grad: var(--surface); /* flat card surface (was a subtle vertical gradient) */
 	--card-hairline: rgba(255, 255, 255, .06);
 	--card-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 30px rgba(0, 0, 0, .28);
 	--glow: radial-gradient(120% 70% at 50% -8%, rgba(76, 157, 115, .16), transparent 60%);
-	--glass: rgba(15, 20, 17, .62);
+	--glass: rgba(12, 21, 17, .62);
 	--glass-border: rgba(255, 255, 255, .08);
 	--btn-glow: rgba(76, 157, 115, .30);
 	/* Chart-mark tokens must be redeclared here too: forcing dark via the theme
@@ -115,7 +134,7 @@ html, body {
 	padding: 0;
 	background: var(--bg);
 	color: var(--text);
-	font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+	font-family: var(--font-body);
 	line-height: 1.45;
 	-webkit-text-size-adjust: 100%;
 }
@@ -152,11 +171,16 @@ a { color: var(--primary); text-decoration: none; }
 /* Backup code: full format is four 4-char groups (e.g. N6YD-DBNN-UPXT-PB67 =
    19 chars). Monospace keeps every glyph the same width so the whole code fits
    at 390px regardless of which letters it contains. */
-.otp2 { width: 100%; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+.otp2 { width: 100%; text-align: center; font-family: var(--font-mono);
 	font-size: .95rem; font-weight: 700; letter-spacing: .02em; padding: .72rem .35rem; text-transform: uppercase;
 	border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); }
 .otp2::placeholder { letter-spacing: .02em; color: color-mix(in srgb, var(--muted) 70%, transparent); font-weight: 700; }
 h1, h2, h3 { margin: 0; }
+/* Display face on headings and the big numeric readouts. */
+h1, h2, h3, .section-title, .summary-card__value, .summary-card__label,
+.appbar__title, .kpi__value, .kpi__label, .barpair__v, .stat__value {
+	font-family: var(--font-display); letter-spacing: -.01em;
+}
 .muted { color: var(--muted); font-size: .9rem; }
 .small { font-size: .78rem; }
 em { font-style: normal; color: var(--muted); }
@@ -184,6 +208,7 @@ em { font-style: normal; color: var(--muted); }
 }
 .appbar__brand { display: flex; align-items: center; gap: .45rem; color: #fff; font-weight: 700; }
 .appbar__brand img { display: block; }
+.appbar__brand-mark { display: block; }
 /* min-width:0 + ellipsis so a long page title (e.g. "Bemessungsgrundlagen")
    truncates instead of forcing the app bar wider than the screen (which caused
    a horizontal scroll and pushed the fixed tab bar below the fold). */
@@ -369,8 +394,8 @@ em { font-style: normal; color: var(--muted); }
 	min-height: var(--tap);
 	padding: .6rem 1.1rem;
 	font-size: 1rem;
-	font-weight: 600;
-	font-family: inherit;
+	font-weight: 700;
+	font-family: var(--font-display);
 	color: var(--text);
 	background: var(--surface-2);
 	border: 1px solid transparent;
@@ -381,7 +406,7 @@ em { font-style: normal; color: var(--muted); }
 	-webkit-tap-highlight-color: transparent;
 }
 .btn:active { transform: translateY(1px) scale(.99); }
-.btn--primary { background: var(--brand-grad); color: #fff; box-shadow: 0 6px 18px var(--btn-glow); }
+.btn--primary { background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 6px 18px var(--btn-glow); }
 .btn--primary:hover { filter: brightness(1.06); }
 .btn--danger { color: var(--danger); background: var(--danger-tint); }
 .btn--danger.btn--primary { background: var(--danger); color: #fff; box-shadow: var(--shadow); }
@@ -548,7 +573,7 @@ em { font-style: normal; color: var(--muted); }
 }
 .tabbar__icon { width: 22px; height: 22px; display: block; }
 .tabbar__item.is-active { color: var(--primary); font-weight: 700; }
-.tabbar__item.is-active .tabbar__pill { background: var(--brand-grad); color: #fff; box-shadow: 0 5px 16px var(--btn-glow); }
+.tabbar__item.is-active .tabbar__pill { background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 5px 16px var(--btn-glow); }
 .tabbar__item.is-active::before {
 	content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
 	width: 20px; height: 3px; border-radius: 3px;
@@ -599,7 +624,7 @@ em { font-style: normal; color: var(--muted); }
 	flex: 1; text-align: center; text-decoration: none; padding: .5rem; border-radius: var(--radius);
 	background: var(--surface-2); color: var(--text); font-weight: 600; border: 1px solid var(--border);
 }
-.subtab.is-active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.subtab.is-active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 .badge { font-size: .72rem; color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: .1rem .5rem; }
 
 /* ---- Button rows & carry-over ----------------------------------------- */
@@ -640,7 +665,7 @@ em { font-style: normal; color: var(--muted); }
 	border-radius: 999px; padding: .35rem .8rem; font-weight: 700; font-size: .82rem;
 	cursor: pointer; min-height: var(--tap); border: 1.5px solid transparent; white-space: nowrap;
 }
-.paychip--paid { background: var(--primary); color: #fff; border-color: var(--primary); }
+.paychip--paid { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 .paychip--open { background: transparent; color: var(--accent-text); border-color: color-mix(in srgb, #d89b00 55%, transparent); }
 .paychip--open:hover { background: color-mix(in srgb, #d89b00 12%, transparent); }
 .carryover strong { display: block; }
@@ -693,7 +718,7 @@ em { font-style: normal; color: var(--muted); }
 .kpi--paid { --kpi-accent: var(--primary); }
 .kpi--open { --kpi-accent: var(--accent); }
 .kpi__label { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
-.kpi__value { font-size: clamp(1.3rem, 3.4vw, 1.6rem); font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: .12rem; }
+.kpi__value { font-size: clamp(1rem, 4.2vw, 1.5rem); font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: .12rem; white-space: nowrap; }
 .delta { display: inline-flex; align-items: center; gap: .22rem; align-self: flex-start; font-size: .72rem; font-weight: 700;
 	margin-top: .35rem; padding: .08rem .42rem; border-radius: 999px; }
 .delta--up { color: var(--data); background: color-mix(in srgb, var(--data) 15%, transparent); }
@@ -727,9 +752,16 @@ em { font-style: normal; color: var(--muted); }
 .barchart__val { font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bchart { display: block; width: 100%; height: 10px; }
 .gradient-defs { position: absolute; width: 0; height: 0; }
-.gs-strong { stop-color: var(--primary-strong); }
-.gs-data { stop-color: var(--data); }
-.gs-pay { stop-color: var(--pay); }
+/* Bar-chart gradient stops: a dramatic deep -> bright green sweep (dark base at
+   the left, bright highlight at the value tip) in both themes. */
+.gs-strong { stop-color: #0f5233; }
+.gs-data, .gs-pay { stop-color: #58c286; }
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) .gs-strong { stop-color: #2b6f50; }
+	:root:not([data-theme="light"]) .gs-data, :root:not([data-theme="light"]) .gs-pay { stop-color: #aef4cd; }
+}
+:root[data-theme="dark"] .gs-strong { stop-color: #2b6f50; }
+:root[data-theme="dark"] .gs-data, :root[data-theme="dark"] .gs-pay { stop-color: #aef4cd; }
 .bchart__track { fill: var(--data-track); }
 .bchart__fill { fill: url(#barGrad); transform-box: fill-box; transform-origin: left center;
 	animation: barGrow .7s cubic-bezier(.22, .61, .36, 1) both; transition: filter .15s ease; }
@@ -858,7 +890,7 @@ em { font-style: normal; color: var(--muted); }
 /* ---- Floating action button (quick-book) ------------------------------ */
 .fab { position: fixed; right: 1rem; z-index: 25;
 	bottom: calc(1rem + 58px + env(safe-area-inset-bottom));
-	width: 52px; height: 52px; border-radius: 50%; background: var(--primary); color: #fff;
+	width: 52px; height: 52px; border-radius: 50%; background: var(--primary); color: var(--on-primary);
 	display: grid; place-items: center; font-size: 1.6rem; font-weight: 700; text-decoration: none;
 	box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 55%, transparent), 0 2px 6px rgba(0, 0, 0, .3); }
 .fab:hover { background: var(--primary-strong); }
@@ -956,7 +988,7 @@ em { font-style: normal; color: var(--muted); }
 .step__go { color: var(--muted); font-size: 1.1rem; line-height: 1; flex: 0 0 auto; }
 .step--done .step__n { background: var(--pay); color: #fff; border-color: var(--pay); }
 .step--now { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
-.step--now .step__n { background: var(--primary); color: #fff; border-color: var(--primary); }
+.step--now .step__n { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 
 /* ---- Skip link (WCAG 2.4.1) ------------------------------------------- */
 /* First focusable element; off-screen until focused, then jumps to #main. */
@@ -1040,7 +1072,7 @@ em { font-style: normal; color: var(--muted); }
 .setup-steps { list-style: none; counter-reset: step; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1.1rem; }
 .setup-steps > li { counter-increment: step; position: relative; padding-left: 2.6rem; }
 .setup-steps > li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 1.8rem; height: 1.8rem;
-	display: grid; place-items: center; border-radius: 50%; background: var(--primary); color: #fff; font-weight: 800; font-size: .85rem; }
+	display: grid; place-items: center; border-radius: 50%; background: var(--primary); color: var(--on-primary); font-weight: 800; font-size: .85rem; }
 .setup-step__t { font-weight: 700; font-size: var(--fs-md); margin-bottom: .3rem; }
 .copyrow { display: flex; gap: .5rem; align-items: stretch; }
 .copyrow .secretkey { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
@@ -1147,3 +1179,64 @@ em { font-style: normal; color: var(--muted); }
 	display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
 .rsum__diff { font-weight: 800; color: var(--accent-text); }
 .rsum__tot .old { color: var(--muted); } .rsum__tot .arr { color: var(--muted); margin: 0 .15rem; }
+
+/* ============================================================================
+   Agro-Modernist finish — ported from the design artifacts.
+   ========================================================================== */
+/* Noir dark: the app bar and hero cards stay deep obsidian-green with light
+   text; the vibrant mint --primary is reserved for buttons/links/accents. */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) .topstack { background: linear-gradient(180deg, #12241b, #0f1d15); }
+	:root:not([data-theme="light"]) .summary-card,
+	:root:not([data-theme="light"]) .rate-preview {
+		background: linear-gradient(135deg, #1e402d, #13251b); color: #fff; border: 1px solid rgba(133, 215, 169, .16);
+	}
+}
+:root[data-theme="dark"] .topstack { background: linear-gradient(180deg, #12241b, #0f1d15); }
+:root[data-theme="dark"] .summary-card,
+:root[data-theme="dark"] .rate-preview {
+	background: linear-gradient(135deg, #1e402d, #13251b); color: #fff; border: 1px solid rgba(133, 215, 169, .16);
+}
+
+/* Card list rows get a subtle left accent stripe (dashboard neighbours, etc.). */
+.list__row.card, .disclosure--row.card { position: relative; overflow: hidden; background: var(--surface); }
+.list__row.card::before, .disclosure--row.card::before {
+	content: ""; position: absolute; left: 9px; top: 13px; bottom: 13px; width: 3px;
+	border-radius: 999px; background: var(--primary);
+}
+/* Give the label room so it clears the inset accent bar. */
+.list__row.card > .list__main, .disclosure--row.card > summary { padding-left: .55rem; }
+
+/* Eyebrow / KPI labels in the mono face, uppercase — the "technical" tag look. */
+.summary-card__label, .kpi__label, .onboard__eyebrow {
+	font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .04em; font-weight: 700;
+}
+
+/* Noir year pills: muted inactive + mint active (not aggressive bright white). */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) .yearpill { color: color-mix(in srgb, var(--text) 82%, transparent); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.12); }
+	:root:not([data-theme="light"]) .yearpill.is-active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 800; }
+	:root:not([data-theme="light"]) .yearpill--manage { color: var(--muted); }
+}
+:root[data-theme="dark"] .yearpill { color: color-mix(in srgb, var(--text) 82%, transparent); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.12); }
+:root[data-theme="dark"] .yearpill.is-active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 800; }
+:root[data-theme="dark"] .yearpill--manage { color: var(--muted); }
+
+/* Login — brand lockup above the card, gradient logo tile (rotating machine
+   mark), mono kicker + field labels, and an "oder" divider before passkey. */
+.auth { flex-direction: column; gap: 0; }
+.auth__brand { margin-bottom: 1.4rem; }
+.auth__logo { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center;
+	background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 14px 30px -14px rgba(17,86,56,.7); margin-bottom: .4rem; }
+.auth__logo svg { width: 34px; height: 34px; display: block; }
+.auth__brand h1 { font-size: 1.9rem; color: var(--primary); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .auth__brand h1 { color: var(--text); } }
+:root[data-theme="dark"] .auth__brand h1 { color: var(--text); }
+.auth__kick { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .2em; font-size: .7rem; font-weight: 700; color: var(--muted); margin: 0; }
+.auth__head { margin-bottom: .2rem; }
+.auth__head h2 { font-size: 1.55rem; letter-spacing: -.01em; }
+.auth__head p { margin: .3rem 0 0; font-size: .9rem; }
+.auth .field > span { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .04em; font-size: .72rem; font-weight: 700; color: var(--muted); }
+.auth__or { display: flex; align-items: center; gap: 12px; margin: .2rem 0 -.2rem; color: var(--muted);
+	font-family: var(--font-mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; }
+.auth__or::before, .auth__or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
