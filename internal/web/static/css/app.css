@@ -25,6 +25,7 @@
 	--primary: #115638;        /* Agro-Modernist deep "Treckrr green" */
 	--primary-strong: #2f6f4f; /* mid green — the lighter end of hero/button gradients */
 	--primary-tint: #e3efe8;
+	--on-primary: #ffffff; /* text/icon on a solid primary surface (dark in Noir) */
 	--danger: #b4442f;
 	--danger-tint: #f7e3df;
 	--accent: #c8891f;
@@ -70,9 +71,10 @@
 		--text: #dbe5de;
 		--muted: #a2ada4;
 		--border: #2b332d;
-		--primary: #4c9d73;
-		--primary-strong: #3c8460;
+		--primary: #85d7a9;        /* Noir: vibrant mint accent */
+		--primary-strong: #63c192; /* mint gradient end (buttons/pills) */
 		--primary-tint: #1b2a22;
+		--on-primary: #04170e;     /* dark text/icon on the mint accent */
 		--danger: #e06a52;
 		--danger-tint: #33201c;
 		--accent: #e0a640;
@@ -99,9 +101,10 @@
 	--text: #dbe5de;
 	--muted: #a2ada4;
 	--border: #2b332d;
-	--primary: #4c9d73;
-	--primary-strong: #3c8460;
+	--primary: #85d7a9;        /* Noir: vibrant mint accent */
+	--primary-strong: #63c192; /* mint gradient end (buttons/pills) */
 	--primary-tint: #1b2a22;
+	--on-primary: #04170e;     /* dark text/icon on the mint accent */
 	--danger: #e06a52;
 	--danger-tint: #33201c;
 	--accent: #e0a640;
@@ -403,7 +406,7 @@ em { font-style: normal; color: var(--muted); }
 	-webkit-tap-highlight-color: transparent;
 }
 .btn:active { transform: translateY(1px) scale(.99); }
-.btn--primary { background: var(--brand-grad); color: #fff; box-shadow: 0 6px 18px var(--btn-glow); }
+.btn--primary { background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 6px 18px var(--btn-glow); }
 .btn--primary:hover { filter: brightness(1.06); }
 .btn--danger { color: var(--danger); background: var(--danger-tint); }
 .btn--danger.btn--primary { background: var(--danger); color: #fff; box-shadow: var(--shadow); }
@@ -570,7 +573,7 @@ em { font-style: normal; color: var(--muted); }
 }
 .tabbar__icon { width: 22px; height: 22px; display: block; }
 .tabbar__item.is-active { color: var(--primary); font-weight: 700; }
-.tabbar__item.is-active .tabbar__pill { background: var(--brand-grad); color: #fff; box-shadow: 0 5px 16px var(--btn-glow); }
+.tabbar__item.is-active .tabbar__pill { background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 5px 16px var(--btn-glow); }
 .tabbar__item.is-active::before {
 	content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
 	width: 20px; height: 3px; border-radius: 3px;
@@ -621,7 +624,7 @@ em { font-style: normal; color: var(--muted); }
 	flex: 1; text-align: center; text-decoration: none; padding: .5rem; border-radius: var(--radius);
 	background: var(--surface-2); color: var(--text); font-weight: 600; border: 1px solid var(--border);
 }
-.subtab.is-active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.subtab.is-active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 .badge { font-size: .72rem; color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: .1rem .5rem; }
 
 /* ---- Button rows & carry-over ----------------------------------------- */
@@ -662,7 +665,7 @@ em { font-style: normal; color: var(--muted); }
 	border-radius: 999px; padding: .35rem .8rem; font-weight: 700; font-size: .82rem;
 	cursor: pointer; min-height: var(--tap); border: 1.5px solid transparent; white-space: nowrap;
 }
-.paychip--paid { background: var(--primary); color: #fff; border-color: var(--primary); }
+.paychip--paid { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 .paychip--open { background: transparent; color: var(--accent-text); border-color: color-mix(in srgb, #d89b00 55%, transparent); }
 .paychip--open:hover { background: color-mix(in srgb, #d89b00 12%, transparent); }
 .carryover strong { display: block; }
@@ -880,7 +883,7 @@ em { font-style: normal; color: var(--muted); }
 /* ---- Floating action button (quick-book) ------------------------------ */
 .fab { position: fixed; right: 1rem; z-index: 25;
 	bottom: calc(1rem + 58px + env(safe-area-inset-bottom));
-	width: 52px; height: 52px; border-radius: 50%; background: var(--primary); color: #fff;
+	width: 52px; height: 52px; border-radius: 50%; background: var(--primary); color: var(--on-primary);
 	display: grid; place-items: center; font-size: 1.6rem; font-weight: 700; text-decoration: none;
 	box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 55%, transparent), 0 2px 6px rgba(0, 0, 0, .3); }
 .fab:hover { background: var(--primary-strong); }
@@ -978,7 +981,7 @@ em { font-style: normal; color: var(--muted); }
 .step__go { color: var(--muted); font-size: 1.1rem; line-height: 1; flex: 0 0 auto; }
 .step--done .step__n { background: var(--pay); color: #fff; border-color: var(--pay); }
 .step--now { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
-.step--now .step__n { background: var(--primary); color: #fff; border-color: var(--primary); }
+.step--now .step__n { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 
 /* ---- Skip link (WCAG 2.4.1) ------------------------------------------- */
 /* First focusable element; off-screen until focused, then jumps to #main. */
@@ -1062,7 +1065,7 @@ em { font-style: normal; color: var(--muted); }
 .setup-steps { list-style: none; counter-reset: step; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1.1rem; }
 .setup-steps > li { counter-increment: step; position: relative; padding-left: 2.6rem; }
 .setup-steps > li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 1.8rem; height: 1.8rem;
-	display: grid; place-items: center; border-radius: 50%; background: var(--primary); color: #fff; font-weight: 800; font-size: .85rem; }
+	display: grid; place-items: center; border-radius: 50%; background: var(--primary); color: var(--on-primary); font-weight: 800; font-size: .85rem; }
 .setup-step__t { font-weight: 700; font-size: var(--fs-md); margin-bottom: .3rem; }
 .copyrow { display: flex; gap: .5rem; align-items: stretch; }
 .copyrow .secretkey { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
@@ -1169,3 +1172,33 @@ em { font-style: normal; color: var(--muted); }
 	display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
 .rsum__diff { font-weight: 800; color: var(--accent-text); }
 .rsum__tot .old { color: var(--muted); } .rsum__tot .arr { color: var(--muted); margin: 0 .15rem; }
+
+/* ============================================================================
+   Agro-Modernist finish — ported from the design artifacts.
+   ========================================================================== */
+/* Noir dark: the app bar and hero cards stay deep obsidian-green with light
+   text; the vibrant mint --primary is reserved for buttons/links/accents. */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) .topstack { background: linear-gradient(180deg, #12241b, #0f1d15); }
+	:root:not([data-theme="light"]) .summary-card,
+	:root:not([data-theme="light"]) .rate-preview {
+		background: linear-gradient(135deg, #1e402d, #13251b); color: #fff; border: 1px solid rgba(133, 215, 169, .16);
+	}
+}
+:root[data-theme="dark"] .topstack { background: linear-gradient(180deg, #12241b, #0f1d15); }
+:root[data-theme="dark"] .summary-card,
+:root[data-theme="dark"] .rate-preview {
+	background: linear-gradient(135deg, #1e402d, #13251b); color: #fff; border: 1px solid rgba(133, 215, 169, .16);
+}
+
+/* Card list rows get a subtle left accent stripe (dashboard neighbours, etc.). */
+.list__row.card { position: relative; overflow: hidden; }
+.list__row.card::before {
+	content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+	background: color-mix(in srgb, var(--primary) 55%, transparent);
+}
+
+/* Eyebrow / KPI labels in the mono face, uppercase — the "technical" tag look. */
+.summary-card__label, .kpi__label, .onboard__eyebrow {
+	font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .04em; font-weight: 700;
+}
