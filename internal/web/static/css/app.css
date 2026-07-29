@@ -144,8 +144,17 @@ body {
 	background-image: var(--glow);
 	background-repeat: no-repeat;
 	background-attachment: fixed;
+}
+/* Reserve space for the fixed bottom tab bar — only on pages that render it
+   (authenticated). Without this scope, the login/offline pages (no tab bar) get
+   an extra 72px below a 100dvh container and show a phantom vertical scrollbar. */
+body.has-nav {
 	padding-bottom: calc(72px + env(safe-area-inset-bottom));
 }
+/* Full-height, self-centering pages without the nav (login, offline) provide
+   their own padding via .auth, so drop the .main gutter — otherwise it stacks
+   on top of a 100dvh child and forces a phantom scrollbar at every size. */
+body:not(.has-nav) .main { padding: 0; }
 
 /* The off-canvas side drawer is fixed and parked just off the right edge when
    closed. On iOS Safari a fixed element beyond the viewport becomes pannable,
@@ -183,6 +192,7 @@ h1, h2, h3, .section-title, .summary-card__value, .summary-card__label,
 }
 .muted { color: var(--muted); font-size: .9rem; }
 .small { font-size: .78rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 em { font-style: normal; color: var(--muted); }
 
 /* ---- Sticky top stack (app bar + year bar move together) -------------- */
@@ -1224,7 +1234,7 @@ em { font-style: normal; color: var(--muted); }
 
 /* Login — brand lockup above the card, gradient logo tile (rotating machine
    mark), mono kicker + field labels, and an "oder" divider before passkey. */
-.auth { flex-direction: column; gap: 0; }
+.auth { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; }
 .auth__brand { margin-bottom: 1.4rem; }
 .auth__logo { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center;
 	background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 14px 30px -14px rgba(17,86,56,.7); margin-bottom: .4rem; }

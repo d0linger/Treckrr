@@ -17,9 +17,9 @@
 			<span class="yearcard__year">{{.Year}}</span>
 			<span class="yearcard__meta">{{num .Hours}} h</span>
 			{{if .Completed}}
-				{{if .Paid}}<span class="chip2 chip2--paid"><span class="chip2__g">✓</span>Bezahlt</span>
+				{{if .Paid}}<span class="chip2 chip2--paid"><span class="chip2__g">{{template "ic-check"}}</span>Bezahlt</span>
 				{{else}}<span class="chip2 chip2--owe"><span class="chip2__g">€</span>Offen</span>{{end}}
-			{{else}}<span class="chip2 chip2--prog"><span class="chip2__g">◔</span>Läuft</span>{{end}}
+			{{else}}<span class="chip2 chip2--prog"><span class="chip2__g">{{template "ic-clock"}}</span>Läuft</span>{{end}}
 			<span class="yearcard__value">{{money .Cost}}</span>
 		</a>
 		{{else}}

@@ -45,7 +45,7 @@
 
 		{{if .Completed}}
 		<div class="beleg__foot beleg__foot--sub {{if not .Paid}}beleg__foot--owe{{end}}">
-			<span>Status</span><span>{{if .Paid}}✓ Bezahlt{{else}}Offen{{end}}</span>
+			<span>Status</span><span>{{if .Paid}}{{template "ic-check"}} Bezahlt{{else}}Offen{{end}}</span>
 		</div>
 		{{end}}
 	</div>

@@ -11,7 +11,7 @@
 	<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 	<link rel="stylesheet" href="/static/css/app.css?v={{.AssetVersion}}">
 </head>
-<body>
+<body{{if .User}} class="has-nav"{{end}}>
 {{/* Shared SVG gradient defs for chart bars (referenced via fill: url(#…) in
     app.css). Stop colours are set by CSS class so they follow the theme. */}}
 <svg class="gradient-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs>

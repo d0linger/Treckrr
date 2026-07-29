@@ -21,7 +21,7 @@
 		<div class="attn">
 			{{if and (not .Completed) .StaleCount}}
 			<a class="attn__row attn__row--warn" href="/years/{{.Year.ID}}/recalc">
-				<span class="attn__ic attn__ic--warn">⚠</span>
+				<span class="attn__ic attn__ic--warn">{{template "ic-warn"}}</span>
 				<span class="attn__txt"><strong>{{.StaleCount}} Buchung(en)</strong> nach Grundlagen-Änderung neu zu berechnen</span>
 				<span class="attn__go">›</span>
 			</a>
@@ -85,7 +85,7 @@
 				<input type="hidden" name="paid" value="{{if .Paid}}false{{else}}true{{end}}">
 				<button class="paychip {{if .Paid}}paychip--paid{{else}}paychip--open{{end}}" type="submit"
 					title="Klicken, um auf {{if .Paid}}offen{{else}}bezahlt{{end}} zu setzen">
-					{{if .Paid}}✓ Bezahlt{{else}}Offen{{end}}
+					{{if .Paid}}{{template "ic-check"}} Bezahlt{{else}}Offen{{end}}
 				</button>
 			</form>
 			{{else if eq .Entries 0}}
