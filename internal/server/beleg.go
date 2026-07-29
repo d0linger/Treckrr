@@ -7,6 +7,15 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// BelegRate is one distinct applied hourly rate (a frozen rig snapshot) used in
+// a beleg, shown in the optional Kostengrundlage appendix.
+type BelegRate struct {
+	Tractor  string
+	Load     string
+	Machines string
+	Rate     decimal.Decimal
+}
+
 // handleNeighborBeleg renders a compact, share-friendly statement for one
 // neighbor and year (bookings + ledger + saldo) — a clean list to screenshot
 // and hand over. Read-only; no actions, no editing.
@@ -47,6 +56,31 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 			ledgerSum = ledgerSum.Add(l.Amount)
 		}
 	}
+
+	// Distinct applied hourly rates (frozen rig snapshots) for the optional
+	// Kostengrundlage appendix — built straight from the entries, so it stays
+	// historically exact even after the basis was edited.
+	var rates []BelegRate
+	bookings := 0
+	seen := map[string]bool{}
+	for _, e := range entries {
+		if e.Voided {
+			continue
+		}
+		bookings++
+		key := e.TractorLabel + "|" + e.LoadLabel + "|" + e.MachineLabels + "|" + e.HourlyRate.String()
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		rates = append(rates, BelegRate{Tractor: e.TractorLabel, Load: e.LoadLabel, Machines: e.MachineLabels, Rate: e.HourlyRate})
+	}
+	// Populate the basis name for the appendix header (loaded on demand).
+	if year.Base == nil {
+		if b, err := s.store.GetBase(r.Context(), year.BaseID); err == nil {
+			year.Base = b
+		}
+	}
 	// Payment status is only tracked once a year is completed.
 	paid := false
 	if year.Completed() {
@@ -72,6 +106,9 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["Saldo"] = cost.Add(ledgerSum)
 	data["Completed"] = year.Completed()
 	data["Paid"] = paid
+	data["Rates"] = rates
+	data["Bookings"] = bookings
+	data["ShowGrund"] = r.URL.Query().Get("grundlage") == "1"
 	data["Today"] = time.Now().Format("02.01.2006")
 	s.render(w, r, "beleg", data)
 }

@@ -1,55 +1,82 @@
 {{define "content"}}
-<section class="stack">
-	<a class="backlink" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ {{.Neighbor.Name}} · {{.Year.Year}}</a>
-	<p class="muted small">Kompakte Übersicht zum Screenshotten &amp; Weitergeben.</p>
+<section class="stack beleg-page">
+	<a class="backlink no-print" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ {{.Neighbor.Name}} · {{.Year.Year}}</a>
 
-	<div class="beleg">
-		<div class="beleg__head">
-			<span class="beleg__who">{{.Neighbor.Name}}</span>
-			<span class="beleg__yr">Abrechnung {{.Year.Year}}</span>
+	<div class="beleg{{if .ShowGrund}} beleg--grund{{end}}" id="beleg">
+		<div class="beleg__hero">
+			<div class="beleg__hero-top">
+				<span class="beleg__who">{{.Neighbor.Name}}</span>
+				<span class="beleg__yr">Abrechnung {{.Year.Year}}</span>
+			</div>
+			<div class="beleg__hl">Saldo{{if .Completed}} · {{if .Paid}}bezahlt{{else}}offen{{end}}{{end}}</div>
+			<div class="beleg__hv">{{money .Saldo}}</div>
+			<div class="beleg__hb">
+				<span>Leistungen {{money .TotalCost}}</span>
+				{{if .Ledger}}<span>Verrechnung {{money .LedgerSum}}</span>{{end}}
+				<span>{{num .TotalHours}} h · {{.Bookings}} Buchungen</span>
+			</div>
 		</div>
+
+		<div class="beleg__sec">Leistungen</div>
+		<div class="beleg__lhead"><span>Datum</span><span>Leistung</span><span class="beleg__r">h</span><span class="beleg__r">Betrag</span></div>
 		{{range .Entries}}
-		<div class="beleg__row {{if .Voided}}beleg__row--void{{end}}">
-			<span class="beleg__l">
-				<span class="beleg__date">{{date .Date}}</span>
-				<span>
-					<span class="beleg__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}</span>
-					<span class="beleg__sub">{{if .Voided}} · storniert{{else}} · {{num .Hours}} h × {{money .HourlyRate}}{{end}}</span>
-				</span>
-			</span>
-			<span class="beleg__cost">{{money .Cost}}</span>
+		<div class="beleg__lrow{{if .Voided}} beleg__lrow--void{{end}}">
+			<span class="beleg__d">{{.Date.Format "02.01."}}</span>
+			<span class="beleg__t">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}{{if .Voided}} · storniert{{end}}</span>
+			<span class="beleg__h beleg__r">{{if .Voided}}—{{else}}{{num .Hours}}{{end}}</span>
+			<span class="beleg__b beleg__r">{{money .Cost}}</span>
 		</div>
 		{{else}}
-		<div class="beleg__row"><span class="muted">Keine Buchungen in diesem Jahr.</span></div>
+		<div class="beleg__empty">Keine Buchungen in diesem Jahr.</div>
 		{{end}}
-		<div class="beleg__foot {{if .Ledger}}beleg__foot--sub{{else}}beleg__foot--total{{end}}">
-			<span>{{if .Ledger}}Leistungen{{else}}Summe{{end}}</span><span>{{money .TotalCost}}</span>
-		</div>
+		<div class="beleg__lsub"><span></span><span>Leistungen</span><span class="beleg__r">{{num .TotalHours}}</span><span class="beleg__r">{{money .TotalCost}}</span></div>
 
 		{{if .Ledger}}
+		<div class="beleg__sec">Verrechnung</div>
 		{{range .Ledger}}
-		<div class="beleg__row {{if .Voided}}beleg__row--void{{end}}">
-			<span class="beleg__l">
-				<span class="beleg__date">{{date .Date}}</span>
-				<span>
-					<span class="beleg__task">{{if .Amount.IsNegative}}Ich schulde{{else}}Zusatzforderung{{end}}</span>
-					<span class="beleg__sub">{{if .Description}} · {{.Description}}{{end}}{{if .Voided}} · storniert{{end}}</span>
-				</span>
-			</span>
-			<span class="beleg__cost">{{money .Amount}}</span>
+		<div class="beleg__lrow beleg__lrow--ver{{if .Voided}} beleg__lrow--void{{end}}">
+			<span class="beleg__d">{{.Date.Format "02.01."}}</span>
+			<span class="beleg__t">{{if .Amount.IsNegative}}Ich schulde{{else}}Zusatzforderung{{end}}{{if .Description}} · {{.Description}}{{end}}{{if .Voided}} · storniert{{end}}</span>
+			<span class="beleg__h beleg__r"></span>
+			<span class="beleg__b beleg__r{{if .Amount.IsNegative}} beleg__b--neg{{end}}">{{money .Amount}}</span>
 		</div>
 		{{end}}
-		<div class="beleg__foot beleg__foot--sub"><span>Verrechnung</span><span>{{money .LedgerSum}}</span></div>
-		<div class="beleg__foot beleg__foot--total"><span>Saldo</span><span>{{money .Saldo}}</span></div>
+		<div class="beleg__lsub beleg__lsub--muted"><span></span><span>Verrechnung</span><span class="beleg__r"></span><span class="beleg__r">{{money .LedgerSum}}</span></div>
 		{{end}}
 
-		{{if .Completed}}
-		<div class="beleg__foot beleg__foot--sub {{if not .Paid}}beleg__foot--owe{{end}}">
-			<span>Status</span><span>{{if .Paid}}{{template "ic-check"}} Bezahlt{{else}}Offen{{end}}</span>
+		{{if .Rates}}
+		<div class="beleg__grund">
+			<div class="beleg__grund-h"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Kostengrundlage{{with .Year.Base}} · {{.Name}}{{end}}</div>
+			<div class="beleg__grund-sub">Angewandte Sätze — die volle Aufschlüsselung steht in den Grundlagen.</div>
+			{{range .Rates}}
+			<div class="beleg__grate">
+				<span class="beleg__grate-nm">{{.Tractor}}</span>
+				<span class="beleg__grate-calc">{{.Load}}{{if .Machines}} · {{.Machines}}{{end}}</span>
+				<span class="beleg__grate-rt">{{money .Rate}}/h</span>
+			</div>
+			{{end}}
 		</div>
 		{{end}}
+
+		<div class="beleg__foot">Stand {{.Today}} · Treckrr · {{num .TotalHours}} h</div>
 	</div>
 
-	<p class="muted small center">Stand {{.Today}} · Treckrr · {{num .TotalHours}} h</p>
+	<div class="beleg__actions no-print">
+		<button type="button" class="btn btn--primary btn--block" data-beleg-print>
+			<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.6"/><path d="M7 17h10v4H7z"/></svg>
+			Drucken / Als PDF speichern
+		</button>
+		<div class="beleg__actrow">
+			<button type="button" class="btn btn--ghost" data-beleg-copy>{{template "ic-copy"}} Text kopieren</button>
+			<button type="button" class="btn btn--ghost" data-beleg-image>
+				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m4 17 5-5 4 4 3-3 4 4"/></svg>Bild
+			</button>
+			{{if .Rates}}
+			<button type="button" class="btn btn--ghost" data-beleg-grund aria-pressed="{{if .ShowGrund}}true{{else}}false{{end}}">
+				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Grundlage
+			</button>
+			{{end}}
+		</div>
+	</div>
 </section>
 {{end}}
