@@ -44,16 +44,16 @@ receipt.
 ## Screenshots
 
 <p align="center">
-  <img src="docs/img/login.png" width="200" alt="Login — password + passkey">
+  <img src="docs/img/login.png" width="200" alt="Login — password or passkey">
   <img src="docs/img/dashboard.png" width="200" alt="Billing-year dashboard">
+  <img src="docs/img/grundlagen.png" width="200" alt="Rate basis — tractor & machine rates">
   <img src="docs/img/neighbor.png" width="200" alt="Neighbour — balance & new booking">
-  <img src="docs/img/verrechnung.png" width="200" alt="Bookings & running account (Verrechnung)">
 </p>
 <p align="center">
+  <img src="docs/img/verrechnung.png" width="200" alt="Bookings & running account (Verrechnung)">
   <img src="docs/img/beleg.png" width="200" alt="Shareable receipt (Beleg)">
   <img src="docs/img/stats.png" width="200" alt="Statistics — KPIs & charts">
   <img src="docs/img/menu.png" width="200" alt="Side-drawer navigation">
-  <img src="docs/img/dashboard-dark.png" width="200" alt="Dark mode">
 </p>
 <p align="center"><sub>Mobile-first PWA · German UI · light &amp; dark themes · password + TOTP or one-tap passkey login · exact-decimal billing with running-account offset (Verrechnung) and a shareable receipt.</sub></p>
 
