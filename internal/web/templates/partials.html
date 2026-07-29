@@ -15,7 +15,7 @@
 		<a class="workspace__back" href="/bases" title="Zu den Grundlagen">‹ Grundlagen</a>
 		<div class="workspace__title">
 			<strong>{{.Base.Year}} — {{.Base.Name}}</strong>
-			{{if .Base.Locked}}<span class="badge">🔒 gesperrt</span>{{end}}
+			{{if .Base.Locked}}<span class="badge">{{template "ic-lock"}} gesperrt</span>{{end}}
 		</div>
 		<nav class="subtabs" role="tablist">
 			<a class="subtab {{if eq .Active "prices"}}is-active{{end}}" href="/prices?base={{.Base.ID}}" role="tab">Kosten</a>
@@ -102,6 +102,7 @@
 {{define "ic-plus"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>{{end}}
 {{define "ic-x"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>{{end}}
 {{define "ic-key"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="4.5"/><path d="M11.2 11.2 20 20"/><path d="M17 17l2-2"/><path d="M14.5 14.5l2-2"/></svg>{{end}}
+{{define "ic-lock"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2.2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>{{end}}
 {{define "ic-copy"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>{{end}}
 {{define "ic-eye"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>{{end}}
 {{define "ic-shield"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>{{end}}
