@@ -301,7 +301,10 @@ em { font-style: normal; color: var(--muted); }
 		box-shadow: 0 2px 4px rgba(0, 0, 0, .10), 0 14px 30px rgba(0, 0, 0, .14);
 	}
 }
-@keyframes page-in { from { opacity: 0; transform: translateY(6px); } }
+/* Fade only — no transform: a transform on .main would make it the containing
+   block for position:fixed descendants (e.g. the quick-book FAB), trapping them
+   at the page bottom instead of pinning them to the viewport. */
+@keyframes page-in { from { opacity: 0; } }
 .stack { display: flex; flex-direction: column; gap: 1rem; }
 .section-title { font-size: var(--fs-lg); font-weight: 800; letter-spacing: -.01em; margin-top: .6rem; }
 
