@@ -44,16 +44,18 @@ receipt.
 ## Screenshots
 
 <p align="center">
-  <img src="docs/img/login.png" width="240" alt="Login with password + passkey">
-  <img src="docs/img/dashboard.png" width="240" alt="Billing-year overview">
-  <img src="docs/img/menu.png" width="240" alt="Side menu / drawer">
+  <img src="docs/img/login.png" width="200" alt="Login — password + passkey">
+  <img src="docs/img/dashboard.png" width="200" alt="Billing-year dashboard">
+  <img src="docs/img/neighbor.png" width="200" alt="Neighbour — balance & new booking">
+  <img src="docs/img/verrechnung.png" width="200" alt="Bookings & running account (Verrechnung)">
 </p>
 <p align="center">
-  <img src="docs/img/neighbor.png" width="240" alt="Neighbour bookings">
-  <img src="docs/img/stats.png" width="240" alt="Statistics and charts">
-  <img src="docs/img/dashboard-dark.png" width="240" alt="Dark mode">
+  <img src="docs/img/beleg.png" width="200" alt="Shareable receipt (Beleg)">
+  <img src="docs/img/stats.png" width="200" alt="Statistics — KPIs & charts">
+  <img src="docs/img/menu.png" width="200" alt="Side-drawer navigation">
+  <img src="docs/img/dashboard-dark.png" width="200" alt="Dark mode">
 </p>
-<p align="center"><sub>Mobile-first PWA · German UI · light &amp; dark themes · password + TOTP or one-tap passkey login · exact-decimal billing.</sub></p>
+<p align="center"><sub>Mobile-first PWA · German UI · light &amp; dark themes · password + TOTP or one-tap passkey login · exact-decimal billing with running-account offset (Verrechnung) and a shareable receipt.</sub></p>
 
 ---
 
@@ -415,13 +417,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
 
 GitHub workflows under `.github/workflows/`:
 
-- **CI** — `go vet`, tests with the race detector, build, and `golangci-lint`.
-- **Security** — `gosec` (static analysis) and `govulncheck` (known CVEs).
-- **CodeQL** — semantic scanning for Go, JavaScript and Actions.
-- **Dependency review** — on pull requests.
-- **GitSecret** — `gitleaks` scans the full git history for leaked secrets.
-- **DeadCode** — fails the build on unreachable functions.
-- **Docker** — builds the multi-arch image and pushes it to GHCR.
+- **CI** (`ci.yml`) — `go vet`, tests with the race detector, build, and `golangci-lint`.
+- **Security** (`security.yml`) — `gosec` (static analysis) and `govulncheck` (known CVEs).
+- **Dependency review** (`dependency-review.yml`) — on pull requests.
+- **Gitleaks** (`gitleaks.yml`) — scans the full git history for leaked secrets.
+- **DeadCode** (`deadcode.yml`) — fails the build on unreachable functions.
+- **Docker** (`docker-publish.yml`) — builds the multi-arch image and pushes it to GHCR.
 
 **Dependabot** keeps Go modules, GitHub Actions and the Docker base image current.
 Vulnerability reports: [SECURITY.md](SECURITY.md).
