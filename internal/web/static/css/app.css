@@ -921,7 +921,7 @@ em { font-style: normal; color: var(--muted); }
 .beleg__sec { font-family: var(--font-mono); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase;
 	color: var(--muted); padding: .7rem .9rem .15rem; }
 .beleg__lhead, .beleg__lrow, .beleg__lsub {
-	display: grid; grid-template-columns: 2.9rem 1fr 1.3rem 6rem; gap: .5rem; align-items: baseline; padding: .5rem .9rem; }
+	display: grid; grid-template-columns: 2.9rem 1fr 2.9rem 6rem; gap: .5rem; align-items: baseline; padding: .5rem .9rem; }
 .beleg__lhead { font-family: var(--font-mono); font-size: .64rem; letter-spacing: .04em; text-transform: uppercase;
 	color: var(--muted); padding-top: .1rem; padding-bottom: .35rem; }
 .beleg__r { text-align: right; white-space: nowrap; }
