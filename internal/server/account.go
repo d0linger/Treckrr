@@ -66,6 +66,11 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 		redirect(w, r, "/account/password")
 		return
 	}
+	if current == next {
+		s.setFlash(w, r, "error", "Das neue Passwort darf nicht mit dem aktuellen Passwort übereinstimmen.")
+		redirect(w, r, "/account/password")
+		return
+	}
 	if msg := passwordPolicyError(next); msg != "" {
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, "/account/password")
