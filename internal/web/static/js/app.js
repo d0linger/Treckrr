@@ -440,6 +440,210 @@
 		});
 	})();
 
+	// ---- Beleg: print / copy-as-text / image export / Kostengrundlage ----
+	(function () {
+		var beleg = document.getElementById("beleg");
+		if (!beleg) return;
+		var scope = beleg.parentNode;
+
+		function toast(msg) {
+			var t = document.createElement("div");
+			t.className = "beleg-toast";
+			t.setAttribute("role", "status");
+			t.textContent = msg;
+			document.body.appendChild(t);
+			requestAnimationFrame(function () { t.classList.add("is-on"); });
+			setTimeout(function () {
+				t.classList.remove("is-on");
+				setTimeout(function () { t.remove(); }, 260);
+			}, 1900);
+		}
+		function txt(el, sel) {
+			var n = el.querySelector(sel);
+			return n ? n.textContent.replace(/\s+/g, " ").trim() : "";
+		}
+
+		// Clean, label-based plain-text version of the currently shown beleg.
+		function belegText() {
+			var out = [];
+			Array.prototype.forEach.call(beleg.children, function (el) {
+				if (el.classList.contains("beleg__hero")) {
+					out.push("Beleg · " + txt(el, ".beleg__who") + " · " + txt(el, ".beleg__yr"));
+					out.push("Saldo: " + txt(el, ".beleg__hv"));
+					var hb = el.querySelector(".beleg__hb");
+					if (hb) out.push(hb.textContent.replace(/\s+/g, " ").trim());
+					out.push("--------------------------------");
+				} else if (el.classList.contains("beleg__sec")) {
+					out.push(el.textContent.trim() + ":");
+				} else if (el.classList.contains("beleg__lrow")) {
+					var d = txt(el, ".beleg__d"), t = txt(el, ".beleg__t"),
+						h = txt(el, ".beleg__h"), b = txt(el, ".beleg__b");
+					var line = "  " + d + " · " + t;
+					if (h && h !== "—") line += " · " + h + " h";
+					out.push(line + " · " + b);
+				} else if (el.classList.contains("beleg__lsub")) {
+					var c = el.children;
+					var lbl = c[1] ? c[1].textContent.trim() : "";
+					var hh = c[2] ? c[2].textContent.trim() : "";
+					var bb = c[3] ? c[3].textContent.trim() : "";
+					out.push("  " + lbl + ": " + (hh ? hh + " h · " : "") + bb);
+				} else if (el.classList.contains("beleg__grund")) {
+					if (!beleg.classList.contains("beleg--grund")) return;
+					out.push("");
+					out.push(txt(el, ".beleg__grund-h"));
+					Array.prototype.forEach.call(el.children, function (c) {
+						var sp = c.querySelectorAll("span");
+						if (c.classList.contains("beleg__gcap")) {
+							out.push(c.textContent.trim() + ":");
+						} else if (c.classList.contains("beleg__gt--head") || c.classList.contains("beleg__gm--head") ||
+							c.classList.contains("beleg__grund-h") || c.classList.contains("beleg__grund-sub")) {
+							/* skip captions/headers */
+						} else if (c.classList.contains("beleg__gt")) {
+							var idEl = c.querySelector(".beleg__gt-id");
+							if (idEl) {
+								var psSmall = idEl.querySelector("small");
+								var psTxt = psSmall ? psSmall.textContent.trim() : "";
+								var idMain = idEl.textContent.replace(psTxt, "").replace(/\s+/g, " ").trim();
+								if (idMain) out.push("  " + idMain + (psTxt ? " · " + psTxt : ""));
+							}
+							var blEl = c.querySelector(".beleg__gt-bl");
+							var smEl = blEl ? blEl.querySelector("small") : null;
+							var mach = smEl ? smEl.textContent.trim() : "";
+							var bl = blEl ? blEl.textContent.replace(mach, "").replace(/\s+/g, " ").trim() : "";
+							out.push("    " + bl + " · " + txt(c, ".beleg__gt-ps") + " €/PS·h · " + txt(c, ".beleg__gt-rt") + "/h" + (mach ? "  → " + mach : ""));
+						} else if (c.classList.contains("beleg__gm")) {
+							out.push("  " + sp[0].textContent.trim() + " · " + sp[1].textContent.trim() + " AB · " + sp[2].textContent.trim() + " €/AB·h · " + sp[3].textContent.trim() + "/h");
+						}
+					});
+				} else if (el.classList.contains("beleg__foot")) {
+					out.push("");
+					out.push(el.textContent.trim());
+				}
+			});
+			return out.join("\n");
+		}
+		function copyText(s) {
+			if (navigator.clipboard && navigator.clipboard.writeText) {
+				return navigator.clipboard.writeText(s);
+			}
+			return new Promise(function (res, rej) {
+				var a = document.createElement("textarea");
+				a.value = s; a.style.position = "fixed"; a.style.opacity = "0";
+				document.body.appendChild(a); a.select();
+				var ok = false;
+				try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+				a.remove();
+				if (ok) { res(); } else { rej(new Error("copy failed")); }
+			});
+		}
+
+		// Image export: clone with inlined computed styles + inlined fonts,
+		// rasterize via an SVG foreignObject → canvas → PNG. No external libs.
+		function b64(buf) {
+			var bytes = new Uint8Array(buf), s = "", chunk = 0x8000;
+			for (var i = 0; i < bytes.length; i += chunk) {
+				s += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+			}
+			return btoa(s);
+		}
+		function inlineFonts() {
+			var faces = [
+				["Manrope", 800, "/static/fonts/manrope-800.woff2"],
+				["Hanken Grotesk", 400, "/static/fonts/hanken-400.woff2"],
+				["Hanken Grotesk", 600, "/static/fonts/hanken-600.woff2"],
+				["JetBrains Mono", 500, "/static/fonts/jetbrainsmono-500.woff2"]
+			];
+			return Promise.all(faces.map(function (f) {
+				return fetch(f[2]).then(function (r) {
+					if (!r.ok) throw new Error("font " + r.status);
+					return r.arrayBuffer();
+				}).then(function (buf) {
+					return '@font-face{font-family:"' + f[0] + '";font-weight:' + f[1]
+						+ ';src:url(data:font/woff2;base64,' + b64(buf) + ') format("woff2")}';
+				}).catch(function () { return ""; });
+			})).then(function (parts) { return parts.join(""); });
+		}
+		function inlineStyles(src, dst) {
+			var cs = getComputedStyle(src), s = "";
+			for (var i = 0; i < cs.length; i++) {
+				var p = cs[i]; s += p + ":" + cs.getPropertyValue(p) + ";";
+			}
+			dst.setAttribute("style", s);
+			var sc = src.children, dc = dst.children;
+			for (var j = 0; j < sc.length; j++) inlineStyles(sc[j], dc[j]);
+		}
+		function belegPng() {
+			var rect = beleg.getBoundingClientRect();
+			var w = Math.ceil(rect.width), h = Math.ceil(beleg.scrollHeight);
+			var clone = beleg.cloneNode(true);
+			inlineStyles(beleg, clone);
+			return inlineFonts().then(function (fontCss) {
+				var xml = new XMLSerializer().serializeToString(clone);
+				var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">'
+					+ '<foreignObject width="100%" height="100%">'
+					+ '<div xmlns="http://www.w3.org/1999/xhtml" style="width:' + w + 'px">'
+					+ '<style>' + fontCss + '</style>' + xml + '</div></foreignObject></svg>';
+				var url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+				return new Promise(function (res, rej) {
+					var img = new Image();
+					img.onload = function () {
+						var scale = 2, cv = document.createElement("canvas");
+						cv.width = w * scale; cv.height = h * scale;
+						var ctx = cv.getContext("2d");
+						ctx.scale(scale, scale);
+						var bg = getComputedStyle(document.body).backgroundColor;
+						if (!bg || bg === "transparent" || /rgba?\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/.test(bg)) bg = "#fff";
+						ctx.fillStyle = bg;
+						ctx.fillRect(0, 0, w, h);
+						ctx.drawImage(img, 0, 0);
+						cv.toBlob(function (blob) { if (blob) { res(blob); } else { rej(new Error("toBlob null")); } }, "image/png");
+					};
+					img.onerror = function () { rej(new Error("svg load failed")); };
+					img.src = url;
+				});
+			});
+		}
+		function download(blob, name) {
+			var u = URL.createObjectURL(blob), a = document.createElement("a");
+			a.href = u; a.download = name; document.body.appendChild(a); a.click();
+			a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 1000);
+		}
+
+		var printBtn = scope.querySelector("[data-beleg-print]");
+		if (printBtn) printBtn.addEventListener("click", function () { window.print(); });
+
+		var copyBtn = scope.querySelector("[data-beleg-copy]");
+		if (copyBtn) copyBtn.addEventListener("click", function () {
+			copyText(belegText()).then(
+				function () { toast("Beleg als Text kopiert"); },
+				function () { toast("Kopieren war nicht möglich"); });
+		});
+
+		var grundBtn = scope.querySelector("[data-beleg-grund]");
+		if (grundBtn) grundBtn.addEventListener("click", function () {
+			var on = !beleg.classList.contains("beleg--grund");
+			beleg.classList.toggle("beleg--grund", on);
+			grundBtn.setAttribute("aria-pressed", on ? "true" : "false");
+		});
+
+		var imgBtn = scope.querySelector("[data-beleg-image]");
+		if (imgBtn) imgBtn.addEventListener("click", function () {
+			if (imgBtn.disabled) return;
+			imgBtn.disabled = true;
+			belegPng().then(function (blob) {
+				var canClip = window.ClipboardItem && navigator.clipboard && navigator.clipboard.write;
+				if (canClip) {
+					return navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]).then(
+						function () { toast("Beleg als Bild kopiert"); },
+						function () { download(blob, "beleg.png"); toast("Beleg als Bild gespeichert"); });
+				}
+				download(blob, "beleg.png"); toast("Beleg als Bild gespeichert");
+			}).catch(function () {
+				toast("Bild-Export hier nicht möglich – nutze Drucken/PDF");
+			}).then(function () { imgBtn.disabled = false; });
+		});
+	})();
+
 	// Register the service worker for offline/PWA support.
 	if ("serviceWorker" in navigator) {
 		window.addEventListener("load", function () {

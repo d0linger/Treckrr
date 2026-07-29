@@ -150,6 +150,31 @@ func (s *Store) EntryMachineIDs(ctx context.Context, entryID int64) ([]int64, er
 	return ids, rows.Err()
 }
 
+// EntryMachineIDsByNeighborYear returns the machine ids of a neighbor's
+// non-voided bookings in a year, grouped by entry id — a single query so the
+// beleg's Kostengrundlage doesn't fan out one lookup per booking.
+func (s *Store) EntryMachineIDsByNeighborYear(ctx context.Context, neighborID, yearID int64) (map[int64][]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT em.entry_id, em.machine_id
+		  FROM entry_machines em
+		  JOIN entries e ON e.id = em.entry_id
+		 WHERE e.neighbor_id = $1 AND e.billing_year_id = $2
+		   AND NOT e.voided AND em.machine_id IS NOT NULL`, neighborID, yearID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]int64{}
+	for rows.Next() {
+		var eid, mid int64
+		if err := rows.Scan(&eid, &mid); err != nil {
+			return nil, err
+		}
+		out[eid] = append(out[eid], mid)
+	}
+	return out, rows.Err()
+}
+
 // GetEntry returns an entry by id.
 func (s *Store) GetEntry(ctx context.Context, id int64) (*models.Entry, error) {
 	row := s.db.QueryRowContext(ctx, entrySelect+` WHERE id=$1`, id)
