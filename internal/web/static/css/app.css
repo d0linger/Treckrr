@@ -951,7 +951,9 @@ em { font-style: normal; color: var(--muted); }
 .beleg__gt--head .beleg__r { font-size: .6rem; text-transform: uppercase; }
 .beleg__gt--first { border-top: 1px solid var(--border); }
 .beleg__gt--cont { border-top: 1px solid var(--card-hairline); }
-.beleg__gt--cont::before { content: ""; position: absolute; left: .9rem; top: 0; bottom: 0; width: 2px; background: var(--border); }
+/* group continuation rows with a left line on the (empty) tractor cell — a real
+   border so it survives the image export's DOM clone (a ::before would not). */
+.beleg__gt--cont .beleg__gt-id { align-self: stretch; border-left: 2px solid var(--border); }
 .beleg__gt-id { font-family: var(--font-display); font-weight: 800; font-size: .82rem; line-height: 1.05; }
 .beleg__gt-id small { display: block; font-family: var(--font-mono); font-weight: 500; font-size: .64rem; color: var(--muted); }
 .beleg__gt-bl { font-weight: 600; font-size: .88rem; min-width: 0; overflow-wrap: anywhere; }
