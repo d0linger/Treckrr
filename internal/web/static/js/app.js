@@ -554,7 +554,10 @@
 				["JetBrains Mono", 500, "/static/fonts/jetbrainsmono-500.woff2"]
 			];
 			return Promise.all(faces.map(function (f) {
-				return fetch(f[2]).then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+				return fetch(f[2]).then(function (r) {
+					if (!r.ok) throw new Error("font " + r.status);
+					return r.arrayBuffer();
+				}).then(function (buf) {
 					return '@font-face{font-family:"' + f[0] + '";font-weight:' + f[1]
 						+ ';src:url(data:font/woff2;base64,' + b64(buf) + ') format("woff2")}';
 				}).catch(function () { return ""; });
@@ -588,7 +591,9 @@
 						cv.width = w * scale; cv.height = h * scale;
 						var ctx = cv.getContext("2d");
 						ctx.scale(scale, scale);
-						ctx.fillStyle = getComputedStyle(document.body).backgroundColor || "#fff";
+						var bg = getComputedStyle(document.body).backgroundColor;
+						if (!bg || bg === "transparent" || /rgba?\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/.test(bg)) bg = "#fff";
+						ctx.fillStyle = bg;
 						ctx.fillRect(0, 0, w, h);
 						ctx.drawImage(img, 0, 0);
 						cv.toBlob(function (blob) { if (blob) { res(blob); } else { rej(new Error("toBlob null")); } }, "image/png");

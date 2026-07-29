@@ -122,6 +122,9 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	// used overall. Voided bookings don't count.
 	usedTractor := map[int64]map[int64]map[int64]bool{} // tractor -> load -> set(machine)
 	usedMachine := map[int64]bool{}
+	// One batched lookup of every booking's machines (avoids a per-entry query).
+	// Best-effort: on error the appendix simply omits the machine links.
+	machineIDsByEntry, _ := s.store.EntryMachineIDsByNeighborYear(r.Context(), neighbor.ID, year.ID)
 	bookings := 0
 	for _, e := range entries {
 		if e.Voided {
@@ -147,12 +150,10 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 			set = map[int64]bool{}
 			loads[*e.LoadLevelID] = set
 		}
-		if mids, err := s.store.EntryMachineIDs(r.Context(), e.ID); err == nil {
-			for _, mid := range mids {
-				if _, ok := machineByID[mid]; ok {
-					set[mid] = true
-					usedMachine[mid] = true
-				}
+		for _, mid := range machineIDsByEntry[e.ID] {
+			if _, ok := machineByID[mid]; ok {
+				set[mid] = true
+				usedMachine[mid] = true
 			}
 		}
 	}

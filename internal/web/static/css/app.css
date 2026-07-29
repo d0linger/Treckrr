@@ -984,12 +984,16 @@ em { font-style: normal; color: var(--muted); }
 
 @media print {
 	.beleg-page .backlink, .beleg__actions { display: none !important; }
-	.beleg { border: 0; box-shadow: none; }
+	/* print backgrounds (hero, header/subtotal bands) — off by default in print */
+	.beleg { border: 0; box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 	.beleg, .beleg * { color: #111 !important; }
 	.beleg__hero { background: #e9efe9 !important; }
 	.beleg__hero * { color: #10241a !important; }
 	.beleg__lhead, .beleg__lsub { background: #f4f4f4 !important; }
 	.beleg__b--neg { color: #b04a2a !important; }
+	/* keep dates/sub-labels muted so the hierarchy survives the flat #111 rule */
+	.beleg__d, .beleg__sec, .beleg__lhead, .beleg__foot, .beleg__grund-sub,
+	.beleg__gt--head, .beleg__gm--head, .beleg__gt-id small, .beleg__gt-bl small { color: #666 !important; }
 }
 
 /* ---- Empty states ------------------------------------------------------ */
