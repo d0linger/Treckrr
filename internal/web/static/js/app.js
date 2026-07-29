@@ -493,7 +493,10 @@
 					out.push(txt(el, ".beleg__grund-h"));
 					el.querySelectorAll(".beleg__grate").forEach(function (g) {
 						g.querySelectorAll(".beleg__gline").forEach(function (ln) {
-							out.push("  " + txt(ln, ".beleg__gl-nm") + " · " + txt(ln, ".beleg__gl-rt"));
+							var nmEl = ln.querySelector(".beleg__gl-nm");
+							var calc = txt(ln, ".beleg__gl-calc");
+							var nm = nmEl ? nmEl.textContent.replace(calc, "").replace(/\s+/g, " ").trim() : "";
+							out.push("  " + nm + (calc ? " (" + calc + ")" : "") + " · " + txt(ln, ".beleg__gl-rt"));
 						});
 					});
 				} else if (el.classList.contains("beleg__foot")) {

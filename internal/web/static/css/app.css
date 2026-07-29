@@ -947,6 +947,7 @@ em { font-style: normal; color: var(--muted); }
 .beleg__gline { display: flex; justify-content: space-between; gap: .6rem; align-items: baseline; }
 .beleg__gline + .beleg__gline { margin-top: .2rem; }
 .beleg__gl-nm { font-size: .85rem; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.beleg__gl-calc { display: block; font-family: var(--font-mono); font-size: .68rem; font-weight: 400; color: var(--muted); margin-top: 1px; }
 .beleg__gl-rt { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .85rem; font-weight: 500; white-space: nowrap; }
 /* split combos: the tractor/machine components are secondary, the Satz stands out */
 .beleg__grate--split .beleg__gl-nm { font-weight: 500; color: var(--muted); }

@@ -51,7 +51,7 @@
 			{{range .Rates}}
 			<div class="beleg__grate{{if .Parts}} beleg__grate--split{{end}}">
 				{{if .Parts}}
-				{{range .Parts}}<div class="beleg__gline"><span class="beleg__gl-nm">{{.Label}}</span><span class="beleg__gl-rt">{{money .Rate}}/h</span></div>{{end}}
+				{{range .Parts}}<div class="beleg__gline"><span class="beleg__gl-nm">{{.Label}}{{if .Calc}}<small class="beleg__gl-calc">{{.Calc}}</small>{{end}}</span><span class="beleg__gl-rt">{{money .Rate}}/h</span></div>{{end}}
 				<div class="beleg__gline beleg__gline--sum"><span class="beleg__gl-nm">Satz</span><span class="beleg__gl-rt">{{money .Total}}/h</span></div>
 				{{else}}
 				<div class="beleg__gline"><span class="beleg__gl-nm">{{.Title}}</span><span class="beleg__gl-rt">{{money .Total}}/h</span></div>

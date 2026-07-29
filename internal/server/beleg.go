@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -11,10 +12,22 @@ import (
 )
 
 // BelegRatePart is one component of an applied hourly rate — the tractor or a
-// single machine — in the Kostengrundlage appendix.
+// single machine — in the Kostengrundlage appendix. Calc is the small formula
+// shown beside it, e.g. "100 PS × 0,4752 €/PS·h".
 type BelegRatePart struct {
 	Label string
+	Calc  string
 	Rate  decimal.Decimal
+}
+
+// deu formats a decimal in German notation (comma) without trailing zeros,
+// e.g. 1.1500 -> "1,15", 0.4752 -> "0,4752", 100 -> "100".
+func deu(d decimal.Decimal) string {
+	s := d.String()
+	if strings.Contains(s, ".") {
+		s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
+	}
+	return strings.ReplaceAll(s, ".", ",")
 }
 
 // BelegRate is one distinct applied hourly rate used in a beleg. When the basis
@@ -123,7 +136,11 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 			if t, okT := tractorByID[*e.TractorID]; okT {
 				if l, okL := loadByID[*e.LoadLevelID]; okL {
 					if mids, err := s.store.EntryMachineIDs(r.Context(), e.ID); err == nil && len(mids) > 0 {
-						parts := []BelegRatePart{{Label: "Traktor " + t.Label() + " · " + l.Name, Rate: calc.TractorRate(t, l)}}
+						parts := []BelegRatePart{{
+							Label: "Traktor " + t.Label() + " · " + l.Name,
+							Calc:  deu(t.PS) + " PS × " + deu(l.CostPerPS) + " €/PS·h",
+							Rate:  calc.TractorRate(t, l),
+						}}
 						sum := calc.TractorRate(t, l)
 						resolved := true
 						for _, mid := range mids {
@@ -133,7 +150,11 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 								break
 							}
 							mr := calc.MachineRate(m)
-							parts = append(parts, BelegRatePart{Label: m.Name, Rate: mr})
+							parts = append(parts, BelegRatePart{
+								Label: m.Name,
+								Calc:  deu(m.WorkingWidth) + " AB × " + deu(m.CostPerAB) + " €/AB·h",
+								Rate:  mr,
+							})
 							sum = sum.Add(mr)
 						}
 						if resolved && sum.Round(2).Equal(e.HourlyRate) {
