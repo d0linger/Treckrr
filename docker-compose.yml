@@ -48,7 +48,7 @@ services:
       RP_ID: ${RP_ID:-localhost}
       RP_ORIGIN: ${RP_ORIGIN:-http://localhost:8080}
     ports:
-      - "${HOST_PORT:-8080}:8080"
+      - "${HOST_PORT:-8080}:${APP_PORT:-8080}"
 
   # Automatic daily database backups. Enable with:
   #   docker compose --profile backup up -d

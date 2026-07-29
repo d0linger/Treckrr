@@ -202,6 +202,7 @@ Requires Docker with Compose.
 
 ```bash
 # 1. Configure — set at least SESSION_SECRET, ADMIN_PASSWORD, POSTGRES_PASSWORD
+#    (if you change POSTGRES_PASSWORD, update the password inside DATABASE_URL too)
 cp .env.example .env
 
 # 2. Start (builds the app image, runs PostgreSQL as a standalone container)
@@ -235,10 +236,11 @@ Copy `.env.example` to `.env` and adjust. The most important variables:
 
 | Variable | Purpose |
 |---|---|
-| `SESSION_SECRET` | Cookie-signing secret, ≥ 16 chars (`openssl rand -hex 32`). **Change for production.** |
+| `SESSION_SECRET` | Cookie-signing secret, ≥ 32 chars (`openssl rand -hex 32`). **Change for production.** |
+| `ENCRYPTION_SECRET` | AES key for data at rest (TOTP secrets), ≥ 16 chars. Defaults to `SESSION_SECRET` — see the rotation note below. |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Bootstrap admin, reconciled on **every** start |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Database credentials |
-| `DATABASE_URL` | Postgres connection string (defaults to the `db` container) |
+| `DATABASE_URL` | Postgres connection string (defaults to the `db` container). Its embedded password must match `POSTGRES_PASSWORD`. |
 | `COOKIE_SECURE` | `true` when served over HTTPS directly (or use `TRUST_PROXY`) |
 | `TRUST_PROXY` | `true` behind a trusted reverse proxy — derives client IP & scheme from `X-Forwarded-*` |
 | `RP_ID` / `RP_ORIGIN` | Passkeys: host (no scheme) and full origin, e.g. `treckrr.example.com` / `https://treckrr.example.com` |
@@ -248,6 +250,14 @@ Copy `.env.example` to `.env` and adjust. The most important variables:
 > [!IMPORTANT]
 > The admin password is reconciled from the environment on **every** start, so
 > access is always recoverable through your Docker configuration.
+
+> [!IMPORTANT]
+> **Rotating `SESSION_SECRET`** also changes the data-at-rest key unless
+> `ENCRYPTION_SECRET` is set, which would make stored TOTP secrets undecryptable.
+> To rotate safely, first set `ENCRYPTION_SECRET` to the **old** `SESSION_SECRET`
+> so existing TOTP secrets keep decrypting, then change `SESSION_SECRET`. Rotate
+> `ENCRYPTION_SECRET` itself only once those secrets are re-encrypted or no
+> longer needed.
 
 ---
 
