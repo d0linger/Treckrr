@@ -172,8 +172,8 @@
 				<span class="bcard__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}</span>
 				{{if or .Voided (index $.Stale .ID)}}
 				<span class="bcard__badges">
-					{{if .Voided}}<span class="chip2 chip2--void"><span class="chip2__g">⊘</span>Storniert</span>{{end}}
-					{{if index $.Stale .ID}}<span class="chip2 chip2--stale" title="Preis weicht von der aktuellen Grundlage ab"><span class="chip2__g">⚠</span>Grundlage</span>{{end}}
+					{{if .Voided}}<span class="chip2 chip2--void"><span class="chip2__g">{{template "ic-void"}}</span>Storniert</span>{{end}}
+					{{if index $.Stale .ID}}<span class="chip2 chip2--stale" title="Preis weicht von der aktuellen Grundlage ab"><span class="chip2__g">{{template "ic-warn"}}</span>Grundlage</span>{{end}}
 				</span>
 				{{end}}
 				<span class="bcard__cost">{{money .Cost}}</span>
@@ -233,7 +233,7 @@
 				<span class="bcard__date">{{date .Date}}</span>
 				<span class="bcard__task">{{if .Amount.IsNegative}}Ich schulde{{else}}Zusatzforderung{{end}}</span>
 				{{if .Voided}}
-				<span class="bcard__badges"><span class="chip2 chip2--void"><span class="chip2__g">⊘</span>Storniert</span></span>
+				<span class="bcard__badges"><span class="chip2 chip2--void"><span class="chip2__g">{{template "ic-void"}}</span>Storniert</span></span>
 				{{end}}
 				<span class="bcard__cost">{{money .Amount}}</span>
 			</div>
