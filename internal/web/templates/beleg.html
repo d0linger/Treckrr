@@ -46,13 +46,16 @@
 
 		{{if .Rates}}
 		<div class="beleg__grund">
-			<div class="beleg__grund-h"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Kostengrundlage{{with .Year.Base}} · {{.Name}}{{end}}</div>
-			<div class="beleg__grund-sub">Angewandte Sätze — die volle Aufschlüsselung steht in den Grundlagen.</div>
+			<div class="beleg__grund-h"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Kostengrundlage{{with .Year.Base}} · {{.Name}} ({{.Year}}){{end}}</div>
+			<div class="beleg__grund-sub">Angewandte Sätze — Traktor + Maschinen je Kombination.</div>
 			{{range .Rates}}
-			<div class="beleg__grate">
-				<span class="beleg__grate-nm">{{.Tractor}}</span>
-				<span class="beleg__grate-calc">{{.Load}}{{if .Machines}} · {{.Machines}}{{end}}</span>
-				<span class="beleg__grate-rt">{{money .Rate}}/h</span>
+			<div class="beleg__grate{{if .Parts}} beleg__grate--split{{end}}">
+				{{if .Parts}}
+				{{range .Parts}}<div class="beleg__gline"><span class="beleg__gl-nm">{{.Label}}</span><span class="beleg__gl-rt">{{money .Rate}}/h</span></div>{{end}}
+				<div class="beleg__gline beleg__gline--sum"><span class="beleg__gl-nm">Satz</span><span class="beleg__gl-rt">{{money .Total}}/h</span></div>
+				{{else}}
+				<div class="beleg__gline"><span class="beleg__gl-nm">{{.Title}}</span><span class="beleg__gl-rt">{{money .Total}}/h</span></div>
+				{{end}}
 			</div>
 			{{end}}
 		</div>

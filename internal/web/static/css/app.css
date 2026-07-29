@@ -943,11 +943,17 @@ em { font-style: normal; color: var(--muted); }
 	font-family: var(--font-display); font-weight: 800; font-size: .9rem; }
 .beleg__grund-h .ic { width: 1em; height: 1em; color: var(--primary-strong); }
 .beleg__grund-sub { padding: 0 .9rem .4rem; font-size: .74rem; color: var(--muted); }
-.beleg__grate { display: grid; grid-template-columns: 1fr auto; gap: .05rem .6rem; padding: .5rem .9rem; border-top: 1px solid var(--card-hairline); }
-.beleg__grate-nm { font-weight: 600; font-size: .85rem; }
-.beleg__grate-calc { grid-column: 1 / 2; font-family: var(--font-mono); font-size: .72rem; color: var(--muted); }
-.beleg__grate-rt { grid-column: 2 / 3; grid-row: 1 / 3; align-self: center; font-family: var(--font-mono);
-	font-variant-numeric: tabular-nums; font-weight: 500; font-size: .88rem; white-space: nowrap; }
+.beleg__grate { padding: .55rem .9rem; border-top: 1px solid var(--card-hairline); }
+.beleg__gline { display: flex; justify-content: space-between; gap: .6rem; align-items: baseline; }
+.beleg__gline + .beleg__gline { margin-top: .2rem; }
+.beleg__gl-nm { font-size: .85rem; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.beleg__gl-rt { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .85rem; font-weight: 500; white-space: nowrap; }
+/* split combos: the tractor/machine components are secondary, the Satz stands out */
+.beleg__grate--split .beleg__gl-nm { font-weight: 500; color: var(--muted); }
+.beleg__grate--split .beleg__gl-rt { color: var(--muted); }
+.beleg__gline--sum { border-top: 1px solid var(--card-hairline); margin-top: .32rem; padding-top: .32rem; }
+.beleg__grate--split .beleg__gline--sum .beleg__gl-nm,
+.beleg__grate--split .beleg__gline--sum .beleg__gl-rt { font-weight: 700; color: var(--text); }
 
 .beleg__foot { text-align: center; color: var(--muted); font-family: var(--font-mono); font-size: .73rem; padding: .7rem .9rem .5rem; }
 

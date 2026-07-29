@@ -492,8 +492,9 @@
 					out.push("");
 					out.push(txt(el, ".beleg__grund-h"));
 					el.querySelectorAll(".beleg__grate").forEach(function (g) {
-						out.push("  " + txt(g, ".beleg__grate-nm") + " · " + txt(g, ".beleg__grate-rt")
-							+ " (" + txt(g, ".beleg__grate-calc") + ")");
+						g.querySelectorAll(".beleg__gline").forEach(function (ln) {
+							out.push("  " + txt(ln, ".beleg__gl-nm") + " · " + txt(ln, ".beleg__gl-rt"));
+						});
 					});
 				} else if (el.classList.contains("beleg__foot")) {
 					out.push("");

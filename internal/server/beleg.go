@@ -5,15 +5,25 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+
+	"treckrr/internal/calc"
+	"treckrr/internal/models"
 )
 
-// BelegRate is one distinct applied hourly rate (a frozen rig snapshot) used in
-// a beleg, shown in the optional Kostengrundlage appendix.
+// BelegRatePart is one component of an applied hourly rate — the tractor or a
+// single machine — in the Kostengrundlage appendix.
+type BelegRatePart struct {
+	Label string
+	Rate  decimal.Decimal
+}
+
+// BelegRate is one distinct applied hourly rate used in a beleg. When the basis
+// still reproduces the frozen rate exactly, Parts itemizes it into the tractor
+// and machine contributions; otherwise only the compact Title + Total are set.
 type BelegRate struct {
-	Tractor  string
-	Load     string
-	Machines string
-	Rate     decimal.Decimal
+	Title string
+	Parts []BelegRatePart
+	Total decimal.Decimal
 }
 
 // handleNeighborBeleg renders a compact, share-friendly statement for one
@@ -57,9 +67,32 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Distinct applied hourly rates (frozen rig snapshots) for the optional
-	// Kostengrundlage appendix — built straight from the entries, so it stays
-	// historically exact even after the basis was edited.
+	// Basis items, keyed by id, to itemize the applied rates. Errors are
+	// tolerated: a missing map just means the appendix falls back to the
+	// compact (frozen) line for the affected combos.
+	tractorByID := map[int64]models.Tractor{}
+	loadByID := map[int64]models.LoadLevel{}
+	machineByID := map[int64]models.Machine{}
+	if ts, err := s.store.ListTractors(r.Context(), year.BaseID); err == nil {
+		for _, t := range ts {
+			tractorByID[t.ID] = t
+		}
+	}
+	if ls, err := s.store.ListLoadLevels(r.Context(), year.BaseID); err == nil {
+		for _, l := range ls {
+			loadByID[l.ID] = l
+		}
+	}
+	if ms, err := s.store.ListMachines(r.Context(), year.BaseID); err == nil {
+		for _, m := range ms {
+			machineByID[m.ID] = m
+		}
+	}
+
+	// Distinct applied rates for the optional Kostengrundlage appendix. Each is
+	// itemized into its tractor + machine parts from the basis, but only when
+	// that reproduces the frozen rate exactly (so a later basis edit can never
+	// show a misleading breakdown); otherwise the compact frozen line is kept.
 	var rates []BelegRate
 	bookings := 0
 	seen := map[string]bool{}
@@ -73,9 +106,47 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		seen[key] = true
-		rates = append(rates, BelegRate{Tractor: e.TractorLabel, Load: e.LoadLabel, Machines: e.MachineLabels, Rate: e.HourlyRate})
+
+		title := e.TractorLabel
+		for _, part := range []string{e.LoadLabel, e.MachineLabels} {
+			if part == "" {
+				continue
+			}
+			if title != "" {
+				title += " · "
+			}
+			title += part
+		}
+		br := BelegRate{Title: title, Total: e.HourlyRate}
+
+		if e.TractorID != nil && e.LoadLevelID != nil {
+			if t, okT := tractorByID[*e.TractorID]; okT {
+				if l, okL := loadByID[*e.LoadLevelID]; okL {
+					if mids, err := s.store.EntryMachineIDs(r.Context(), e.ID); err == nil && len(mids) > 0 {
+						parts := []BelegRatePart{{Label: "Traktor " + t.Label() + " · " + l.Name, Rate: calc.TractorRate(t, l)}}
+						sum := calc.TractorRate(t, l)
+						resolved := true
+						for _, mid := range mids {
+							m, okM := machineByID[mid]
+							if !okM {
+								resolved = false
+								break
+							}
+							mr := calc.MachineRate(m)
+							parts = append(parts, BelegRatePart{Label: m.Name, Rate: mr})
+							sum = sum.Add(mr)
+						}
+						if resolved && sum.Round(2).Equal(e.HourlyRate) {
+							br.Parts = parts
+						}
+					}
+				}
+			}
+		}
+		rates = append(rates, br)
 	}
-	// Populate the basis name for the appendix header (loaded on demand).
+
+	// Populate the basis (name + year) for the appendix header.
 	if year.Base == nil {
 		if b, err := s.store.GetBase(r.Context(), year.BaseID); err == nil {
 			year.Base = b
