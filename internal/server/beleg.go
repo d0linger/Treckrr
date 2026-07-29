@@ -11,13 +11,27 @@ import (
 	"treckrr/internal/models"
 )
 
-// BelegRatePart is one component of an applied hourly rate — the tractor or a
-// single machine — in the Kostengrundlage appendix. Calc is the small formula
-// shown beside it, e.g. "100 PS × 0,4752 €/PS·h".
-type BelegRatePart struct {
-	Label string
-	Calc  string
-	Rate  decimal.Decimal
+// BelegTractorLoad is one Belastungsstufe a tractor was used at this year: its
+// €/PS·h, the resulting tractor €/h, and the machines run with that combination.
+type BelegTractorLoad struct {
+	Load     string
+	CostPS   string
+	Rate     decimal.Decimal
+	Machines []string
+}
+
+// BelegTractor groups the load levels a tractor was used at this year.
+type BelegTractor struct {
+	Head  string
+	Loads []BelegTractorLoad
+}
+
+// BelegMachine is one machine used this year, with its €/AB·h and €/h.
+type BelegMachine struct {
+	Name   string
+	Width  string
+	CostAB string
+	Rate   decimal.Decimal
 }
 
 // deu formats a decimal in German notation (comma) without trailing zeros,
@@ -30,13 +44,16 @@ func deu(d decimal.Decimal) string {
 	return strings.ReplaceAll(s, ".", ",")
 }
 
-// BelegRate is one distinct applied hourly rate used in a beleg. When the basis
-// still reproduces the frozen rate exactly, Parts itemizes it into the tractor
-// and machine contributions; otherwise only the compact Title + Total are set.
-type BelegRate struct {
-	Title string
-	Parts []BelegRatePart
-	Total decimal.Decimal
+// deu2 is like deu but keeps at least two decimals, for unit prices (€/PS·h,
+// €/AB·h): 0.4 -> "0,40", 12 -> "12,00", 0.4752 -> "0,4752".
+func deu2(d decimal.Decimal) string {
+	s := deu(d)
+	if i := strings.IndexByte(s, ','); i < 0 {
+		s += ",00"
+	} else if n := len(s) - i - 1; n < 2 {
+		s += strings.Repeat("0", 2-n)
+	}
+	return s
 }
 
 // handleNeighborBeleg renders a compact, share-friendly statement for one
@@ -80,91 +97,100 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Basis items, keyed by id, to itemize the applied rates. Errors are
-	// tolerated: a missing map just means the appendix falls back to the
-	// compact (frozen) line for the affected combos.
+	// Basis items (ordered lists + id lookups) for the Kostengrundlage. Errors
+	// are tolerated: without them the appendix simply stays empty.
+	tractorList, _ := s.store.ListTractors(r.Context(), year.BaseID)
+	loadList, _ := s.store.ListLoadLevels(r.Context(), year.BaseID)
+	machineList, _ := s.store.ListMachines(r.Context(), year.BaseID)
 	tractorByID := map[int64]models.Tractor{}
+	for _, t := range tractorList {
+		tractorByID[t.ID] = t
+	}
 	loadByID := map[int64]models.LoadLevel{}
+	for _, l := range loadList {
+		loadByID[l.ID] = l
+	}
 	machineByID := map[int64]models.Machine{}
-	if ts, err := s.store.ListTractors(r.Context(), year.BaseID); err == nil {
-		for _, t := range ts {
-			tractorByID[t.ID] = t
-		}
-	}
-	if ls, err := s.store.ListLoadLevels(r.Context(), year.BaseID); err == nil {
-		for _, l := range ls {
-			loadByID[l.ID] = l
-		}
-	}
-	if ms, err := s.store.ListMachines(r.Context(), year.BaseID); err == nil {
-		for _, m := range ms {
-			machineByID[m.ID] = m
-		}
+	for _, m := range machineList {
+		machineByID[m.ID] = m
 	}
 
-	// Distinct applied rates for the optional Kostengrundlage appendix. Each is
-	// itemized into its tractor + machine parts from the basis, but only when
-	// that reproduces the frozen rate exactly (so a later basis edit can never
-	// show a misleading breakdown); otherwise the compact frozen line is kept.
-	var rates []BelegRate
+	// Collect what THIS neighbor actually used this year: which tractors, at
+	// which load levels, and which machines with each — plus the set of machines
+	// used overall. Voided bookings don't count.
+	usedTractor := map[int64]map[int64]map[int64]bool{} // tractor -> load -> set(machine)
+	usedMachine := map[int64]bool{}
 	bookings := 0
-	seen := map[string]bool{}
 	for _, e := range entries {
 		if e.Voided {
 			continue
 		}
 		bookings++
-		key := e.TractorLabel + "|" + e.LoadLabel + "|" + e.MachineLabels + "|" + e.HourlyRate.String()
-		if seen[key] {
+		if e.TractorID == nil || e.LoadLevelID == nil {
 			continue
 		}
-		seen[key] = true
-
-		title := e.TractorLabel
-		for _, part := range []string{e.LoadLabel, e.MachineLabels} {
-			if part == "" {
-				continue
-			}
-			if title != "" {
-				title += " · "
-			}
-			title += part
+		if _, ok := tractorByID[*e.TractorID]; !ok {
+			continue
 		}
-		br := BelegRate{Title: title, Total: e.HourlyRate}
-
-		if e.TractorID != nil && e.LoadLevelID != nil {
-			if t, okT := tractorByID[*e.TractorID]; okT {
-				if l, okL := loadByID[*e.LoadLevelID]; okL {
-					if mids, err := s.store.EntryMachineIDs(r.Context(), e.ID); err == nil && len(mids) > 0 {
-						parts := []BelegRatePart{{
-							Label: "Traktor " + t.Label() + " · " + l.Name,
-							Calc:  deu(t.PS) + " PS × " + deu(l.CostPerPS) + " €/PS·h",
-							Rate:  calc.TractorRate(t, l),
-						}}
-						sum := calc.TractorRate(t, l)
-						resolved := true
-						for _, mid := range mids {
-							m, okM := machineByID[mid]
-							if !okM {
-								resolved = false
-								break
-							}
-							mr := calc.MachineRate(m)
-							parts = append(parts, BelegRatePart{
-								Label: m.Name,
-								Calc:  deu(m.WorkingWidth) + " AB × " + deu(m.CostPerAB) + " €/AB·h",
-								Rate:  mr,
-							})
-							sum = sum.Add(mr)
-						}
-						if resolved && sum.Round(2).Equal(e.HourlyRate) {
-							br.Parts = parts
-						}
-					}
+		if _, ok := loadByID[*e.LoadLevelID]; !ok {
+			continue
+		}
+		loads := usedTractor[*e.TractorID]
+		if loads == nil {
+			loads = map[int64]map[int64]bool{}
+			usedTractor[*e.TractorID] = loads
+		}
+		set := loads[*e.LoadLevelID]
+		if set == nil {
+			set = map[int64]bool{}
+			loads[*e.LoadLevelID] = set
+		}
+		if mids, err := s.store.EntryMachineIDs(r.Context(), e.ID); err == nil {
+			for _, mid := range mids {
+				if _, ok := machineByID[mid]; ok {
+					set[mid] = true
+					usedMachine[mid] = true
 				}
 			}
 		}
-		rates = append(rates, br)
+	}
+
+	// Build the two tables in the basis' own order (tractors, load levels,
+	// machines), keeping only what was used.
+	var gTractors []BelegTractor
+	for _, t := range tractorList {
+		loads := usedTractor[t.ID]
+		if loads == nil {
+			continue
+		}
+		head := t.Ident
+		if t.Name != "" {
+			head += " " + t.Name
+		}
+		head += " · " + deu(t.PS) + " PS"
+		bt := BelegTractor{Head: head}
+		for _, l := range loadList {
+			set := loads[l.ID]
+			if set == nil {
+				continue
+			}
+			btl := BelegTractorLoad{Load: l.Name, CostPS: deu2(l.CostPerPS), Rate: calc.TractorRate(t, l)}
+			for _, m := range machineList {
+				if set[m.ID] {
+					btl.Machines = append(btl.Machines, m.Name)
+				}
+			}
+			bt.Loads = append(bt.Loads, btl)
+		}
+		if len(bt.Loads) > 0 {
+			gTractors = append(gTractors, bt)
+		}
+	}
+	var gMachines []BelegMachine
+	for _, m := range machineList {
+		if usedMachine[m.ID] {
+			gMachines = append(gMachines, BelegMachine{Name: m.Name, Width: deu(m.WorkingWidth), CostAB: deu2(m.CostPerAB), Rate: calc.MachineRate(m)})
+		}
 	}
 
 	// Populate the basis (name + year) for the appendix header.
@@ -198,7 +224,9 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["Saldo"] = cost.Add(ledgerSum)
 	data["Completed"] = year.Completed()
 	data["Paid"] = paid
-	data["Rates"] = rates
+	data["GrundTractors"] = gTractors
+	data["GrundMachines"] = gMachines
+	data["HasGrund"] = len(gTractors) > 0 || len(gMachines) > 0
 	data["Bookings"] = bookings
 	data["ShowGrund"] = r.URL.Query().Get("grundlage") == "1"
 	data["Today"] = time.Now().Format("02.01.2006")

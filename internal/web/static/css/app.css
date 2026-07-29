@@ -943,18 +943,23 @@ em { font-style: normal; color: var(--muted); }
 	font-family: var(--font-display); font-weight: 800; font-size: .9rem; }
 .beleg__grund-h .ic { width: 1em; height: 1em; color: var(--primary-strong); }
 .beleg__grund-sub { padding: 0 .9rem .4rem; font-size: .74rem; color: var(--muted); }
-.beleg__grate { padding: .55rem .9rem; border-top: 1px solid var(--card-hairline); }
-.beleg__gline { display: flex; justify-content: space-between; gap: .6rem; align-items: baseline; }
-.beleg__gline + .beleg__gline { margin-top: .2rem; }
-.beleg__gl-nm { font-size: .85rem; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
-.beleg__gl-calc { display: block; font-family: var(--font-mono); font-size: .68rem; font-weight: 400; color: var(--muted); margin-top: 1px; }
-.beleg__gl-rt { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .85rem; font-weight: 500; white-space: nowrap; }
-/* split combos: the tractor/machine components are secondary, the Satz stands out */
-.beleg__grate--split .beleg__gl-nm { font-weight: 500; color: var(--muted); }
-.beleg__grate--split .beleg__gl-rt { color: var(--muted); }
-.beleg__gline--sum { border-top: 1px solid var(--card-hairline); margin-top: .32rem; padding-top: .32rem; }
-.beleg__grate--split .beleg__gline--sum .beleg__gl-nm,
-.beleg__grate--split .beleg__gline--sum .beleg__gl-rt { font-weight: 700; color: var(--text); }
+/* Kostengrundlage as two reference tables (only what was used this year) */
+.beleg__gcap { font-family: var(--font-display); font-weight: 800; font-size: .88rem; padding: .7rem .9rem .2rem; }
+.beleg__gt { display: grid; grid-template-columns: 1fr 4.2rem 4.6rem; gap: .5rem; padding: .28rem .9rem; align-items: baseline; }
+.beleg__gt span:first-child { font-size: .85rem; }
+.beleg__gt .beleg__r { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .82rem; }
+.beleg__gt--head { font-family: var(--font-mono); font-size: .62rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding-bottom: .1rem; }
+.beleg__gt--head .beleg__r { font-family: var(--font-mono); font-size: .62rem; text-transform: uppercase; }
+.beleg__gt-t { font-weight: 700; font-size: .88rem; padding: .45rem .9rem .1rem; border-top: 1px solid var(--card-hairline); }
+.beleg__gt-t:first-of-type { border-top: 0; }
+.beleg__gt-m { font-family: var(--font-mono); font-size: .7rem; color: var(--muted); padding: 0 .9rem .12rem 1.4rem; }
+.beleg__gt-m::before { content: "↳ "; }
+.beleg__gm { display: grid; grid-template-columns: 1fr 2.6rem 3.6rem 4.6rem; gap: .5rem; padding: .3rem .9rem; align-items: baseline; border-top: 1px solid var(--card-hairline); }
+.beleg__gm span:first-child { font-size: .85rem; font-weight: 600; }
+.beleg__gm .beleg__r { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .82rem; }
+.beleg__gm--head { border-top: 0; font-family: var(--font-mono); font-size: .62rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding-bottom: .1rem; }
+.beleg__gm--head span:first-child { font-weight: 500; }
+.beleg__gm--head .beleg__r { font-size: .62rem; text-transform: uppercase; }
 
 .beleg__foot { text-align: center; color: var(--muted); font-family: var(--font-mono); font-size: .73rem; padding: .7rem .9rem .5rem; }
 

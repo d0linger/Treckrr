@@ -44,19 +44,29 @@
 		<div class="beleg__lsub beleg__lsub--muted"><span></span><span>Verrechnung</span><span class="beleg__r"></span><span class="beleg__r">{{money .LedgerSum}}</span></div>
 		{{end}}
 
-		{{if .Rates}}
+		{{if .HasGrund}}
 		<div class="beleg__grund">
 			<div class="beleg__grund-h"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Kostengrundlage{{with .Year.Base}} · {{.Name}} ({{.Year}}){{end}}</div>
-			<div class="beleg__grund-sub">Angewandte Sätze — Traktor + Maschinen je Kombination.</div>
-			{{range .Rates}}
-			<div class="beleg__grate{{if .Parts}} beleg__grate--split{{end}}">
-				{{if .Parts}}
-				{{range .Parts}}<div class="beleg__gline"><span class="beleg__gl-nm">{{.Label}}{{if .Calc}}<small class="beleg__gl-calc">{{.Calc}}</small>{{end}}</span><span class="beleg__gl-rt">{{money .Rate}}/h</span></div>{{end}}
-				<div class="beleg__gline beleg__gline--sum"><span class="beleg__gl-nm">Satz</span><span class="beleg__gl-rt">{{money .Total}}/h</span></div>
-				{{else}}
-				<div class="beleg__gline"><span class="beleg__gl-nm">{{.Title}}</span><span class="beleg__gl-rt">{{money .Total}}/h</span></div>
-				{{end}}
-			</div>
+			<div class="beleg__grund-sub">Nur die {{.Year.Year}} verwendeten Sätze.</div>
+
+			{{if .GrundTractors}}
+			<div class="beleg__gcap">Traktoren</div>
+			<div class="beleg__gt beleg__gt--head"><span>Belastung</span><span class="beleg__r">€/PS·h</span><span class="beleg__r">€/h</span></div>
+			{{range .GrundTractors}}
+			<div class="beleg__gt-t">{{.Head}}</div>
+			{{range .Loads}}
+			<div class="beleg__gt"><span>{{.Load}}</span><span class="beleg__r">{{.CostPS}}</span><span class="beleg__r">{{money .Rate}}</span></div>
+			{{if .Machines}}<div class="beleg__gt-m">{{range $i, $m := .Machines}}{{if $i}}, {{end}}{{$m}}{{end}}</div>{{end}}
+			{{end}}
+			{{end}}
+			{{end}}
+
+			{{if .GrundMachines}}
+			<div class="beleg__gcap">Maschinen</div>
+			<div class="beleg__gm beleg__gm--head"><span>Maschine</span><span class="beleg__r">AB</span><span class="beleg__r">€/AB·h</span><span class="beleg__r">€/h</span></div>
+			{{range .GrundMachines}}
+			<div class="beleg__gm"><span>{{.Name}}</span><span class="beleg__r">{{.Width}}</span><span class="beleg__r">{{.CostAB}}</span><span class="beleg__r">{{money .Rate}}</span></div>
+			{{end}}
 			{{end}}
 		</div>
 		{{end}}
@@ -74,7 +84,7 @@
 			<button type="button" class="btn btn--ghost" data-beleg-image>
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m4 17 5-5 4 4 3-3 4 4"/></svg>Bild
 			</button>
-			{{if .Rates}}
+			{{if .HasGrund}}
 			<button type="button" class="btn btn--ghost" data-beleg-grund aria-pressed="{{if .ShowGrund}}true{{else}}false{{end}}">
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Grundlage
 			</button>

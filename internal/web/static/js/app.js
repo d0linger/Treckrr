@@ -491,13 +491,22 @@
 					if (!beleg.classList.contains("beleg--grund")) return;
 					out.push("");
 					out.push(txt(el, ".beleg__grund-h"));
-					el.querySelectorAll(".beleg__grate").forEach(function (g) {
-						g.querySelectorAll(".beleg__gline").forEach(function (ln) {
-							var nmEl = ln.querySelector(".beleg__gl-nm");
-							var calc = txt(ln, ".beleg__gl-calc");
-							var nm = nmEl ? nmEl.textContent.replace(calc, "").replace(/\s+/g, " ").trim() : "";
-							out.push("  " + nm + (calc ? " (" + calc + ")" : "") + " · " + txt(ln, ".beleg__gl-rt"));
-						});
+					Array.prototype.forEach.call(el.children, function (c) {
+						var sp = c.querySelectorAll("span");
+						if (c.classList.contains("beleg__gcap")) {
+							out.push(c.textContent.trim() + ":");
+						} else if (c.classList.contains("beleg__gt--head") || c.classList.contains("beleg__gm--head") ||
+							c.classList.contains("beleg__grund-h") || c.classList.contains("beleg__grund-sub")) {
+							/* skip captions/headers */
+						} else if (c.classList.contains("beleg__gt-t")) {
+							out.push("  " + c.textContent.trim());
+						} else if (c.classList.contains("beleg__gt")) {
+							out.push("    " + sp[0].textContent.trim() + " · " + sp[1].textContent.trim() + " €/PS·h · " + sp[2].textContent.trim() + "/h");
+						} else if (c.classList.contains("beleg__gt-m")) {
+							out.push("      → " + c.textContent.trim());
+						} else if (c.classList.contains("beleg__gm")) {
+							out.push("  " + sp[0].textContent.trim() + " · " + sp[1].textContent.trim() + " AB · " + sp[2].textContent.trim() + " €/AB·h · " + sp[3].textContent.trim() + "/h");
+						}
 					});
 				} else if (el.classList.contains("beleg__foot")) {
 					out.push("");
