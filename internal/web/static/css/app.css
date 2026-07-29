@@ -924,7 +924,7 @@ em { font-style: normal; color: var(--muted); }
 	display: grid; grid-template-columns: 2.9rem 1fr 1.3rem 6rem; gap: .5rem; align-items: baseline; padding: .5rem .9rem; }
 .beleg__lhead { font-family: var(--font-mono); font-size: .64rem; letter-spacing: .04em; text-transform: uppercase;
 	color: var(--muted); padding-top: .1rem; padding-bottom: .35rem; }
-.beleg__r { text-align: right; }
+.beleg__r { text-align: right; white-space: nowrap; }
 .beleg__lrow { border-top: 1px solid var(--card-hairline); }
 .beleg__d { font-family: var(--font-mono); font-size: .74rem; color: var(--muted); }
 .beleg__t { font-weight: 600; font-size: .92rem; min-width: 0; overflow-wrap: anywhere; }
