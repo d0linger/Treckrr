@@ -20,9 +20,11 @@ type BelegTractorLoad struct {
 	Machines []string
 }
 
-// BelegTractor groups the load levels a tractor was used at this year.
+// BelegTractor groups the load levels a tractor was used at this year. Ident and
+// PS fill the left "rail" column of the Traktoren table.
 type BelegTractor struct {
-	Head  string
+	Ident string
+	PS    string
 	Loads []BelegTractorLoad
 }
 
@@ -163,12 +165,11 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		if loads == nil {
 			continue
 		}
-		head := t.Ident
-		if t.Name != "" {
-			head += " " + t.Name
+		ident := t.Ident
+		if ident == "" {
+			ident = t.Name
 		}
-		head += " · " + deu(t.PS) + " PS"
-		bt := BelegTractor{Head: head}
+		bt := BelegTractor{Ident: ident, PS: deu(t.PS)}
 		for _, l := range loadList {
 			set := loads[l.ID]
 			if set == nil {

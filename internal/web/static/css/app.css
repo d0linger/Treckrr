@@ -945,15 +945,19 @@ em { font-style: normal; color: var(--muted); }
 .beleg__grund-sub { padding: 0 .9rem .4rem; font-size: .74rem; color: var(--muted); }
 /* Kostengrundlage as two reference tables (only what was used this year) */
 .beleg__gcap { font-family: var(--font-display); font-weight: 800; font-size: .88rem; padding: .7rem .9rem .2rem; }
-.beleg__gt { display: grid; grid-template-columns: 1fr 4.2rem 4.6rem; gap: .5rem; padding: .28rem .9rem; align-items: baseline; }
-.beleg__gt span:first-child { font-size: .85rem; }
-.beleg__gt .beleg__r { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .82rem; }
-.beleg__gt--head { font-family: var(--font-mono); font-size: .62rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding-bottom: .1rem; }
-.beleg__gt--head .beleg__r { font-family: var(--font-mono); font-size: .62rem; text-transform: uppercase; }
-.beleg__gt-t { font-weight: 700; font-size: .88rem; padding: .45rem .9rem .1rem; border-top: 1px solid var(--card-hairline); }
-.beleg__gt-t:first-of-type { border-top: 0; }
-.beleg__gt-m { font-family: var(--font-mono); font-size: .7rem; color: var(--muted); padding: 0 .9rem .12rem 1.4rem; }
-.beleg__gt-m::before { content: "↳ "; }
+/* Traktoren: tractor+PS in a left rail (grouped with a line across loads) */
+.beleg__gt { display: grid; grid-template-columns: 3.6rem 1fr 3.4rem 4.6rem; gap: .4rem; padding: .42rem .9rem; align-items: baseline; position: relative; }
+.beleg__gt--head { padding: .3rem .9rem .2rem; font-family: var(--font-mono); font-size: .6rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.beleg__gt--head .beleg__r { font-size: .6rem; text-transform: uppercase; }
+.beleg__gt--first { border-top: 1px solid var(--border); }
+.beleg__gt--cont { border-top: 1px solid var(--card-hairline); }
+.beleg__gt--cont::before { content: ""; position: absolute; left: .9rem; top: 0; bottom: 0; width: 2px; background: var(--border); }
+.beleg__gt-id { font-family: var(--font-display); font-weight: 800; font-size: .82rem; line-height: 1.05; }
+.beleg__gt-id small { display: block; font-family: var(--font-mono); font-weight: 500; font-size: .64rem; color: var(--muted); }
+.beleg__gt-bl { font-weight: 600; font-size: .88rem; min-width: 0; overflow-wrap: anywhere; }
+.beleg__gt-bl small { display: block; font-family: var(--font-mono); font-weight: 400; font-size: .66rem; color: var(--muted); margin-top: 1px; }
+.beleg__gt-ps, .beleg__gt-rt { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .82rem; }
+.beleg__gt-rt { font-weight: 700; }
 .beleg__gm { display: grid; grid-template-columns: 1fr 2.6rem 3.6rem 4.6rem; gap: .5rem; padding: .3rem .9rem; align-items: baseline; border-top: 1px solid var(--card-hairline); }
 .beleg__gm span:first-child { font-size: .85rem; font-weight: 600; }
 .beleg__gm .beleg__r { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .82rem; }

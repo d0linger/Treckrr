@@ -51,12 +51,15 @@
 
 			{{if .GrundTractors}}
 			<div class="beleg__gcap">Traktoren</div>
-			<div class="beleg__gt beleg__gt--head"><span>Belastung</span><span class="beleg__r">€/PS·h</span><span class="beleg__r">€/h</span></div>
-			{{range .GrundTractors}}
-			<div class="beleg__gt-t">{{.Head}}</div>
-			{{range .Loads}}
-			<div class="beleg__gt"><span>{{.Load}}</span><span class="beleg__r">{{.CostPS}}</span><span class="beleg__r">{{money .Rate}}</span></div>
-			{{if .Machines}}<div class="beleg__gt-m">{{range $i, $m := .Machines}}{{if $i}}, {{end}}{{$m}}{{end}}</div>{{end}}
+			<div class="beleg__gt beleg__gt--head"><span>Traktor</span><span>Belastung</span><span class="beleg__r">€/PS·h</span><span class="beleg__r">€/h</span></div>
+			{{range .GrundTractors}}{{$t := .}}
+			{{range $i, $l := .Loads}}
+			<div class="beleg__gt{{if $i}} beleg__gt--cont{{else}} beleg__gt--first{{end}}">
+				<span class="beleg__gt-id">{{if eq $i 0}}{{$t.Ident}}<small>{{$t.PS}} PS</small>{{end}}</span>
+				<span class="beleg__gt-bl">{{$l.Load}}{{if $l.Machines}}<small>{{range $j, $m := $l.Machines}}{{if $j}}, {{end}}{{$m}}{{end}}</small>{{end}}</span>
+				<span class="beleg__r beleg__gt-ps">{{$l.CostPS}}</span>
+				<span class="beleg__r beleg__gt-rt">{{money $l.Rate}}</span>
+			</div>
 			{{end}}
 			{{end}}
 			{{end}}
