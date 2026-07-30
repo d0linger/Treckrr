@@ -29,7 +29,7 @@
 		{{else}}
 		<div class="beleg__empty">Keine Buchungen in diesem Jahr.</div>
 		{{end}}
-		<div class="beleg__lsub"><span></span><span>Leistungen</span><span class="beleg__r">{{num .TotalHours}}</span><span class="beleg__r">{{money .TotalCost}}</span></div>
+		<div class="beleg__lsub"><span></span><span>Leistungen</span><span class="beleg__r beleg__lsub-h">{{num .TotalHours}} h</span><span class="beleg__r">{{money .TotalCost}}</span></div>
 
 		{{if .Ledger}}
 		<div class="beleg__sec">Verrechnung</div>
@@ -74,7 +74,7 @@
 		</div>
 		{{end}}
 
-		<div class="beleg__foot">Stand {{.Today}} · Treckrr · {{num .TotalHours}} h</div>
+		<div class="beleg__foot">Stand {{.Today}} · Treckrr</div>
 	</div>
 
 	<div class="beleg__actions no-print">

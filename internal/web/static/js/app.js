@@ -488,7 +488,7 @@
 					var lbl = c[1] ? c[1].textContent.trim() : "";
 					var hh = c[2] ? c[2].textContent.trim() : "";
 					var bb = c[3] ? c[3].textContent.trim() : "";
-					out.push("  " + lbl + ": " + (hh ? hh + " h · " : "") + bb);
+					out.push("  " + lbl + ": " + (hh ? hh + " · " : "") + bb);
 				} else if (el.classList.contains("beleg__grund")) {
 					if (!beleg.classList.contains("beleg--grund")) return;
 					out.push("");
