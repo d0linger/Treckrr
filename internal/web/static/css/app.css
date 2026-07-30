@@ -968,7 +968,9 @@ em { font-style: normal; color: var(--muted); }
 .beleg__grund-h .ic { width: 1em; height: 1em; color: var(--primary-strong); }
 .beleg__grund-sub { padding: 0 .9rem .4rem; font-size: .74rem; color: var(--muted); }
 /* Kostengrundlage as two reference tables (only what was used this year) */
-.beleg__gcap { font-family: var(--font-display); font-weight: 800; font-size: .88rem; padding: .55rem .9rem .15rem; }
+/* Entity word in the head row (Traktor/Maschine): same mono/size/caps as the
+   labels beside it, only bolder + full-ink — it doubles as the table heading. */
+.beleg__ghcap { font-weight: 800; color: var(--text); }
 /* Traktoren: tractor+PS in a left rail (grouped with a line across loads) */
 .beleg__gt { display: grid; grid-template-columns: 3.6rem 1fr 3.4rem 4.6rem; gap: .4rem; padding: .3rem .9rem; align-items: baseline; position: relative; }
 .beleg__gt--head { padding: .3rem .9rem .2rem; font-family: var(--font-mono); font-size: .6rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
@@ -987,7 +989,7 @@ em { font-style: normal; color: var(--muted); }
 .beleg__gm { display: grid; grid-template-columns: 1fr 2.6rem 3.6rem 4.6rem; gap: .5rem; padding: .24rem .9rem; align-items: baseline; border-top: 1px solid var(--card-hairline); }
 .beleg__gm span:first-child { font-size: .85rem; font-weight: 600; }
 .beleg__gm .beleg__r { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .82rem; }
-.beleg__gm--head { border-top: 0; font-family: var(--font-mono); font-size: .62rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding-bottom: .1rem; }
+.beleg__gm--head { border-top: 1px solid var(--border); margin-top: .3rem; font-family: var(--font-mono); font-size: .62rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding-top: .45rem; padding-bottom: .1rem; }
 .beleg__gm--head span:first-child { font-weight: 500; }
 .beleg__gm--head .beleg__r { font-size: .62rem; text-transform: uppercase; }
 

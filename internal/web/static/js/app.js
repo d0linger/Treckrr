@@ -517,11 +517,12 @@
 					out.push(txt(el, ".beleg__grund-h"));
 					Array.prototype.forEach.call(el.children, function (c) {
 						var sp = c.querySelectorAll("span");
-						if (c.classList.contains("beleg__gcap")) {
-							out.push(c.textContent.trim() + ":");
-						} else if (c.classList.contains("beleg__gt--head") || c.classList.contains("beleg__gm--head") ||
-							c.classList.contains("beleg__grund-h") || c.classList.contains("beleg__grund-sub")) {
-							/* skip captions/headers */
+						if (c.classList.contains("beleg__gt--head") || c.classList.contains("beleg__gm--head")) {
+							// The head row's bold entity word doubles as the section label.
+							var cap = c.querySelector(".beleg__ghcap");
+							if (cap) out.push(cap.textContent.trim() + ":");
+						} else if (c.classList.contains("beleg__grund-h") || c.classList.contains("beleg__grund-sub")) {
+							/* skip section header/sub */
 						} else if (c.classList.contains("beleg__gt")) {
 							var idEl = c.querySelector(".beleg__gt-id");
 							if (idEl) {

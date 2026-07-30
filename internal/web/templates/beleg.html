@@ -66,8 +66,7 @@
 			<div class="beleg__grund-sub">Nur die {{.Year.Year}} verwendeten Sätze.</div>
 
 			{{if .GrundTractors}}
-			<div class="beleg__gcap">Traktoren</div>
-			<div class="beleg__gt beleg__gt--head"><span>Traktor</span><span>Belastung</span><span class="beleg__r">€/PS·h</span><span class="beleg__r">€/h</span></div>
+			<div class="beleg__gt beleg__gt--head"><span class="beleg__ghcap">Traktor</span><span>Belastung</span><span class="beleg__r">€/PS·h</span><span class="beleg__r">€/h</span></div>
 			{{range .GrundTractors}}{{$t := .}}
 			{{range $i, $l := .Loads}}
 			<div class="beleg__gt{{if $i}} beleg__gt--cont{{else}} beleg__gt--first{{end}}">
@@ -81,8 +80,7 @@
 			{{end}}
 
 			{{if .GrundMachines}}
-			<div class="beleg__gcap">Maschinen</div>
-			<div class="beleg__gm beleg__gm--head"><span>Maschine</span><span class="beleg__r">AB</span><span class="beleg__r">€/AB·h</span><span class="beleg__r">€/h</span></div>
+			<div class="beleg__gm beleg__gm--head"><span class="beleg__ghcap">Maschine</span><span class="beleg__r">AB</span><span class="beleg__r">€/AB·h</span><span class="beleg__r">€/h</span></div>
 			{{range .GrundMachines}}
 			<div class="beleg__gm"><span>{{.Name}}</span><span class="beleg__r">{{.Width}}</span><span class="beleg__r">{{.CostAB}}</span><span class="beleg__r">{{money .Rate}}</span></div>
 			{{end}}

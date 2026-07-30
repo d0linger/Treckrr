@@ -72,7 +72,7 @@ func TestBelegPageRenders(t *testing.T) {
 	execPage(t, "beleg", map[string]any{
 		"Title":      "Beleg",
 		"Neighbor":   map[string]any{"ID": int64(2), "Name": "Florian"},
-		"Year":       map[string]any{"ID": int64(1), "Year": 2026},
+		"Year":       map[string]any{"ID": int64(1), "Year": 2026, "Base": map[string]any{"Name": "Preisliste", "Year": 2026}},
 		"TotalCost":  d(498.19), "TotalHours": d(3.75),
 		"Saldo":      d(498.19), "LedgerSum": d(0),
 		"Completed":  false, "Paid": false, "Bookings": 3,
@@ -91,7 +91,20 @@ func TestBelegPageRenders(t *testing.T) {
 			{"Label": "Schwadern groß", "Count": 2, "Hours": d(3), "Cost": d(247)},
 			{"Label": "Mähen", "Count": 1, "Hours": d(2.25), "Cost": d(251.19)},
 		},
-		"Bundle": true, "HasGrund": false, "ShowGrund": false,
+		"Bundle": true, "ShowGrund": true, "HasGrund": true,
+		"GrundTractors": []map[string]any{
+			{"Ident": "4095", "PS": "100", "Loads": []map[string]any{
+				{"Load": "mittel", "CostPS": "0,40", "Rate": d(40), "Machines": []string{"Frontmähwerk", "Heckmähwerk"}},
+			}},
+			{"Ident": "9083", "PS": "94", "Loads": []map[string]any{
+				{"Load": "leicht", "CostPS": "0,38", "Rate": d(35.72), "Machines": []string{"Kreiselzettwender"}},
+				{"Load": "schwer", "CostPS": "0,42", "Rate": d(39.48), "Machines": []string{"Fräse"}},
+			}},
+		},
+		"GrundMachines": []map[string]any{
+			{"Name": "Frontmähwerk", "Width": "3,06", "CostAB": "14,00", "Rate": d(42.84)},
+			{"Name": "Kreiselzettwender", "Width": "8,8", "CostAB": "5,00", "Rate": d(44)},
+		},
 		"Today": "30.07.2026",
 	})
 }
