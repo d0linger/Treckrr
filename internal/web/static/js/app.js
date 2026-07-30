@@ -469,7 +469,7 @@
 			Array.prototype.forEach.call(beleg.children, function (el) {
 				if (el.classList.contains("beleg__hero")) {
 					out.push("Beleg · " + txt(el, ".beleg__who") + " · " + txt(el, ".beleg__yr"));
-					out.push("Saldo: " + txt(el, ".beleg__hv"));
+					out.push((txt(el, ".beleg__hl") || "Saldo") + ": " + txt(el, ".beleg__hv"));
 					var hb = el.querySelector(".beleg__hb");
 					if (hb) out.push(hb.textContent.replace(/\s+/g, " ").trim());
 					out.push("--------------------------------");
@@ -481,12 +481,14 @@
 					var line = "  " + d + " · " + t;
 					if (h && h !== "—") line += " · " + h + " h";
 					out.push(line + " · " + b);
+				} else if (el.classList.contains("beleg__empty")) {
+					out.push("  " + el.textContent.trim());
 				} else if (el.classList.contains("beleg__lsub")) {
 					var c = el.children;
 					var lbl = c[1] ? c[1].textContent.trim() : "";
 					var hh = c[2] ? c[2].textContent.trim() : "";
 					var bb = c[3] ? c[3].textContent.trim() : "";
-					out.push("  " + lbl + ": " + (hh ? hh + " h · " : "") + bb);
+					out.push("  " + lbl + ": " + (hh ? hh + " · " : "") + bb);
 				} else if (el.classList.contains("beleg__grund")) {
 					if (!beleg.classList.contains("beleg--grund")) return;
 					out.push("");
@@ -551,7 +553,8 @@
 				["Manrope", 800, "/static/fonts/manrope-800.woff2"],
 				["Hanken Grotesk", 400, "/static/fonts/hanken-400.woff2"],
 				["Hanken Grotesk", 600, "/static/fonts/hanken-600.woff2"],
-				["JetBrains Mono", 500, "/static/fonts/jetbrainsmono-500.woff2"]
+				["JetBrains Mono", 500, "/static/fonts/jetbrainsmono-500.woff2"],
+				["JetBrains Mono", 700, "/static/fonts/jetbrainsmono-700.woff2"]
 			];
 			return Promise.all(faces.map(function (f) {
 				return fetch(f[2]).then(function (r) {

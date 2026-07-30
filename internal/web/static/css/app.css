@@ -924,7 +924,7 @@ em { font-style: normal; color: var(--muted); }
 .beleg__sec { font-family: var(--font-mono); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase;
 	color: var(--muted); padding: .7rem .9rem .15rem; }
 .beleg__lhead, .beleg__lrow, .beleg__lsub {
-	display: grid; grid-template-columns: 2.9rem 1fr 2.9rem 6rem; gap: .5rem; align-items: baseline; padding: .5rem .9rem; }
+	display: grid; grid-template-columns: 2.9rem 1fr 3.4rem 6rem; gap: .5rem; align-items: baseline; padding: .5rem .9rem; }
 .beleg__lhead { font-family: var(--font-mono); font-size: .64rem; letter-spacing: .04em; text-transform: uppercase;
 	color: var(--muted); padding-top: .1rem; padding-bottom: .35rem; }
 .beleg__r { text-align: right; white-space: nowrap; }
@@ -937,6 +937,9 @@ em { font-style: normal; color: var(--muted); }
 .beleg__lrow--void .beleg__t, .beleg__lrow--void .beleg__b { text-decoration: line-through; color: var(--muted); }
 .beleg__lsub { border-top: 1px solid var(--border); background: var(--surface-2); font-weight: 600; }
 .beleg__lsub .beleg__r { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+/* Hours on the summary line are secondary — muted and smaller so the money
+   figure reads as the total, not two competing numbers. */
+.beleg__lsub-h { color: var(--muted); font-weight: 500; font-size: .72rem; }
 .beleg__lsub--muted { background: transparent; color: var(--muted); font-weight: 500; }
 .beleg__empty { padding: .7rem .9rem; color: var(--muted); font-size: .9rem; }
 
@@ -992,7 +995,7 @@ em { font-style: normal; color: var(--muted); }
 	.beleg__lhead, .beleg__lsub { background: #f4f4f4 !important; }
 	.beleg__b--neg { color: #b04a2a !important; }
 	/* keep dates/sub-labels muted so the hierarchy survives the flat #111 rule */
-	.beleg__d, .beleg__sec, .beleg__lhead, .beleg__foot, .beleg__grund-sub,
+	.beleg__d, .beleg__sec, .beleg__lhead, .beleg__foot, .beleg__grund-sub, .beleg__lsub-h,
 	.beleg__gt--head, .beleg__gm--head, .beleg__gt-id small, .beleg__gt-bl small { color: #666 !important; }
 }
 
@@ -1085,6 +1088,7 @@ em { font-style: normal; color: var(--muted); }
    prints as a clean document. ------------------------------------------- */
 @media print {
 	.appbar, .yearbar, .tabbar, .drawer, .drawer__scrim, .toast, .fab, .skip { display: none !important; }
+	.no-print { display: none !important; }
 	.main { max-width: none; padding: 0; }
 	body { background: #fff; }
 }
