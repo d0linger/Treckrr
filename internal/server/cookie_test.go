@@ -41,7 +41,11 @@ func TestCSVSafe(t *testing.T) {
 		"+1+1":        "'+1+1",
 		"-2":          "'-2",
 		"@cmd":        "'@cmd",
-		"\ttab":       "'\ttab",
+		"\t=cmd":      "'\t=cmd", // leading tab then a trigger -> quoted
+		" =1+1":       "' =1+1",  // leading-space bypass -> quoted, original kept
+		"   ":         "   ",     // whitespace only -> unchanged
+		"Wert =x":     "Wert =x", // trigger not first non-space -> unchanged
+		"\ttab":       "\ttab",   // leading tab then plain text -> harmless, unchanged
 		"Wiese 3,5ha": "Wiese 3,5ha",
 	}
 	for in, want := range cases {

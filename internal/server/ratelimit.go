@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"log"
+	"strings"
 	"time"
 
 	"treckrr/internal/store"
@@ -10,29 +12,75 @@ import (
 const (
 	loginMaxFails = 5
 	loginWindow   = 15 * time.Minute
+
+	// Account-scoped login throttle: a higher threshold and longer window than
+	// the per-IP limiter. It bounds a distributed (many-IP) guessing campaign
+	// against a single account without making an account-lockout DoS practical —
+	// usernames stay non-enumerable via the constant-time miss path, so an
+	// attacker can't reliably tell which usernames to target, and the threshold
+	// is far above any legitimate user's failure rate.
+	accountMaxFails = 30
+	accountWindow   = time.Hour
 )
 
 // loginLimiter is a Postgres-backed sliding-window limiter for login and other
 // sensitive actions, keyed by client IP or user. Persisting the state means it
 // survives restarts and is shared across instances. On a DB error it fails open
-// (does not lock users out) rather than fail closed.
+// (does not lock users out) rather than fail closed — but the error is logged so
+// the degraded state is observable rather than silent.
 type loginLimiter struct{ store *store.Store }
 
 func newLoginLimiter(st *store.Store) *loginLimiter { return &loginLimiter{store: st} }
 
-// blocked reports whether the key currently exceeds the failure threshold.
+// blocked reports whether the key currently exceeds the per-IP failure threshold.
 func (l *loginLimiter) blocked(ctx context.Context, key string) bool {
 	b, err := l.store.RateLimitBlocked(ctx, key, loginMaxFails, loginWindow)
-	return err == nil && b
+	if err != nil {
+		log.Printf("WARN ratelimit degraded (%s): %v", sanitizeLog(key), sanitizeLog(err.Error()))
+		return false // fail open, but visibly
+	}
+	return b
 }
 
 // fail records a failed attempt and returns the count within the active window.
 func (l *loginLimiter) fail(ctx context.Context, key string) int {
-	n, _ := l.store.RateLimitFail(ctx, key, loginWindow)
+	n, err := l.store.RateLimitFail(ctx, key, loginWindow)
+	if err != nil {
+		log.Printf("WARN ratelimit fail-record failed (%s): %v", sanitizeLog(key), sanitizeLog(err.Error()))
+	}
 	return n
 }
 
 // reset clears the key after a successful attempt.
 func (l *loginLimiter) reset(ctx context.Context, key string) {
 	_ = l.store.RateLimitReset(ctx, key)
+}
+
+// accountKey namespaces the account-scoped login limiter by normalized username,
+// so failures are counted per target account independent of source IP.
+func accountKey(username string) string {
+	return "pwuser:" + strings.ToLower(strings.TrimSpace(username))
+}
+
+// accountBlocked reports whether login attempts for the given username exceed the
+// account-scoped threshold, independent of which IP(s) they came from.
+func (l *loginLimiter) accountBlocked(ctx context.Context, username string) bool {
+	b, err := l.store.RateLimitBlocked(ctx, accountKey(username), accountMaxFails, accountWindow)
+	if err != nil {
+		log.Printf("WARN ratelimit degraded (account): %v", sanitizeLog(err.Error()))
+		return false // fail open, but visibly
+	}
+	return b
+}
+
+// accountFail records a failed login attempt against the target account.
+func (l *loginLimiter) accountFail(ctx context.Context, username string) {
+	if _, err := l.store.RateLimitFail(ctx, accountKey(username), accountWindow); err != nil {
+		log.Printf("WARN ratelimit fail-record failed (account): %v", sanitizeLog(err.Error()))
+	}
+}
+
+// accountReset clears the account-scoped counter after a successful login.
+func (l *loginLimiter) accountReset(ctx context.Context, username string) {
+	_ = l.store.RateLimitReset(ctx, accountKey(username))
 }
