@@ -958,7 +958,7 @@ em { font-style: normal; color: var(--muted); }
 .beleg__lhead--bundle, .beleg__brow { grid-template-columns: 1fr 3.4rem 6rem; }
 .beleg__brow { display: grid; gap: .5rem; align-items: baseline; padding: .34rem .9rem; line-height: 1.25;
 	border-top: 1px solid var(--card-hairline); }
-.beleg__brow:first-of-type { border-top-color: var(--border); }
+.beleg__lhead--bundle + .beleg__brow { border-top-color: var(--border); }
 .beleg__bx { font-family: var(--font-mono); font-weight: 500; font-size: .72rem; color: var(--muted); }
 
 .beleg__grund { display: none; border-top: 1px dashed var(--border); }
