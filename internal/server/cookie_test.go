@@ -34,23 +34,30 @@ func TestSetCookieAppliesDefaults(t *testing.T) {
 }
 
 func TestCSVSafe(t *testing.T) {
-	cases := map[string]string{
-		"":            "",
-		"Hallo":       "Hallo",
-		"=SUM(A1)":    "'=SUM(A1)",
-		"+1+1":        "'+1+1",
-		"-2":          "'-2",
-		"@cmd":        "'@cmd",
-		"\t=cmd":      "'\t=cmd", // leading tab then a trigger -> quoted
-		" =1+1":       "' =1+1",  // leading-space bypass -> quoted, original kept
-		"   ":         "   ",     // whitespace only -> unchanged
-		"Wert =x":     "Wert =x", // trigger not first non-space -> unchanged
-		"\ttab":       "\ttab",   // leading tab then plain text -> harmless, unchanged
-		"Wiese 3,5ha": "Wiese 3,5ha",
+	// Construct non-ASCII whitespace from code points so the source stays ASCII.
+	nbsp := string(rune(0x00A0)) // NO-BREAK SPACE
+	emsp := string(rune(0x2003)) // EM SPACE
+
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"Hallo", "Hallo"},
+		{"=SUM(A1)", "'=SUM(A1)"},
+		{"+1+1", "'+1+1"},
+		{"-2", "'-2"},
+		{"@cmd", "'@cmd"},
+		{"\t=cmd", "'\t=cmd"}, // leading tab then a trigger -> quoted
+		{" =1+1", "' =1+1"},   // leading ASCII space -> quoted, original kept
+		{nbsp + "=SUM(A1)", "'" + nbsp + "=SUM(A1)"}, // NBSP prefix -> quoted
+		{emsp + "=1+1", "'" + emsp + "=1+1"},         // em-space prefix -> quoted
+		{"   ", "   "},                               // ASCII whitespace only -> unchanged
+		{nbsp + emsp, nbsp + emsp},                   // Unicode whitespace only -> unchanged
+		{"Wert =x", "Wert =x"},                       // trigger not first non-space -> unchanged
+		{"\ttab", "\ttab"},                           // leading tab then plain text -> unchanged
+		{"Wiese 3,5ha", "Wiese 3,5ha"},
 	}
-	for in, want := range cases {
-		if got := csvSafe(in); got != want {
-			t.Fatalf("csvSafe(%q) = %q, want %q", in, got, want)
+	for _, c := range cases {
+		if got := csvSafe(c.in); got != c.want {
+			t.Fatalf("csvSafe(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }
