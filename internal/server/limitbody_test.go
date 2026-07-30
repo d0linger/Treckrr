@@ -12,9 +12,9 @@ import (
 // TestLimitBody pins the request-body cap to the middleware itself: a body of
 // exactly maxRequestBody bytes reads cleanly, one byte more fails with
 // *http.MaxBytesError. Asserting on the read (rather than a downstream handler's
-// status) keeps the test on limitBody's own contract — it swaps r.Body and
-// writes no status of its own — and guards against the guard silently dropping
-// out if the middleware chain is ever reordered.
+// status) keeps the test on limitBody's own contract — it swaps r.Body and writes
+// no status of its own. TestHandlerBodyLimit is the companion that verifies
+// Server.Handler() actually installs the limiter in the chain.
 func TestLimitBody(t *testing.T) {
 	s := &Server{}
 
@@ -52,4 +52,26 @@ func TestLimitBody(t *testing.T) {
 			t.Fatalf("expected *http.MaxBytesError, got %v", readErr)
 		}
 	})
+}
+
+// TestHandlerBodyLimit is the wiring companion to TestLimitBody: it drives a real
+// request through Server.Handler() to prove the limiter is actually installed in
+// the chain, ahead of form parsing. An oversized POST /login must return 400 —
+// handleLogin's ParseForm hits the MaxBytesReader read error before it reaches the
+// rate limiter or store — whereas without the middleware the body would parse and
+// the request would proceed. No DB is needed: the request carries no session
+// cookie, so csrf/accessLog/auth never touch the (nil) store.
+func TestHandlerBodyLimit(t *testing.T) {
+	s := testServer()
+	h := s.Handler()
+
+	body := bytes.NewReader(bytes.Repeat([]byte("a"), maxRequestBody+1))
+	req := httptest.NewRequest(http.MethodPost, "/login", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("oversized POST /login status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
 }
