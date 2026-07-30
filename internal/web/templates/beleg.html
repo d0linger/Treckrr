@@ -13,7 +13,7 @@
 			<div class="beleg__hb">
 				<span>Leistungen {{money .TotalCost}}</span>
 				{{if .Ledger}}<span>Verrechnung {{money .LedgerSum}}</span>{{end}}
-				<span>{{num .TotalHours}} h · {{.Bookings}} Buchungen</span>
+				<span>{{num .TotalHours}} h · {{.Bookings}} Buchung{{if ne .Bookings 1}}en{{end}}</span>
 			</div>
 		</div>
 

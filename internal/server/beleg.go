@@ -195,12 +195,6 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Populate the basis (name + year) for the appendix header.
-	if year.Base == nil {
-		if b, err := s.store.GetBase(r.Context(), year.BaseID); err == nil {
-			year.Base = b
-		}
-	}
 	// Payment status is only tracked once a year is completed.
 	paid := false
 	if year.Completed() {

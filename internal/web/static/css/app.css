@@ -1085,6 +1085,7 @@ em { font-style: normal; color: var(--muted); }
    prints as a clean document. ------------------------------------------- */
 @media print {
 	.appbar, .yearbar, .tabbar, .drawer, .drawer__scrim, .toast, .fab, .skip { display: none !important; }
+	.no-print { display: none !important; }
 	.main { max-width: none; padding: 0; }
 	body { background: #fff; }
 }
