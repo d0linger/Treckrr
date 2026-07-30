@@ -164,7 +164,28 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/users/{id}/reset-2fa", s.admin(s.handleUserResetTotp))
 	mux.Handle("POST /admin/users/{id}/delete", s.admin(s.handleUserDelete))
 
-	return s.accessLog(s.securityHeaders(s.csrf(mux)))
+	return s.limitBody(s.accessLog(s.securityHeaders(s.csrf(mux))))
+}
+
+// maxRequestBody caps how many bytes the server will read from a request body.
+// Every endpoint takes only a small form post or a few-KB WebAuthn JSON payload
+// (there are no uploads), so a generous 1 MiB ceiling rejects oversized bodies —
+// a cheap DoS vector — before they reach form parsing, without ever constraining
+// legitimate use.
+const maxRequestBody = 1 << 20 // 1 MiB
+
+// limitBody wraps the request body in an http.MaxBytesReader so a client cannot
+// stream an unbounded payload into ParseForm (and onward into bcrypt, decoding,
+// etc.). It sits outermost — ahead of csrf, which reads the form — so the ceiling
+// is in force for all body parsing, and receives the raw ResponseWriter so the
+// reader can emit 413 and close the connection when the limit is exceeded.
+func (s *Server) limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil && r.Body != http.NoBody {
+			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // auth wraps a handler requiring an authenticated user. It also enforces the
