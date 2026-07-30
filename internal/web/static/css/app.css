@@ -989,8 +989,10 @@ em { font-style: normal; color: var(--muted); }
 .beleg__gm { display: grid; grid-template-columns: 1fr 2.6rem 3.6rem 4.6rem; gap: .5rem; padding: .24rem .9rem; align-items: baseline; border-top: 1px solid var(--card-hairline); }
 .beleg__gm span:first-child { font-size: .85rem; font-weight: 600; }
 .beleg__gm .beleg__r { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .82rem; }
-.beleg__gm--head { border-top: 1px solid var(--border); margin-top: .3rem; font-family: var(--font-mono); font-size: .62rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding-top: .45rem; padding-bottom: .1rem; }
-.beleg__gm--head span:first-child { font-weight: 500; }
+.beleg__gm--head { border-top: 1px solid var(--border); margin-top: .3rem; font-family: var(--font-mono); font-size: .6rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding-top: .45rem; padding-bottom: .1rem; }
+/* Keep the head's entity word at header size + bold (matches Traktoren); the
+   .beleg__gm span:first-child rule above is for machine-name data rows. */
+.beleg__gm--head span:first-child { font-size: inherit; font-weight: 800; }
 .beleg__gm--head .beleg__r { font-size: .62rem; text-transform: uppercase; }
 
 .beleg__foot { text-align: center; color: var(--muted); font-family: var(--font-mono); font-size: .73rem; padding: .7rem .9rem .5rem; }
