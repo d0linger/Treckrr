@@ -70,12 +70,12 @@ func TestBelegPageRenders(t *testing.T) {
 	// A day with several bookings (grouping + rail), a voided continuation row,
 	// and the aggregated "Bündeln" view enabled — the paths the redesign added.
 	execPage(t, "beleg", map[string]any{
-		"Title":      "Beleg",
-		"Neighbor":   map[string]any{"ID": int64(2), "Name": "Florian"},
-		"Year":       map[string]any{"ID": int64(1), "Year": 2026, "Base": map[string]any{"Name": "Preisliste", "Year": 2026}},
-		"TotalCost":  d(498.19), "TotalHours": d(3.75),
-		"Saldo":      d(498.19), "LedgerSum": d(0),
-		"Completed":  false, "Paid": false, "Bookings": 3,
+		"Title":     "Beleg",
+		"Neighbor":  map[string]any{"ID": int64(2), "Name": "Florian"},
+		"Year":      map[string]any{"ID": int64(1), "Year": 2026, "Base": map[string]any{"Name": "Preisliste", "Year": 2026}},
+		"TotalCost": d(498.19), "TotalHours": d(3.75),
+		"Saldo": d(498.19), "LedgerSum": d(0),
+		"Completed": false, "Paid": false, "Bookings": 3,
 		"Days": []map[string]any{
 			{"Date": "09.05.", "Entries": []map[string]any{
 				{"TaskLabel": "Mähen", "Hours": d(2.25), "Cost": d(251.19), "Voided": false},
