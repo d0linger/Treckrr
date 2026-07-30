@@ -53,7 +53,9 @@ func (l *loginLimiter) fail(ctx context.Context, key string) int {
 
 // reset clears the key after a successful attempt.
 func (l *loginLimiter) reset(ctx context.Context, key string) {
-	_ = l.store.RateLimitReset(ctx, key)
+	if err := l.store.RateLimitReset(ctx, key); err != nil {
+		log.Printf("WARN ratelimit reset failed (%s): %v", sanitizeLog(key), sanitizeLog(err.Error()))
+	}
 }
 
 // accountKey namespaces the account-scoped login limiter by normalized username,
@@ -80,7 +82,11 @@ func (l *loginLimiter) accountFail(ctx context.Context, username string) {
 	}
 }
 
-// accountReset clears the account-scoped counter after a successful login.
+// accountReset clears the account-scoped counter after a successful login. A
+// failure here would leave the account bucket active until it ages out, so log
+// it rather than dropping it silently.
 func (l *loginLimiter) accountReset(ctx context.Context, username string) {
-	_ = l.store.RateLimitReset(ctx, accountKey(username))
+	if err := l.store.RateLimitReset(ctx, accountKey(username)); err != nil {
+		log.Printf("WARN ratelimit account reset failed: %v", sanitizeLog(err.Error()))
+	}
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"treckrr/internal/auth"
 	"treckrr/internal/models"
@@ -59,10 +60,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	rlKey := s.clientIP(r)
 
+	// Only apply the account-scoped limiter to plausibly-real usernames: an
+	// over-long value can never match an account (AuthenticateUser rejects it),
+	// so skipping it stops a flood of junk usernames from writing oversized
+	// rate-limit keys. Stale keys are evicted by PurgeStaleRateLimits.
+	accountLimited := username != "" && utf8.RuneCountInString(username) <= maxUsernameLen
+
 	// Throttle by source IP AND by target account: the account-scoped limit
 	// bounds a distributed (many-IP) guessing campaign against one username,
-	// which the per-IP limit alone cannot.
-	if s.logins.blocked(r.Context(), rlKey) || s.logins.accountBlocked(r.Context(), username) {
+	// which the per-IP limit alone cannot. NOTE: a temporary account block is a
+	// deliberate trade-off; it is time-bounded and self-healing, and passkey
+	// login (a separate route) is unaffected, so it is not an unrecoverable lockout.
+	if s.logins.blocked(r.Context(), rlKey) || (accountLimited && s.logins.accountBlocked(r.Context(), username)) {
 		s.auditLogin(r, username, "login_blocked", "zu viele Fehlversuche")
 		s.setFlash(w, r, "error", "Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen.")
 		redirect(w, r, "/login")
@@ -72,7 +81,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	user, err := s.store.AuthenticateUser(r.Context(), username, password)
 	if errors.Is(err, store.ErrNotFound) {
 		s.logins.fail(r.Context(), rlKey)
-		s.logins.accountFail(r.Context(), username)
+		if accountLimited {
+			s.logins.accountFail(r.Context(), username)
+		}
 		s.auditLogin(r, username, "login_failed", "falsche Zugangsdaten")
 		s.setFlash(w, r, "error", "Benutzername oder Passwort falsch.")
 		redirect(w, r, "/login")
@@ -83,7 +94,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logins.reset(r.Context(), rlKey)
-	s.logins.accountReset(r.Context(), username)
+	if accountLimited {
+		s.logins.accountReset(r.Context(), username)
+	}
 
 	if user.TotpEnabled {
 		// Mitigation: Check per-user rate limit before showing the 2FA step.
