@@ -924,13 +924,19 @@ em { font-style: normal; color: var(--muted); }
 .beleg__sec { font-family: var(--font-mono); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase;
 	color: var(--muted); padding: .7rem .9rem .15rem; }
 .beleg__lhead, .beleg__lrow, .beleg__lsub {
-	display: grid; grid-template-columns: 2.9rem 1fr 3.4rem 6rem; gap: .5rem; align-items: baseline; padding: .5rem .9rem; }
+	display: grid; grid-template-columns: 2.9rem 1fr 3.4rem 6rem; gap: .5rem; align-items: baseline;
+	padding: .34rem .9rem; line-height: 1.25; }
 .beleg__lhead { font-family: var(--font-mono); font-size: .64rem; letter-spacing: .04em; text-transform: uppercase;
 	color: var(--muted); padding-top: .1rem; padding-bottom: .35rem; }
 .beleg__r { text-align: right; white-space: nowrap; }
 .beleg__lrow { border-top: 1px solid var(--card-hairline); }
+/* Bookings are grouped by day: the date shows on the first row, and a left rail on
+   the (empty) date cell links the day's continuation rows (a real border, so it
+   survives the image export's DOM clone — mirrors the Traktoren rail). */
+.beleg__lrow--dayfirst { border-top: 1px solid var(--border); }
+.beleg__lrow--daycont .beleg__d { align-self: stretch; border-left: 2px solid var(--border); }
 .beleg__d { font-family: var(--font-mono); font-size: .74rem; color: var(--muted); }
-.beleg__t { font-weight: 600; font-size: .92rem; min-width: 0; overflow-wrap: anywhere; }
+.beleg__t { font-weight: 600; font-size: .87rem; min-width: 0; overflow-wrap: anywhere; }
 .beleg__h { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .85rem; color: var(--muted); }
 .beleg__b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .92rem; font-weight: 500; white-space: nowrap; }
 .beleg__b--neg { color: var(--owe); }
@@ -943,6 +949,18 @@ em { font-style: normal; color: var(--muted); }
 .beleg__lsub--muted { background: transparent; color: var(--muted); font-weight: 500; }
 .beleg__empty { padding: .7rem .9rem; color: var(--muted); font-size: .9rem; }
 
+/* "Bündeln" — an alternate Leistungen view that collapses identical Leistungen to
+   one row (count + totals). Both views live in the DOM; the button toggles which
+   one shows (like the Grundlage toggle), so print/copy/image follow the choice. */
+.beleg__bundle { display: none; }
+.beleg--bundle .beleg__items { display: none; }
+.beleg--bundle .beleg__bundle { display: block; }
+.beleg__lhead--bundle, .beleg__brow { grid-template-columns: 1fr 3.4rem 6rem; }
+.beleg__brow { display: grid; gap: .5rem; align-items: baseline; padding: .34rem .9rem; line-height: 1.25;
+	border-top: 1px solid var(--card-hairline); }
+.beleg__brow:first-of-type { border-top-color: var(--border); }
+.beleg__bx { font-family: var(--font-mono); font-weight: 500; font-size: .72rem; color: var(--muted); }
+
 .beleg__grund { display: none; border-top: 1px dashed var(--border); }
 .beleg--grund .beleg__grund { display: block; }
 .beleg__grund-h { display: flex; align-items: center; gap: .45rem; padding: .7rem .9rem .1rem;
@@ -950,9 +968,9 @@ em { font-style: normal; color: var(--muted); }
 .beleg__grund-h .ic { width: 1em; height: 1em; color: var(--primary-strong); }
 .beleg__grund-sub { padding: 0 .9rem .4rem; font-size: .74rem; color: var(--muted); }
 /* Kostengrundlage as two reference tables (only what was used this year) */
-.beleg__gcap { font-family: var(--font-display); font-weight: 800; font-size: .88rem; padding: .7rem .9rem .2rem; }
+.beleg__gcap { font-family: var(--font-display); font-weight: 800; font-size: .88rem; padding: .55rem .9rem .15rem; }
 /* Traktoren: tractor+PS in a left rail (grouped with a line across loads) */
-.beleg__gt { display: grid; grid-template-columns: 3.6rem 1fr 3.4rem 4.6rem; gap: .4rem; padding: .42rem .9rem; align-items: baseline; position: relative; }
+.beleg__gt { display: grid; grid-template-columns: 3.6rem 1fr 3.4rem 4.6rem; gap: .4rem; padding: .3rem .9rem; align-items: baseline; position: relative; }
 .beleg__gt--head { padding: .3rem .9rem .2rem; font-family: var(--font-mono); font-size: .6rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 .beleg__gt--head .beleg__r { font-size: .6rem; text-transform: uppercase; }
 .beleg__gt--first { border-top: 1px solid var(--border); }
@@ -966,7 +984,7 @@ em { font-style: normal; color: var(--muted); }
 .beleg__gt-bl small { display: block; font-family: var(--font-mono); font-weight: 400; font-size: .66rem; color: var(--muted); margin-top: 1px; }
 .beleg__gt-ps, .beleg__gt-rt { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .82rem; }
 .beleg__gt-rt { font-weight: 700; }
-.beleg__gm { display: grid; grid-template-columns: 1fr 2.6rem 3.6rem 4.6rem; gap: .5rem; padding: .3rem .9rem; align-items: baseline; border-top: 1px solid var(--card-hairline); }
+.beleg__gm { display: grid; grid-template-columns: 1fr 2.6rem 3.6rem 4.6rem; gap: .5rem; padding: .24rem .9rem; align-items: baseline; border-top: 1px solid var(--card-hairline); }
 .beleg__gm span:first-child { font-size: .85rem; font-weight: 600; }
 .beleg__gm .beleg__r { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .82rem; }
 .beleg__gm--head { border-top: 0; font-family: var(--font-mono); font-size: .62rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding-bottom: .1rem; }

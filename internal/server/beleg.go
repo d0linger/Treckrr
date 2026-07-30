@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,6 +35,22 @@ type BelegMachine struct {
 	Width  string
 	CostAB string
 	Rate   decimal.Decimal
+}
+
+// BelegDay groups a neighbor's bookings by calendar day so the date is shown once
+// per day (a left rail marks the continuation rows), keeping a long list compact.
+type BelegDay struct {
+	Date    string
+	Entries []models.Entry
+}
+
+// BelegService is one distinct Leistung aggregated across the year — booking
+// count, total hours and total cost — for the optional "Bündeln" (grouped) view.
+type BelegService struct {
+	Label string
+	Count int
+	Hours decimal.Decimal
+	Cost  decimal.Decimal
 }
 
 // deu formats a decimal in German notation (comma) without trailing zeros,
@@ -195,6 +212,45 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Group bookings by day (date shown once per day) and aggregate identical
+	// Leistungen for the optional "Bündeln" view. Both render the same bookings as
+	// the flat list; totals are unchanged (voided bookings are excluded from the
+	// aggregate, exactly as they are from the totals). Entries arrive date-ordered.
+	var days []BelegDay
+	for _, e := range entries {
+		d := e.Date.Format("02.01.")
+		if n := len(days); n > 0 && days[n-1].Date == d {
+			days[n-1].Entries = append(days[n-1].Entries, e)
+		} else {
+			days = append(days, BelegDay{Date: d, Entries: []models.Entry{e}})
+		}
+	}
+	svcByLabel := map[string]*BelegService{}
+	var svcOrder []string
+	for _, e := range entries {
+		if e.Voided {
+			continue
+		}
+		label := e.TaskLabel
+		if label == "" {
+			label = "Sonstige"
+		}
+		g := svcByLabel[label]
+		if g == nil {
+			g = &BelegService{Label: label}
+			svcByLabel[label] = g
+			svcOrder = append(svcOrder, label)
+		}
+		g.Count++
+		g.Hours = g.Hours.Add(e.Hours)
+		g.Cost = g.Cost.Add(e.Cost)
+	}
+	groups := make([]BelegService, 0, len(svcOrder))
+	for _, l := range svcOrder {
+		groups = append(groups, *svcByLabel[l])
+	}
+	sort.SliceStable(groups, func(i, j int) bool { return groups[i].Cost.GreaterThan(groups[j].Cost) })
+
 	// Payment status is only tracked once a year is completed.
 	paid := false
 	if year.Completed() {
@@ -212,7 +268,10 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data["Neighbor"] = neighbor
-	data["Entries"] = entries
+	data["Days"] = days
+	data["Groups"] = groups
+	data["CanBundle"] = len(groups) > 0 && len(groups) < bookings
+	data["Bundle"] = r.URL.Query().Get("bundeln") == "1"
 	data["TotalCost"] = cost
 	data["TotalHours"] = hours
 	data["Ledger"] = ledger

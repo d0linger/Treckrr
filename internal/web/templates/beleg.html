@@ -2,7 +2,7 @@
 <section class="stack beleg-page">
 	<a class="backlink no-print" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ {{.Neighbor.Name}} · {{.Year.Year}}</a>
 
-	<div class="beleg{{if .ShowGrund}} beleg--grund{{end}}" id="beleg">
+	<div class="beleg{{if .ShowGrund}} beleg--grund{{end}}{{if .Bundle}} beleg--bundle{{end}}" id="beleg">
 		<div class="beleg__hero">
 			<div class="beleg__hero-top">
 				<span class="beleg__who">{{.Neighbor.Name}}</span>
@@ -18,16 +18,32 @@
 		</div>
 
 		<div class="beleg__sec">Leistungen</div>
-		<div class="beleg__lhead"><span>Datum</span><span>Leistung</span><span class="beleg__r">h</span><span class="beleg__r">Betrag</span></div>
-		{{range .Entries}}
-		<div class="beleg__lrow{{if .Voided}} beleg__lrow--void{{end}}">
-			<span class="beleg__d">{{.Date.Format "02.01."}}</span>
-			<span class="beleg__t">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}{{if .Voided}} · storniert{{end}}</span>
-			<span class="beleg__h beleg__r">{{if .Voided}}—{{else}}{{num .Hours}}{{end}}</span>
-			<span class="beleg__b beleg__r">{{money .Cost}}</span>
+		<div class="beleg__items" id="beleg-items">
+			<div class="beleg__lhead"><span>Datum</span><span>Leistung</span><span class="beleg__r">h</span><span class="beleg__r">Betrag</span></div>
+			{{range .Days}}{{$day := .}}
+			{{range $i, $e := .Entries}}
+			<div class="beleg__lrow{{if $i}} beleg__lrow--daycont{{else}} beleg__lrow--dayfirst{{end}}{{if $e.Voided}} beleg__lrow--void{{end}}">
+				<span class="beleg__d">{{if eq $i 0}}{{$day.Date}}{{end}}</span>
+				<span class="beleg__t">{{if $e.TaskLabel}}{{$e.TaskLabel}}{{else}}Sonstige{{end}}{{if $e.Voided}} · storniert{{end}}</span>
+				<span class="beleg__h beleg__r">{{if $e.Voided}}—{{else}}{{num $e.Hours}}{{end}}</span>
+				<span class="beleg__b beleg__r">{{money $e.Cost}}</span>
+			</div>
+			{{end}}
+			{{else}}
+			<div class="beleg__empty">Keine Buchungen in diesem Jahr.</div>
+			{{end}}
 		</div>
-		{{else}}
-		<div class="beleg__empty">Keine Buchungen in diesem Jahr.</div>
+		{{if .CanBundle}}
+		<div class="beleg__bundle" id="beleg-bundle">
+			<div class="beleg__lhead beleg__lhead--bundle"><span>Leistung</span><span class="beleg__r">h</span><span class="beleg__r">Betrag</span></div>
+			{{range .Groups}}
+			<div class="beleg__brow">
+				<span class="beleg__t">{{.Label}} <span class="beleg__bx">×{{.Count}}</span></span>
+				<span class="beleg__h beleg__r">{{num .Hours}}</span>
+				<span class="beleg__b beleg__r">{{money .Cost}}</span>
+			</div>
+			{{end}}
+		</div>
 		{{end}}
 		<div class="beleg__lsub"><span></span><span>Leistungen</span><span class="beleg__r beleg__lsub-h">{{num .TotalHours}} h</span><span class="beleg__r">{{money .TotalCost}}</span></div>
 
@@ -87,6 +103,11 @@
 			<button type="button" class="btn btn--ghost" data-beleg-image>
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m4 17 5-5 4 4 3-3 4 4"/></svg>Bild
 			</button>
+			{{if .CanBundle}}
+			<button type="button" class="btn btn--ghost" data-beleg-bundle aria-controls="beleg-items beleg-bundle" aria-pressed="{{if .Bundle}}true{{else}}false{{end}}">
+				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 4.5-9 4.5-9-4.5 9-4.5Z"/><path d="m3 16.5 9 4.5 9-4.5"/><path d="m3 12 9 4.5 9-4.5"/></svg>Bündeln
+			</button>
+			{{end}}
 			{{if .HasGrund}}
 			<button type="button" class="btn btn--ghost" data-beleg-grund aria-controls="beleg-grund" aria-pressed="{{if .ShowGrund}}true{{else}}false{{end}}">
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Grundlage
