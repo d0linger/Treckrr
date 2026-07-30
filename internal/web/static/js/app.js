@@ -475,14 +475,36 @@
 					out.push("--------------------------------");
 				} else if (el.classList.contains("beleg__sec")) {
 					out.push(el.textContent.trim() + ":");
+				} else if (el.classList.contains("beleg__items")) {
+					// Itemized Leistungen (grouped by day). Carry the day's date onto
+					// its continuation rows, whose date cell is blank in the markup.
+					if (beleg.classList.contains("beleg--bundle")) return;
+					var lastDate = "";
+					Array.prototype.forEach.call(el.children, function (c) {
+						if (c.classList.contains("beleg__empty")) { out.push("  " + c.textContent.trim()); return; }
+						if (!c.classList.contains("beleg__lrow")) return;
+						var d = txt(c, ".beleg__d"), t = txt(c, ".beleg__t"),
+							h = txt(c, ".beleg__h"), b = txt(c, ".beleg__b");
+						if (d) { lastDate = d; } else { d = lastDate; }
+						var line = "  " + d + " · " + t;
+						if (h && h !== "—") line += " · " + h + " h";
+						out.push(line + " · " + b);
+					});
+				} else if (el.classList.contains("beleg__bundle")) {
+					// Aggregated Leistungen — only when the "Bündeln" view is active.
+					if (!beleg.classList.contains("beleg--bundle")) return;
+					Array.prototype.forEach.call(el.children, function (c) {
+						if (!c.classList.contains("beleg__brow")) return;
+						var t = txt(c, ".beleg__t"), h = txt(c, ".beleg__h"), b = txt(c, ".beleg__b");
+						out.push("  " + t + (h ? " · " + h + " h" : "") + " · " + b);
+					});
 				} else if (el.classList.contains("beleg__lrow")) {
+					// Verrechnung rows (direct children of the beleg).
 					var d = txt(el, ".beleg__d"), t = txt(el, ".beleg__t"),
 						h = txt(el, ".beleg__h"), b = txt(el, ".beleg__b");
 					var line = "  " + d + " · " + t;
 					if (h && h !== "—") line += " · " + h + " h";
 					out.push(line + " · " + b);
-				} else if (el.classList.contains("beleg__empty")) {
-					out.push("  " + el.textContent.trim());
 				} else if (el.classList.contains("beleg__lsub")) {
 					var c = el.children;
 					var lbl = c[1] ? c[1].textContent.trim() : "";
@@ -495,11 +517,12 @@
 					out.push(txt(el, ".beleg__grund-h"));
 					Array.prototype.forEach.call(el.children, function (c) {
 						var sp = c.querySelectorAll("span");
-						if (c.classList.contains("beleg__gcap")) {
-							out.push(c.textContent.trim() + ":");
-						} else if (c.classList.contains("beleg__gt--head") || c.classList.contains("beleg__gm--head") ||
-							c.classList.contains("beleg__grund-h") || c.classList.contains("beleg__grund-sub")) {
-							/* skip captions/headers */
+						if (c.classList.contains("beleg__gt--head") || c.classList.contains("beleg__gm--head")) {
+							// The head row's bold entity word doubles as the section label.
+							var cap = c.querySelector(".beleg__ghcap");
+							if (cap) out.push(cap.textContent.trim() + ":");
+						} else if (c.classList.contains("beleg__grund-h") || c.classList.contains("beleg__grund-sub")) {
+							/* skip section header/sub */
 						} else if (c.classList.contains("beleg__gt")) {
 							var idEl = c.querySelector(".beleg__gt-id");
 							if (idEl) {
@@ -627,6 +650,13 @@
 			var on = !beleg.classList.contains("beleg--grund");
 			beleg.classList.toggle("beleg--grund", on);
 			grundBtn.setAttribute("aria-pressed", on ? "true" : "false");
+		});
+
+		var bundleBtn = scope.querySelector("[data-beleg-bundle]");
+		if (bundleBtn) bundleBtn.addEventListener("click", function () {
+			var on = !beleg.classList.contains("beleg--bundle");
+			beleg.classList.toggle("beleg--bundle", on);
+			bundleBtn.setAttribute("aria-pressed", on ? "true" : "false");
 		});
 
 		var imgBtn = scope.querySelector("[data-beleg-image]");

@@ -65,6 +65,50 @@ func TestStatsAllPageRenders(t *testing.T) {
 	})
 }
 
+func TestBelegPageRenders(t *testing.T) {
+	d := decimal.NewFromFloat
+	// A day with several bookings (grouping + rail), a voided continuation row,
+	// and the aggregated "Bündeln" view enabled — the paths the redesign added.
+	execPage(t, "beleg", map[string]any{
+		"Title":     "Beleg",
+		"Neighbor":  map[string]any{"ID": int64(2), "Name": "Florian"},
+		"Year":      map[string]any{"ID": int64(1), "Year": 2026, "Base": map[string]any{"Name": "Preisliste", "Year": 2026}},
+		"TotalCost": d(498.19), "TotalHours": d(3.75),
+		"Saldo": d(498.19), "LedgerSum": d(0),
+		"Completed": false, "Paid": false, "Bookings": 3,
+		"Days": []map[string]any{
+			{"Date": "09.05.", "Entries": []map[string]any{
+				{"TaskLabel": "Mähen", "Hours": d(2.25), "Cost": d(251.19), "Voided": false},
+				{"TaskLabel": "Schwadern groß", "Hours": d(1.5), "Cost": d(78), "Voided": false},
+			}},
+			{"Date": "10.05.", "Entries": []map[string]any{
+				{"TaskLabel": "Schwadern groß", "Hours": d(1.5), "Cost": d(169), "Voided": false},
+				{"TaskLabel": "", "Hours": d(0), "Cost": d(0), "Voided": true},
+			}},
+		},
+		"CanBundle": true,
+		"Groups": []map[string]any{
+			{"Label": "Schwadern groß", "Count": 2, "Hours": d(3), "Cost": d(247)},
+			{"Label": "Mähen", "Count": 1, "Hours": d(2.25), "Cost": d(251.19)},
+		},
+		"Bundle": true, "ShowGrund": true, "HasGrund": true,
+		"GrundTractors": []map[string]any{
+			{"Ident": "4095", "PS": "100", "Loads": []map[string]any{
+				{"Load": "mittel", "CostPS": "0,40", "Rate": d(40), "Machines": []string{"Frontmähwerk", "Heckmähwerk"}},
+			}},
+			{"Ident": "9083", "PS": "94", "Loads": []map[string]any{
+				{"Load": "leicht", "CostPS": "0,38", "Rate": d(35.72), "Machines": []string{"Kreiselzettwender"}},
+				{"Load": "schwer", "CostPS": "0,42", "Rate": d(39.48), "Machines": []string{"Fräse"}},
+			}},
+		},
+		"GrundMachines": []map[string]any{
+			{"Name": "Frontmähwerk", "Width": "3,06", "CostAB": "14,00", "Rate": d(42.84)},
+			{"Name": "Kreiselzettwender", "Width": "8,8", "CostAB": "5,00", "Rate": d(44)},
+		},
+		"Today": "30.07.2026",
+	})
+}
+
 func TestComparePageRendersWithDiffs(t *testing.T) {
 	d := decimal.NewFromFloat
 	rows := []map[string]any{
