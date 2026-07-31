@@ -937,6 +937,7 @@ em { font-style: normal; color: var(--muted); }
 .beleg__lrow--daycont .beleg__d { align-self: stretch; border-left: 2px solid var(--border); }
 .beleg__d { font-family: var(--font-mono); font-size: .74rem; color: var(--muted); }
 .beleg__t { font-weight: 600; font-size: .87rem; min-width: 0; overflow-wrap: anywhere; }
+.beleg__t small { display: block; font-family: var(--font-mono); font-weight: 400; font-size: .66rem; color: var(--muted); margin-top: 1px; }
 .beleg__h { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .85rem; color: var(--muted); }
 .beleg__b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .92rem; font-weight: 500; white-space: nowrap; }
 .beleg__b--neg { color: var(--owe); }
@@ -1017,7 +1018,7 @@ em { font-style: normal; color: var(--muted); }
 	.beleg__lhead, .beleg__lsub { background: #f4f4f4 !important; }
 	.beleg__b--neg { color: #b04a2a !important; }
 	/* keep dates/sub-labels muted so the hierarchy survives the flat #111 rule */
-	.beleg__d, .beleg__sec, .beleg__lhead, .beleg__foot, .beleg__grund-sub, .beleg__lsub-h,
+	.beleg__d, .beleg__sec, .beleg__lhead, .beleg__foot, .beleg__grund-sub, .beleg__lsub-h, .beleg__t small,
 	.beleg__gt--head, .beleg__gm--head, .beleg__gt-id small, .beleg__gt-bl small { color: #666 !important; }
 }
 

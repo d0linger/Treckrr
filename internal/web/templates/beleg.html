@@ -25,8 +25,8 @@
 			{{range $i, $e := .Entries}}
 			<div class="beleg__lrow{{if $i}} beleg__lrow--daycont{{else}} beleg__lrow--dayfirst{{end}}{{if $e.Voided}} beleg__lrow--void{{end}}">
 				<span class="beleg__d">{{if eq $i 0}}{{$day.Date}}{{end}}</span>
-				<span class="beleg__t">{{if $e.TaskLabel}}{{$e.TaskLabel}}{{else}}Sonstige{{end}}{{if $e.Voided}} · storniert{{end}}</span>
-				<span class="beleg__h beleg__r">{{if $e.Voided}}—{{else}}{{num $e.Hours}}{{end}}</span>
+				<span class="beleg__t">{{if $e.TaskLabel}}{{$e.TaskLabel}}{{else}}Sonstige{{end}}{{if $e.Voided}} · storniert{{end}}{{if ne $e.Unit "h"}}<small>{{num $e.Quantity}} {{$e.Unit}} × {{money $e.UnitPrice}}</small>{{end}}</span>
+				<span class="beleg__h beleg__r">{{if $e.Voided}}—{{else if eq $e.Unit "h"}}{{num $e.Hours}}{{else}}—{{end}}</span>
 				<span class="beleg__b beleg__r">{{money $e.Cost}}</span>
 			</div>
 			{{end}}

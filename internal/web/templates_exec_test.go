@@ -83,12 +83,13 @@ func TestBelegPageRenders(t *testing.T) {
 		},
 		"Days": []map[string]any{
 			{"Date": "09.05.", "Entries": []map[string]any{
-				{"TaskLabel": "Mähen", "Hours": d(2.25), "Cost": d(251.19), "Voided": false},
-				{"TaskLabel": "Schwadern groß", "Hours": d(1.5), "Cost": d(78), "Voided": false},
+				{"TaskLabel": "Mähen", "Unit": "h", "Hours": d(2.25), "HourlyRate": d(40), "Cost": d(251.19), "Voided": false},
+				{"TaskLabel": "Schwadern groß", "Unit": "h", "Hours": d(1.5), "HourlyRate": d(52), "Cost": d(78), "Voided": false},
+				{"TaskLabel": "Ballenpressen", "Unit": "Ballen", "Quantity": d(40), "UnitPrice": d(3.2), "Hours": d(0), "Cost": d(128), "Voided": false},
 			}},
 			{"Date": "10.05.", "Entries": []map[string]any{
-				{"TaskLabel": "Schwadern groß", "Hours": d(1.5), "Cost": d(169), "Voided": false},
-				{"TaskLabel": "", "Hours": d(0), "Cost": d(0), "Voided": true},
+				{"TaskLabel": "Schwadern groß", "Unit": "h", "Hours": d(1.5), "HourlyRate": d(52), "Cost": d(169), "Voided": false},
+				{"TaskLabel": "", "Unit": "h", "Hours": d(0), "Cost": d(0), "Voided": true},
 			}},
 		},
 		"CanBundle": true,

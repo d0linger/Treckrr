@@ -211,7 +211,7 @@
 				<span class="bcard__cost">{{money .Cost}}</span>
 			</div>
 			<div class="bcard__foot">
-				<span class="bcard__detail">{{num .Hours}} h × {{money .HourlyRate}}/h · {{.TractorLabel}} · {{.LoadLabel}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
+				<span class="bcard__detail">{{if eq .Unit "h"}}{{num .Hours}} h × {{money .HourlyRate}}/h · {{.TractorLabel}} · {{.LoadLabel}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{else}}{{num .Quantity}} {{.Unit}} × {{money .UnitPrice}}/{{.Unit}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
 				{{if not $.Completed}}
 				<span class="bcard__acts">
 					{{if .Voided}}
