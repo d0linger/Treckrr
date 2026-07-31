@@ -77,6 +77,10 @@ func TestBelegPageRenders(t *testing.T) {
 		"TotalCost": d(498.19), "TotalHours": d(3.75),
 		"Saldo": d(498.19), "LedgerSum": d(0),
 		"Completed": false, "Paid": false, "Bookings": 3,
+		"HasPayments": true, "PaidSum": d(300), "Remaining": d(198.19),
+		"Payments": []map[string]any{
+			{"PaidOn": time.Now(), "Amount": d(300), "Note": "Überweisung"},
+		},
 		"Days": []map[string]any{
 			{"Date": "09.05.", "Entries": []map[string]any{
 				{"TaskLabel": "Mähen", "Hours": d(2.25), "Cost": d(251.19), "Voided": false},

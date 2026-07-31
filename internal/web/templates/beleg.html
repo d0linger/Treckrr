@@ -13,6 +13,7 @@
 			<div class="beleg__hb">
 				<span>Leistungen {{money .TotalCost}}</span>
 				{{if .Ledger}}<span>Verrechnung {{money .LedgerSum}}</span>{{end}}
+				{{if .HasPayments}}<span>Bezahlt {{money .PaidSum}}</span><span>Offen {{money .Remaining}}</span>{{end}}
 				<span>{{num .TotalHours}} h · {{.Bookings}} Buchung{{if ne .Bookings 1}}en{{end}}</span>
 			</div>
 		</div>
@@ -58,6 +59,19 @@
 		</div>
 		{{end}}
 		<div class="beleg__lsub beleg__lsub--muted"><span></span><span>Verrechnung</span><span class="beleg__r"></span><span class="beleg__r">{{money .LedgerSum}}</span></div>
+		{{end}}
+
+		{{if .HasPayments}}
+		<div class="beleg__sec">Zahlungen</div>
+		{{range .Payments}}
+		<div class="beleg__lrow beleg__lrow--ver">
+			<span class="beleg__d">{{.PaidOn.Format "02.01."}}</span>
+			<span class="beleg__t">Zahlung{{if .Note}} · {{.Note}}{{end}}</span>
+			<span class="beleg__h beleg__r"></span>
+			<span class="beleg__b beleg__r beleg__b--neg">−{{money .Amount}}</span>
+		</div>
+		{{end}}
+		<div class="beleg__lsub"><span></span><span>Offener Rest</span><span class="beleg__r"></span><span class="beleg__r">{{money .Remaining}}</span></div>
 		{{end}}
 
 		{{if .HasGrund}}

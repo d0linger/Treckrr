@@ -251,16 +251,19 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.SliceStable(groups, func(i, j int) bool { return groups[i].Cost.GreaterThan(groups[j].Cost) })
 
-	// Payment status is only tracked once a year is completed.
-	paid := false
-	if year.Completed() {
-		payments, err := s.store.YearPayments(r.Context(), year.ID)
-		if err != nil {
-			s.serverError(w, "beleg: payments", err)
-			return
-		}
-		paid = payments[neighbor.ID]
+	// Payments toward this year and the resulting open balance (saldo − paid).
+	payments, err := s.store.ListPayments(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		s.serverError(w, "beleg: payments", err)
+		return
 	}
+	paidSum := decimal.Zero
+	for _, p := range payments {
+		paidSum = paidSum.Add(p.Amount)
+	}
+	saldo := cost.Add(ledgerSum)
+	remaining := saldo.Sub(paidSum)
+	paid := !remaining.IsPositive() // fully settled
 
 	data := s.newPage(w, r, neighbor.Name+" · Beleg", "dashboard")
 	if err := s.withYearSelector(r, data, year); err != nil {
@@ -276,9 +279,13 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["TotalHours"] = hours
 	data["Ledger"] = ledger
 	data["LedgerSum"] = ledgerSum
-	data["Saldo"] = cost.Add(ledgerSum)
+	data["Saldo"] = saldo
 	data["Completed"] = year.Completed()
 	data["Paid"] = paid
+	data["Payments"] = payments
+	data["PaidSum"] = paidSum
+	data["Remaining"] = remaining
+	data["HasPayments"] = len(payments) > 0
 	data["GrundTractors"] = gTractors
 	data["GrundMachines"] = gMachines
 	data["HasGrund"] = len(gTractors) > 0 || len(gMachines) > 0
