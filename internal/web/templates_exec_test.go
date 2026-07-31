@@ -133,6 +133,17 @@ func TestComparePageRendersWithDiffs(t *testing.T) {
 	})
 }
 
+func TestCompanyPageRenders(t *testing.T) {
+	d := decimal.NewFromFloat
+	execPage(t, "company", map[string]any{
+		"Title": "Betriebsdaten",
+		"Company": map[string]any{
+			"Name": "Hof Bergmann", "Address": "Feldweg 3\n4780 Schärding", "TaxID": "ATU12345678",
+			"TaxNote": "§ 22 UStG", "TaxMode": "pauschal", "VATRate": d(0),
+		},
+	})
+}
+
 func TestBackupPageRenders(t *testing.T) {
 	// Configured "ok" state exercises the date/IsZero/size/offhost branch.
 	execPage(t, "backup", map[string]any{

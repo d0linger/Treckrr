@@ -185,6 +185,7 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	name := trimmed(r, "name")
 	note := trimmed(r, "note")
+	address := trimmed(r, "address")
 	if name == "" {
 		s.setFlash(w, r, "error", "Name darf nicht leer sein.")
 		redirect(w, r, neighborReturnURL(r, id))
@@ -198,8 +199,12 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborReturnURL(r, id))
 		return
 	}
+	if s.tooLong(w, r, "Adresse", address, maxNoteLen) {
+		redirect(w, r, neighborReturnURL(r, id))
+		return
+	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
-	if err := s.store.UpdateNeighbor(r.Context(), id, name, note); err != nil {
+	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address); err != nil {
 		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")
 	} else {
 		detail := name

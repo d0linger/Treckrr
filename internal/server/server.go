@@ -159,6 +159,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /admin/audit", s.admin(s.handleAudit))
 	mux.Handle("GET /admin/audit/export", s.admin(s.handleAuditExport))
 	mux.Handle("GET /admin/backup", s.admin(s.handleBackupStatus))
+	mux.Handle("GET /admin/company", s.admin(s.handleCompany))
+	mux.Handle("POST /admin/company", s.admin(s.handleCompanySave))
 	mux.Handle("GET /admin/users", s.admin(s.handleUsers))
 	mux.Handle("POST /admin/users", s.admin(s.handleUserCreate))
 	mux.Handle("POST /admin/users/{id}/password", s.admin(s.handleUserPassword))

@@ -146,6 +146,7 @@ type Neighbor struct {
 	ID       int64
 	Name     string
 	Note     string
+	Address  string // optional, for the invoice recipient block
 	Archived bool
 	Created  time.Time
 }
@@ -222,6 +223,29 @@ type Payment struct {
 	Amount        decimal.Decimal
 	PaidOn        time.Time
 	Note          string
+	Created       time.Time
+}
+
+// Company holds the sender (Absender) details shown on an invoice-mode Beleg,
+// plus the tax treatment: "pauschal" shows only TaxNote; "regel" adds a VAT
+// breakdown at VATRate.
+type Company struct {
+	Name    string
+	Address string
+	TaxID   string
+	TaxNote string
+	TaxMode string
+	VATRate decimal.Decimal
+}
+
+// Invoice is a Beleg issued as a formal Rechnung: a sequential number per year,
+// fixed at issue time, for one neighbour and year.
+type Invoice struct {
+	ID            int64
+	BillingYearID int64
+	NeighborID    int64
+	Number        string
+	IssuedOn      time.Time
 	Created       time.Time
 }
 
