@@ -1014,6 +1014,9 @@ em { font-style: normal; color: var(--muted); }
    the Rechnung toggle is on (.beleg--rechnung). */
 .beleg__invoice, .beleg__invtax { display: none; }
 .beleg--rechnung .beleg__invoice, .beleg--rechnung .beleg__invtax { display: block; }
+/* Hide the informal payments/Offener-Rest block in invoice mode — the invoice
+   reconciliation (Rechnungsbetrag → bezahlt → Restbetrag) replaces it. */
+.beleg--rechnung .beleg__pay { display: none; }
 .beleg__invoice { padding: .85rem .9rem; border-bottom: 1px solid var(--border); }
 .beleg__inv-top { display: flex; justify-content: space-between; gap: .5rem; font-family: var(--font-mono); font-size: .8rem; margin-bottom: .55rem; }
 .beleg__inv-no { font-weight: 700; }

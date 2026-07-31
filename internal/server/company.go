@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log"
 	"net/http"
 
 	"treckrr/internal/models"
@@ -32,7 +33,9 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 		TaxMode: r.FormValue("tax_mode"),
 		VATRate: formDecimal(r, "vat_rate"),
 	}
-	if c.TaxMode != "regel" {
+	switch c.TaxMode {
+	case "kleinunternehmer", "pauschal", "regel":
+	default:
 		c.TaxMode = "pauschal"
 	}
 	if s.tooLong(w, r, "Name", c.Name, maxNameLen) ||
@@ -43,6 +46,7 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.UpdateCompany(r.Context(), c); err != nil {
+		log.Printf("company update failed: %v", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	} else {
 		s.audit(r, "update", "company", 1, "Betriebsdaten aktualisiert")
