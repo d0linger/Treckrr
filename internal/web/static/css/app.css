@@ -1124,6 +1124,21 @@ em { font-style: normal; color: var(--muted); }
 .logcard__time { margin-left: auto; font-size: var(--fs-xs); color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .logcard__detail { font-size: var(--fs-sm); line-height: 1.4; overflow-wrap: break-word; }
 .logcard__meta { font-size: var(--fs-xs); color: var(--muted); overflow-wrap: break-word; }
+
+/* ---- Backup status panel (admin) -------------------------------------- */
+.bkp__head { display: flex; align-items: center; gap: .6rem; }
+.bkp__dot { width: .8rem; height: .8rem; border-radius: 50%; flex: 0 0 auto; background: var(--muted); }
+.bkp--ok .bkp__dot { background: var(--pay); }
+.bkp--stale .bkp__dot { background: #e0a03a; }
+.bkp--failed .bkp__dot { background: var(--owe); }
+.bkp__state { font-size: 1.05rem; }
+.bkp__meta { display: grid; gap: 0; margin: .8rem 0 0; }
+.bkp__meta div { display: flex; justify-content: space-between; gap: 1rem; border-top: 1px solid var(--card-hairline); padding: .4rem 0; }
+.bkp__meta dt { color: var(--muted); font-size: .85rem; margin: 0; }
+.bkp__meta dd { margin: 0; font-variant-numeric: tabular-nums; }
+.bkp__hint, .bkp__note { color: var(--muted); font-size: .88rem; line-height: 1.5; }
+.bkp__hint { margin: .6rem 0 0; }
+.bkp__note { margin: .2rem .2rem 0; font-size: .8rem; }
 .logcard__meta .ip { font-variant-numeric: tabular-nums; }
 .abadge { display: inline-flex; align-items: center; font-size: var(--fs-xs); font-weight: 800;
 	padding: .12rem .5rem; border-radius: 999px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); white-space: nowrap; }

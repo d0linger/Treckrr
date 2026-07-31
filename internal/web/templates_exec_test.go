@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 )
@@ -124,5 +125,17 @@ func TestComparePageRendersWithDiffs(t *testing.T) {
 			{"ID": int64(2), "Year": 2023, "Name": "Grundlage 2023"},
 		},
 		"GespannDiffs": rows, "MachineDiffs": rows, "LoadDiffs": rows,
+	})
+}
+
+func TestBackupPageRenders(t *testing.T) {
+	// Configured "ok" state exercises the date/IsZero/size/offhost branch.
+	execPage(t, "backup", map[string]any{
+		"Title": "Backup",
+		"Backup": map[string]any{
+			"Configured": true, "State": "ok",
+			"LastBackup": time.Now().Add(-3 * time.Hour), "AgeHours": 3,
+			"SizeLabel": "4.2 MB", "Offhost": "ok",
+		},
 	})
 }

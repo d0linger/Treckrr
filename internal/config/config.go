@@ -25,6 +25,9 @@ type Config struct {
 	// resets the existing admin's password to AdminPassword (and revokes sessions).
 	// Off by default so a normal restart never reverts a UI-changed password.
 	AdminPasswordReset bool
+	// BackupStatusFile is the path to the backup service's status.json, surfaced
+	// on the admin Backup panel. Absent/unreadable -> panel shows "not configured".
+	BackupStatusFile string
 	// WebAuthn (passkeys). RPID is the effective domain (host only, no scheme);
 	// RPOrigin is the full origin the browser sees. Both must match the site.
 	RPID     string
@@ -42,6 +45,7 @@ func Load() (*Config, error) {
 		AdminUsername:      getenv("ADMIN_USERNAME", "admin"),
 		AdminPassword:      os.Getenv("ADMIN_PASSWORD"),
 		AdminPasswordReset: strings.EqualFold(getenv("ADMIN_PASSWORD_RESET", "false"), "true"),
+		BackupStatusFile:   getenv("BACKUP_STATUS_FILE", "/backups/status.json"),
 		RPID:               getenv("RP_ID", "localhost"),
 		RPOrigin:           getenv("RP_ORIGIN", "http://localhost:8080"),
 	}

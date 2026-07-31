@@ -47,6 +47,13 @@ services:
       # set RP_ID to your host (no scheme) and RP_ORIGIN to the full origin.
       RP_ID: ${RP_ID:-localhost}
       RP_ORIGIN: ${RP_ORIGIN:-http://localhost:8080}
+      # Break-glass admin password reset (see .env.example); off by default.
+      ADMIN_PASSWORD_RESET: ${ADMIN_PASSWORD_RESET:-false}
+      # Backup status file for the admin Backup panel (needs the ./backups mount).
+      BACKUP_STATUS_FILE: ${BACKUP_STATUS_FILE:-/backups/status.json}
+    # Read-only view of the backup dir so the admin Backup panel can read status.json.
+    volumes:
+      - ./backups:/backups:ro
     ports:
       - "${HOST_PORT:-8080}:${APP_PORT:-8080}"
 
