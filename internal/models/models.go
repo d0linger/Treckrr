@@ -203,6 +203,19 @@ type LedgerEntry struct {
 	Created     time.Time
 }
 
+// Payment is a dated amount a neighbour paid toward a billing year. Payments are
+// decoupled from year status (a completed year still accepts them) and there may
+// be several per (year, neighbour) — partial payments settle the balance over time.
+type Payment struct {
+	ID            int64
+	BillingYearID int64
+	NeighborID    int64
+	Amount        decimal.Decimal
+	PaidOn        time.Time
+	Note          string
+	Created       time.Time
+}
+
 // AuditEntry is one recorded action in the audit trail.
 type AuditEntry struct {
 	ID       int64
