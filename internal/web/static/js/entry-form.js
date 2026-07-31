@@ -23,6 +23,19 @@
 	var rateEl = form.querySelector("[data-rate]");
 	var costEl = form.querySelector("[data-cost]");
 	var hoursEl = form.querySelector("[data-hours]");
+	var unitEl = form.querySelector("[data-unit]");
+	var hOnly = form.querySelector("[data-h-only]");
+	var qtyOnly = form.querySelector("[data-qty-only]");
+	var qtyEl = form.querySelector("[data-qty]");
+	var unitPriceEl = form.querySelector("[data-unit-price]");
+	var qtyCostEl = form.querySelector("[data-qty-cost]");
+	var unitLabels = form.querySelectorAll("[data-unit-label]");
+
+	function decVal(el) { return parseFloat((((el && el.value) || "0")).replace(",", ".")) || 0; }
+	function isHours() {
+		var u = ((unitEl && unitEl.value) || "").trim();
+		return u === "" || u === "h";
+	}
 
 	function currentMode() {
 		var checked = form.querySelector("[data-mode-toggle]:checked");
@@ -66,6 +79,11 @@
 	}
 
 	function update() {
+		if (!isHours()) {
+			var q = decVal(qtyEl), p = decVal(unitPriceEl);
+			if (qtyCostEl) qtyCostEl.textContent = (q > 0 && p > 0) ? fmt(round2(q * p)) : "–";
+			return;
+		}
 		var sel = resolveSelection();
 		if (!sel) {
 			rateEl.textContent = "–";
@@ -85,9 +103,24 @@
 		update();
 	}
 
-	form.addEventListener("input", update);
+	// Toggle the hour path (rig + rate) vs the quantity path (menge × unit price)
+	// based on the chosen unit; hidden fields are barred from HTML validation.
+	function applyUnit() {
+		var hours = isHours();
+		if (hOnly) hOnly.hidden = !hours;
+		if (qtyOnly) qtyOnly.hidden = hours;
+		var label = ((unitEl && unitEl.value) || "").trim() || "Einheit";
+		for (var i = 0; i < unitLabels.length; i++) unitLabels[i].textContent = label;
+		update();
+	}
+
+	form.addEventListener("input", function (e) {
+		if (e.target.matches("[data-unit]")) applyUnit();
+		else update();
+	});
 	form.addEventListener("change", function (e) {
 		if (e.target.matches("[data-mode-toggle]")) applyMode();
+		else if (e.target.matches("[data-unit]")) applyUnit();
 		else update();
 	});
 
@@ -105,4 +138,5 @@
 		.catch(function () { /* preview stays inert; server still calculates */ });
 
 	applyMode();
+	applyUnit();
 })();

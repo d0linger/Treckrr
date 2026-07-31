@@ -292,9 +292,17 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	s.audit(r, "create", "entry", newID, fmt.Sprintf("%s · %s, %s h × %s = %s €",
-		s.neighborName(r, neighborID), entry.TaskLabel,
-		entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2)))
+	var detail string
+	if entry.Unit != "" && entry.Unit != "h" {
+		detail = fmt.Sprintf("%s · %s, %s %s × %s = %s €",
+			s.neighborName(r, neighborID), entry.TaskLabel,
+			entry.Quantity.String(), entry.Unit, entry.UnitPrice.StringFixed(2), entry.Cost.StringFixed(2))
+	} else {
+		detail = fmt.Sprintf("%s · %s, %s h × %s = %s €",
+			s.neighborName(r, neighborID), entry.TaskLabel,
+			entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2))
+	}
+	s.audit(r, "create", "entry", newID, detail)
 	s.setFlash(w, r, "success", "Buchung gespeichert.")
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
@@ -304,6 +312,49 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 // returns a populated Entry (without neighbor/year) plus its machine ids. On
 // validation failure it returns a non-empty German message.
 func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, string) {
+	// Non-hour unit (ha, Ballen, m³, …): quantity × unit price, no rig required.
+	// Hours stay 0 (they don't count toward TotalHours). Unit "h" (or empty) falls
+	// through to the rig-based hourly path below.
+	if unit := trimmed(r, "unit"); unit != "" && unit != "h" {
+		if msg := lenError("Einheit", unit, 16); msg != "" {
+			return nil, nil, msg
+		}
+		taskLabel := trimmed(r, "task_label")
+		if taskLabel == "" {
+			return nil, nil, "Bitte eine Tätigkeit angeben."
+		}
+		if msg := lenError("Tätigkeit", taskLabel, maxNameLen); msg != "" {
+			return nil, nil, msg
+		}
+		quantity := formDecimal(r, "quantity")
+		if !quantity.IsPositive() {
+			return nil, nil, "Menge muss größer als 0 sein."
+		}
+		unitPrice := formDecimal(r, "unit_price")
+		if !unitPrice.IsPositive() {
+			return nil, nil, "Preis je Einheit muss größer als 0 sein."
+		}
+		note := trimmed(r, "note")
+		if msg := lenError("Notiz", note, maxNoteLen); msg != "" {
+			return nil, nil, msg
+		}
+		entryDate, err := time.Parse("2006-01-02", trimmed(r, "entry_date"))
+		if err != nil {
+			entryDate = time.Now()
+		}
+		return &models.Entry{
+			Date:       entryDate,
+			TaskLabel:  taskLabel,
+			Unit:       unit,
+			Quantity:   quantity,
+			UnitPrice:  unitPrice,
+			Hours:      decimal.Zero,
+			HourlyRate: decimal.Zero,
+			Cost:       calc.Cost(quantity, unitPrice),
+			Note:       note,
+		}, nil, ""
+	}
+
 	var (
 		gespannID   *int64
 		tractorID   = formInt64Ptr(r, "tractor_id")

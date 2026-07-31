@@ -29,6 +29,23 @@
 		<input type="hidden" name="year_id" value="{{.Year.ID}}">
 		<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
 
+		<div class="form__grid">
+			<label class="field"><span>Einheit</span>
+				<input class="input" name="unit" value="h" list="unit-options" autocomplete="off" data-unit>
+				<datalist id="unit-options">
+					<option value="h">Stunden</option>
+					<option value="ha">Hektar</option>
+					<option value="Ballen">Ballen</option>
+					<option value="m³">Kubikmeter</option>
+					<option value="Fuhre">Fuhre</option>
+					<option value="t">Tonnen</option>
+				</datalist>
+			</label>
+			<label class="field"><span>Datum</span>
+				<input class="input" type="date" name="entry_date" value="{{.Today}}" required></label>
+		</div>
+
+		<div data-h-only>
 		<div class="segmented" role="tablist">
 			<label class="segmented__item">
 				<input type="radio" name="mode" value="gespann" checked data-mode-toggle>
@@ -83,13 +100,9 @@
 			</fieldset>
 		</div>
 
-		<div class="form__grid">
-			<label class="field"><span>Datum</span>
-				<input class="input" type="date" name="entry_date" value="{{.Today}}" required></label>
-			<label class="field"><span>Stunden</span>
-				<input class="input" type="number" step="0.001" min="0" name="hours"
-					inputmode="decimal" data-hours required></label>
-		</div>
+		<label class="field"><span>Stunden</span>
+			<input class="input" type="number" step="0.001" min="0" name="hours"
+				inputmode="decimal" data-hours required></label>
 
 		<div class="rate-preview" data-rate-preview aria-live="polite" aria-atomic="true">
 			<span class="rate-preview__main">
@@ -98,7 +111,26 @@
 			</span>
 			<span class="rate-preview__rate">Satz <strong data-rate>–</strong></span>
 		</div>
-		<label class="field"><span>Tätigkeit (optional)</span>
+		</div><!-- /data-h-only -->
+
+		<div data-qty-only hidden>
+			<div class="form__grid">
+				<label class="field"><span>Menge</span>
+					<input class="input" type="number" step="0.001" min="0" name="quantity"
+						inputmode="decimal" data-qty></label>
+				<label class="field"><span>€ / <span data-unit-label>Einheit</span></span>
+					<input class="input" type="number" step="0.01" min="0" name="unit_price"
+						inputmode="decimal" data-unit-price></label>
+			</div>
+			<div class="rate-preview" aria-live="polite" aria-atomic="true">
+				<span class="rate-preview__main">
+					<span class="rate-preview__lbl">Kosten</span>
+					<strong class="rate-preview__cost" data-qty-cost>–</strong>
+				</span>
+			</div>
+		</div><!-- /data-qty-only -->
+
+		<label class="field"><span>Tätigkeit (bei Mengen-Einheiten erforderlich)</span>
 			<input class="input" type="text" name="task_label" placeholder="z. B. Mähen"></label>
 		<label class="field"><span>Notiz (optional)</span>
 			<input class="input" type="text" name="note"></label>
