@@ -1002,6 +1002,21 @@ em { font-style: normal; color: var(--muted); }
 .beleg__actrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .5rem; }
 [data-beleg-grund][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 [data-beleg-grund][aria-pressed="true"] .ic { color: var(--on-primary); }
+[data-beleg-rechnung][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+[data-beleg-rechnung][aria-pressed="true"] .ic { color: var(--on-primary); }
+
+/* Invoice (Rechnung) mode — sender/recipient block + tax note, shown only when
+   the Rechnung toggle is on (.beleg--rechnung). */
+.beleg__invoice, .beleg__invtax { display: none; }
+.beleg--rechnung .beleg__invoice, .beleg--rechnung .beleg__invtax { display: block; }
+.beleg__invoice { padding: .85rem .9rem; border-bottom: 1px solid var(--border); }
+.beleg__inv-top { display: flex; justify-content: space-between; gap: .5rem; font-family: var(--font-mono); font-size: .8rem; margin-bottom: .55rem; }
+.beleg__inv-no { font-weight: 700; }
+.beleg__inv-pp { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; font-size: .84rem; align-items: start; }
+.beleg__inv-k { font-family: var(--font-mono); font-size: .6rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: .1rem; }
+.beleg__inv-addr { white-space: pre-line; }
+.beleg__invtax { padding-top: .3rem; }
+.beleg__inv-note { font-size: .74rem; color: var(--muted); font-style: italic; padding: .5rem .9rem .2rem; }
 
 .beleg-toast { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom)); transform: translate(-50%, 12px);
 	background: var(--text); color: var(--bg); font-weight: 600; font-size: .88rem; padding: .6rem 1rem; border-radius: 12px;

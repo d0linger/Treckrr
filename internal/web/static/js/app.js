@@ -652,6 +652,13 @@
 			grundBtn.setAttribute("aria-pressed", on ? "true" : "false");
 		});
 
+		var rechnungBtn = scope.querySelector("[data-beleg-rechnung]");
+		if (rechnungBtn) rechnungBtn.addEventListener("click", function () {
+			var on = !beleg.classList.contains("beleg--rechnung");
+			beleg.classList.toggle("beleg--rechnung", on);
+			rechnungBtn.setAttribute("aria-pressed", on ? "true" : "false");
+		});
+
 		var bundleBtn = scope.querySelector("[data-beleg-bundle]");
 		if (bundleBtn) bundleBtn.addEventListener("click", function () {
 			var on = !beleg.classList.contains("beleg--bundle");

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -265,6 +266,11 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	remaining := saldo.Sub(paidSum)
 	paid := !remaining.IsPositive() // fully settled
 
+	// Invoice (Rechnung) mode: sender settings + the issued number (if any).
+	company, _ := s.store.GetCompany(r.Context())
+	invoice, invErr := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
+	hasInvoice := invErr == nil
+
 	data := s.newPage(w, r, neighbor.Name+" · Beleg", "dashboard")
 	if err := s.withYearSelector(r, data, year); err != nil {
 		s.serverError(w, "beleg: year selector", err)
@@ -286,6 +292,17 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["PaidSum"] = paidSum
 	data["Remaining"] = remaining
 	data["HasPayments"] = len(payments) > 0
+	data["Company"] = company
+	data["HasInvoice"] = hasInvoice
+	data["Invoice"] = invoice
+	data["Rechnung"] = hasInvoice && r.URL.Query().Get("rechnung") == "1"
+	if company.TaxMode == "regel" && company.VATRate.IsPositive() {
+		ust := saldo.Mul(company.VATRate).Div(decimal.NewFromInt(100)).Round(2)
+		data["VATShow"] = true
+		data["VATRate"] = company.VATRate
+		data["VATAmount"] = ust
+		data["VATGross"] = saldo.Add(ust)
+	}
 	data["GrundTractors"] = gTractors
 	data["GrundMachines"] = gMachines
 	data["HasGrund"] = len(gTractors) > 0 || len(gMachines) > 0
@@ -293,4 +310,47 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["ShowGrund"] = r.URL.Query().Get("grundlage") == "1"
 	data["Today"] = time.Now().Format("02.01.2006")
 	s.render(w, r, "beleg", data)
+}
+
+// handleInvoiceIssue assigns and stores a sequential invoice number for a
+// neighbor+year (fixed once), then shows the Beleg in Rechnung mode.
+func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	yearID := s.yearIDFromForm(r)
+	if yearID == 0 {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	year, err := s.store.GetBillingYear(r.Context(), yearID)
+	if err != nil {
+		s.serverError(w, "invoice: year", err)
+		return
+	}
+	member, err := s.store.NeighborInYear(r.Context(), yearID, neighborID)
+	if err != nil {
+		s.serverError(w, "invoice: membership", err)
+		return
+	}
+	if !member {
+		s.setFlash(w, r, "error", "Nachbar ist in diesem Abrechnungsjahr nicht vorhanden.")
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
+	iv, err := s.store.IssueInvoice(r.Context(), yearID, neighborID, year.Year)
+	if err != nil {
+		s.setFlash(w, r, "error", "Rechnung konnte nicht ausgestellt werden.")
+		redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
+		return
+	}
+	s.audit(r, "invoice_issue", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Rechnung "+iv.Number)
+	s.setFlash(w, r, "success", "Rechnung "+iv.Number+" ausgestellt.")
+	redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID))
 }

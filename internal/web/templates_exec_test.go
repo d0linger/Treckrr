@@ -81,6 +81,11 @@ func TestBelegPageRenders(t *testing.T) {
 		"Payments": []map[string]any{
 			{"PaidOn": time.Now(), "Amount": d(300), "Note": "Überweisung"},
 		},
+		"HasInvoice": true, "Rechnung": true,
+		"Invoice": map[string]any{"Number": "2026-014", "IssuedOn": time.Now()},
+		"Company": map[string]any{"Name": "Hof Bergmann", "Address": "Feldweg 3\n4780", "TaxID": "ATU123",
+			"TaxNote": "§ 22 UStG", "TaxMode": "regel", "VATRate": d(13)},
+		"VATShow": true, "VATRate": d(13), "VATAmount": d(64.76), "VATGross": d(562.95),
 		"Days": []map[string]any{
 			{"Date": "09.05.", "Entries": []map[string]any{
 				{"TaskLabel": "Mähen", "Unit": "h", "Hours": d(2.25), "HourlyRate": d(40), "Cost": d(251.19), "Voided": false},

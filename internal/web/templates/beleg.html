@@ -2,7 +2,22 @@
 <section class="stack beleg-page">
 	<a class="backlink no-print" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ {{.Neighbor.Name}} · {{.Year.Year}}</a>
 
-	<div class="beleg{{if .ShowGrund}} beleg--grund{{end}}{{if .Bundle}} beleg--bundle{{end}}" id="beleg">
+	<div class="beleg{{if .ShowGrund}} beleg--grund{{end}}{{if .Bundle}} beleg--bundle{{end}}{{if .Rechnung}} beleg--rechnung{{end}}" id="beleg">
+		{{if .HasInvoice}}
+		<div class="beleg__invoice">
+			<div class="beleg__inv-top">
+				<span class="beleg__inv-no">RECHNUNG Nr. {{.Invoice.Number}}</span>
+				<span>Datum {{date .Invoice.IssuedOn}}</span>
+			</div>
+			<div class="beleg__inv-pp">
+				<div><div class="beleg__inv-k">Von</div><span class="beleg__inv-addr">{{.Company.Name}}{{with .Company.Address}}
+{{.}}{{end}}{{with .Company.TaxID}}
+{{.}}{{end}}</span></div>
+				<div><div class="beleg__inv-k">An</div><span class="beleg__inv-addr">{{.Neighbor.Name}}{{with .Neighbor.Address}}
+{{.}}{{end}}</span></div>
+			</div>
+		</div>
+		{{end}}
 		<div class="beleg__hero">
 			<div class="beleg__hero-top">
 				<span class="beleg__who">{{.Neighbor.Name}}</span>
@@ -102,6 +117,17 @@
 		</div>
 		{{end}}
 
+		{{if .HasInvoice}}
+		<div class="beleg__invtax">
+			{{if .VATShow}}
+			<div class="beleg__lsub"><span></span><span>Netto</span><span class="beleg__r"></span><span class="beleg__r">{{money .Saldo}}</span></div>
+			<div class="beleg__lsub beleg__lsub--muted"><span></span><span>zzgl. USt {{num .VATRate}} %</span><span class="beleg__r"></span><span class="beleg__r">{{money .VATAmount}}</span></div>
+			<div class="beleg__lsub"><span></span><span>Brutto</span><span class="beleg__r"></span><span class="beleg__r">{{money .VATGross}}</span></div>
+			{{end}}
+			{{with .Company.TaxNote}}<div class="beleg__inv-note">{{.}}</div>{{end}}
+		</div>
+		{{end}}
+
 		<div class="beleg__foot">Stand {{.Today}} · Treckrr</div>
 	</div>
 
@@ -125,7 +151,18 @@
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Grundlage
 			</button>
 			{{end}}
+			{{if .HasInvoice}}
+			<button type="button" class="btn btn--ghost" data-beleg-rechnung aria-pressed="{{if .Rechnung}}true{{else}}false{{end}}">
+				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Rechnung
+			</button>
+			{{end}}
 		</div>
+		{{if not .HasInvoice}}
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<button type="submit" class="btn btn--ghost btn--block">Als Rechnung ausstellen (Nummer vergeben)</button>
+		</form>
+		{{end}}
 	</div>
 </section>
 {{end}}
