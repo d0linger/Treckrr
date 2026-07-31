@@ -30,11 +30,19 @@
 	var unitPriceEl = form.querySelector("[data-unit-price]");
 	var qtyCostEl = form.querySelector("[data-qty-cost]");
 	var unitLabels = form.querySelectorAll("[data-unit-label]");
+	var unitCustomWrap = form.querySelector("[data-unit-custom]");
+	var unitCustomInput = form.querySelector("[data-unit-custom-input]");
 
 	function decVal(el) { return parseFloat((((el && el.value) || "0")).replace(",", ".")) || 0; }
 	function isHours() {
 		var u = ((unitEl && unitEl.value) || "").trim();
 		return u === "" || u === "h";
+	}
+	// The effective unit label (resolves the "Andere Einheit" option to its text).
+	function unitValue() {
+		var v = ((unitEl && unitEl.value) || "").trim();
+		if (v === "__custom") return ((unitCustomInput && unitCustomInput.value) || "").trim();
+		return v;
 	}
 
 	function currentMode() {
@@ -106,21 +114,22 @@
 	// Toggle the hour path (rig + rate) vs the quantity path (menge × unit price)
 	// based on the chosen unit; hidden fields are barred from HTML validation.
 	function applyUnit() {
+		if (unitCustomWrap) unitCustomWrap.hidden = !(unitEl && unitEl.value === "__custom");
 		var hours = isHours();
 		if (hOnly) hOnly.hidden = !hours;
 		if (qtyOnly) qtyOnly.hidden = hours;
-		var label = ((unitEl && unitEl.value) || "").trim() || "Einheit";
+		var label = unitValue() || "Einheit";
 		for (var i = 0; i < unitLabels.length; i++) unitLabels[i].textContent = label;
 		update();
 	}
 
 	form.addEventListener("input", function (e) {
-		if (e.target.matches("[data-unit]")) applyUnit();
+		if (e.target.matches("[data-unit], [data-unit-custom-input]")) applyUnit();
 		else update();
 	});
 	form.addEventListener("change", function (e) {
 		if (e.target.matches("[data-mode-toggle]")) applyMode();
-		else if (e.target.matches("[data-unit]")) applyUnit();
+		else if (e.target.matches("[data-unit], [data-unit-custom-input]")) applyUnit();
 		else update();
 	});
 

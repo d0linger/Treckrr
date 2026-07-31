@@ -31,19 +31,21 @@
 
 		<div class="form__grid">
 			<label class="field"><span>Einheit</span>
-				<input class="input" name="unit" value="h" list="unit-options" autocomplete="off" data-unit>
-				<datalist id="unit-options">
-					<option value="h">Stunden</option>
-					<option value="ha">Hektar</option>
+				<select class="select" name="unit" data-unit>
+					<option value="h">Stunden (h)</option>
+					<option value="ha">Hektar (ha)</option>
 					<option value="Ballen">Ballen</option>
-					<option value="m³">Kubikmeter</option>
+					<option value="m³">Kubikmeter (m³)</option>
 					<option value="Fuhre">Fuhre</option>
-					<option value="t">Tonnen</option>
-				</datalist>
+					<option value="t">Tonnen (t)</option>
+					<option value="__custom">Andere Einheit …</option>
+				</select>
 			</label>
 			<label class="field"><span>Datum</span>
 				<input class="input" type="date" name="entry_date" value="{{.Today}}" required></label>
 		</div>
+		<label class="field" data-unit-custom hidden><span>Eigene Einheit</span>
+			<input class="input" type="text" name="unit_custom" placeholder="z. B. Stk, Fuder" maxlength="16" data-unit-custom-input></label>
 
 		<div data-h-only>
 		<div class="segmented" role="tablist">

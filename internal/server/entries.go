@@ -314,8 +314,16 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, string) {
 	// Non-hour unit (ha, Ballen, m³, …): quantity × unit price, no rig required.
 	// Hours stay 0 (they don't count toward TotalHours). Unit "h" (or empty) falls
-	// through to the rig-based hourly path below.
-	if unit := trimmed(r, "unit"); unit != "" && unit != "h" {
+	// through to the rig-based hourly path below. "__custom" resolves to the
+	// free-text unit field.
+	unit := trimmed(r, "unit")
+	if unit == "__custom" {
+		unit = trimmed(r, "unit_custom")
+		if unit == "" {
+			return nil, nil, "Bitte eine eigene Einheit angeben."
+		}
+	}
+	if unit != "" && unit != "h" {
 		if msg := lenError("Einheit", unit, 16); msg != "" {
 			return nil, nil, msg
 		}
