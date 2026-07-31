@@ -101,14 +101,16 @@ func (s *Store) YearNeighborResults(ctx context.Context, yearID int64) ([]YearNe
 // bookings (Leistungen), signed ledger sum (Verrechnung), their Net, hours,
 // the payment flag and the year's status.
 type NeighborYearHistoryRow struct {
-	YearID int64
-	Year   int
-	Status string
-	Cost   decimal.Decimal // work bookings, not voided
-	Ledger decimal.Decimal // signed manual postings, not voided
-	Net    decimal.Decimal // Cost + Ledger
-	Hours  decimal.Decimal
-	Paid   bool
+	YearID     int64
+	Year       int
+	Status     string
+	Cost       decimal.Decimal // work bookings, not voided
+	Ledger     decimal.Decimal // signed manual postings, not voided
+	Net        decimal.Decimal // Cost + Ledger
+	Hours      decimal.Decimal
+	PaidAmount decimal.Decimal // sum of recorded payments
+	Remaining  decimal.Decimal // Net − PaidAmount
+	Paid       bool            // fully settled (Remaining <= 0)
 }
 
 // NeighborYearHistory returns a neighbor's per-year history (newest first) in a
@@ -117,7 +119,7 @@ type NeighborYearHistoryRow struct {
 // naturally absent via the billing_year_neighbors join.
 func (s *Store) NeighborYearHistory(ctx context.Context, neighborID int64) ([]NeighborYearHistoryRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT y.id, y.year, y.status, byn.paid,
+		SELECT y.id, y.year, y.status,
 		  COALESCE((SELECT SUM(e.cost) FROM entries e
 		             WHERE e.neighbor_id = byn.neighbor_id
 		               AND e.billing_year_id = byn.billing_year_id
@@ -129,7 +131,10 @@ func (s *Store) NeighborYearHistory(ctx context.Context, neighborID int64) ([]Ne
 		  COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
 		             WHERE l.neighbor_id = byn.neighbor_id
 		               AND l.billing_year_id = byn.billing_year_id
-		               AND NOT l.voided), 0) AS ledger
+		               AND NOT l.voided), 0) AS ledger,
+		  COALESCE((SELECT SUM(p.amount) FROM payments p
+		             WHERE p.neighbor_id = byn.neighbor_id
+		               AND p.billing_year_id = byn.billing_year_id), 0) AS paid
 		FROM billing_year_neighbors byn
 		JOIN billing_years y ON y.id = byn.billing_year_id
 		WHERE byn.neighbor_id = $1
@@ -141,10 +146,12 @@ func (s *Store) NeighborYearHistory(ctx context.Context, neighborID int64) ([]Ne
 	var out []NeighborYearHistoryRow
 	for rows.Next() {
 		var r NeighborYearHistoryRow
-		if err := rows.Scan(&r.YearID, &r.Year, &r.Status, &r.Paid, &r.Cost, &r.Hours, &r.Ledger); err != nil {
+		if err := rows.Scan(&r.YearID, &r.Year, &r.Status, &r.Cost, &r.Hours, &r.Ledger, &r.PaidAmount); err != nil {
 			return nil, err
 		}
 		r.Net = r.Cost.Add(r.Ledger)
+		r.Remaining = r.Net.Sub(r.PaidAmount)
+		r.Paid = !r.Remaining.IsPositive()
 		out = append(out, r)
 	}
 	return out, rows.Err()

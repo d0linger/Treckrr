@@ -221,16 +221,17 @@ func (s *Store) NeighborTotal(ctx context.Context, neighborID, yearID int64) (co
 	return
 }
 
-// YearPaymentTotals returns the paid and open cost totals for a billing year in
-// a single query (paid = neighbors marked paid, open = the rest). This replaces
-// a per-neighbor fan-out of NeighborTotal calls.
+// YearPaymentTotals returns the received (paid) and outstanding (open) totals for
+// a billing year in a single query: paid = the sum of recorded payments, open =
+// the sum of each neighbor's remaining balance (net − payments). Replaces a
+// per-neighbor fan-out of NeighborTotal calls.
 func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open decimal.Decimal, err error) {
-	// Per neighbor: net = work bookings + signed ledger postings. Aggregate the
-	// two sides in subqueries first so joining them can't multiply rows, then
-	// split by the paid flag.
+	// Per neighbor: net = work bookings + signed ledger postings; paid = recorded
+	// payments. Aggregate each side in scalar subqueries first so joining can't
+	// multiply rows.
 	err = s.db.QueryRowContext(ctx, `
 		WITH per_neighbor AS (
-		  SELECT byn.neighbor_id, byn.paid,
+		  SELECT
 		    COALESCE((SELECT SUM(e.cost) FROM entries e
 		               WHERE e.neighbor_id = byn.neighbor_id
 		                 AND e.billing_year_id = byn.billing_year_id
@@ -238,13 +239,14 @@ func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open
 		    + COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
 		                 WHERE l.neighbor_id = byn.neighbor_id
 		                   AND l.billing_year_id = byn.billing_year_id
-		                   AND NOT l.voided), 0) AS net
+		                   AND NOT l.voided), 0) AS net,
+		    COALESCE((SELECT SUM(p.amount) FROM payments p
+		               WHERE p.neighbor_id = byn.neighbor_id
+		                 AND p.billing_year_id = byn.billing_year_id), 0) AS paid
 		  FROM billing_year_neighbors byn
 		  WHERE byn.billing_year_id = $1
 		)
-		SELECT
-		  COALESCE(SUM(CASE WHEN paid THEN net ELSE 0 END), 0),
-		  COALESCE(SUM(CASE WHEN NOT paid THEN net ELSE 0 END), 0)
+		SELECT COALESCE(SUM(paid), 0), COALESCE(SUM(net - paid), 0)
 		FROM per_neighbor`, yearID).Scan(&paid, &open)
 	return
 }
@@ -255,10 +257,12 @@ func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open
 type YearNeighborSummary struct {
 	NeighborID int64
 	Name       string
-	Cost       decimal.Decimal
+	Cost       decimal.Decimal // net owed (bookings + signed ledger)
 	Hours      decimal.Decimal
 	Entries    int
-	Paid       bool
+	PaidAmount decimal.Decimal // sum of recorded payments
+	Remaining  decimal.Decimal // Cost − PaidAmount
+	Paid       bool            // fully settled (Remaining <= 0)
 }
 
 // YearNeighborSummaries returns one row per neighbor in the year in a single
@@ -268,7 +272,7 @@ type YearNeighborSummary struct {
 // name to match the dashboard list.
 func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]YearNeighborSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT n.id, n.name, byn.paid,
+		SELECT n.id, n.name,
 		  COALESCE((SELECT SUM(e.cost) FROM entries e
 		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id
 		               AND NOT e.voided), 0)
@@ -279,7 +283,9 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id
 		               AND NOT e.voided), 0) AS hours,
 		  (SELECT count(*) FROM entries e
-		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id) AS entries
+		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id) AS entries,
+		  COALESCE((SELECT SUM(p.amount) FROM payments p
+		             WHERE p.neighbor_id = n.id AND p.billing_year_id = byn.billing_year_id), 0) AS paid
 		FROM billing_year_neighbors byn
 		JOIN neighbors n ON n.id = byn.neighbor_id
 		WHERE byn.billing_year_id = $1
@@ -291,9 +297,11 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 	var out []YearNeighborSummary
 	for rows.Next() {
 		var r YearNeighborSummary
-		if err := rows.Scan(&r.NeighborID, &r.Name, &r.Paid, &r.Cost, &r.Hours, &r.Entries); err != nil {
+		if err := rows.Scan(&r.NeighborID, &r.Name, &r.Cost, &r.Hours, &r.Entries, &r.PaidAmount); err != nil {
 			return nil, err
 		}
+		r.Remaining = r.Cost.Sub(r.PaidAmount)
+		r.Paid = !r.Remaining.IsPositive() // fully settled when nothing remains
 		out = append(out, r)
 	}
 	return out, rows.Err()

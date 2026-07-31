@@ -54,6 +54,18 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Payments toward this year (dated amounts). The remaining balance is the
+	// saldo minus what was paid; payments are editable regardless of year status.
+	payments, err := s.store.ListPayments(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	paidSum := decimal.Zero
+	for _, p := range payments {
+		paidSum = paidSum.Add(p.Amount)
+	}
+
 	// Bookings whose stored price no longer matches the current basis (the basis
 	// was edited after they were booked). Marked in the table; offered for
 	// recalculation. Best-effort — a failure just omits the markers.
@@ -90,6 +102,9 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Ledger"] = ledger
 	data["LedgerSum"] = ledgerSum
 	data["Saldo"] = cost.Add(ledgerSum)
+	data["Payments"] = payments
+	data["PaidSum"] = paidSum
+	data["Remaining"] = cost.Add(ledgerSum).Sub(paidSum)
 	data["Tractors"] = tractors
 	data["Loads"] = loads
 	data["Machines"] = machines

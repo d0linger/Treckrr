@@ -86,9 +86,9 @@ func TestLedgerNetIntegration(t *testing.T) {
 		t.Fatalf("unvoid: %v", err)
 	}
 
-	// Net owed = 100 - 20 = 80. Mark paid → paid total should be 80, open 0.
-	if err := st.SetNeighborPaid(ctx, yearID, nid, true); err != nil {
-		t.Fatalf("set paid: %v", err)
+	// Net owed = 100 - 20 = 80. A full payment → paid total 80, open 0.
+	if err := st.AddPayment(ctx, yearID, nid, decimal.RequireFromString("80"), time.Now(), "test"); err != nil {
+		t.Fatalf("add payment: %v", err)
 	}
 	paid, open, err := st.YearPaymentTotals(ctx, yearID)
 	if err != nil {

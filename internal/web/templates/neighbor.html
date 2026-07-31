@@ -303,6 +303,58 @@
 		</details>
 		{{end}}
 
+	<h2 class="section-title">Zahlungen</h2>
+	<p class="muted small">Erhaltene Zahlungen — jederzeit erfassbar, auch nach Abschluss des Jahres.</p>
+	<div class="bookcards">
+		{{range .Payments}}
+		<div class="bcard">
+			<div class="bcard__head">
+				<span class="bcard__date">{{date .PaidOn}}</span>
+				<span class="bcard__task">Zahlung</span>
+				<span class="bcard__cost">−{{money .Amount}}</span>
+			</div>
+			<div class="bcard__foot">
+				<span class="bcard__detail">{{if .Note}}{{.Note}}{{else}}—{{end}}</span>
+				<span class="bcard__acts">
+					<form method="post" action="/payments/{{.ID}}/delete" data-confirm="Zahlung löschen?">
+						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
+					</form>
+				</span>
+			</div>
+		</div>
+		{{else}}
+		<div class="empty empty--slim">
+			<span class="empty__title">Noch keine Zahlungen</span>
+		</div>
+		{{end}}
+	</div>
+	<div class="bcard__summary"><span class="muted">Bezahlt</span><span>{{money .PaidSum}}</span></div>
+	<div class="bcard__summary"><span>Offener Rest</span><span>{{money .Remaining}}</span></div>
+
+	<details class="card disclosure">
+		<summary>+ Zahlung erfassen</summary>
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/payments" class="form">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<div class="form__grid">
+				<label class="field"><span>Betrag (€)</span>
+					<input class="input" type="number" step="0.01" min="0" name="amount" required></label>
+				<label class="field"><span>Datum</span>
+					<input class="input" type="date" name="paid_on" value="{{.Today}}"></label>
+				<label class="field"><span>Notiz</span>
+					<input class="input" name="note" placeholder="z. B. Überweisung"></label>
+			</div>
+			<button class="btn btn--primary btn--sm" type="submit">Zahlung erfassen</button>
+		</form>
+	</details>
+
+	{{if .Remaining.IsPositive}}
+	<form method="post" action="/neighbors/{{.Neighbor.ID}}/carry-forward" class="form"
+		data-confirm="Offenen Rest ({{money .Remaining}}) ins Folgejahr übernehmen? Das aktuelle Jahr wird damit ausgeglichen.">
+		<input type="hidden" name="year_id" value="{{.Year.ID}}">
+		<button class="btn btn--ghost btn--sm" type="submit">Rest ins Folgejahr übernehmen</button>
+	</form>
+	{{end}}
+
 	{{if not .Completed}}<a class="fab" href="#neue-buchung" aria-label="Neue Buchung" title="Neue Buchung">{{template "ic-plus"}}</a>{{end}}
 </section>
 {{end}}

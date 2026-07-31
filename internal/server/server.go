@@ -87,7 +87,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /years/add-neighbor", s.auth(s.handleYearAddNeighbor))
 	mux.Handle("POST /years/remove-neighbor", s.auth(s.handleYearRemoveNeighbor))
 	mux.Handle("POST /years/carry-over", s.auth(s.handleCarryOverNeighbors))
-	mux.Handle("POST /years/mark-paid", s.auth(s.handleNeighborPaid))
+	mux.Handle("POST /years/mark-paid", s.auth(s.handleNeighborSettle))
 
 	mux.Handle("POST /entries", s.auth(s.handleEntryCreate))
 	mux.Handle("POST /entries/quick", s.auth(s.handleQuickEntries))
@@ -96,6 +96,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /entries/{id}/void", s.auth(s.handleEntryVoid))
 	mux.Handle("POST /entries/{id}/delete", s.auth(s.handleEntryDelete))
 	mux.Handle("POST /neighbors/{id}/ledger", s.auth(s.handleLedgerAdd))
+	mux.Handle("POST /neighbors/{id}/payments", s.auth(s.handlePaymentAdd))
+	mux.Handle("POST /neighbors/{id}/carry-forward", s.auth(s.handleNeighborCarryForward))
+	mux.Handle("POST /payments/{id}/delete", s.auth(s.handlePaymentDelete))
 	mux.Handle("GET /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcPreview))
 	mux.Handle("POST /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcApply))
 	mux.Handle("GET /years/{id}/recalc", s.auth(s.handleYearRecalcPreview))
