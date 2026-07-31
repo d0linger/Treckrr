@@ -296,27 +296,31 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["HasInvoice"] = hasInvoice
 	data["Invoice"] = invoice
 	data["Rechnung"] = hasInvoice && r.URL.Query().Get("rechnung") == "1"
-	// Invoice reconciliation: the full net amount → USt → gross, less payments
-	// already received (with their USt share), giving the amount still to pay.
-	// USt is shown for §22 (pauschal) and regel; not for Kleinunternehmer.
+	// Invoice reconciliation. USt is computed on the Leistungsentgelt (the
+	// services actually supplied) — NOT on the mutual-claim-netted saldo — so
+	// the tax base stays correct regardless of any Verrechnung. The Verrechnung
+	// and payments already received are then shown as settlement lines that
+	// reduce the amount still to pay. USt is shown for §22 (pauschal) and regel,
+	// not for Kleinunternehmer.
 	invShowVAT := (company.TaxMode == "pauschal" || company.TaxMode == "regel") && company.VATRate.IsPositive()
-	invNet := saldo
-	invBrutto := saldo
+	invNet := cost
 	var invUSt, invPaidUSt decimal.Decimal
 	if invShowVAT {
 		rate := company.VATRate.Div(decimal.NewFromInt(100))
 		invUSt = invNet.Mul(rate).Round(2)
-		invBrutto = invNet.Add(invUSt)
 		// USt share contained in the (gross) payments already received.
 		invPaidUSt = paidSum.Mul(rate).Div(decimal.NewFromInt(1).Add(rate)).Round(2)
 	}
+	invBrutto := invNet.Add(invUSt)
 	data["InvShowVAT"] = invShowVAT
 	data["InvRate"] = company.VATRate
 	data["InvNet"] = invNet
 	data["InvUSt"] = invUSt
 	data["InvBrutto"] = invBrutto
+	data["InvLedger"] = ledgerSum
 	data["InvPaidUSt"] = invPaidUSt
-	data["InvRest"] = invBrutto.Sub(paidSum)
+	// Amount still to pay: gross services, less mutual Verrechnung, less payments.
+	data["InvRest"] = invBrutto.Add(ledgerSum).Sub(paidSum)
 	data["GrundTractors"] = gTractors
 	data["GrundMachines"] = gMachines
 	data["HasGrund"] = len(gTractors) > 0 || len(gMachines) > 0

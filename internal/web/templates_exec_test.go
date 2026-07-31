@@ -85,8 +85,8 @@ func TestBelegPageRenders(t *testing.T) {
 		"Invoice": map[string]any{"Number": "2026-014", "IssuedOn": time.Now()},
 		"Company": map[string]any{"Name": "Hof Bergmann", "Address": "Feldweg 3\n4780", "TaxID": "ATU123",
 			"TaxNote": "§ 22 UStG", "TaxMode": "regel", "VATRate": d(13)},
-		"InvShowVAT": true, "InvRate": d(13), "InvNet": d(498.19), "InvUSt": d(64.76),
-		"InvBrutto": d(562.95), "InvPaidUSt": d(34.51), "InvRest": d(262.95),
+		"InvShowVAT": true, "InvRate": d(13), "InvNet": d(647.60), "InvUSt": d(84.19),
+		"InvBrutto": d(731.79), "InvLedger": d(-50), "InvPaidUSt": d(34.51), "InvRest": d(481.79),
 		"Days": []map[string]any{
 			{"Date": "09.05.", "Entries": []map[string]any{
 				{"TaskLabel": "Mähen", "Unit": "h", "Hours": d(2.25), "HourlyRate": d(40), "Cost": d(251.19), "Voided": false},

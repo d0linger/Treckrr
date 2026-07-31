@@ -23,12 +23,16 @@
 				<span class="beleg__who">{{.Neighbor.Name}}</span>
 				<span class="beleg__yr">Abrechnung {{.Year.Year}}</span>
 			</div>
-			<div class="beleg__hl">Saldo{{if .Completed}} · {{if .Paid}}bezahlt{{else}}offen{{end}}{{end}}</div>
-			<div class="beleg__hv">{{money .Saldo}}</div>
+			{{if .HasInvoice}}
+			<div class="beleg__hl beleg__sum-invoice">Restbetrag zu zahlen</div>
+			<div class="beleg__hv beleg__sum-invoice">{{money .InvRest}}</div>
+			{{end}}
+			<div class="beleg__hl beleg__sum-informal">{{if .HasPayments}}Offener Rest{{else}}Saldo{{if .Completed}} · {{if .Paid}}bezahlt{{else}}offen{{end}}{{end}}{{end}}</div>
+			<div class="beleg__hv beleg__sum-informal">{{if .HasPayments}}{{money .Remaining}}{{else}}{{money .Saldo}}{{end}}</div>
 			<div class="beleg__hb">
 				<span>Leistungen {{money .TotalCost}}</span>
 				{{if .Ledger}}<span>Verrechnung {{money .LedgerSum}}</span>{{end}}
-				{{if .HasPayments}}<span class="beleg__pay">Bezahlt {{money .PaidSum}}</span><span class="beleg__pay">Offen {{money .Remaining}}</span>{{end}}
+				{{if .HasPayments}}<span>Bezahlt {{money .PaidSum}}</span>{{end}}
 				<span>{{num .TotalHours}} h · {{.Bookings}} Buchung{{if ne .Bookings 1}}en{{end}}</span>
 			</div>
 		</div>
@@ -73,7 +77,7 @@
 			<span class="beleg__b beleg__r{{if .Amount.IsNegative}} beleg__b--neg{{end}}">{{money .Amount}}</span>
 		</div>
 		{{end}}
-		<div class="beleg__lsub beleg__lsub--muted"><span></span><span>Verrechnung</span><span class="beleg__r"></span><span class="beleg__r">{{money .LedgerSum}}</span></div>
+		<div class="beleg__lsub beleg__lsub--muted beleg__ver-sum"><span></span><span>Verrechnung</span><span class="beleg__r"></span><span class="beleg__r">{{money .LedgerSum}}</span></div>
 		{{end}}
 
 		{{if .HasPayments}}
@@ -126,8 +130,13 @@
 			{{else}}
 			<div class="beleg__lsub"><span></span><span>Rechnungsbetrag</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvBrutto}}</span></div>
 			{{end}}
+			{{if .Ledger}}
+			<div class="beleg__lsub beleg__lsub--muted"><span></span><span>Verrechnung</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvLedger}}</span></div>
+			{{end}}
 			{{if .HasPayments}}
 			<div class="beleg__lsub beleg__lsub--muted"><span></span><span>abzüglich bereits bezahlt{{if .InvShowVAT}} (davon USt {{money .InvPaidUSt}}){{end}}</span><span class="beleg__r"></span><span class="beleg__r">−{{money .PaidSum}}</span></div>
+			{{end}}
+			{{if or .Ledger .HasPayments}}
 			<div class="beleg__lsub"><span></span><span>Restbetrag zu zahlen</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvRest}}</span></div>
 			{{end}}
 			{{with .Company.TaxNote}}<div class="beleg__inv-note">{{.}}</div>{{end}}
