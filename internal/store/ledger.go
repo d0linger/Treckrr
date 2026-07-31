@@ -16,7 +16,7 @@ import (
 // count toward the balance.
 func (s *Store) ListNeighborLedger(ctx context.Context, yearID, neighborID int64) ([]models.LedgerEntry, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, amount, description, posting_date, voided, void_reason, created_at
+		`SELECT id, amount, description, posting_date, voided, void_reason, created_at, transfer_id
 		   FROM neighbor_ledger
 		  WHERE billing_year_id=$1 AND neighbor_id=$2
 		  ORDER BY posting_date, id`, yearID, neighborID)
@@ -27,7 +27,7 @@ func (s *Store) ListNeighborLedger(ctx context.Context, yearID, neighborID int64
 	var out []models.LedgerEntry
 	for rows.Next() {
 		var e models.LedgerEntry
-		if err := rows.Scan(&e.ID, &e.Amount, &e.Description, &e.Date, &e.Voided, &e.VoidReason, &e.Created); err != nil {
+		if err := rows.Scan(&e.ID, &e.Amount, &e.Description, &e.Date, &e.Voided, &e.VoidReason, &e.Created, &e.TransferID); err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -229,9 +229,9 @@ func (s *Store) SetLedgerVoided(ctx context.Context, id int64, voided bool, reas
 // authorize, lock-check, prefill an edit form, and audit).
 func (s *Store) GetLedgerEntry(ctx context.Context, id int64) (yearID, neighborID int64, e models.LedgerEntry, err error) {
 	err = s.db.QueryRowContext(ctx,
-		`SELECT billing_year_id, neighbor_id, id, amount, description, posting_date, voided, void_reason, created_at
+		`SELECT billing_year_id, neighbor_id, id, amount, description, posting_date, voided, void_reason, created_at, transfer_id
 		   FROM neighbor_ledger WHERE id=$1`, id).
-		Scan(&yearID, &neighborID, &e.ID, &e.Amount, &e.Description, &e.Date, &e.Voided, &e.VoidReason, &e.Created)
+		Scan(&yearID, &neighborID, &e.ID, &e.Amount, &e.Description, &e.Date, &e.Voided, &e.VoidReason, &e.Created, &e.TransferID)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
 	}
@@ -241,5 +241,20 @@ func (s *Store) GetLedgerEntry(ctx context.Context, id int64) (yearID, neighborI
 // DeleteNeighborLedger removes a posting.
 func (s *Store) DeleteNeighborLedger(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM neighbor_ledger WHERE id=$1`, id)
+	return err
+}
+
+// DeleteLedgerTransfer removes both sides of a carry-forward (all postings that
+// share the transfer_id), so a transfer is undone as a unit and the balance
+// reopens in the source year instead of vanishing.
+func (s *Store) DeleteLedgerTransfer(ctx context.Context, transferID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM neighbor_ledger WHERE transfer_id=$1`, transferID)
+	return err
+}
+
+// SetLedgerVoidedTransfer voids (or restores) both sides of a carry-forward.
+func (s *Store) SetLedgerVoidedTransfer(ctx context.Context, transferID string, voided bool, reason string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE neighbor_ledger SET voided=$1, void_reason=$2 WHERE transfer_id=$3`, voided, reason, transferID)
 	return err
 }

@@ -201,6 +201,9 @@ type LedgerEntry struct {
 	Voided      bool
 	VoidReason  string
 	Created     time.Time
+	// TransferID links the two sides of a carry-forward; non-empty means this
+	// posting is one half of a cross-year transfer that reverses as a unit.
+	TransferID string
 }
 
 // Payment is a dated amount a neighbour paid toward a billing year. Payments are

@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"time"
 
@@ -88,18 +90,33 @@ func (s *Store) BillingYearIDForYear(ctx context.Context, year int) (int64, erro
 // (its remaining goes to 0) and a +amount opening posting seeds the target year.
 // Bypasses the completed-year gate deliberately — this is a settlement action.
 func (s *Store) CarryForward(ctx context.Context, neighborID, fromYearID, toYearID int64, amount decimal.Decimal, when time.Time, fromDesc, toDesc string) error {
+	tid, err := randToken()
+	if err != nil {
+		return err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	const ins = `INSERT INTO neighbor_ledger (billing_year_id, neighbor_id, amount, description, posting_date)
-	             VALUES ($1,$2,$3,$4,$5)`
-	if _, err := tx.ExecContext(ctx, ins, fromYearID, neighborID, amount.Neg(), fromDesc, when); err != nil {
+	// Both sides share transfer_id so the pair reverses atomically (see
+	// DeleteLedgerTransfer / SetLedgerVoidedTransfer).
+	const ins = `INSERT INTO neighbor_ledger (billing_year_id, neighbor_id, amount, description, posting_date, transfer_id)
+	             VALUES ($1,$2,$3,$4,$5,$6)`
+	if _, err := tx.ExecContext(ctx, ins, fromYearID, neighborID, amount.Neg(), fromDesc, when, tid); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, ins, toYearID, neighborID, amount, toDesc, when); err != nil {
+	if _, err := tx.ExecContext(ctx, ins, toYearID, neighborID, amount, toDesc, when, tid); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// randToken returns a random 128-bit hex id (used to link transfer postings).
+func randToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }

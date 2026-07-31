@@ -674,6 +674,21 @@ func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
+	// A carry-forward posting reverses as a unit: void/restore both sides so the
+	// balance can't be left settled in one year and gone from the other.
+	if e.TransferID != "" {
+		if err := s.store.SetLedgerVoidedTransfer(r.Context(), e.TransferID, void, reason); err != nil {
+			s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
+		} else if void {
+			s.audit(r, "ledger_void", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Übertrag storniert (beide Seiten)")
+			s.setFlash(w, r, "success", "Übertrag storniert — beide Seiten aufgehoben.")
+		} else {
+			s.audit(r, "ledger_unvoid", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Übertrag wiederhergestellt")
+			s.setFlash(w, r, "success", "Übertrags-Stornierung aufgehoben.")
+		}
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
 	if err := s.store.SetLedgerVoided(r.Context(), id, void, reason); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if void {
@@ -701,6 +716,18 @@ func (s *Server) handleLedgerDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
+		return
+	}
+	// A carry-forward posting reverses as a unit: deleting one side removes both,
+	// so the balance reopens in the source year instead of vanishing.
+	if e.TransferID != "" {
+		if err := s.store.DeleteLedgerTransfer(r.Context(), e.TransferID); err != nil {
+			s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
+		} else {
+			s.audit(r, "ledger_delete", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Übertrag rückgängig")
+			s.setFlash(w, r, "success", "Übertrag rückgängig gemacht — der Rest ist im anderen Jahr wieder offen.")
+		}
+		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
 	if err := s.store.DeleteNeighborLedger(r.Context(), id); err != nil {
