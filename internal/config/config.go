@@ -21,6 +21,10 @@ type Config struct {
 	TrustProxy       bool
 	AdminUsername    string
 	AdminPassword    string
+	// AdminPasswordReset is a deliberate break-glass: when true, the bootstrap
+	// resets the existing admin's password to AdminPassword (and revokes sessions).
+	// Off by default so a normal restart never reverts a UI-changed password.
+	AdminPasswordReset bool
 	// WebAuthn (passkeys). RPID is the effective domain (host only, no scheme);
 	// RPOrigin is the full origin the browser sees. Both must match the site.
 	RPID     string
@@ -30,15 +34,16 @@ type Config struct {
 // Load reads configuration from the environment and validates required values.
 func Load() (*Config, error) {
 	c := &Config{
-		Port:          getenv("APP_PORT", "8080"),
-		DatabaseURL:   os.Getenv("DATABASE_URL"),
-		SessionSecret: os.Getenv("SESSION_SECRET"),
-		CookieSecure:  strings.EqualFold(getenv("COOKIE_SECURE", "false"), "true"),
-		TrustProxy:    strings.EqualFold(getenv("TRUST_PROXY", "false"), "true"),
-		AdminUsername: getenv("ADMIN_USERNAME", "admin"),
-		AdminPassword: os.Getenv("ADMIN_PASSWORD"),
-		RPID:          getenv("RP_ID", "localhost"),
-		RPOrigin:      getenv("RP_ORIGIN", "http://localhost:8080"),
+		Port:               getenv("APP_PORT", "8080"),
+		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		SessionSecret:      os.Getenv("SESSION_SECRET"),
+		CookieSecure:       strings.EqualFold(getenv("COOKIE_SECURE", "false"), "true"),
+		TrustProxy:         strings.EqualFold(getenv("TRUST_PROXY", "false"), "true"),
+		AdminUsername:      getenv("ADMIN_USERNAME", "admin"),
+		AdminPassword:      os.Getenv("ADMIN_PASSWORD"),
+		AdminPasswordReset: strings.EqualFold(getenv("ADMIN_PASSWORD_RESET", "false"), "true"),
+		RPID:               getenv("RP_ID", "localhost"),
+		RPOrigin:           getenv("RP_ORIGIN", "http://localhost:8080"),
 	}
 
 	// Data-at-rest encryption key. Defaults to SessionSecret so existing

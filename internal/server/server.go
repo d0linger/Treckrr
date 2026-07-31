@@ -4,7 +4,6 @@ package server
 import (
 	"context"
 	"html/template"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -277,11 +276,12 @@ func userFromCtx(r *http.Request) *models.User {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.PurgeExpiredSessions(r.Context()); err != nil {
-		log.Printf("purge sessions: %v", sanitizeLog(err.Error()))
-	}
-	if err := s.store.PurgeStaleRateLimits(r.Context()); err != nil {
-		log.Printf("purge rate limits: %v", sanitizeLog(err.Error()))
+	// Cheap liveness + DB-reachability probe, kept side-effect free. Maintenance
+	// purges run on a timer in the main run loop, so a flood of /healthz can no
+	// longer saturate the connection pool with DELETEs.
+	if err := s.store.Ping(r.Context()); err != nil {
+		http.Error(w, "db unreachable", http.StatusServiceUnavailable)
+		return
 	}
 	w.Header().Set("Content-Type", "text/plain")
 	_, _ = w.Write([]byte("ok"))

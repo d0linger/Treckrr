@@ -81,7 +81,12 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		keepToken = c.Value
 	}
-	_ = s.store.DeleteUserSessionsExcept(r.Context(), user.ID, keepToken)
+	// Load-bearing: revoke all other sessions on password change. Surface a
+	// failure instead of falsely reporting that other sessions were ended.
+	if err := s.store.DeleteUserSessionsExcept(r.Context(), user.ID, keepToken); err != nil {
+		s.serverError(w, "password change: revoke sessions", err)
+		return
+	}
 	_ = s.store.SetMustChangePassword(r.Context(), user.ID, false)
 	s.audit(r, "password_change", "user", user.ID, "eigenes Passwort; andere Sitzungen beendet")
 	s.setFlash(w, r, "success", "Passwort geändert. Andere Sitzungen wurden beendet.")

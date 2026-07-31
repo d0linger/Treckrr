@@ -45,8 +45,26 @@ func Connect(ctx context.Context, dsn string) (*sql.DB, error) {
 	}
 }
 
+// migrateLockKey is a fixed advisory-lock key that serializes Migrate across
+// instances (any constant works as long as it's unique to this concern).
+const migrateLockKey = 4711
+
 // Migrate applies every embedded migration that has not yet run, in order.
+// It runs under a session-level Postgres advisory lock so two instances booting
+// together cannot both apply the same migration (a data-backfill migration could
+// otherwise double-apply before its constraints exist). Other instances block on
+// the lock, then find every migration already recorded and no-op.
 func Migrate(ctx context.Context, pool *sql.DB) error {
+	conn, err := pool.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("migrate: acquire conn: %w", err)
+	}
+	defer conn.Close() // releases the session advisory lock even on error
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, migrateLockKey); err != nil {
+		return fmt.Errorf("migrate: advisory lock: %w", err)
+	}
+	defer func() { _, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock($1)`, migrateLockKey) }()
+
 	if _, err := pool.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			name TEXT PRIMARY KEY,

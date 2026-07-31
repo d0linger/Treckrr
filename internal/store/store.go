@@ -29,6 +29,10 @@ func New(db *sql.DB, encryptionKey string) *Store {
 	return &Store{db: db, key: h[:]}
 }
 
+// Ping verifies the database is reachable — a cheap, side-effect-free probe for
+// the health endpoint (maintenance purges run on a timer, not per health check).
+func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
+
 // ---- Users ---------------------------------------------------------------
 
 // userCols is the shared column list for scanning a models.User.
