@@ -166,10 +166,16 @@ type Entry struct {
 	Hours         decimal.Decimal
 	HourlyRate    decimal.Decimal
 	Cost          decimal.Decimal
-	Note          string
-	Voided        bool
-	VoidReason    string
-	Created       time.Time
+	// Unit/Quantity/UnitPrice generalize billing beyond hours: cost = quantity ×
+	// unit price. For hour bookings Unit is "h", Quantity == Hours and UnitPrice
+	// == HourlyRate. Other units: "ha", "Ballen", "m3", "Fuhre", "t" (or custom).
+	Unit       string
+	Quantity   decimal.Decimal
+	UnitPrice  decimal.Decimal
+	Note       string
+	Voided     bool
+	VoidReason string
+	Created    time.Time
 }
 
 // WebauthnCredential is a registered passkey (public key only).

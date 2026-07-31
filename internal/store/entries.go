@@ -97,7 +97,19 @@ func (s *Store) CountEntriesForNeighbor(ctx context.Context, neighborID int64) (
 // ---- Entries -------------------------------------------------------------
 
 // CreateEntry inserts a booked work entry and links its machines.
+// ensureUnit fills the unit fields for an hour booking, so a caller that only
+// set Hours/HourlyRate still stores a consistent unit='h' row (quantity = hours,
+// unit price = hourly rate) rather than an empty unit / zero quantity.
+func ensureUnit(e *models.Entry) {
+	if e.Unit == "" {
+		e.Unit = "h"
+		e.Quantity = e.Hours
+		e.UnitPrice = e.HourlyRate
+	}
+}
+
 func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []int64) (int64, error) {
+	ensureUnit(e)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -108,11 +120,12 @@ func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 	err = tx.QueryRowContext(ctx,
 		`INSERT INTO entries
 		   (neighbor_id, billing_year_id, entry_date, task_label, gespann_id, tractor_id, load_level_id,
-		    tractor_label, load_label, machine_labels, hours, hourly_rate, cost, note)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+		    tractor_label, load_label, machine_labels, hours, hourly_rate, cost, note,
+		    unit, quantity, unit_price)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
 		e.NeighborID, e.BillingYearID, e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID),
 		nullInt(e.LoadLevelID), e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours,
-		e.HourlyRate, e.Cost, e.Note).Scan(&id)
+		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -310,6 +323,7 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 // UpdateEntry replaces the editable fields (and pricing snapshot) of an entry
 // and its machine links.
 func (s *Store) UpdateEntry(ctx context.Context, e *models.Entry, machineIDs []int64) error {
+	ensureUnit(e)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -319,9 +333,11 @@ func (s *Store) UpdateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE entries SET entry_date=$1, task_label=$2, gespann_id=$3, tractor_id=$4,
 			load_level_id=$5, tractor_label=$6, load_label=$7, machine_labels=$8,
-			hours=$9, hourly_rate=$10, cost=$11, note=$12 WHERE id=$13`,
+			hours=$9, hourly_rate=$10, cost=$11, note=$12,
+			unit=$13, quantity=$14, unit_price=$15 WHERE id=$16`,
 		e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID), nullInt(e.LoadLevelID),
-		e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours, e.HourlyRate, e.Cost, e.Note, e.ID); err != nil {
+		e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours, e.HourlyRate, e.Cost, e.Note,
+		e.Unit, e.Quantity, e.UnitPrice, e.ID); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM entry_machines WHERE entry_id=$1`, e.ID); err != nil {
@@ -345,7 +361,8 @@ func (s *Store) SetEntryVoided(ctx context.Context, id int64, voided bool, reaso
 
 const entrySelect = `SELECT id, neighbor_id, billing_year_id, entry_date, task_label, gespann_id,
 	tractor_id, load_level_id, tractor_label, load_label, machine_labels,
-	hours, hourly_rate, cost, note, voided, void_reason, created_at FROM entries`
+	hours, hourly_rate, cost, note, voided, void_reason, created_at,
+	unit, quantity, unit_price FROM entries`
 
 func collectEntries(rows *sql.Rows) ([]models.Entry, error) {
 	var out []models.Entry
@@ -369,7 +386,8 @@ func scanEntry(sc scanner) (models.Entry, error) {
 	)
 	if err := sc.Scan(&e.ID, &e.NeighborID, &e.BillingYearID, &date, &e.TaskLabel, &gespann,
 		&tractor, &load, &e.TractorLabel, &e.LoadLabel, &e.MachineLabels,
-		&e.Hours, &e.HourlyRate, &e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created); err != nil {
+		&e.Hours, &e.HourlyRate, &e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created,
+		&e.Unit, &e.Quantity, &e.UnitPrice); err != nil {
 		return e, err
 	}
 	e.Date = date
