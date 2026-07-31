@@ -367,6 +367,11 @@ em { font-style: normal; color: var(--muted); }
 .form:first-child { margin-top: 0; }
 .form__row { display: flex; gap: .6rem; flex-wrap: wrap; }
 .form__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .8rem; }
+/* Toggled elements (hidden attr) must win over .field/.input display rules. */
+[hidden] { display: none !important; }
+/* Booking-form sub-groups that toggle by unit — keep the form's vertical gap
+   so fields inside them are spaced like direct form children. */
+[data-h-only], [data-qty-only] { display: flex; flex-direction: column; gap: .8rem; }
 .field { display: flex; flex-direction: column; gap: .3rem; font-size: .85rem; color: var(--muted); }
 .field > span { font-weight: 600; }
 
