@@ -70,9 +70,9 @@
 					<input class="input input--num" type="number" min="0" name="s3_keep" value="{{.S3Keep}}">
 				</div>
 			</div>
-			<div class="btnrow" style="margin-top:.8rem">
+			<div class="bkp__btnrow" style="margin-top:.9rem">
 				<button class="btn btn--primary" type="submit">Zeitplan speichern</button>
-				<button class="btn" type="submit" formaction="/admin/backup/run-scheduled">Jetzt sichern (Volume)</button>
+				<button class="btn btn--ghost" type="submit" formaction="/admin/backup/run-scheduled">Jetzt sichern (Volume)</button>
 			</div>
 			<p class="bkp__note" style="margin:.5rem .1rem 0">Modus wählen oder eigenen Cron eintippen — gespeichert wird immer ein Standard-Cron (<code>Minute Stunde Tag Monat Wochentag</code>). Leer = Ziel aus.</p>
 		</form>
@@ -133,7 +133,7 @@
 				<input class="input" type="file" name="file" accept=".enc" required></label>
 			<label class="field"><span>2 · Backup-Schlüssel — bestätigt, dass er zur Datei passt</span>
 				<input class="input" type="password" name="key" autocomplete="off" placeholder="BACKUP_ENCRYPTION_KEY" required></label>
-			<div class="btnrow"><button class="btn" type="submit">Validieren (Vorschau)</button></div>
+			<div class="bkp__btnrow"><button class="btn btn--ghost" type="submit">Validieren (Vorschau)</button></div>
 		</form>
 		<p class="bkp__note" style="margin:.6rem .2rem">„Validieren" entschlüsselt in-memory und prüft das Archiv — <strong>ohne die DB anzufassen</strong>.</p>
 
@@ -146,7 +146,7 @@
 					<input class="input" type="password" name="key" autocomplete="off" required></label>
 				<label class="field"><span>Zum Ausführen <code>RESTORE</code> eintippen</span>
 					<input class="input" type="text" name="confirm" autocomplete="off" placeholder="RESTORE" required></label>
-				<div class="btnrow"><button class="btn btn--danger" type="submit">Wiederherstellen — überschreibt die Live-DB</button></div>
+				<div class="bkp__btnrow"><button class="btn btn--danger btn--primary" type="submit">Wiederherstellen — überschreibt die Live-DB</button></div>
 			</form>
 			<p class="bkp__note" style="margin:.5rem .2rem 0"><strong>Zerstörerisch:</strong> ersetzt alle aktuellen Daten. Nur nach Validierung &amp; Tipp-Bestätigung, admin-only, auditiert. Alternativ: <code>docker compose run --rm app restore &lt;datei.dump.enc&gt;</code>.</p>
 		</div>

@@ -1233,7 +1233,11 @@ em { font-style: normal; color: var(--muted); }
 .bkp__next { font-family: var(--font-mono); font-size: .72rem; color: var(--muted); margin-top: .4rem; }
 .bkp__next strong { color: var(--text); }
 .bkp__hide { display: none !important; }
-.bkp__seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); margin-bottom: .1rem; }
+/* Backup panel: buttons keep their natural width (the global .btnrow stretches
+   them, which looks oversized next to the compact schedule fields). */
+.bkp__btnrow { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.bkp__btnrow .btn { flex: 0 0 auto; }
+.bkp__seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); margin-bottom: .6rem; }
 .bkp__seg button { font-family: var(--font-body); font-size: .72rem; font-weight: 600; padding: .34rem .55rem; border: 0;
 	border-right: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
 .bkp__seg button:last-child { border-right: 0; }
