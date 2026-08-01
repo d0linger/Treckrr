@@ -13,7 +13,7 @@ import (
 	"treckrr/internal/models"
 )
 
-// AddPayment records a dated payment a neighbour made toward a billing year.
+// AddPayment records a dated payment a neighbor made toward a billing year.
 // It is allowed regardless of the year's status (the payment side is decoupled
 // from booking lock).
 func (s *Store) AddPayment(ctx context.Context, yearID, neighborID int64, amount decimal.Decimal, paidOn time.Time, note string) error {
@@ -24,7 +24,7 @@ func (s *Store) AddPayment(ctx context.Context, yearID, neighborID int64, amount
 	return err
 }
 
-// ListPayments returns a neighbour's payments for a year, oldest first.
+// ListPayments returns a neighbor's payments for a year, oldest first.
 func (s *Store) ListPayments(ctx context.Context, yearID, neighborID int64) ([]models.Payment, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, billing_year_id, neighbor_id, amount, paid_on, note, created_at
@@ -46,7 +46,7 @@ func (s *Store) ListPayments(ctx context.Context, yearID, neighborID int64) ([]m
 }
 
 // GetPayment returns a single payment, e.g. to scope a delete and redirect back
-// to the right neighbour/year.
+// to the right neighbor/year.
 func (s *Store) GetPayment(ctx context.Context, id int64) (models.Payment, error) {
 	var p models.Payment
 	err := s.db.QueryRowContext(ctx,
@@ -65,7 +65,7 @@ func (s *Store) DeletePayment(ctx context.Context, id int64) error {
 	return err
 }
 
-// NeighborPaymentSum returns the total a neighbour has paid toward a year.
+// NeighborPaymentSum returns the total a neighbor has paid toward a year.
 func (s *Store) NeighborPaymentSum(ctx context.Context, yearID, neighborID int64) (decimal.Decimal, error) {
 	var sum decimal.Decimal
 	err := s.db.QueryRowContext(ctx,

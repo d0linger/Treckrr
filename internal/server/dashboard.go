@@ -172,7 +172,7 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 	redirect(w, r, dashboardURL(yearID))
 }
 
-// handleNeighborUpdate changes a neighbor's name and note.
+// handleNeighborUpdate changes a neighbor's name, note, and address.
 func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -212,6 +212,7 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 			if d := diffFields(
 				fieldChange{"Name", before.Name, name},
 				fieldChange{"Notiz", before.Note, note},
+				fieldChange{"Adresse", before.Address, address},
 			); d != "" {
 				detail = d
 			}

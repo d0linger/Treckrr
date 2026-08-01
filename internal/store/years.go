@@ -97,15 +97,6 @@ func (s *Store) SetYearStatus(ctx context.Context, id int64, status string) erro
 	return err
 }
 
-// SetNeighborPaid marks a neighbor's yearly bill as paid or open.
-func (s *Store) SetNeighborPaid(ctx context.Context, yearID, neighborID int64, paid bool) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE billing_year_neighbors
-		   SET paid = $3, paid_at = CASE WHEN $3 THEN now() ELSE NULL END
-		 WHERE billing_year_id = $1 AND neighbor_id = $2`, yearID, neighborID, paid)
-	return err
-}
-
 // ResetYearPayments sets every neighbor of a year back to "open" (unpaid).
 func (s *Store) ResetYearPayments(ctx context.Context, yearID int64) error {
 	_, err := s.db.ExecContext(ctx,

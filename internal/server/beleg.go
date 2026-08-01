@@ -362,6 +362,13 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
+	// A formal Rechnung needs a sender: don't fix an invoice number against empty
+	// Betriebsdaten — send the user to fill them in first.
+	if company, err := s.store.GetCompany(r.Context()); err != nil || strings.TrimSpace(company.Name) == "" {
+		s.setFlash(w, r, "error", "Bitte zuerst die Betriebsdaten (Absender) ausfüllen.")
+		redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
+		return
+	}
 	iv, err := s.store.IssueInvoice(r.Context(), yearID, neighborID, year.Year)
 	if err != nil {
 		s.setFlash(w, r, "error", "Rechnung konnte nicht ausgestellt werden.")

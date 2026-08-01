@@ -26,7 +26,7 @@ func (s *Store) UpdateCompany(ctx context.Context, c models.Company) error {
 	return err
 }
 
-// GetInvoice returns the issued invoice for a (year, neighbour), or ErrNotFound.
+// GetInvoice returns the issued invoice for a (year, neighbor), or ErrNotFound.
 func (s *Store) GetInvoice(ctx context.Context, yearID, neighborID int64) (models.Invoice, error) {
 	var iv models.Invoice
 	err := s.db.QueryRowContext(ctx,
@@ -53,9 +53,28 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 		return models.Invoice{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	// Serialize number allocation per year so two concurrent issues (even for
+	// different neighbors) can't be handed the same sequence. The lock is held
+	// until Commit/Rollback.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, yearID); err != nil {
+		return models.Invoice{}, err
+	}
+	// Re-check under the lock: a concurrent request may have just issued it.
+	var existing models.Invoice
+	err = tx.QueryRowContext(ctx,
+		`SELECT id, billing_year_id, neighbor_id, number, issued_on, created_at
+		   FROM invoices WHERE billing_year_id=$1 AND neighbor_id=$2`, yearID, neighborID).
+		Scan(&existing.ID, &existing.BillingYearID, &existing.NeighborID, &existing.Number, &existing.IssuedOn, &existing.Created)
+	if err == nil {
+		return existing, tx.Commit()
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return models.Invoice{}, err
+	}
+	// Next sequence = highest existing suffix + 1 (robust to gaps, unlike count).
 	var seq int
 	if err := tx.QueryRowContext(ctx,
-		`SELECT count(*)+1 FROM invoices WHERE billing_year_id=$1`, yearID).Scan(&seq); err != nil {
+		`SELECT COALESCE(MAX(NULLIF(split_part(number,'-',2),'')::int), 0)+1
+		   FROM invoices WHERE billing_year_id=$1`, yearID).Scan(&seq); err != nil {
 		return models.Invoice{}, err
 	}
 	number := fmt.Sprintf("%d-%03d", year, seq)

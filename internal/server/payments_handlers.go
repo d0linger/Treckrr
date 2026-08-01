@@ -12,7 +12,7 @@ import (
 	"treckrr/internal/store"
 )
 
-// neighborRemaining is the open balance for a neighbour in a year:
+// neighborRemaining is the open balance for a neighbor in a year:
 // bookings + signed ledger − recorded payments.
 func (s *Server) neighborRemaining(ctx context.Context, yearID, neighborID int64) (decimal.Decimal, error) {
 	cost, _, err := s.store.NeighborTotal(ctx, neighborID, yearID)
@@ -73,6 +73,10 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	note := strings.TrimSpace(r.FormValue("note"))
+	if s.tooLong(w, r, "Notiz", note, maxNoteLen) {
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
 	if err := s.store.AddPayment(r.Context(), yearID, neighborID, amount, parsePaidOn(r.FormValue("paid_on")), note); err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	} else {
@@ -83,7 +87,7 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
 
-// handlePaymentDelete removes a payment and returns to its neighbour/year.
+// handlePaymentDelete removes a payment and returns to its neighbor/year.
 func (s *Server) handlePaymentDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {

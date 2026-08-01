@@ -37,7 +37,8 @@ func readBackupStatus(path string) backupStatus {
 	if path == "" {
 		return backupStatus{State: "none"}
 	}
-	b, err := os.ReadFile(path)
+	// path is operator configuration (cfg.BackupStatusFile), never user input.
+	b, err := os.ReadFile(path) //nosec G304 -- operator-configured status file path
 	if err != nil {
 		return backupStatus{State: "none"}
 	}
@@ -59,11 +60,17 @@ func readBackupStatus(path string) backupStatus {
 		}
 	}
 	age := time.Since(d.LastBackup)
+	// A future timestamp (clock skew or a bad write) is not trustworthy: clamp the
+	// reported age to zero and treat it as stale rather than silently "ok".
+	future := age < 0
+	if future {
+		age = 0
+	}
 	st.AgeHours = int(age.Hours())
 	switch {
 	case !d.OK:
 		st.State = "failed"
-	case d.LastBackup.IsZero() || age > backupMaxAge:
+	case d.LastBackup.IsZero() || future || age > backupMaxAge:
 		st.State = "stale"
 	default:
 		st.State = "ok"

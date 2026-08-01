@@ -26,7 +26,7 @@
 					<label class="field"><span>Notiz</span>
 						<input class="input" name="note" value="{{.Neighbor.Note}}"></label>
 					<label class="field"><span>Adresse (für Rechnung, optional)</span>
-						<input class="input" name="address" value="{{.Neighbor.Address}}" placeholder="Straße, PLZ Ort"></label>
+						<textarea class="input" name="address" rows="2" placeholder="Straße, PLZ Ort">{{.Neighbor.Address}}</textarea></label>
 					<div class="btnrow"><button class="btn btn--primary btn--sm" type="submit">Speichern</button></div>
 				</form>
 				<div class="btnrow">

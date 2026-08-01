@@ -446,6 +446,9 @@ func entryUpdateDetail(prev, cur *models.Entry) string {
 		fieldChange{"Datum", prev.Date.Format("02.01.2006"), cur.Date.Format("02.01.2006")},
 		fieldChange{"Tätigkeit", prev.TaskLabel, cur.TaskLabel},
 		fieldChange{"Maschinen", prev.MachineLabels, cur.MachineLabels},
+		fieldChange{"Einheit", prev.Unit, cur.Unit},
+		fieldChange{"Menge", prev.Quantity.StringFixed(2), cur.Quantity.StringFixed(2)},
+		fieldChange{"Einzelpreis", prev.UnitPrice.StringFixed(2), cur.UnitPrice.StringFixed(2)},
 		fieldChange{"Stunden", prev.Hours.StringFixed(2), cur.Hours.StringFixed(2)},
 		fieldChange{"Satz", prev.HourlyRate.StringFixed(2), cur.HourlyRate.StringFixed(2)},
 		fieldChange{"Kosten", prev.Cost.StringFixed(2) + " €", cur.Cost.StringFixed(2) + " €"},
@@ -569,6 +572,33 @@ func (s *Server) ledgerYearOpen(w http.ResponseWriter, r *http.Request, yearID, 
 		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return false
+	}
+	return true
+}
+
+// transferYearsOpen reports whether every billing year a carry-forward transfer
+// touches is still open. Undoing a transfer changes both sides at once, so it
+// must be blocked when either the clicked or the linked year is completed —
+// ledgerYearOpen only guards the clicked side.
+func (s *Server) transferYearsOpen(w http.ResponseWriter, r *http.Request, transferID string, neighborID, yearID int64) bool {
+	ids, err := s.store.LedgerTransferYearIDs(r.Context(), transferID)
+	if err != nil {
+		s.setFlash(w, r, "error", "Übertrag konnte nicht geladen werden.")
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return false
+	}
+	for _, id := range ids {
+		year, err := s.store.GetBillingYear(r.Context(), id)
+		if err != nil {
+			s.setFlash(w, r, "error", "Abrechnungsjahr konnte nicht geladen werden.")
+			redirect(w, r, neighborURL(neighborID, yearID))
+			return false
+		}
+		if year.Completed() {
+			s.setFlash(w, r, "error", "Ein beteiligtes Abrechnungsjahr ist abgeschlossen.")
+			redirect(w, r, neighborURL(neighborID, yearID))
+			return false
+		}
 	}
 	return true
 }
@@ -736,6 +766,9 @@ func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
 	// A carry-forward posting reverses as a unit: void/restore both sides so the
 	// balance can't be left settled in one year and gone from the other.
 	if e.TransferID != "" {
+		if !s.transferYearsOpen(w, r, e.TransferID, neighborID, yearID) {
+			return
+		}
 		if err := s.store.SetLedgerVoidedTransfer(r.Context(), e.TransferID, void, reason); err != nil {
 			s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 		} else if void {
@@ -780,6 +813,9 @@ func (s *Server) handleLedgerDelete(w http.ResponseWriter, r *http.Request) {
 	// A carry-forward posting reverses as a unit: deleting one side removes both,
 	// so the balance reopens in the source year instead of vanishing.
 	if e.TransferID != "" {
+		if !s.transferYearsOpen(w, r, e.TransferID, neighborID, yearID) {
+			return
+		}
 		if err := s.store.DeleteLedgerTransfer(r.Context(), e.TransferID); err != nil {
 			s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 		} else {

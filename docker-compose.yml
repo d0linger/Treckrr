@@ -99,9 +99,10 @@ services:
             fi;
           else
             ok=false; size=0;
+            rm -f "$$out";
             echo "backup $$ts FAILED";
           fi;
-          printf '{"last_backup":"%s","ok":%s,"size_bytes":%s,"offhost_ok":%s}\n' "$$iso" "$$ok" "$$size" "$$offhost" > /backups/status.json;
+          printf '{"last_backup":"%s","ok":%s,"size_bytes":%s,"offhost_ok":%s}\n' "$$iso" "$$ok" "$$size" "$$offhost" > /backups/status.json.tmp && mv /backups/status.json.tmp /backups/status.json;
           ls -1t /backups/treckrr-*.dump 2>/dev/null | tail -n +$$((BACKUP_KEEP+1)) | xargs -r rm -f;
           sleep "$${BACKUP_INTERVAL}";
         done

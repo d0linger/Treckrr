@@ -213,9 +213,9 @@ type LedgerEntry struct {
 	TransferID string
 }
 
-// Payment is a dated amount a neighbour paid toward a billing year. Payments are
+// Payment is a dated amount a neighbor paid toward a billing year. Payments are
 // decoupled from year status (a completed year still accepts them) and there may
-// be several per (year, neighbour) — partial payments settle the balance over time.
+// be several per (year, neighbor) — partial payments settle the balance over time.
 type Payment struct {
 	ID            int64
 	BillingYearID int64
@@ -239,7 +239,7 @@ type Company struct {
 }
 
 // Invoice is a Beleg issued as a formal Rechnung: a sequential number per year,
-// fixed at issue time, for one neighbour and year.
+// fixed at issue time, for one neighbor and year.
 type Invoice struct {
 	ID            int64
 	BillingYearID int64

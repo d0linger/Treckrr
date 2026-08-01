@@ -244,16 +244,49 @@ func (s *Store) DeleteNeighborLedger(ctx context.Context, id int64) error {
 	return err
 }
 
+// LedgerTransferYearIDs returns the distinct billing years a transfer touches
+// (normally the source and target of a carry-forward), so callers can verify
+// none of them is completed before undoing the transfer.
+func (s *Store) LedgerTransferYearIDs(ctx context.Context, transferID string) ([]int64, error) {
+	if transferID == "" {
+		return nil, errors.New("empty transfer id")
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT billing_year_id FROM neighbor_ledger WHERE transfer_id=$1`, transferID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // DeleteLedgerTransfer removes both sides of a carry-forward (all postings that
 // share the transfer_id), so a transfer is undone as a unit and the balance
-// reopens in the source year instead of vanishing.
+// reopens in the source year instead of vanishing. An empty transfer_id is
+// rejected — it would otherwise match every ordinary (non-transfer) posting.
 func (s *Store) DeleteLedgerTransfer(ctx context.Context, transferID string) error {
+	if transferID == "" {
+		return errors.New("empty transfer id")
+	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM neighbor_ledger WHERE transfer_id=$1`, transferID)
 	return err
 }
 
-// SetLedgerVoidedTransfer voids (or restores) both sides of a carry-forward.
+// SetLedgerVoidedTransfer voids (or restores) both sides of a carry-forward. An
+// empty transfer_id is rejected — it would otherwise match every ordinary
+// (non-transfer) posting.
 func (s *Store) SetLedgerVoidedTransfer(ctx context.Context, transferID string, voided bool, reason string) error {
+	if transferID == "" {
+		return errors.New("empty transfer id")
+	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE neighbor_ledger SET voided=$1, void_reason=$2 WHERE transfer_id=$3`, voided, reason, transferID)
 	return err

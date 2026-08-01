@@ -88,10 +88,11 @@ func run() error {
 }
 
 // purgeLoop periodically removes expired sessions and stale rate-limit rows until
-// ctx is cancelled. It runs one purge shortly after boot, then on a fixed tick.
+// ctx is canceled. It runs one purge shortly after boot, then on a fixed tick.
 func purgeLoop(ctx context.Context, st *store.Store) {
 	purge := func() {
-		bg := context.Background()
+		bg, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
 		if err := st.PurgeExpiredSessions(bg); err != nil {
 			log.Printf("purge sessions: %v", err)
 		}
