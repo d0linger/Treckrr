@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 // template execution error. This guards against the class of bug where a
 // template compared a decimal.Decimal against a float literal (gt/lt), which
 // parses fine but errors at render time — producing a 500 in production.
-func execPage(t *testing.T, page string, data map[string]any) {
+func execPage(t *testing.T, page string, data map[string]any) string {
 	t.Helper()
 	pages, err := Templates()
 	if err != nil {
@@ -26,6 +27,7 @@ func execPage(t *testing.T, page string, data map[string]any) {
 	if err := tpl.ExecuteTemplate(&buf, "layout", data); err != nil {
 		t.Fatalf("execute %q: %v", page, err)
 	}
+	return buf.String()
 }
 
 func TestStatsPageRendersWithPreviousYear(t *testing.T) {
@@ -70,7 +72,7 @@ func TestBelegPageRenders(t *testing.T) {
 	d := decimal.NewFromFloat
 	// A day with several bookings (grouping + rail), a voided continuation row,
 	// and the aggregated "Bündeln" view enabled — the paths the redesign added.
-	execPage(t, "beleg", map[string]any{
+	html := execPage(t, "beleg", map[string]any{
 		"Title":     "Beleg",
 		"Neighbor":  map[string]any{"ID": int64(2), "Name": "Florian", "Address": "Dorf 1", "TaxID": "ATU55555555"},
 		"Year":      map[string]any{"ID": int64(1), "Year": 2026, "Base": map[string]any{"Name": "Preisliste", "Year": 2026}},
@@ -96,6 +98,8 @@ func TestBelegPageRenders(t *testing.T) {
 			}},
 			{"Date": "10.05.", "Entries": []map[string]any{
 				{"TaskLabel": "Schwadern groß", "Unit": "h", "Hours": d(1.5), "HourlyRate": d(52), "Cost": d(169), "Voided": false},
+				// No task label, but a note → the note is the line description (B).
+				{"TaskLabel": "", "Note": "Freie Sonderleistung", "Unit": "h", "Hours": d(1), "HourlyRate": d(10), "Cost": d(10), "Voided": false},
 				{"TaskLabel": "", "Unit": "h", "Hours": d(0), "Cost": d(0), "Voided": true},
 			}},
 		},
@@ -120,6 +124,18 @@ func TestBelegPageRenders(t *testing.T) {
 		},
 		"Today": "30.07.2026",
 	})
+	// Assert the §11 invoice branches actually render, not just that the template
+	// executes: recipient UID, the over-€10,000 UID reminder, and the booking-note
+	// fallback for a label-less booking.
+	for _, want := range []string{
+		"ATU55555555", // recipient UID in the "An" block
+		"UID/Steuernummer des Empfängers erforderlich", // soft § 11 reminder
+		"Freie Sonderleistung",                         // note used instead of "Sonstige"
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("beleg HTML missing %q", want)
+		}
+	}
 }
 
 func TestComparePageRendersWithDiffs(t *testing.T) {

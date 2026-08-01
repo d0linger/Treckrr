@@ -232,7 +232,12 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		if e.Voided {
 			continue
 		}
+		// Same precedence as the flat view: task label, else the booking note,
+		// else "Sonstige" — so the grouped view labels match.
 		label := e.TaskLabel
+		if label == "" {
+			label = e.Note
+		}
 		if label == "" {
 			label = "Sonstige"
 		}
