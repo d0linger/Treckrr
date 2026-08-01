@@ -1215,7 +1215,11 @@ em { font-style: normal; color: var(--muted); }
 .bkp__restore-file { flex: 1 1 15rem; min-width: 0; }
 .bkp__restore-key { flex: 0 1 13rem; }
 .bkp__restore-confirm { max-width: 13rem; font-family: var(--font-mono); letter-spacing: .06em; }
-[data-validate-result] { margin-top: .7rem; }
+[data-validate-result] { margin-top: 1rem; }
+/* Danger box: even internal rhythm via gap (inline margins are CSP-stripped). */
+.bkp__danger { display: flex; flex-direction: column; gap: .7rem; }
+.bkp__danger > * { margin: 0; }
+.bkp__danger .bkp__btnrow { margin-top: 0; }
 .bkp__danger { margin-top: 1rem; padding: .9rem; border: 1px solid color-mix(in srgb, var(--owe) 40%, var(--border));
 	border-radius: 11px; background: color-mix(in srgb, var(--owe) 7%, transparent); }
 .btn--danger { background: var(--owe); color: #fff; border-color: var(--owe); }
@@ -1243,8 +1247,10 @@ em { font-style: normal; color: var(--muted); }
 .bkp__hide { display: none !important; }
 /* Backup panel: buttons keep their natural width (the global .btnrow stretches
    them, which looks oversized next to the compact schedule fields). */
-.bkp__btnrow { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
-.bkp__btnrow .btn { flex: 0 0 auto; }
+/* Button rows: real margin (the CSP blocks inline style attributes, so spacing
+   MUST live in a class) and no glow that would bleed into the element above. */
+.bkp__btnrow { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-top: 1.3rem; }
+.bkp__btnrow .btn { flex: 0 0 auto; box-shadow: none; }
 .bkp__seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); margin-bottom: .6rem; }
 .bkp__seg button { font-family: var(--font-body); font-size: .72rem; font-weight: 600; padding: .34rem .55rem; border: 0;
 	border-right: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
