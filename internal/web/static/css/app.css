@@ -1217,7 +1217,7 @@ em { font-style: normal; color: var(--muted); }
 .bkp__restore-confirm { max-width: 13rem; font-family: var(--font-mono); letter-spacing: .06em; }
 [data-validate-result] { margin-top: 1rem; }
 /* Danger box: even internal rhythm via gap (inline margins are CSP-stripped). */
-.bkp__danger { display: flex; flex-direction: column; gap: .7rem; }
+.bkp__danger { display: flex; flex-direction: column; gap: .85rem; }
 .bkp__danger > * { margin: 0; }
 .bkp__danger .bkp__btnrow { margin-top: 0; }
 .bkp__danger { margin-top: 1rem; padding: .9rem; border: 1px solid color-mix(in srgb, var(--owe) 40%, var(--border));
