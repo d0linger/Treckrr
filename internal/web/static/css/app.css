@@ -1025,18 +1025,6 @@ em { font-style: normal; color: var(--muted); }
 .beleg__sum-invoice { display: none; }
 .beleg--rechnung .beleg__sum-invoice { display: block; }
 .beleg--rechnung .beleg__sum-informal { display: none; }
-/* The Beleg (informal statement and Rechnung alike) is a document to hand over,
-   print, or export as PDF, so it always renders as light "paper" — the sender's
-   dark mode must never make it unreadable (dark-on-dark) on screen or in the
-   export. We pin the theme tokens to their light values for the whole subtree. */
-.beleg {
-	--surface: #ffffff; --surface-2: #f2f4ef;
-	--text: #191c1a; --muted: #5b655d; --border: #dfe4dd;
-	--card-hairline: rgba(20, 40, 30, .07);
-	--primary: #115638; --primary-strong: #2f6f4f; --on-primary: #ffffff;
-	--danger: #b4442f; --owe: #c05635;
-	color: var(--text);
-}
 .beleg__invoice { padding: .85rem .9rem; border-bottom: 1px solid var(--border); }
 .beleg__inv-top { display: flex; justify-content: space-between; gap: .5rem; font-family: var(--font-mono); font-size: .8rem; margin-bottom: .55rem; }
 .beleg__inv-no { font-weight: 700; }
@@ -1054,7 +1042,18 @@ em { font-style: normal; color: var(--muted); }
 @media print {
 	.beleg-page .backlink, .beleg__actions { display: none !important; }
 	/* print backgrounds (hero, header/subtotal bands) — off by default in print */
-	.beleg { border: 0; box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+	/* A printed/PDF Beleg is a document to hand over, so pin the theme tokens to
+	   their light values: on screen the Beleg stays theme-aware (dark in dark
+	   mode), but the export must never be dark-on-dark. print-color-adjust:exact
+	   would otherwise carry the dark theme surface into the PDF under #111 text. */
+	.beleg {
+		--surface: #ffffff; --surface-2: #f2f4ef;
+		--text: #191c1a; --muted: #5b655d; --border: #dfe4dd;
+		--card-hairline: rgba(20, 40, 30, .07);
+		--owe: #c05635; --danger: #b4442f;
+		background: #ffffff !important;
+		border: 0; box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+	}
 	.beleg, .beleg * { color: #111 !important; }
 	.beleg__hero { background: #e9efe9 !important; }
 	.beleg__hero * { color: #10241a !important; }
