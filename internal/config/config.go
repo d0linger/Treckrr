@@ -95,9 +95,14 @@ func Load() (*Config, error) {
 	if c.AdminPassword == "" {
 		return nil, fmt.Errorf("ADMIN_PASSWORD is required to bootstrap the admin user")
 	}
-	// Backups are optional, but if a key is set it must be long enough to be a
-	// real secret (the AES-256 key is derived from it).
-	if c.BackupEncryptionKey != "" && len(c.BackupEncryptionKey) < 16 {
+	// Backups are optional (unset = off). If a key is set it must be a real
+	// secret: reject a whitespace-only value (it would derive a guessable key)
+	// and require real length. The original key bytes are kept untrimmed.
+	if strings.TrimSpace(c.BackupEncryptionKey) == "" {
+		if c.BackupEncryptionKey != "" {
+			return nil, fmt.Errorf("BACKUP_ENCRYPTION_KEY must not be whitespace only (leave it unset to disable backups)")
+		}
+	} else if len(c.BackupEncryptionKey) < 16 {
 		return nil, fmt.Errorf("BACKUP_ENCRYPTION_KEY must be at least 16 characters")
 	}
 	return c, nil
