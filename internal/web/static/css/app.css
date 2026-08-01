@@ -1189,6 +1189,15 @@ em { font-style: normal; color: var(--muted); }
 .bkp__hint, .bkp__note { color: var(--muted); font-size: .88rem; line-height: 1.5; }
 .bkp__hint { margin: .6rem 0 0; }
 .bkp__note { margin: .2rem .2rem 0; font-size: .8rem; }
+.bkp__badge { margin-left: auto; font-family: var(--font-mono); font-size: .66rem; font-weight: 700; letter-spacing: .04em;
+	padding: .18rem .55rem; border-radius: 999px; background: var(--primary-tint); color: var(--primary);
+	border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); }
+.bkp__warn { color: #b04a2a; font-weight: 600; }
+.bkp--ok .bkp__warn { color: #b04a2a; }
+.bkp__do { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.bkp__cmd { margin: 0; padding: .6rem .75rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px;
+	overflow-x: auto; font-family: var(--font-mono); font-size: .8rem; }
+.bkp__cmd code { background: none; padding: 0; }
 .logcard__meta .ip { font-variant-numeric: tabular-nums; }
 .abadge { display: inline-flex; align-items: center; font-size: var(--fs-xs); font-weight: 800;
 	padding: .12rem .5rem; border-radius: 999px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); white-space: nowrap; }

@@ -5,19 +5,44 @@
 	<div class="card bkp bkp--{{.State}}">
 		<div class="bkp__head">
 			<span class="bkp__dot" aria-hidden="true"></span>
-			<strong class="bkp__state">{{if eq .State "ok"}}Aktuell{{else if eq .State "stale"}}Veraltet{{else if eq .State "failed"}}Fehlgeschlagen{{else}}Nicht konfiguriert{{end}}</strong>
+			<strong class="bkp__state">{{if eq .State "ok"}}Aktuell{{else if eq .State "stale"}}Veraltet{{else if eq .State "failed"}}Fehlgeschlagen{{else}}Kein geplantes Backup{{end}}</strong>
+			{{if .Encrypted}}<span class="bkp__badge">verschlüsselt</span>{{end}}
 		</div>
 		{{if .Configured}}
 		<dl class="bkp__meta">
 			<div><dt>Letztes Backup</dt><dd>{{if .LastBackup.IsZero}}—{{else}}{{date .LastBackup}} · vor {{.AgeHours}} h{{end}}</dd></div>
 			<div><dt>Größe</dt><dd>{{.SizeLabel}}</dd></div>
+			<div><dt>Restore getestet</dt><dd>{{if .RestoreTested.IsZero}}<span class="bkp__warn">nie</span>{{else}}{{date .RestoreTested}}{{end}}</dd></div>
+			<div><dt>Schema-Stand</dt><dd>{{if .SchemaVersion}}{{.SchemaVersion}}{{else}}—{{end}}</dd></div>
 			<div><dt>Off-Host-Kopie</dt><dd>{{.Offhost}}</dd></div>
 		</dl>
 		{{else}}
-		<p class="bkp__hint">Kein <code>status.json</code> gefunden. Backup-Dienst aktivieren mit <code>docker compose --profile backup up -d</code> und <code>./backups</code> read-only in den App-Container mounten. Wiederherstellbarkeit prüfen: <code>sh scripts/restore-drill.sh</code>.</p>
+		<p class="bkp__hint">Noch kein geplantes Backup gelaufen. Der App-Ticker schreibt verschlüsselte Dumps nach <code>BACKUP_DIR</code> — dieses Verzeichnis auf eine zweite Platte/NAS off-box syncen, sonst liegt das Backup neben der DB, die es schützt.</p>
 		{{end}}
 	</div>
-	<p class="bkp__note">Der Backup-Status wird vom Backup-Dienst geschrieben (letzter Lauf, Off-Host-Kopie). „Veraltet" heißt: das letzte Backup ist älter als 26&nbsp;Stunden.</p>
+
+	{{if .Enabled}}
+	<div class="card bkp__do">
+		<div>
+			<strong>Backup jetzt herunterladen</strong>
+			<p class="bkp__note" style="margin:.25rem 0 0">Die App erzeugt einen verschlüsselten <code>pg_dump</code> (<code>.dump.enc</code>) und bietet ihn zum Download an. Enthält alle Personen- &amp; Abrechnungsdaten — sicher ablegen.</p>
+		</div>
+		<form method="post" action="/admin/backup/run">
+			<button class="btn btn--primary" type="submit">Backup jetzt</button>
+		</form>
+	</div>
+	{{else}}
+	<p class="bkp__hint">Backups sind nicht konfiguriert. <code>BACKUP_ENCRYPTION_KEY</code> setzen (mind. 16 Zeichen, getrennt vom Session-Secret), dann werden On-Demand- und geplante Backups aktiv.</p>
+	{{end}}
+
+	<div class="card">
+		<strong>Wiederherstellen</strong>
+		<p class="bkp__note" style="margin:.25rem 0 .5rem">Restore überschreibt die laufende DB — bewusst <em>kein</em> UI-Knopf. Als Ops-Kommando mit Tipp-Bestätigung (<code>RESTORE</code> eintippen):</p>
+		<pre class="bkp__cmd"><code>docker compose run --rm app restore &lt;datei.dump.enc&gt;</code></pre>
+		<p class="bkp__note" style="margin:.4rem 0 0">Vorab prüfen (ohne die DB anzufassen): <code>docker compose run --rm app restore --test &lt;datei.dump.enc&gt;</code> — entschlüsselt, validiert das Archiv, meldet Objekt-Anzahl &amp; Schema-Stand.</p>
+	</div>
+
+	<p class="bkp__note">„Veraltet" heißt: das letzte geplante Backup ist älter als 26&nbsp;Stunden. Jedes geschriebene Backup wird automatisch auf Wiederherstellbarkeit geprüft (Entschlüsselung + Archiv-Validierung) → „Restore getestet".</p>
 	{{end}}
 </section>
 {{end}}

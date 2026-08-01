@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-webauthn/webauthn/webauthn"
 
+	"treckrr/internal/backup"
 	"treckrr/internal/config"
 	"treckrr/internal/models"
 	"treckrr/internal/store"
@@ -26,13 +27,14 @@ const (
 type Server struct {
 	cfg       *config.Config
 	store     *store.Store
+	backup    *backup.Service
 	templates map[string]*template.Template
 	logins    *loginLimiter
 	wa        *webauthn.WebAuthn
 }
 
 // New constructs a Server and parses templates.
-func New(cfg *config.Config, st *store.Store) (*Server, error) {
+func New(cfg *config.Config, st *store.Store, bk *backup.Service) (*Server, error) {
 	tpl, err := web.Templates()
 	if err != nil {
 		return nil, err
@@ -45,7 +47,7 @@ func New(cfg *config.Config, st *store.Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, store: st, templates: tpl, logins: newLoginLimiter(st), wa: wa}, nil
+	return &Server{cfg: cfg, store: st, backup: bk, templates: tpl, logins: newLoginLimiter(st), wa: wa}, nil
 }
 
 type ctxKey string
@@ -160,6 +162,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /admin/audit", s.admin(s.handleAudit))
 	mux.Handle("GET /admin/audit/export", s.admin(s.handleAuditExport))
 	mux.Handle("GET /admin/backup", s.admin(s.handleBackupStatus))
+	mux.Handle("POST /admin/backup/run", s.admin(s.handleBackupRun))
 	mux.Handle("GET /admin/company", s.auth(s.handleCompany))
 	mux.Handle("POST /admin/company", s.auth(s.handleCompanySave))
 	mux.Handle("GET /admin/users", s.admin(s.handleUsers))

@@ -172,9 +172,11 @@ func TestBackupPageRenders(t *testing.T) {
 	execPage(t, "backup", map[string]any{
 		"Title": "Backup",
 		"Backup": map[string]any{
-			"Configured": true, "State": "ok",
+			"Enabled": true, "Configured": true, "State": "ok",
 			"LastBackup": time.Now().Add(-3 * time.Hour), "AgeHours": 3,
 			"SizeLabel": "4.2 MB", "Offhost": "ok",
+			"Encrypted": true, "SchemaVersion": "0021_neighbor_tax_id.sql",
+			"RestoreTested": time.Now().Add(-3 * time.Hour),
 		},
 	})
 }
