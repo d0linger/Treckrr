@@ -2,17 +2,37 @@
 <section class="stack beleg-page">
 	<a class="backlink no-print" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ {{.Neighbor.Name}} · {{.Year.Year}}</a>
 
-	<div class="beleg{{if .ShowGrund}} beleg--grund{{end}}{{if .Bundle}} beleg--bundle{{end}}" id="beleg">
+	<div class="beleg{{if .ShowGrund}} beleg--grund{{end}}{{if .Bundle}} beleg--bundle{{end}}{{if .Rechnung}} beleg--rechnung{{end}}" id="beleg">
+		{{if .HasInvoice}}
+		<div class="beleg__invoice">
+			<div class="beleg__inv-top">
+				<span class="beleg__inv-no">RECHNUNG Nr. {{.Invoice.Number}}</span>
+				<span>Datum {{date .Invoice.IssuedOn}}</span>
+			</div>
+			<div class="beleg__inv-pp">
+				<div><div class="beleg__inv-k">Von</div><span class="beleg__inv-addr">{{.Company.Name}}{{with .Company.Address}}
+{{.}}{{end}}{{with .Company.TaxID}}
+{{.}}{{end}}</span></div>
+				<div><div class="beleg__inv-k">An</div><span class="beleg__inv-addr">{{.Neighbor.Name}}{{with .Neighbor.Address}}
+{{.}}{{end}}</span></div>
+			</div>
+		</div>
+		{{end}}
 		<div class="beleg__hero">
 			<div class="beleg__hero-top">
 				<span class="beleg__who">{{.Neighbor.Name}}</span>
 				<span class="beleg__yr">Abrechnung {{.Year.Year}}</span>
 			</div>
-			<div class="beleg__hl">Saldo{{if .Completed}} · {{if .Paid}}bezahlt{{else}}offen{{end}}{{end}}</div>
-			<div class="beleg__hv">{{money .Saldo}}</div>
+			{{if .HasInvoice}}
+			<div class="beleg__hl beleg__sum-invoice">Restbetrag zu zahlen</div>
+			<div class="beleg__hv beleg__sum-invoice">{{money .InvRest}}</div>
+			{{end}}
+			<div class="beleg__hl beleg__sum-informal">{{if .HasPayments}}Offener Rest{{else}}Saldo{{if .Completed}} · {{if .Paid}}bezahlt{{else}}offen{{end}}{{end}}{{end}}</div>
+			<div class="beleg__hv beleg__sum-informal">{{if .HasPayments}}{{money .Remaining}}{{else}}{{money .Saldo}}{{end}}</div>
 			<div class="beleg__hb">
 				<span>Leistungen {{money .TotalCost}}</span>
 				{{if .Ledger}}<span>Verrechnung {{money .LedgerSum}}</span>{{end}}
+				{{if .HasPayments}}<span>Bezahlt {{money .PaidSum}}</span>{{end}}
 				<span>{{num .TotalHours}} h · {{.Bookings}} Buchung{{if ne .Bookings 1}}en{{end}}</span>
 			</div>
 		</div>
@@ -24,8 +44,8 @@
 			{{range $i, $e := .Entries}}
 			<div class="beleg__lrow{{if $i}} beleg__lrow--daycont{{else}} beleg__lrow--dayfirst{{end}}{{if $e.Voided}} beleg__lrow--void{{end}}">
 				<span class="beleg__d">{{if eq $i 0}}{{$day.Date}}{{end}}</span>
-				<span class="beleg__t">{{if $e.TaskLabel}}{{$e.TaskLabel}}{{else}}Sonstige{{end}}{{if $e.Voided}} · storniert{{end}}</span>
-				<span class="beleg__h beleg__r">{{if $e.Voided}}—{{else}}{{num $e.Hours}}{{end}}</span>
+				<span class="beleg__t">{{if $e.TaskLabel}}{{$e.TaskLabel}}{{else}}Sonstige{{end}}{{if $e.Voided}} · storniert{{end}}{{if ne $e.Unit "h"}}<small>{{num $e.Quantity}} {{$e.Unit}} × {{money $e.UnitPrice}}</small>{{end}}</span>
+				<span class="beleg__h beleg__r">{{if $e.Voided}}—{{else if eq $e.Unit "h"}}{{num $e.Hours}}{{else}}—{{end}}</span>
 				<span class="beleg__b beleg__r">{{money $e.Cost}}</span>
 			</div>
 			{{end}}
@@ -57,7 +77,20 @@
 			<span class="beleg__b beleg__r{{if .Amount.IsNegative}} beleg__b--neg{{end}}">{{money .Amount}}</span>
 		</div>
 		{{end}}
-		<div class="beleg__lsub beleg__lsub--muted"><span></span><span>Verrechnung</span><span class="beleg__r"></span><span class="beleg__r">{{money .LedgerSum}}</span></div>
+		<div class="beleg__lsub beleg__lsub--muted beleg__ver-sum"><span></span><span>Verrechnung</span><span class="beleg__r"></span><span class="beleg__r">{{money .LedgerSum}}</span></div>
+		{{end}}
+
+		{{if .HasPayments}}
+		<div class="beleg__sec beleg__pay">Zahlungen</div>
+		{{range .Payments}}
+		<div class="beleg__lrow beleg__lrow--ver beleg__pay">
+			<span class="beleg__d">{{.PaidOn.Format "02.01."}}</span>
+			<span class="beleg__t">Zahlung{{if .Note}} · {{.Note}}{{end}}</span>
+			<span class="beleg__h beleg__r"></span>
+			<span class="beleg__b beleg__r beleg__b--neg">−{{money .Amount}}</span>
+		</div>
+		{{end}}
+		<div class="beleg__lsub beleg__pay"><span></span><span>Offener Rest</span><span class="beleg__r"></span><span class="beleg__r">{{money .Remaining}}</span></div>
 		{{end}}
 
 		{{if .HasGrund}}
@@ -88,6 +121,28 @@
 		</div>
 		{{end}}
 
+		{{if .HasInvoice}}
+		<div class="beleg__invtax">
+			{{if .InvShowVAT}}
+			<div class="beleg__lsub"><span></span><span>Rechnungsbetrag netto</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvNet}}</span></div>
+			<div class="beleg__lsub beleg__lsub--muted"><span></span><span>zzgl. USt {{num .InvRate}} %</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvUSt}}</span></div>
+			<div class="beleg__lsub"><span></span><span>Rechnungsbetrag brutto</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvBrutto}}</span></div>
+			{{else}}
+			<div class="beleg__lsub"><span></span><span>Rechnungsbetrag</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvBrutto}}</span></div>
+			{{end}}
+			{{if .Ledger}}
+			<div class="beleg__lsub beleg__lsub--muted"><span></span><span>Verrechnung</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvLedger}}</span></div>
+			{{end}}
+			{{if .HasPayments}}
+			<div class="beleg__lsub beleg__lsub--muted"><span></span><span>abzüglich bereits bezahlt{{if .InvShowVAT}} (davon USt {{money .InvPaidUSt}}){{end}}</span><span class="beleg__r"></span><span class="beleg__r">−{{money .PaidSum}}</span></div>
+			{{end}}
+			{{if or .Ledger .HasPayments}}
+			<div class="beleg__lsub"><span></span><span>Restbetrag zu zahlen</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvRest}}</span></div>
+			{{end}}
+			{{with .Company.TaxNote}}<div class="beleg__inv-note">{{.}}</div>{{end}}
+		</div>
+		{{end}}
+
 		<div class="beleg__foot">Stand {{.Today}} · Treckrr</div>
 	</div>
 
@@ -111,7 +166,18 @@
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Grundlage
 			</button>
 			{{end}}
+			{{if .HasInvoice}}
+			<button type="button" class="btn btn--ghost" data-beleg-rechnung aria-pressed="{{if .Rechnung}}true{{else}}false{{end}}">
+				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Rechnung
+			</button>
+			{{end}}
 		</div>
+		{{if not .HasInvoice}}
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice" data-confirm="Rechnung ausstellen? Die Rechnungsnummer wird fest vergeben und bleibt bestehen.">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<button type="submit" class="btn btn--ghost btn--block">Als Rechnung ausstellen (Nummer vergeben)</button>
+		</form>
+		{{end}}
 	</div>
 </section>
 {{end}}

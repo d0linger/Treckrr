@@ -54,6 +54,18 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Payments toward this year (dated amounts). The remaining balance is the
+	// saldo minus what was paid; payments are editable regardless of year status.
+	payments, err := s.store.ListPayments(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	paidSum := decimal.Zero
+	for _, p := range payments {
+		paidSum = paidSum.Add(p.Amount)
+	}
+
 	// Bookings whose stored price no longer matches the current basis (the basis
 	// was edited after they were booked). Marked in the table; offered for
 	// recalculation. Best-effort — a failure just omits the markers.
@@ -90,6 +102,9 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Ledger"] = ledger
 	data["LedgerSum"] = ledgerSum
 	data["Saldo"] = cost.Add(ledgerSum)
+	data["Payments"] = payments
+	data["PaidSum"] = paidSum
+	data["Remaining"] = cost.Add(ledgerSum).Sub(paidSum)
 	data["Tractors"] = tractors
 	data["Loads"] = loads
 	data["Machines"] = machines
@@ -277,9 +292,17 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	s.audit(r, "create", "entry", newID, fmt.Sprintf("%s · %s, %s h × %s = %s €",
-		s.neighborName(r, neighborID), entry.TaskLabel,
-		entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2)))
+	var detail string
+	if entry.Unit != "" && entry.Unit != "h" {
+		detail = fmt.Sprintf("%s · %s, %s %s × %s = %s €",
+			s.neighborName(r, neighborID), entry.TaskLabel,
+			entry.Quantity.String(), entry.Unit, entry.UnitPrice.StringFixed(2), entry.Cost.StringFixed(2))
+	} else {
+		detail = fmt.Sprintf("%s · %s, %s h × %s = %s €",
+			s.neighborName(r, neighborID), entry.TaskLabel,
+			entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2))
+	}
+	s.audit(r, "create", "entry", newID, detail)
 	s.setFlash(w, r, "success", "Buchung gespeichert.")
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
@@ -289,6 +312,57 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 // returns a populated Entry (without neighbor/year) plus its machine ids. On
 // validation failure it returns a non-empty German message.
 func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, string) {
+	// Non-hour unit (ha, Ballen, m³, …): quantity × unit price, no rig required.
+	// Hours stay 0 (they don't count toward TotalHours). Unit "h" (or empty) falls
+	// through to the rig-based hourly path below. "__custom" resolves to the
+	// free-text unit field.
+	unit := trimmed(r, "unit")
+	if unit == "__custom" {
+		unit = trimmed(r, "unit_custom")
+		if unit == "" {
+			return nil, nil, "Bitte eine eigene Einheit angeben."
+		}
+	}
+	if unit != "" && unit != "h" {
+		if msg := lenError("Einheit", unit, 16); msg != "" {
+			return nil, nil, msg
+		}
+		taskLabel := trimmed(r, "task_label")
+		if taskLabel == "" {
+			return nil, nil, "Bitte eine Tätigkeit angeben."
+		}
+		if msg := lenError("Tätigkeit", taskLabel, maxNameLen); msg != "" {
+			return nil, nil, msg
+		}
+		quantity := formDecimal(r, "quantity")
+		if !quantity.IsPositive() {
+			return nil, nil, "Menge muss größer als 0 sein."
+		}
+		unitPrice := formDecimal(r, "unit_price")
+		if !unitPrice.IsPositive() {
+			return nil, nil, "Preis je Einheit muss größer als 0 sein."
+		}
+		note := trimmed(r, "note")
+		if msg := lenError("Notiz", note, maxNoteLen); msg != "" {
+			return nil, nil, msg
+		}
+		entryDate, err := time.Parse("2006-01-02", trimmed(r, "entry_date"))
+		if err != nil {
+			entryDate = time.Now()
+		}
+		return &models.Entry{
+			Date:       entryDate,
+			TaskLabel:  taskLabel,
+			Unit:       unit,
+			Quantity:   quantity,
+			UnitPrice:  unitPrice,
+			Hours:      decimal.Zero,
+			HourlyRate: decimal.Zero,
+			Cost:       calc.Cost(quantity, unitPrice),
+			Note:       note,
+		}, nil, ""
+	}
+
 	var (
 		gespannID   *int64
 		tractorID   = formInt64Ptr(r, "tractor_id")
@@ -372,12 +446,21 @@ func entryUpdateDetail(prev, cur *models.Entry) string {
 		fieldChange{"Datum", prev.Date.Format("02.01.2006"), cur.Date.Format("02.01.2006")},
 		fieldChange{"Tätigkeit", prev.TaskLabel, cur.TaskLabel},
 		fieldChange{"Maschinen", prev.MachineLabels, cur.MachineLabels},
+		fieldChange{"Einheit", prev.Unit, cur.Unit},
+		fieldChange{"Menge", prev.Quantity.StringFixed(2), cur.Quantity.StringFixed(2)},
+		fieldChange{"Einzelpreis", prev.UnitPrice.StringFixed(2), cur.UnitPrice.StringFixed(2)},
 		fieldChange{"Stunden", prev.Hours.StringFixed(2), cur.Hours.StringFixed(2)},
 		fieldChange{"Satz", prev.HourlyRate.StringFixed(2), cur.HourlyRate.StringFixed(2)},
 		fieldChange{"Kosten", prev.Cost.StringFixed(2) + " €", cur.Cost.StringFixed(2) + " €"},
 		fieldChange{"Notiz", prev.Note, cur.Note},
 	)
 	if d == "" {
+		// Mirror the booking's own basis: hours × rate for time bookings, but
+		// quantity × unit price for a unit-based one (h × rate would be 0 there).
+		if cur.Unit != "" && cur.Unit != "h" {
+			return fmt.Sprintf("keine inhaltliche Änderung (%s %s × %s = %s €)",
+				cur.Quantity.StringFixed(2), cur.Unit, cur.UnitPrice.StringFixed(2), cur.Cost.StringFixed(2))
+		}
 		return fmt.Sprintf("keine inhaltliche Änderung (%s h × %s = %s €)",
 			cur.Hours.StringFixed(2), cur.HourlyRate.StringFixed(2), cur.Cost.StringFixed(2))
 	}
@@ -495,6 +578,33 @@ func (s *Server) ledgerYearOpen(w http.ResponseWriter, r *http.Request, yearID, 
 		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return false
+	}
+	return true
+}
+
+// transferYearsOpen reports whether every billing year a carry-forward transfer
+// touches is still open. Undoing a transfer changes both sides at once, so it
+// must be blocked when either the clicked or the linked year is completed —
+// ledgerYearOpen only guards the clicked side.
+func (s *Server) transferYearsOpen(w http.ResponseWriter, r *http.Request, transferID string, neighborID, yearID int64) bool {
+	ids, err := s.store.LedgerTransferYearIDs(r.Context(), transferID)
+	if err != nil {
+		s.setFlash(w, r, "error", "Übertrag konnte nicht geladen werden.")
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return false
+	}
+	for _, id := range ids {
+		year, err := s.store.GetBillingYear(r.Context(), id)
+		if err != nil {
+			s.setFlash(w, r, "error", "Abrechnungsjahr konnte nicht geladen werden.")
+			redirect(w, r, neighborURL(neighborID, yearID))
+			return false
+		}
+		if year.Completed() {
+			s.setFlash(w, r, "error", "Ein beteiligtes Abrechnungsjahr ist abgeschlossen.")
+			redirect(w, r, neighborURL(neighborID, yearID))
+			return false
+		}
 	}
 	return true
 }
@@ -659,6 +769,24 @@ func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
+	// A carry-forward posting reverses as a unit: void/restore both sides so the
+	// balance can't be left settled in one year and gone from the other.
+	if e.TransferID != "" {
+		if !s.transferYearsOpen(w, r, e.TransferID, neighborID, yearID) {
+			return
+		}
+		if err := s.store.SetLedgerVoidedTransfer(r.Context(), e.TransferID, void, reason); err != nil {
+			s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
+		} else if void {
+			s.audit(r, "ledger_void", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Übertrag storniert (beide Seiten)")
+			s.setFlash(w, r, "success", "Übertrag storniert — beide Seiten aufgehoben.")
+		} else {
+			s.audit(r, "ledger_unvoid", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Übertrag wiederhergestellt")
+			s.setFlash(w, r, "success", "Übertrags-Stornierung aufgehoben.")
+		}
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
 	if err := s.store.SetLedgerVoided(r.Context(), id, void, reason); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if void {
@@ -686,6 +814,21 @@ func (s *Server) handleLedgerDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
+		return
+	}
+	// A carry-forward posting reverses as a unit: deleting one side removes both,
+	// so the balance reopens in the source year instead of vanishing.
+	if e.TransferID != "" {
+		if !s.transferYearsOpen(w, r, e.TransferID, neighborID, yearID) {
+			return
+		}
+		if err := s.store.DeleteLedgerTransfer(r.Context(), e.TransferID); err != nil {
+			s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
+		} else {
+			s.audit(r, "ledger_delete", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Übertrag rückgängig")
+			s.setFlash(w, r, "success", "Übertrag rückgängig gemacht — der Rest ist im anderen Jahr wieder offen.")
+		}
+		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
 	if err := s.store.DeleteNeighborLedger(r.Context(), id); err != nil {

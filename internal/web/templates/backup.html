@@ -1,0 +1,23 @@
+{{define "content"}}
+<section class="stack">
+	<h1 class="section-title">Backup</h1>
+	{{with .Backup}}
+	<div class="card bkp bkp--{{.State}}">
+		<div class="bkp__head">
+			<span class="bkp__dot" aria-hidden="true"></span>
+			<strong class="bkp__state">{{if eq .State "ok"}}Aktuell{{else if eq .State "stale"}}Veraltet{{else if eq .State "failed"}}Fehlgeschlagen{{else}}Nicht konfiguriert{{end}}</strong>
+		</div>
+		{{if .Configured}}
+		<dl class="bkp__meta">
+			<div><dt>Letztes Backup</dt><dd>{{if .LastBackup.IsZero}}—{{else}}{{date .LastBackup}} · vor {{.AgeHours}} h{{end}}</dd></div>
+			<div><dt>Größe</dt><dd>{{.SizeLabel}}</dd></div>
+			<div><dt>Off-Host-Kopie</dt><dd>{{.Offhost}}</dd></div>
+		</dl>
+		{{else}}
+		<p class="bkp__hint">Kein <code>status.json</code> gefunden. Backup-Dienst aktivieren mit <code>docker compose --profile backup up -d</code> und <code>./backups</code> read-only in den App-Container mounten. Wiederherstellbarkeit prüfen: <code>sh scripts/restore-drill.sh</code>.</p>
+		{{end}}
+	</div>
+	<p class="bkp__note">Der Backup-Status wird vom Backup-Dienst geschrieben (letzter Lauf, Off-Host-Kopie). „Veraltet" heißt: das letzte Backup ist älter als 26&nbsp;Stunden.</p>
+	{{end}}
+</section>
+{{end}}

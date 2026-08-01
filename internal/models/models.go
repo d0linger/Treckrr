@@ -146,6 +146,7 @@ type Neighbor struct {
 	ID       int64
 	Name     string
 	Note     string
+	Address  string // optional, for the invoice recipient block
 	Archived bool
 	Created  time.Time
 }
@@ -166,10 +167,16 @@ type Entry struct {
 	Hours         decimal.Decimal
 	HourlyRate    decimal.Decimal
 	Cost          decimal.Decimal
-	Note          string
-	Voided        bool
-	VoidReason    string
-	Created       time.Time
+	// Unit/Quantity/UnitPrice generalize billing beyond hours: cost = quantity ×
+	// unit price. For hour bookings Unit is "h", Quantity == Hours and UnitPrice
+	// == HourlyRate. Other units: "ha", "Ballen", "m3", "Fuhre", "t" (or custom).
+	Unit       string
+	Quantity   decimal.Decimal
+	UnitPrice  decimal.Decimal
+	Note       string
+	Voided     bool
+	VoidReason string
+	Created    time.Time
 }
 
 // WebauthnCredential is a registered passkey (public key only).
@@ -201,6 +208,45 @@ type LedgerEntry struct {
 	Voided      bool
 	VoidReason  string
 	Created     time.Time
+	// TransferID links the two sides of a carry-forward; non-empty means this
+	// posting is one half of a cross-year transfer that reverses as a unit.
+	TransferID string
+}
+
+// Payment is a dated amount a neighbor paid toward a billing year. Payments are
+// decoupled from year status (a completed year still accepts them) and there may
+// be several per (year, neighbor) — partial payments settle the balance over time.
+type Payment struct {
+	ID            int64
+	BillingYearID int64
+	NeighborID    int64
+	Amount        decimal.Decimal
+	PaidOn        time.Time
+	Note          string
+	Created       time.Time
+}
+
+// Company holds the sender (Absender) details shown on an invoice-mode Beleg,
+// plus the tax treatment: "pauschal" shows only TaxNote; "regel" adds a VAT
+// breakdown at VATRate.
+type Company struct {
+	Name    string
+	Address string
+	TaxID   string
+	TaxNote string
+	TaxMode string
+	VATRate decimal.Decimal
+}
+
+// Invoice is a Beleg issued as a formal Rechnung: a sequential number per year,
+// fixed at issue time, for one neighbor and year.
+type Invoice struct {
+	ID            int64
+	BillingYearID int64
+	NeighborID    int64
+	Number        string
+	IssuedOn      time.Time
+	Created       time.Time
 }
 
 // AuditEntry is one recorded action in the audit trail.

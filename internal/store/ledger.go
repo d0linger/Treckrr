@@ -16,7 +16,7 @@ import (
 // count toward the balance.
 func (s *Store) ListNeighborLedger(ctx context.Context, yearID, neighborID int64) ([]models.LedgerEntry, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, amount, description, posting_date, voided, void_reason, created_at
+		`SELECT id, amount, description, posting_date, voided, void_reason, created_at, transfer_id
 		   FROM neighbor_ledger
 		  WHERE billing_year_id=$1 AND neighbor_id=$2
 		  ORDER BY posting_date, id`, yearID, neighborID)
@@ -27,7 +27,7 @@ func (s *Store) ListNeighborLedger(ctx context.Context, yearID, neighborID int64
 	var out []models.LedgerEntry
 	for rows.Next() {
 		var e models.LedgerEntry
-		if err := rows.Scan(&e.ID, &e.Amount, &e.Description, &e.Date, &e.Voided, &e.VoidReason, &e.Created); err != nil {
+		if err := rows.Scan(&e.ID, &e.Amount, &e.Description, &e.Date, &e.Voided, &e.VoidReason, &e.Created, &e.TransferID); err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -101,14 +101,16 @@ func (s *Store) YearNeighborResults(ctx context.Context, yearID int64) ([]YearNe
 // bookings (Leistungen), signed ledger sum (Verrechnung), their Net, hours,
 // the payment flag and the year's status.
 type NeighborYearHistoryRow struct {
-	YearID int64
-	Year   int
-	Status string
-	Cost   decimal.Decimal // work bookings, not voided
-	Ledger decimal.Decimal // signed manual postings, not voided
-	Net    decimal.Decimal // Cost + Ledger
-	Hours  decimal.Decimal
-	Paid   bool
+	YearID     int64
+	Year       int
+	Status     string
+	Cost       decimal.Decimal // work bookings, not voided
+	Ledger     decimal.Decimal // signed manual postings, not voided
+	Net        decimal.Decimal // Cost + Ledger
+	Hours      decimal.Decimal
+	PaidAmount decimal.Decimal // sum of recorded payments
+	Remaining  decimal.Decimal // Net − PaidAmount
+	Paid       bool            // fully settled (Remaining <= 0)
 }
 
 // NeighborYearHistory returns a neighbor's per-year history (newest first) in a
@@ -117,7 +119,7 @@ type NeighborYearHistoryRow struct {
 // naturally absent via the billing_year_neighbors join.
 func (s *Store) NeighborYearHistory(ctx context.Context, neighborID int64) ([]NeighborYearHistoryRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT y.id, y.year, y.status, byn.paid,
+		SELECT y.id, y.year, y.status,
 		  COALESCE((SELECT SUM(e.cost) FROM entries e
 		             WHERE e.neighbor_id = byn.neighbor_id
 		               AND e.billing_year_id = byn.billing_year_id
@@ -129,7 +131,10 @@ func (s *Store) NeighborYearHistory(ctx context.Context, neighborID int64) ([]Ne
 		  COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
 		             WHERE l.neighbor_id = byn.neighbor_id
 		               AND l.billing_year_id = byn.billing_year_id
-		               AND NOT l.voided), 0) AS ledger
+		               AND NOT l.voided), 0) AS ledger,
+		  COALESCE((SELECT SUM(p.amount) FROM payments p
+		             WHERE p.neighbor_id = byn.neighbor_id
+		               AND p.billing_year_id = byn.billing_year_id), 0) AS paid
 		FROM billing_year_neighbors byn
 		JOIN billing_years y ON y.id = byn.billing_year_id
 		WHERE byn.neighbor_id = $1
@@ -141,10 +146,12 @@ func (s *Store) NeighborYearHistory(ctx context.Context, neighborID int64) ([]Ne
 	var out []NeighborYearHistoryRow
 	for rows.Next() {
 		var r NeighborYearHistoryRow
-		if err := rows.Scan(&r.YearID, &r.Year, &r.Status, &r.Paid, &r.Cost, &r.Hours, &r.Ledger); err != nil {
+		if err := rows.Scan(&r.YearID, &r.Year, &r.Status, &r.Cost, &r.Hours, &r.Ledger, &r.PaidAmount); err != nil {
 			return nil, err
 		}
 		r.Net = r.Cost.Add(r.Ledger)
+		r.Remaining = r.Net.Sub(r.PaidAmount)
+		r.Paid = !r.Remaining.IsPositive()
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -222,9 +229,9 @@ func (s *Store) SetLedgerVoided(ctx context.Context, id int64, voided bool, reas
 // authorize, lock-check, prefill an edit form, and audit).
 func (s *Store) GetLedgerEntry(ctx context.Context, id int64) (yearID, neighborID int64, e models.LedgerEntry, err error) {
 	err = s.db.QueryRowContext(ctx,
-		`SELECT billing_year_id, neighbor_id, id, amount, description, posting_date, voided, void_reason, created_at
+		`SELECT billing_year_id, neighbor_id, id, amount, description, posting_date, voided, void_reason, created_at, transfer_id
 		   FROM neighbor_ledger WHERE id=$1`, id).
-		Scan(&yearID, &neighborID, &e.ID, &e.Amount, &e.Description, &e.Date, &e.Voided, &e.VoidReason, &e.Created)
+		Scan(&yearID, &neighborID, &e.ID, &e.Amount, &e.Description, &e.Date, &e.Voided, &e.VoidReason, &e.Created, &e.TransferID)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
 	}
@@ -234,5 +241,53 @@ func (s *Store) GetLedgerEntry(ctx context.Context, id int64) (yearID, neighborI
 // DeleteNeighborLedger removes a posting.
 func (s *Store) DeleteNeighborLedger(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM neighbor_ledger WHERE id=$1`, id)
+	return err
+}
+
+// LedgerTransferYearIDs returns the distinct billing years a transfer touches
+// (normally the source and target of a carry-forward), so callers can verify
+// none of them is completed before undoing the transfer.
+func (s *Store) LedgerTransferYearIDs(ctx context.Context, transferID string) ([]int64, error) {
+	if transferID == "" {
+		return nil, errors.New("empty transfer id")
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT billing_year_id FROM neighbor_ledger WHERE transfer_id=$1`, transferID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// DeleteLedgerTransfer removes both sides of a carry-forward (all postings that
+// share the transfer_id), so a transfer is undone as a unit and the balance
+// reopens in the source year instead of vanishing. An empty transfer_id is
+// rejected — it would otherwise match every ordinary (non-transfer) posting.
+func (s *Store) DeleteLedgerTransfer(ctx context.Context, transferID string) error {
+	if transferID == "" {
+		return errors.New("empty transfer id")
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM neighbor_ledger WHERE transfer_id=$1`, transferID)
+	return err
+}
+
+// SetLedgerVoidedTransfer voids (or restores) both sides of a carry-forward. An
+// empty transfer_id is rejected — it would otherwise match every ordinary
+// (non-transfer) posting.
+func (s *Store) SetLedgerVoidedTransfer(ctx context.Context, transferID string, voided bool, reason string) error {
+	if transferID == "" {
+		return errors.New("empty transfer id")
+	}
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE neighbor_ledger SET voided=$1, void_reason=$2 WHERE transfer_id=$3`, voided, reason, transferID)
 	return err
 }

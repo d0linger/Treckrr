@@ -47,6 +47,13 @@ services:
       # set RP_ID to your host (no scheme) and RP_ORIGIN to the full origin.
       RP_ID: ${RP_ID:-localhost}
       RP_ORIGIN: ${RP_ORIGIN:-http://localhost:8080}
+      # Break-glass admin password reset (see .env.example); off by default.
+      ADMIN_PASSWORD_RESET: ${ADMIN_PASSWORD_RESET:-false}
+      # Backup status file for the admin Backup panel (needs the ./backups mount).
+      BACKUP_STATUS_FILE: ${BACKUP_STATUS_FILE:-/backups/status.json}
+    # Read-only view of the backup dir so the admin Backup panel can read status.json.
+    volumes:
+      - ./backups:/backups:ro
     ports:
       - "${HOST_PORT:-8080}:${APP_PORT:-8080}"
 
@@ -69,6 +76,10 @@ services:
       PGDATABASE: ${POSTGRES_DB:-treckrr}
       BACKUP_INTERVAL: ${BACKUP_INTERVAL:-86400}
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      # Optional off-host copy: a shell command run after each successful dump to
+      # mirror /backups to a second, independent location (rsync/rclone/S3/…).
+      # Empty = disabled. The tool must exist in this container's image.
+      BACKUP_SYNC_CMD: ${BACKUP_SYNC_CMD:-}
     volumes:
       - ./backups:/backups
     entrypoint: ["/bin/sh", "-c"]
@@ -77,11 +88,21 @@ services:
         echo "backup service started (interval $${BACKUP_INTERVAL}s, keep $${BACKUP_KEEP})";
         while true; do
           ts=$$(date +%Y%m%d-%H%M%S);
-          if pg_dump -h db -F c -f /backups/treckrr-$$ts.dump; then
-            echo "backup $$ts ok";
+          iso=$$(date -u +%Y-%m-%dT%H:%M:%SZ);
+          out="/backups/treckrr-$$ts.dump";
+          offhost=null;
+          if pg_dump -h db -F c -f "$$out"; then
+            ok=true; size=$$(wc -c < "$$out" | tr -d ' ');
+            echo "backup $$ts ok ($${size} bytes)";
+            if [ -n "$${BACKUP_SYNC_CMD}" ]; then
+              if sh -c "$${BACKUP_SYNC_CMD}"; then offhost=true; echo "offhost copy ok"; else offhost=false; echo "offhost copy FAILED"; fi;
+            fi;
           else
+            ok=false; size=0;
+            rm -f "$$out";
             echo "backup $$ts FAILED";
           fi;
+          printf '{"last_backup":"%s","ok":%s,"size_bytes":%s,"offhost_ok":%s}\n' "$$iso" "$$ok" "$$size" "$$offhost" > /backups/status.json.tmp && mv /backups/status.json.tmp /backups/status.json;
           ls -1t /backups/treckrr-*.dump 2>/dev/null | tail -n +$$((BACKUP_KEEP+1)) | xargs -r rm -f;
           sleep "$${BACKUP_INTERVAL}";
         done

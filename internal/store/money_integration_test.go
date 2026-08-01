@@ -126,8 +126,9 @@ func TestYearPaymentTotalsIntegration(t *testing.T) {
 			}
 		}
 		if c.paid {
-			if err := st.SetNeighborPaid(ctx, yearID, nid, true); err != nil {
-				t.Fatalf("set paid: %v", err)
+			// New payment model: a full payment settles the neighbor (paid += net).
+			if err := st.AddPayment(ctx, yearID, nid, cost, time.Now(), "test"); err != nil {
+				t.Fatalf("add payment: %v", err)
 			}
 			wantPaid = wantPaid.Add(cost)
 		} else {

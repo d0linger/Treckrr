@@ -115,7 +115,7 @@ func (s *Server) writeCSV(w http.ResponseWriter, filename string, entries []mode
 
 	_ = cw.Write([]string{
 		"Nachbar", "Datum", "Tätigkeit", "Traktor", "Belastung",
-		"Maschinen", "Stunden", "Stundensatz (€)", "Kosten (€)", "Notiz",
+		"Maschinen", "Einheit", "Menge", "Satz/Einheit (€)", "Kosten (€)", "Notiz",
 	})
 
 	var total decimal.Decimal
@@ -127,14 +127,15 @@ func (s *Server) writeCSV(w http.ResponseWriter, filename string, entries []mode
 			csvSafe(e.TractorLabel),
 			csvSafe(e.LoadLabel),
 			csvSafe(e.MachineLabels),
-			deDecimal(e.Hours),
-			deDecimal(e.HourlyRate),
+			csvSafe(e.Unit),
+			deDecimal(e.Quantity),
+			deDecimal(e.UnitPrice),
 			deDecimal(e.Cost),
 			csvSafe(e.Note),
 		})
 		total = total.Add(e.Cost)
 	}
-	_ = cw.Write([]string{"", "", "", "", "", "", "", "Gesamt", deDecimal(total), ""})
+	_ = cw.Write([]string{"", "", "", "", "", "", "", "", "Gesamt", deDecimal(total), ""})
 }
 
 // deDecimal formats an exact decimal with a comma separator for German

@@ -130,7 +130,12 @@ func (s *Server) handleUserPassword(w http.ResponseWriter, r *http.Request) {
 	// Force the user to change this admin-set password at next login.
 	_ = s.store.SetMustChangePassword(r.Context(), id, r.FormValue("force_change") == "on")
 	// Terminate the target user's sessions so the reset takes effect immediately.
-	_ = s.store.DeleteUserSessionsExcept(r.Context(), id, "")
+	// Auth is by session token, not password, so this is load-bearing: a failure
+	// must surface rather than be reported to the admin as success.
+	if err := s.store.DeleteUserSessionsExcept(r.Context(), id, ""); err != nil {
+		s.serverError(w, "password reset: revoke sessions", err)
+		return
+	}
 	s.audit(r, "password_reset", "user", id, "durch Admin; Sitzungen beendet")
 	s.setFlash(w, r, "success", "Passwort gesetzt. Bestehende Sitzungen wurden beendet.")
 	redirect(w, r, "/admin/users")

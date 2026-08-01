@@ -7,9 +7,9 @@
 
 	<div class="summary-card card">
 		<div>
-			<span class="summary-card__label">{{.Neighbor.Name}} · {{.Year.Year}}{{if .Ledger}} · Saldo{{end}}</span>
-			<span class="summary-card__value">{{money .Saldo}}</span>
-			{{if .Ledger}}<span class="summary-card__label">Leistungen {{money .TotalCost}} · Verrechnung {{money .LedgerSum}}</span>{{end}}
+			<span class="summary-card__label">{{.Neighbor.Name}} · {{.Year.Year}}{{if or .Ledger .Payments}} · {{if .Payments}}Offener Rest{{else}}Saldo{{end}}{{end}}</span>
+			<span class="summary-card__value">{{if .Payments}}{{money .Remaining}}{{else}}{{money .Saldo}}{{end}}</span>
+			{{if or .Ledger .Payments}}<span class="summary-card__label">Leistungen {{money .TotalCost}}{{if .Ledger}} · Verrechnung {{money .LedgerSum}}{{end}}{{if .Payments}} · Bezahlt {{money .PaidSum}}{{end}}</span>{{end}}
 		</div>
 		<div class="summary-card__meta">
 			<span>{{num .TotalHours}} h · {{len .Entries}} Buchungen</span>
@@ -29,6 +29,25 @@
 		<input type="hidden" name="year_id" value="{{.Year.ID}}">
 		<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
 
+		<div class="form__grid">
+			<label class="field"><span>Einheit</span>
+				<select class="select" name="unit" data-unit>
+					<option value="h">Stunden (h)</option>
+					<option value="ha">Hektar (ha)</option>
+					<option value="Ballen">Ballen</option>
+					<option value="m³">Kubikmeter (m³)</option>
+					<option value="Fuhre">Fuhre</option>
+					<option value="t">Tonnen (t)</option>
+					<option value="__custom">Andere Einheit …</option>
+				</select>
+			</label>
+			<label class="field"><span>Datum</span>
+				<input class="input" type="date" name="entry_date" value="{{.Today}}" required></label>
+		</div>
+		<label class="field" data-unit-custom hidden><span>Eigene Einheit</span>
+			<input class="input" type="text" name="unit_custom" placeholder="z. B. Stk, Fuder" maxlength="16" data-unit-custom-input></label>
+
+		<div data-h-only>
 		<div class="segmented" role="tablist">
 			<label class="segmented__item">
 				<input type="radio" name="mode" value="gespann" checked data-mode-toggle>
@@ -83,13 +102,9 @@
 			</fieldset>
 		</div>
 
-		<div class="form__grid">
-			<label class="field"><span>Datum</span>
-				<input class="input" type="date" name="entry_date" value="{{.Today}}" required></label>
-			<label class="field"><span>Stunden</span>
-				<input class="input" type="number" step="0.001" min="0" name="hours"
-					inputmode="decimal" data-hours required></label>
-		</div>
+		<label class="field"><span>Stunden</span>
+			<input class="input" type="number" step="0.001" min="0" name="hours"
+				inputmode="decimal" data-hours required></label>
 
 		<div class="rate-preview" data-rate-preview aria-live="polite" aria-atomic="true">
 			<span class="rate-preview__main">
@@ -98,7 +113,26 @@
 			</span>
 			<span class="rate-preview__rate">Satz <strong data-rate>–</strong></span>
 		</div>
-		<label class="field"><span>Tätigkeit (optional)</span>
+		</div><!-- /data-h-only -->
+
+		<div data-qty-only hidden>
+			<div class="form__grid">
+				<label class="field"><span>Menge</span>
+					<input class="input" type="number" step="0.001" min="0" name="quantity"
+						inputmode="decimal" data-qty></label>
+				<label class="field"><span>€ / <span data-unit-label>Einheit</span></span>
+					<input class="input" type="number" step="0.01" min="0" name="unit_price"
+						inputmode="decimal" data-unit-price></label>
+			</div>
+			<div class="rate-preview" aria-live="polite" aria-atomic="true">
+				<span class="rate-preview__main">
+					<span class="rate-preview__lbl">Kosten</span>
+					<strong class="rate-preview__cost" data-qty-cost>–</strong>
+				</span>
+			</div>
+		</div><!-- /data-qty-only -->
+
+		<label class="field"><span>Tätigkeit (bei Mengen-Einheiten erforderlich)</span>
 			<input class="input" type="text" name="task_label" placeholder="z. B. Mähen"></label>
 		<label class="field"><span>Notiz (optional)</span>
 			<input class="input" type="text" name="note"></label>
@@ -179,7 +213,7 @@
 				<span class="bcard__cost">{{money .Cost}}</span>
 			</div>
 			<div class="bcard__foot">
-				<span class="bcard__detail">{{num .Hours}} h × {{money .HourlyRate}}/h · {{.TractorLabel}} · {{.LoadLabel}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
+				<span class="bcard__detail">{{if eq .Unit "h"}}{{num .Hours}} h × {{money .HourlyRate}}/h · {{.TractorLabel}} · {{.LoadLabel}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{else}}{{num .Quantity}} {{.Unit}} × {{money .UnitPrice}}/{{.Unit}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
 				{{if not $.Completed}}
 				<span class="bcard__acts">
 					{{if .Voided}}
@@ -249,13 +283,13 @@
 					{{else}}
 					<a class="iconact" href="/ledger/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">{{template "ic-edit"}}</a>
 					<form method="post" action="/ledger/{{.ID}}/void"
-						data-confirm="Position stornieren? (bleibt sichtbar, zählt nicht mehr)"
+						data-confirm="{{if .TransferID}}Übertrag stornieren? Die Gegenbuchung im anderen Jahr wird ebenfalls storniert.{{else}}Position stornieren? (bleibt sichtbar, zählt nicht mehr){{end}}"
 						data-confirm-reason="Grund der Stornierung (optional)">
 						<input type="hidden" name="voided" value="true">
 						<input type="hidden" name="reason" value="">
 						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">{{template "ic-void"}}</button>
 					</form>
-					<form method="post" action="/ledger/{{.ID}}/delete" data-confirm="Position endgültig löschen?">
+					<form method="post" action="/ledger/{{.ID}}/delete" data-confirm="{{if .TransferID}}Übertrag rückgängig machen? Die Gegenbuchung im anderen Jahr wird ebenfalls entfernt — der Rest ist dort wieder offen.{{else}}Position endgültig löschen?{{end}}">
 						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
 					{{end}}
@@ -302,6 +336,58 @@
 			</form>
 		</details>
 		{{end}}
+
+	<h2 class="section-title">Zahlungen</h2>
+	<p class="muted small">Erhaltene Zahlungen — jederzeit erfassbar, auch nach Abschluss des Jahres.</p>
+	<div class="bookcards">
+		{{range .Payments}}
+		<div class="bcard">
+			<div class="bcard__head">
+				<span class="bcard__date">{{date .PaidOn}}</span>
+				<span class="bcard__task">Zahlung</span>
+				<span class="bcard__cost">−{{money .Amount}}</span>
+			</div>
+			<div class="bcard__foot">
+				<span class="bcard__detail">{{if .Note}}{{.Note}}{{else}}—{{end}}</span>
+				<span class="bcard__acts">
+					<form method="post" action="/payments/{{.ID}}/delete" data-confirm="Zahlung löschen?">
+						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
+					</form>
+				</span>
+			</div>
+		</div>
+		{{else}}
+		<div class="empty empty--slim">
+			<span class="empty__title">Noch keine Zahlungen</span>
+		</div>
+		{{end}}
+	</div>
+	<div class="bcard__summary"><span class="muted">Bezahlt</span><span>{{money .PaidSum}}</span></div>
+	<div class="bcard__summary"><span>Offener Rest</span><span>{{money .Remaining}}</span></div>
+
+	<details class="card disclosure">
+		<summary>+ Zahlung erfassen</summary>
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/payments" class="form">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<div class="form__grid">
+				<label class="field"><span>Betrag (€)</span>
+					<input class="input" type="number" step="0.01" min="0" name="amount" required></label>
+				<label class="field"><span>Datum</span>
+					<input class="input" type="date" name="paid_on" value="{{.Today}}"></label>
+				<label class="field"><span>Notiz</span>
+					<input class="input" name="note" placeholder="z. B. Überweisung"></label>
+			</div>
+			<button class="btn btn--primary btn--sm" type="submit">Zahlung erfassen</button>
+		</form>
+	</details>
+
+	{{if .Remaining.IsPositive}}
+	<form method="post" action="/neighbors/{{.Neighbor.ID}}/carry-forward" class="form"
+		data-confirm="Offenen Rest ({{money .Remaining}}) ins Folgejahr übernehmen? Das aktuelle Jahr wird damit ausgeglichen.">
+		<input type="hidden" name="year_id" value="{{.Year.ID}}">
+		<button class="btn btn--ghost btn--sm" type="submit">Rest ins Folgejahr übernehmen</button>
+	</form>
+	{{end}}
 
 	{{if not .Completed}}<a class="fab" href="#neue-buchung" aria-label="Neue Buchung" title="Neue Buchung">{{template "ic-plus"}}</a>{{end}}
 </section>

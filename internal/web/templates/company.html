@@ -1,0 +1,28 @@
+{{define "content"}}
+<section class="stack">
+	<h1 class="section-title">Betriebsdaten</h1>
+	<p class="muted small">Absender und Steuerhinweis für den Rechnungs-Modus des Belegs. Empfänger-Adressen pflegst du je Nachbar unter „Nachbarn".</p>
+	{{with .Company}}
+	<form method="post" action="/admin/company" class="card form">
+		<label class="field"><span>Betriebsname</span>
+			<input class="input" name="name" value="{{.Name}}" placeholder="z. B. Hof Bergmann"></label>
+		<label class="field"><span>Adresse</span>
+			<textarea class="input" name="address" rows="2" placeholder="Straße, PLZ Ort">{{.Address}}</textarea></label>
+		<label class="field"><span>UID / Steuernummer</span>
+			<input class="input" name="tax_id" value="{{.TaxID}}" placeholder="z. B. ATU12345678"></label>
+		<label class="field"><span>Besteuerung</span>
+			<select class="select" name="tax_mode">
+				<option value="kleinunternehmer" {{if eq .TaxMode "kleinunternehmer"}}selected{{end}}>Kleinunternehmer – kein USt-Ausweis</option>
+				<option value="pauschal" {{if eq .TaxMode "pauschal"}}selected{{end}}>Pauschaliert § 22 – USt-Ausweis (Durchschnittssatz)</option>
+				<option value="regel" {{if eq .TaxMode "regel"}}selected{{end}}>Regelbesteuert – USt-Ausweis</option>
+			</select></label>
+		<label class="field"><span>USt-Satz % (bei Pauschaliert/Regelbesteuert)</span>
+			<input class="input" type="number" step="0.01" min="0" name="vat_rate" value="{{.VATRate}}"></label>
+		<label class="field"><span>Steuerhinweis auf der Rechnung</span>
+			<textarea class="input" name="tax_note" rows="3">{{.TaxNote}}</textarea></label>
+		<button class="btn btn--primary btn--block" type="submit">Speichern</button>
+	</form>
+	<p class="muted small">Standard ist AT-Pauschalierung (§ 22 UStG). Prüfe den Wortlaut mit deiner Steuerberatung, bevor du echte Rechnungen ausstellst.</p>
+	{{end}}
+</section>
+{{end}}

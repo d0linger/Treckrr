@@ -10,11 +10,12 @@ import (
 
 // neighborSummary is a neighbor with its totals for the selected billing year.
 type neighborSummary struct {
-	Neighbor models.Neighbor
-	Cost     decimal.Decimal
-	Hours    decimal.Decimal
-	Entries  int
-	Paid     bool
+	Neighbor  models.Neighbor
+	Cost      decimal.Decimal
+	Hours     decimal.Decimal
+	Entries   int
+	Paid      bool // fully settled (nothing remaining)
+	Remaining decimal.Decimal
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -36,17 +37,17 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	for _, row := range summaryRows {
 		summaries = append(summaries, neighborSummary{
 			Neighbor: models.Neighbor{ID: row.NeighborID, Name: row.Name},
-			Cost:     row.Cost, Hours: row.Hours, Entries: row.Entries, Paid: row.Paid,
+			Cost:     row.Cost, Hours: row.Hours, Entries: row.Entries,
+			Paid: row.Paid, Remaining: row.Remaining,
 		})
 		grandCost = grandCost.Add(row.Cost)
 		grandHours = grandHours.Add(row.Hours)
-		if row.Paid {
-			paidCost = paidCost.Add(row.Cost)
-		} else if row.Cost.IsPositive() {
-			// "Offen" = what neighbors still owe. Negative unpaid nets (I owe
-			// them) are excluded from both count and sum so the attention strip
-			// reports a consistent pair.
-			openCost = openCost.Add(row.Cost)
+		paidCost = paidCost.Add(row.PaidAmount) // actual money received
+		if row.Remaining.IsPositive() {
+			// "Offen" = what neighbors still owe (net minus payments). Negative
+			// remainders (I owe them) are excluded from both count and sum so the
+			// attention strip reports a consistent pair.
+			openCost = openCost.Add(row.Remaining)
 			openCount++
 		}
 	}
@@ -171,31 +172,7 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 	redirect(w, r, dashboardURL(yearID))
 }
 
-// handleNeighborPaid toggles the payment status of a neighbor within a year.
-func (s *Server) handleNeighborPaid(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
-		return
-	}
-	yearID := s.yearIDFromForm(r)
-	neighborID := formInt64(r, "neighbor_id")
-	if yearID == 0 || neighborID == 0 {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
-		return
-	}
-	paid := r.FormValue("paid") == "true"
-	if err := s.store.SetNeighborPaid(r.Context(), yearID, neighborID, paid); err != nil {
-		s.setFlash(w, r, "error", "Zahlungsstatus konnte nicht gesetzt werden.")
-	} else if paid {
-		s.audit(r, "mark_paid", "year", yearID, s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID))
-		s.setFlash(w, r, "success", "Als bezahlt markiert.")
-	} else {
-		s.audit(r, "mark_open", "year", yearID, s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID))
-		s.setFlash(w, r, "success", "Als offen markiert.")
-	}
-	redirect(w, r, dashboardURL(yearID))
-}
-
+// handleNeighborUpdate changes a neighbor's name, note, and address.
 func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -208,6 +185,7 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	name := trimmed(r, "name")
 	note := trimmed(r, "note")
+	address := trimmed(r, "address")
 	if name == "" {
 		s.setFlash(w, r, "error", "Name darf nicht leer sein.")
 		redirect(w, r, neighborReturnURL(r, id))
@@ -221,8 +199,12 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborReturnURL(r, id))
 		return
 	}
+	if s.tooLong(w, r, "Adresse", address, maxNoteLen) {
+		redirect(w, r, neighborReturnURL(r, id))
+		return
+	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
-	if err := s.store.UpdateNeighbor(r.Context(), id, name, note); err != nil {
+	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address); err != nil {
 		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")
 	} else {
 		detail := name
@@ -230,6 +212,7 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 			if d := diffFields(
 				fieldChange{"Name", before.Name, name},
 				fieldChange{"Notiz", before.Note, note},
+				fieldChange{"Adresse", before.Address, address},
 			); d != "" {
 				detail = d
 			}

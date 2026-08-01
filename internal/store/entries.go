@@ -16,7 +16,7 @@ import (
 // ListNeighbors returns all neighbors (active first, then archived).
 func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, note, archived, created_at FROM neighbors ORDER BY archived, name`)
+		`SELECT id, name, note, address, archived, created_at FROM neighbors ORDER BY archived, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +24,7 @@ func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 	var out []models.Neighbor
 	for rows.Next() {
 		var n models.Neighbor
-		if err := rows.Scan(&n.ID, &n.Name, &n.Note, &n.Archived, &n.Created); err != nil {
+		if err := rows.Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.Archived, &n.Created); err != nil {
 			return nil, err
 		}
 		out = append(out, n)
@@ -36,8 +36,8 @@ func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 func (s *Store) GetNeighbor(ctx context.Context, id int64) (*models.Neighbor, error) {
 	var n models.Neighbor
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, note, archived, created_at FROM neighbors WHERE id=$1`, id).
-		Scan(&n.ID, &n.Name, &n.Note, &n.Archived, &n.Created)
+		`SELECT id, name, note, address, archived, created_at FROM neighbors WHERE id=$1`, id).
+		Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.Archived, &n.Created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -59,9 +59,9 @@ func (s *Store) CreateNeighbor(ctx context.Context, name, note string) (int64, e
 }
 
 // UpdateNeighbor updates a neighbor.
-func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note string) error {
+func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note, address string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE neighbors SET name=$1, note=$2 WHERE id=$3`, name, note, id)
+		`UPDATE neighbors SET name=$1, note=$2, address=$3 WHERE id=$4`, name, note, address, id)
 	return err
 }
 
@@ -97,7 +97,19 @@ func (s *Store) CountEntriesForNeighbor(ctx context.Context, neighborID int64) (
 // ---- Entries -------------------------------------------------------------
 
 // CreateEntry inserts a booked work entry and links its machines.
+// ensureUnit fills the unit fields for an hour booking, so a caller that only
+// set Hours/HourlyRate still stores a consistent unit='h' row (quantity = hours,
+// unit price = hourly rate) rather than an empty unit / zero quantity.
+func ensureUnit(e *models.Entry) {
+	if e.Unit == "" {
+		e.Unit = "h"
+		e.Quantity = e.Hours
+		e.UnitPrice = e.HourlyRate
+	}
+}
+
 func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []int64) (int64, error) {
+	ensureUnit(e)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -108,11 +120,12 @@ func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 	err = tx.QueryRowContext(ctx,
 		`INSERT INTO entries
 		   (neighbor_id, billing_year_id, entry_date, task_label, gespann_id, tractor_id, load_level_id,
-		    tractor_label, load_label, machine_labels, hours, hourly_rate, cost, note)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+		    tractor_label, load_label, machine_labels, hours, hourly_rate, cost, note,
+		    unit, quantity, unit_price)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
 		e.NeighborID, e.BillingYearID, e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID),
 		nullInt(e.LoadLevelID), e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours,
-		e.HourlyRate, e.Cost, e.Note).Scan(&id)
+		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -221,16 +234,17 @@ func (s *Store) NeighborTotal(ctx context.Context, neighborID, yearID int64) (co
 	return
 }
 
-// YearPaymentTotals returns the paid and open cost totals for a billing year in
-// a single query (paid = neighbors marked paid, open = the rest). This replaces
-// a per-neighbor fan-out of NeighborTotal calls.
+// YearPaymentTotals returns the received (paid) and outstanding (open) totals for
+// a billing year in a single query: paid = the sum of recorded payments, open =
+// the sum of each neighbor's remaining balance (net − payments). Replaces a
+// per-neighbor fan-out of NeighborTotal calls.
 func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open decimal.Decimal, err error) {
-	// Per neighbor: net = work bookings + signed ledger postings. Aggregate the
-	// two sides in subqueries first so joining them can't multiply rows, then
-	// split by the paid flag.
+	// Per neighbor: net = work bookings + signed ledger postings; paid = recorded
+	// payments. Aggregate each side in scalar subqueries first so joining can't
+	// multiply rows.
 	err = s.db.QueryRowContext(ctx, `
 		WITH per_neighbor AS (
-		  SELECT byn.neighbor_id, byn.paid,
+		  SELECT
 		    COALESCE((SELECT SUM(e.cost) FROM entries e
 		               WHERE e.neighbor_id = byn.neighbor_id
 		                 AND e.billing_year_id = byn.billing_year_id
@@ -238,13 +252,14 @@ func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open
 		    + COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
 		                 WHERE l.neighbor_id = byn.neighbor_id
 		                   AND l.billing_year_id = byn.billing_year_id
-		                   AND NOT l.voided), 0) AS net
+		                   AND NOT l.voided), 0) AS net,
+		    COALESCE((SELECT SUM(p.amount) FROM payments p
+		               WHERE p.neighbor_id = byn.neighbor_id
+		                 AND p.billing_year_id = byn.billing_year_id), 0) AS paid
 		  FROM billing_year_neighbors byn
 		  WHERE byn.billing_year_id = $1
 		)
-		SELECT
-		  COALESCE(SUM(CASE WHEN paid THEN net ELSE 0 END), 0),
-		  COALESCE(SUM(CASE WHEN NOT paid THEN net ELSE 0 END), 0)
+		SELECT COALESCE(SUM(paid), 0), COALESCE(SUM(net - paid), 0)
 		FROM per_neighbor`, yearID).Scan(&paid, &open)
 	return
 }
@@ -255,10 +270,12 @@ func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open
 type YearNeighborSummary struct {
 	NeighborID int64
 	Name       string
-	Cost       decimal.Decimal
+	Cost       decimal.Decimal // net owed (bookings + signed ledger)
 	Hours      decimal.Decimal
 	Entries    int
-	Paid       bool
+	PaidAmount decimal.Decimal // sum of recorded payments
+	Remaining  decimal.Decimal // Cost − PaidAmount
+	Paid       bool            // fully settled (Remaining <= 0)
 }
 
 // YearNeighborSummaries returns one row per neighbor in the year in a single
@@ -268,7 +285,7 @@ type YearNeighborSummary struct {
 // name to match the dashboard list.
 func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]YearNeighborSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT n.id, n.name, byn.paid,
+		SELECT n.id, n.name,
 		  COALESCE((SELECT SUM(e.cost) FROM entries e
 		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id
 		               AND NOT e.voided), 0)
@@ -279,7 +296,9 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id
 		               AND NOT e.voided), 0) AS hours,
 		  (SELECT count(*) FROM entries e
-		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id) AS entries
+		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id) AS entries,
+		  COALESCE((SELECT SUM(p.amount) FROM payments p
+		             WHERE p.neighbor_id = n.id AND p.billing_year_id = byn.billing_year_id), 0) AS paid
 		FROM billing_year_neighbors byn
 		JOIN neighbors n ON n.id = byn.neighbor_id
 		WHERE byn.billing_year_id = $1
@@ -291,9 +310,11 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 	var out []YearNeighborSummary
 	for rows.Next() {
 		var r YearNeighborSummary
-		if err := rows.Scan(&r.NeighborID, &r.Name, &r.Paid, &r.Cost, &r.Hours, &r.Entries); err != nil {
+		if err := rows.Scan(&r.NeighborID, &r.Name, &r.Cost, &r.Hours, &r.Entries, &r.PaidAmount); err != nil {
 			return nil, err
 		}
+		r.Remaining = r.Cost.Sub(r.PaidAmount)
+		r.Paid = !r.Remaining.IsPositive() // fully settled when nothing remains
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -302,6 +323,7 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 // UpdateEntry replaces the editable fields (and pricing snapshot) of an entry
 // and its machine links.
 func (s *Store) UpdateEntry(ctx context.Context, e *models.Entry, machineIDs []int64) error {
+	ensureUnit(e)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -311,9 +333,11 @@ func (s *Store) UpdateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE entries SET entry_date=$1, task_label=$2, gespann_id=$3, tractor_id=$4,
 			load_level_id=$5, tractor_label=$6, load_label=$7, machine_labels=$8,
-			hours=$9, hourly_rate=$10, cost=$11, note=$12 WHERE id=$13`,
+			hours=$9, hourly_rate=$10, cost=$11, note=$12,
+			unit=$13, quantity=$14, unit_price=$15 WHERE id=$16`,
 		e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID), nullInt(e.LoadLevelID),
-		e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours, e.HourlyRate, e.Cost, e.Note, e.ID); err != nil {
+		e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours, e.HourlyRate, e.Cost, e.Note,
+		e.Unit, e.Quantity, e.UnitPrice, e.ID); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM entry_machines WHERE entry_id=$1`, e.ID); err != nil {
@@ -337,7 +361,8 @@ func (s *Store) SetEntryVoided(ctx context.Context, id int64, voided bool, reaso
 
 const entrySelect = `SELECT id, neighbor_id, billing_year_id, entry_date, task_label, gespann_id,
 	tractor_id, load_level_id, tractor_label, load_label, machine_labels,
-	hours, hourly_rate, cost, note, voided, void_reason, created_at FROM entries`
+	hours, hourly_rate, cost, note, voided, void_reason, created_at,
+	unit, quantity, unit_price FROM entries`
 
 func collectEntries(rows *sql.Rows) ([]models.Entry, error) {
 	var out []models.Entry
@@ -361,7 +386,8 @@ func scanEntry(sc scanner) (models.Entry, error) {
 	)
 	if err := sc.Scan(&e.ID, &e.NeighborID, &e.BillingYearID, &date, &e.TaskLabel, &gespann,
 		&tractor, &load, &e.TractorLabel, &e.LoadLabel, &e.MachineLabels,
-		&e.Hours, &e.HourlyRate, &e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created); err != nil {
+		&e.Hours, &e.HourlyRate, &e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created,
+		&e.Unit, &e.Quantity, &e.UnitPrice); err != nil {
 		return e, err
 	}
 	e.Date = date

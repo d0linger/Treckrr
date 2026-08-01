@@ -79,15 +79,18 @@
 			</a>
 			<div class="list__value">{{money .Cost}}</div>
 			{{if $.Completed}}
-			<form method="post" action="/years/mark-paid" class="paytoggle">
-				<input type="hidden" name="year_id" value="{{$.Year.ID}}">
-				<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
-				<input type="hidden" name="paid" value="{{if .Paid}}false{{else}}true{{end}}">
-				<button class="paychip {{if .Paid}}paychip--paid{{else}}paychip--open{{end}}" type="submit"
-					title="Klicken, um auf {{if .Paid}}offen{{else}}bezahlt{{end}} zu setzen">
-					{{if .Paid}}{{template "ic-check"}} Bezahlt{{else}}Offen{{end}}
-				</button>
-			</form>
+			{{if .Paid}}
+				<span class="paychip paychip--paid">{{template "ic-check"}} Bezahlt</span>
+				{{else}}
+				<form method="post" action="/years/mark-paid" class="paytoggle"
+					data-confirm="Restbetrag ({{money .Remaining}}) als bezahlt verbuchen?">
+					<input type="hidden" name="year_id" value="{{$.Year.ID}}">
+					<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
+					<button class="paychip paychip--open" type="submit" title="Restbetrag als bezahlt verbuchen">
+						Offen · {{money .Remaining}}
+					</button>
+				</form>
+				{{end}}
 			{{else if eq .Entries 0}}
 			<form method="post" action="/years/remove-neighbor" class="list__remove"
 				data-confirm="{{.Neighbor.Name}} aus diesem Jahr entfernen?">

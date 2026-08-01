@@ -47,10 +47,15 @@ func run() error {
 	log.Println("migrations applied")
 
 	st := store.New(pool, cfg.EncryptionSecret)
-	if err := st.EnsureAdmin(ctx, cfg.AdminUsername, cfg.AdminPassword); err != nil {
+	if err := st.EnsureAdmin(ctx, cfg.AdminUsername, cfg.AdminPassword, cfg.AdminPasswordReset); err != nil {
 		return err
 	}
 	log.Println("bootstrap complete")
+
+	// Background maintenance: purge expired sessions and stale rate-limit rows on a
+	// timer, so cleanup no longer depends on /healthz being hit — and /healthz can
+	// stay a cheap, side-effect-free probe instead of running DELETEs per request.
+	go purgeLoop(ctx, st)
 
 	srv, err := server.New(cfg, st)
 	if err != nil {
@@ -80,4 +85,30 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	return httpServer.Shutdown(shutdownCtx)
+}
+
+// purgeLoop periodically removes expired sessions and stale rate-limit rows until
+// ctx is canceled. It runs one purge shortly after boot, then on a fixed tick.
+func purgeLoop(ctx context.Context, st *store.Store) {
+	purge := func() {
+		bg, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		if err := st.PurgeExpiredSessions(bg); err != nil {
+			log.Printf("purge sessions: %v", err)
+		}
+		if err := st.PurgeStaleRateLimits(bg); err != nil {
+			log.Printf("purge rate limits: %v", err)
+		}
+	}
+	purge()
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			purge()
+		}
+	}
 }

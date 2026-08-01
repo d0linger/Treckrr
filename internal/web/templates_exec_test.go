@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 )
@@ -76,14 +77,25 @@ func TestBelegPageRenders(t *testing.T) {
 		"TotalCost": d(498.19), "TotalHours": d(3.75),
 		"Saldo": d(498.19), "LedgerSum": d(0),
 		"Completed": false, "Paid": false, "Bookings": 3,
+		"HasPayments": true, "PaidSum": d(300), "Remaining": d(198.19),
+		"Payments": []map[string]any{
+			{"PaidOn": time.Now(), "Amount": d(300), "Note": "Überweisung"},
+		},
+		"HasInvoice": true, "Rechnung": true,
+		"Invoice": map[string]any{"Number": "2026-014", "IssuedOn": time.Now()},
+		"Company": map[string]any{"Name": "Hof Bergmann", "Address": "Feldweg 3\n4780", "TaxID": "ATU123",
+			"TaxNote": "§ 22 UStG", "TaxMode": "regel", "VATRate": d(13)},
+		"InvShowVAT": true, "InvRate": d(13), "InvNet": d(647.60), "InvUSt": d(84.19),
+		"InvBrutto": d(731.79), "InvLedger": d(-50), "InvPaidUSt": d(34.51), "InvRest": d(481.79),
 		"Days": []map[string]any{
 			{"Date": "09.05.", "Entries": []map[string]any{
-				{"TaskLabel": "Mähen", "Hours": d(2.25), "Cost": d(251.19), "Voided": false},
-				{"TaskLabel": "Schwadern groß", "Hours": d(1.5), "Cost": d(78), "Voided": false},
+				{"TaskLabel": "Mähen", "Unit": "h", "Hours": d(2.25), "HourlyRate": d(40), "Cost": d(251.19), "Voided": false},
+				{"TaskLabel": "Schwadern groß", "Unit": "h", "Hours": d(1.5), "HourlyRate": d(52), "Cost": d(78), "Voided": false},
+				{"TaskLabel": "Ballenpressen", "Unit": "Ballen", "Quantity": d(40), "UnitPrice": d(3.2), "Hours": d(0), "Cost": d(128), "Voided": false},
 			}},
 			{"Date": "10.05.", "Entries": []map[string]any{
-				{"TaskLabel": "Schwadern groß", "Hours": d(1.5), "Cost": d(169), "Voided": false},
-				{"TaskLabel": "", "Hours": d(0), "Cost": d(0), "Voided": true},
+				{"TaskLabel": "Schwadern groß", "Unit": "h", "Hours": d(1.5), "HourlyRate": d(52), "Cost": d(169), "Voided": false},
+				{"TaskLabel": "", "Unit": "h", "Hours": d(0), "Cost": d(0), "Voided": true},
 			}},
 		},
 		"CanBundle": true,
@@ -124,5 +136,28 @@ func TestComparePageRendersWithDiffs(t *testing.T) {
 			{"ID": int64(2), "Year": 2023, "Name": "Grundlage 2023"},
 		},
 		"GespannDiffs": rows, "MachineDiffs": rows, "LoadDiffs": rows,
+	})
+}
+
+func TestCompanyPageRenders(t *testing.T) {
+	d := decimal.NewFromFloat
+	execPage(t, "company", map[string]any{
+		"Title": "Betriebsdaten",
+		"Company": map[string]any{
+			"Name": "Hof Bergmann", "Address": "Feldweg 3\n4780 Schärding", "TaxID": "ATU12345678",
+			"TaxNote": "§ 22 UStG", "TaxMode": "pauschal", "VATRate": d(0),
+		},
+	})
+}
+
+func TestBackupPageRenders(t *testing.T) {
+	// Configured "ok" state exercises the date/IsZero/size/offhost branch.
+	execPage(t, "backup", map[string]any{
+		"Title": "Backup",
+		"Backup": map[string]any{
+			"Configured": true, "State": "ok",
+			"LastBackup": time.Now().Add(-3 * time.Hour), "AgeHours": 3,
+			"SizeLabel": "4.2 MB", "Offhost": "ok",
+		},
 	})
 }

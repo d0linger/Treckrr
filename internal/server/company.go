@@ -1,0 +1,56 @@
+package server
+
+import (
+	"log"
+	"net/http"
+
+	"treckrr/internal/models"
+)
+
+// handleCompany renders the Betriebsdaten (sender/invoice settings) form.
+func (s *Server) handleCompany(w http.ResponseWriter, r *http.Request) {
+	c, err := s.store.GetCompany(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data := s.newPage(w, r, "Betriebsdaten", "company")
+	data["Company"] = c
+	s.render(w, r, "company", data)
+}
+
+// handleCompanySave persists the Betriebsdaten.
+func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	c := models.Company{
+		Name:    trimmed(r, "name"),
+		Address: trimmed(r, "address"),
+		TaxID:   trimmed(r, "tax_id"),
+		TaxNote: trimmed(r, "tax_note"),
+		TaxMode: r.FormValue("tax_mode"),
+		VATRate: formDecimal(r, "vat_rate"),
+	}
+	switch c.TaxMode {
+	case "kleinunternehmer", "pauschal", "regel":
+	default:
+		c.TaxMode = "pauschal"
+	}
+	if s.tooLong(w, r, "Name", c.Name, maxNameLen) ||
+		s.tooLong(w, r, "Adresse", c.Address, maxNoteLen) ||
+		s.tooLong(w, r, "UID/Steuernummer", c.TaxID, maxNameLen) ||
+		s.tooLong(w, r, "Steuerhinweis", c.TaxNote, maxNoteLen) {
+		redirect(w, r, "/admin/company")
+		return
+	}
+	if err := s.store.UpdateCompany(r.Context(), c); err != nil {
+		log.Printf("company update failed: %v", sanitizeLog(err.Error()))
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+	} else {
+		s.audit(r, "update", "company", 1, "Betriebsdaten aktualisiert")
+		s.setFlash(w, r, "success", "Betriebsdaten gespeichert.")
+	}
+	redirect(w, r, "/admin/company")
+}

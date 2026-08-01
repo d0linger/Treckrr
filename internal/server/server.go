@@ -4,7 +4,6 @@ package server
 import (
 	"context"
 	"html/template"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -80,6 +79,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /neighbors/{id}", s.auth(s.handleNeighborDetail))
 	mux.Handle("GET /neighbors/{id}/overview", s.auth(s.handleNeighborOverview))
 	mux.Handle("GET /neighbors/{id}/beleg", s.auth(s.handleNeighborBeleg))
+	mux.Handle("POST /neighbors/{id}/invoice", s.auth(s.handleInvoiceIssue))
 	mux.Handle("GET /neighbors", s.auth(s.handleNeighborsManage))
 	mux.Handle("POST /neighbors/create", s.auth(s.handleNeighborManageCreate))
 	mux.Handle("POST /neighbors/{id}/update", s.auth(s.handleNeighborUpdate))
@@ -88,7 +88,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /years/add-neighbor", s.auth(s.handleYearAddNeighbor))
 	mux.Handle("POST /years/remove-neighbor", s.auth(s.handleYearRemoveNeighbor))
 	mux.Handle("POST /years/carry-over", s.auth(s.handleCarryOverNeighbors))
-	mux.Handle("POST /years/mark-paid", s.auth(s.handleNeighborPaid))
+	mux.Handle("POST /years/mark-paid", s.auth(s.handleNeighborSettle))
 
 	mux.Handle("POST /entries", s.auth(s.handleEntryCreate))
 	mux.Handle("POST /entries/quick", s.auth(s.handleQuickEntries))
@@ -97,6 +97,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /entries/{id}/void", s.auth(s.handleEntryVoid))
 	mux.Handle("POST /entries/{id}/delete", s.auth(s.handleEntryDelete))
 	mux.Handle("POST /neighbors/{id}/ledger", s.auth(s.handleLedgerAdd))
+	mux.Handle("POST /neighbors/{id}/payments", s.auth(s.handlePaymentAdd))
+	mux.Handle("POST /neighbors/{id}/carry-forward", s.auth(s.handleNeighborCarryForward))
+	mux.Handle("POST /payments/{id}/delete", s.auth(s.handlePaymentDelete))
 	mux.Handle("GET /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcPreview))
 	mux.Handle("POST /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcApply))
 	mux.Handle("GET /years/{id}/recalc", s.auth(s.handleYearRecalcPreview))
@@ -156,6 +159,9 @@ func (s *Server) Handler() http.Handler {
 	// Admin only.
 	mux.Handle("GET /admin/audit", s.admin(s.handleAudit))
 	mux.Handle("GET /admin/audit/export", s.admin(s.handleAuditExport))
+	mux.Handle("GET /admin/backup", s.admin(s.handleBackupStatus))
+	mux.Handle("GET /admin/company", s.auth(s.handleCompany))
+	mux.Handle("POST /admin/company", s.auth(s.handleCompanySave))
 	mux.Handle("GET /admin/users", s.admin(s.handleUsers))
 	mux.Handle("POST /admin/users", s.admin(s.handleUserCreate))
 	mux.Handle("POST /admin/users/{id}/password", s.admin(s.handleUserPassword))
@@ -277,11 +283,12 @@ func userFromCtx(r *http.Request) *models.User {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.PurgeExpiredSessions(r.Context()); err != nil {
-		log.Printf("purge sessions: %v", sanitizeLog(err.Error()))
-	}
-	if err := s.store.PurgeStaleRateLimits(r.Context()); err != nil {
-		log.Printf("purge rate limits: %v", sanitizeLog(err.Error()))
+	// Cheap liveness + DB-reachability probe, kept side-effect free. Maintenance
+	// purges run on a timer in the main run loop, so a flood of /healthz can no
+	// longer saturate the connection pool with DELETEs.
+	if err := s.store.Ping(r.Context()); err != nil {
+		http.Error(w, "db unreachable", http.StatusServiceUnavailable)
+		return
 	}
 	w.Header().Set("Content-Type", "text/plain")
 	_, _ = w.Write([]byte("ok"))
