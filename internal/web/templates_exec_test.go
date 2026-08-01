@@ -72,7 +72,7 @@ func TestBelegPageRenders(t *testing.T) {
 	// and the aggregated "Bündeln" view enabled — the paths the redesign added.
 	execPage(t, "beleg", map[string]any{
 		"Title":     "Beleg",
-		"Neighbor":  map[string]any{"ID": int64(2), "Name": "Florian"},
+		"Neighbor":  map[string]any{"ID": int64(2), "Name": "Florian", "Address": "Dorf 1", "TaxID": "ATU55555555"},
 		"Year":      map[string]any{"ID": int64(1), "Year": 2026, "Base": map[string]any{"Name": "Preisliste", "Year": 2026}},
 		"TotalCost": d(498.19), "TotalHours": d(3.75),
 		"Saldo": d(498.19), "LedgerSum": d(0),
@@ -87,6 +87,7 @@ func TestBelegPageRenders(t *testing.T) {
 			"TaxNote": "§ 22 UStG", "TaxMode": "regel", "VATRate": d(13)},
 		"InvShowVAT": true, "InvRate": d(13), "InvNet": d(647.60), "InvUSt": d(84.19),
 		"InvBrutto": d(731.79), "InvLedger": d(-50), "InvPaidUSt": d(34.51), "InvRest": d(481.79),
+		"InvNeedRecipientVATID": true,
 		"Days": []map[string]any{
 			{"Date": "09.05.", "Entries": []map[string]any{
 				{"TaskLabel": "Mähen", "Unit": "h", "Hours": d(2.25), "HourlyRate": d(40), "Cost": d(251.19), "Voided": false},

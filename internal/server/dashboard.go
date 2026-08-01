@@ -172,7 +172,7 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 	redirect(w, r, dashboardURL(yearID))
 }
 
-// handleNeighborUpdate changes a neighbor's name, note, and address.
+// handleNeighborUpdate changes a neighbor's name, note, address, and tax id.
 func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -186,6 +186,7 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	name := trimmed(r, "name")
 	note := trimmed(r, "note")
 	address := trimmed(r, "address")
+	taxID := trimmed(r, "tax_id")
 	if name == "" {
 		s.setFlash(w, r, "error", "Name darf nicht leer sein.")
 		redirect(w, r, neighborReturnURL(r, id))
@@ -203,8 +204,12 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborReturnURL(r, id))
 		return
 	}
+	if s.tooLong(w, r, "UID/Steuernummer", taxID, maxNameLen) {
+		redirect(w, r, neighborReturnURL(r, id))
+		return
+	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
-	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address); err != nil {
+	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID); err != nil {
 		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")
 	} else {
 		detail := name
@@ -213,6 +218,7 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 				fieldChange{"Name", before.Name, name},
 				fieldChange{"Notiz", before.Note, note},
 				fieldChange{"Adresse", before.Address, address},
+				fieldChange{"UID/Steuernr.", before.TaxID, taxID},
 			); d != "" {
 				detail = d
 			}

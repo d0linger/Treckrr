@@ -27,6 +27,8 @@
 						<input class="input" name="note" value="{{.Neighbor.Note}}"></label>
 					<label class="field"><span>Adresse (für Rechnung, optional)</span>
 						<textarea class="input" name="address" rows="2" placeholder="Straße, PLZ Ort">{{.Neighbor.Address}}</textarea></label>
+					<label class="field"><span>UID / Steuernummer (für Rechnung &gt; 10.000 €, optional)</span>
+						<input class="input" name="tax_id" value="{{.Neighbor.TaxID}}" placeholder="z. B. ATU12345678"></label>
 					<div class="btnrow"><button class="btn btn--primary btn--sm" type="submit">Speichern</button></div>
 				</form>
 				<div class="btnrow">
