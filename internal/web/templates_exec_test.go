@@ -178,5 +178,9 @@ func TestBackupPageRenders(t *testing.T) {
 			"Encrypted": true, "SchemaVersion": "0021_neighbor_tax_id.sql",
 			"RestoreTested": time.Now().Add(-3 * time.Hour),
 		},
+		"Settings":   map[string]any{"VolumeIntervalHours": 24, "VolumeKeep": 7, "S3IntervalHours": 24, "S3Keep": 0},
+		"NextVolume": "02.08.2026 03:00",
+		"NextS3":     "02.08.2026 03:00",
+		"Files":      []map[string]any{{"Name": "treckrr-2026-08-01-030000.dump.enc", "Size": "57 KB", "ModTime": time.Now()}},
 	})
 }

@@ -17,6 +17,7 @@ import (
 	"treckrr/internal/backup"
 	"treckrr/internal/config"
 	"treckrr/internal/db"
+	"treckrr/internal/models"
 	"treckrr/internal/server"
 	"treckrr/internal/store"
 )
@@ -37,8 +38,9 @@ func main() {
 	}
 }
 
-// newBackup builds the backup service from config (nil-safe pool for CLI use).
-func newBackup(cfg *config.Config, pool *sql.DB) *backup.Service {
+// newBackup builds the backup service. The schedule is read live from the DB
+// (GUI-editable) via SettingsFn, falling back to the BACKUP_* env.
+func newBackup(cfg *config.Config, pool *sql.DB, st *store.Store) *backup.Service {
 	return backup.New(backup.Options{
 		DatabaseURL: cfg.DatabaseURL,
 		EncKey:      cfg.BackupEncryptionKey,
@@ -53,6 +55,17 @@ func newBackup(cfg *config.Config, pool *sql.DB) *backup.Service {
 			SecretKey: cfg.S3SecretKey,
 			Prefix:    cfg.S3Prefix,
 			UseSSL:    cfg.S3UseSSL,
+		},
+		SettingsFn: func(ctx context.Context) backup.Settings {
+			s, err := st.GetBackupSettings(ctx)
+			if err != nil {
+				return backup.Settings{
+					VolumeIntervalHours: cfg.BackupIntervalHours,
+					VolumeKeep:          cfg.BackupKeep,
+					S3IntervalHours:     cfg.BackupIntervalHours,
+				}
+			}
+			return backup.Settings(s)
 		},
 	}, pool)
 }
@@ -89,10 +102,17 @@ func run() error {
 	go purgeLoop(ctx, st)
 
 	// Encrypted backups: scheduled writer (in-app) + on-demand download handler.
-	bk := newBackup(cfg, pool)
+	// Seed the schedule from env on first boot; thereafter it is GUI-editable.
+	if err := st.EnsureBackupSettings(ctx, models.BackupSettings{
+		VolumeIntervalHours: cfg.BackupIntervalHours,
+		VolumeKeep:          cfg.BackupKeep,
+		S3IntervalHours:     cfg.BackupIntervalHours,
+	}); err != nil {
+		return err
+	}
+	bk := newBackup(cfg, pool, st)
 	if bk.Enabled() {
-		log.Printf("encrypted backups enabled (every %dh, keep %d, dir %s)",
-			cfg.BackupIntervalHours, cfg.BackupKeep, cfg.BackupDir)
+		log.Printf("encrypted backups enabled (schedule via GUI, dir %s)", cfg.BackupDir)
 		go bk.Loop(ctx, log.Printf)
 	} else {
 		log.Println("backups disabled (set BACKUP_ENCRYPTION_KEY to enable)")
@@ -178,7 +198,7 @@ func openBackup() (*config.Config, *sql.DB, *backup.Service, error) {
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	bk := newBackup(cfg, pool)
+	bk := newBackup(cfg, pool, store.New(pool, cfg.EncryptionSecret))
 	if !bk.Enabled() {
 		pool.Close()
 		return nil, nil, nil, fmt.Errorf("backups are not configured (set BACKUP_ENCRYPTION_KEY)")

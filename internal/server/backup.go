@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"treckrr/internal/backup"
+	"treckrr/internal/models"
 )
 
 // backupMaxAge is how old the last successful backup may be before the panel
@@ -140,7 +141,78 @@ func (s *Server) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
 			data["S3Error"] = sanitizeLog(err.Error())
 		}
 	}
+	if st.Enabled {
+		if bs, err := s.store.GetBackupSettings(r.Context()); err == nil {
+			data["Settings"] = bs
+		}
+		nv, ns := s.backup.NextRuns(r.Context())
+		data["NextVolume"] = fmtNext(nv)
+		data["NextS3"] = fmtNext(ns)
+	}
 	s.render(w, r, "backup", data)
+}
+
+// handleBackupRunScheduled runs a volume backup now (the panel's manual trigger).
+func (s *Server) handleBackupRunScheduled(w http.ResponseWriter, r *http.Request) {
+	if s.backup == nil || !s.backup.Enabled() {
+		s.setFlash(w, r, "error", "Backups sind nicht konfiguriert.")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+	if err := s.backup.ManualVolume(ctx); err != nil {
+		log.Printf("manual backup failed: %v", sanitizeLog(err.Error()))
+		s.setFlash(w, r, "error", "Backup fehlgeschlagen.")
+	} else {
+		s.audit(r, "backup_run", "backup", 0, "Volume-Backup manuell erstellt")
+		s.setFlash(w, r, "success", "Volume-Backup erstellt.")
+	}
+	redirect(w, r, "/admin/backup")
+}
+
+// handleBackupSettings persists the GUI-edited backup schedule.
+func (s *Server) handleBackupSettings(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	bs := models.BackupSettings{
+		VolumeIntervalHours: clampAtoi(r.FormValue("volume_interval"), 24),
+		VolumeKeep:          clampAtoi(r.FormValue("volume_keep"), 7),
+		S3IntervalHours:     clampAtoi(r.FormValue("s3_interval"), 24),
+		S3Keep:              clampAtoi(r.FormValue("s3_keep"), 0),
+	}
+	if err := s.store.UpdateBackupSettings(r.Context(), bs); err != nil {
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+	} else {
+		s.audit(r, "backup_settings", "backup", 0,
+			fmt.Sprintf("Volume %dh/behalte %d · S3 %dh/behalte %d",
+				bs.VolumeIntervalHours, bs.VolumeKeep, bs.S3IntervalHours, bs.S3Keep))
+		s.setFlash(w, r, "success", "Backup-Zeitplan gespeichert.")
+	}
+	redirect(w, r, "/admin/backup")
+}
+
+// fmtNext renders a next-run time for the panel ("—" when unknown/disabled).
+func fmtNext(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.Format("02.01.2006 15:04")
+}
+
+// clampAtoi parses a non-negative int form value, falling back to def and
+// clamping to a sane ceiling.
+func clampAtoi(v string, def int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 {
+		return def
+	}
+	if n > 24*365 {
+		n = 24 * 365
+	}
+	return n
 }
 
 func toFileViews(files []backup.BackupFile) []backupFileView {

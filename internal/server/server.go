@@ -163,6 +163,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /admin/audit/export", s.admin(s.handleAuditExport))
 	mux.Handle("GET /admin/backup", s.admin(s.handleBackupStatus))
 	mux.Handle("POST /admin/backup/run", s.admin(s.handleBackupRun))
+	mux.Handle("POST /admin/backup/run-scheduled", s.admin(s.handleBackupRunScheduled))
+	mux.Handle("POST /admin/backup/settings", s.admin(s.handleBackupSettings))
 	mux.Handle("GET /admin/backup/file/{name}", s.admin(s.handleBackupFile))
 	mux.Handle("POST /admin/backup/validate", s.admin(s.handleBackupValidate))
 	mux.Handle("POST /admin/backup/restore", s.admin(s.handleBackupRestore))

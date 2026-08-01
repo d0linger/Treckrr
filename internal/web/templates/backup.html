@@ -10,15 +10,14 @@
 		</div>
 		{{if .Configured}}
 		<dl class="bkp__meta">
-			<div><dt>Letztes geplantes Backup</dt><dd>{{if .LastBackup.IsZero}}—{{else}}{{date .LastBackup}} · vor {{.AgeHours}} h{{end}}</dd></div>
+			<div><dt>Letztes Volume-Backup</dt><dd>{{if .LastBackup.IsZero}}—{{else}}{{date .LastBackup}} · vor {{.AgeHours}} h{{end}}</dd></div>
 			<div><dt>Größe</dt><dd>{{.SizeLabel}}</dd></div>
 			<div><dt>Restore getestet</dt><dd>{{if .RestoreTested.IsZero}}<span class="bkp__warn">nie</span>{{else}}{{date .RestoreTested}}{{end}}</dd></div>
 			<div><dt>Schema-Stand</dt><dd>{{if .SchemaVersion}}{{.SchemaVersion}}{{else}}—{{end}}</dd></div>
 			{{if $.S3Enabled}}<div><dt>S3-Kopie</dt><dd>{{if .S3}}{{.S3}}{{else}}—{{end}}</dd></div>{{end}}
-			<div><dt>Off-Host-Kopie</dt><dd>{{.Offhost}}</dd></div>
 		</dl>
 		{{else}}
-		<p class="bkp__hint">Noch kein geplantes Backup gelaufen. Der App-Ticker schreibt verschlüsselte Dumps nach <code>BACKUP_DIR</code> (Zeitplan über <code>BACKUP_INTERVAL_HOURS</code>).</p>
+		<p class="bkp__hint">Noch kein Volume-Backup gelaufen. Zeitplan unten einstellen oder „Jetzt sichern".</p>
 		{{end}}
 	</div>
 
@@ -28,78 +27,82 @@
 	{{end}}
 
 	{{if .Backup.Enabled}}
-	<!-- Zielorte -->
+	<!-- Zeitplan (GUI) -->
+	{{with .Settings}}
 	<div class="card">
-		<div class="bkp__sec">Backup erstellen — Zielorte</div>
-		<div class="bkp__do">
-			<div>
-				<strong>Browser-Download</strong>
-				<p class="bkp__note" style="margin:.25rem 0 0">Verschlüsselten Dump (<code>.dump.enc</code>) sofort erzeugen und herunterladen — enthält alle Personen- &amp; Abrechnungsdaten, sicher ablegen.</p>
+		<div class="bkp__sec">Zeitplan</div>
+		<form method="post" action="/admin/backup/settings">
+			<div class="bkp__sched">
+				<div class="bkp__sched-col">
+					<div class="bkp__sched-h">Volume <span class="bkp__muted">(neben der DB)</span></div>
+					<label class="field field--row"><span>Intervall (Std., 0 = aus)</span>
+						<input class="input input--num" type="number" min="0" name="volume_interval" value="{{.VolumeIntervalHours}}"></label>
+					<label class="field field--row"><span>Behalten (Anzahl)</span>
+						<input class="input input--num" type="number" min="0" name="volume_keep" value="{{.VolumeKeep}}"></label>
+					<div class="bkp__next">nächstes: <strong>{{$.NextVolume}}</strong></div>
+				</div>
+				<div class="bkp__sched-col">
+					<div class="bkp__sched-h">S3 {{if not $.S3Enabled}}<span class="bkp__muted">(S3_* nicht gesetzt)</span>{{end}}</div>
+					<label class="field field--row"><span>Intervall (Std., 0 = aus)</span>
+						<input class="input input--num" type="number" min="0" name="s3_interval" value="{{.S3IntervalHours}}"></label>
+					<label class="field field--row"><span>Behalten (0 = alle)</span>
+						<input class="input input--num" type="number" min="0" name="s3_keep" value="{{.S3Keep}}"></label>
+					<div class="bkp__next">nächstes: <strong>{{$.NextS3}}</strong></div>
+				</div>
 			</div>
-			<form method="post" action="/admin/backup/run">
-				<button class="btn btn--primary" type="submit">Backup jetzt</button>
-			</form>
+			<div class="btnrow" style="margin-top:.6rem">
+				<button class="btn btn--primary" type="submit">Zeitplan speichern</button>
+				<button class="btn" type="submit" formaction="/admin/backup/run-scheduled">Jetzt sichern (Volume)</button>
+			</div>
+		</form>
+	</div>
+	{{end}}
+
+	<!-- On-demand Browser-Download -->
+	<div class="card bkp__do">
+		<div>
+			<strong>Sofort herunterladen</strong>
+			<p class="bkp__note" style="margin:.25rem 0 0">Verschlüsselten Dump (<code>.dump.enc</code>) jetzt erzeugen und im Browser speichern — enthält alle Personen- &amp; Abrechnungsdaten.</p>
 		</div>
-		<dl class="bkp__meta">
-			<div><dt>Volume (geplant)</dt><dd>aktiv · <code>BACKUP_DIR</code></dd></div>
-			<div><dt>S3 / Backblaze</dt><dd>{{if .S3Enabled}}aktiv · <code>S3_BUCKET</code>{{else}}optional · <code>S3_*</code> setzen{{end}}</dd></div>
-		</dl>
+		<form method="post" action="/admin/backup/run">
+			<button class="btn btn--primary" type="submit">Backup jetzt ↓</button>
+		</form>
 	</div>
 
-	<!-- Geplante Backups: Liste -->
+	<!-- Geplante Backups (Volume) -->
 	{{if .Files}}
 	<div class="card">
-		<div class="bkp__sec">Geplante Backups</div>
+		<div class="bkp__sec">Volume-Backups · <code>BACKUP_DIR</code></div>
 		<ul class="bkp__files">
 			{{range .Files}}
 			<li>
 				<span class="bkp__fn">{{.Name}}</span>
 				<span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span>
-				<a class="link" href="/admin/backup/file/{{.Name}}">herunterladen ↓</a>
+				<a class="link" href="/admin/backup/file/{{.Name}}">↓</a>
 			</li>
 			{{end}}
 		</ul>
-		<p class="bkp__note" style="margin:.5rem .2rem 0">Liegen im Volume neben der DB — per S3 (unten) oder Off-box-Sync auf eine zweite Platte/NAS kopieren.</p>
 	</div>
 	{{end}}
 
-	<!-- S3-Bucket-Explorer -->
+	<!-- S3-Bucket-Explorer (kompakt) -->
 	{{if .S3Enabled}}
-	<div class="card">
-		<div class="bkp__do">
-			<div>
-				<div class="bkp__sec" style="margin:0">S3-Kopie · <code>{{.S3Bucket}}</code></div>
-				<p class="bkp__note" style="margin:.25rem 0 0">Off-box-Ziel (3-2-1). Zugangsdaten liegen bewusst in der Deployment-Konfig (<code>S3_*</code>), <strong>nicht</strong> in der DB — sonst gäbe ein DB-Leck auch die Backup-Kopien preis.</p>
-			</div>
-			<form method="post" action="/admin/backup/s3/test">
-				<button class="btn" type="submit">Verbindung testen</button>
-			</form>
+	<div class="card bkp__s3">
+		<div class="bkp__s3-head">
+			<div class="bkp__sec" style="margin:0">S3 · <code>{{.S3Bucket}}</code></div>
+			<form method="post" action="/admin/backup/s3/test"><button class="btn btn--sm" type="submit">Verbindung testen</button></form>
 		</div>
-		{{if .S3Error}}<p class="bkp__note" style="color:var(--owe);margin:.5rem .2rem 0">Bucket nicht lesbar: {{.S3Error}}</p>{{end}}
+		{{if .S3Error}}<p class="bkp__note bkp__warn" style="margin:.4rem 0 0">Bucket nicht lesbar: {{.S3Error}}</p>{{end}}
 		{{if .S3Files}}
-		<ul class="bkp__files">
+		<ul class="bkp__files bkp__files--compact">
 			{{range .S3Files}}
-			<li>
-				<span class="bkp__fn">{{.Name}}</span>
-				<span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span>
-				<a class="link" href="/admin/backup/s3/file/{{.Name}}">herunterladen ↓</a>
-			</li>
+			<li><span class="bkp__fn">{{.Name}}</span><span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span><a class="link" href="/admin/backup/s3/file/{{.Name}}">↓</a></li>
 			{{end}}
 		</ul>
-		{{else if not .S3Error}}
-		<p class="bkp__note" style="margin:.5rem .2rem 0">Noch keine Objekte im Bucket.</p>
-		{{end}}
+		{{else if not .S3Error}}<p class="bkp__note" style="margin:.4rem 0 0">Noch keine Objekte im Bucket.</p>{{end}}
+		<p class="bkp__note" style="margin:.4rem 0 0">Zugangsdaten in der Deployment-Konfig (<code>S3_*</code>), bewusst nicht in der DB.</p>
 	</div>
 	{{end}}
-
-	<!-- Schlüssel -->
-	<div class="card bkp__do">
-		<div>
-			<strong>Backup-Schlüssel</strong>
-			<p class="bkp__note" style="margin:.25rem 0 0">AES-256-GCM, definiert als <code>BACKUP_ENCRYPTION_KEY</code> in der Deployment-Konfiguration — bewusst <em>nicht</em> in der DB (er schützt genau diese DB). Beim Restore unten <strong>erneut eingeben</strong>.</p>
-		</div>
-		<span class="bkp__badge">● gesetzt</span>
-	</div>
 
 	<!-- Wiederherstellen (GUI) -->
 	<div class="card bkp--restore">
@@ -109,11 +112,9 @@
 				<input class="input" type="file" name="file" accept=".enc" required></label>
 			<label class="field"><span>2 · Backup-Schlüssel — bestätigt, dass er zur Datei passt</span>
 				<input class="input" type="password" name="key" autocomplete="off" placeholder="BACKUP_ENCRYPTION_KEY" required></label>
-			<div class="btnrow">
-				<button class="btn" type="submit">Validieren (Vorschau)</button>
-			</div>
+			<div class="btnrow"><button class="btn" type="submit">Validieren (Vorschau)</button></div>
 		</form>
-		<p class="bkp__note" style="margin:.6rem .2rem">„Validieren" entschlüsselt in-memory und prüft das Archiv — <strong>ohne die DB anzufassen</strong>. Ergebnis erscheint als Meldung oben.</p>
+		<p class="bkp__note" style="margin:.6rem .2rem">„Validieren" entschlüsselt in-memory und prüft das Archiv — <strong>ohne die DB anzufassen</strong>.</p>
 
 		<div class="bkp__danger">
 			<form method="post" action="/admin/backup/restore" enctype="multipart/form-data" class="form"
@@ -124,15 +125,11 @@
 					<input class="input" type="password" name="key" autocomplete="off" required></label>
 				<label class="field"><span>Zum Ausführen <code>RESTORE</code> eintippen</span>
 					<input class="input" type="text" name="confirm" autocomplete="off" placeholder="RESTORE" required></label>
-				<div class="btnrow">
-					<button class="btn btn--danger" type="submit">Wiederherstellen — überschreibt die Live-DB</button>
-				</div>
+				<div class="btnrow"><button class="btn btn--danger" type="submit">Wiederherstellen — überschreibt die Live-DB</button></div>
 			</form>
-			<p class="bkp__note" style="margin:.5rem .2rem 0"><strong>Zerstörerisch:</strong> ersetzt alle aktuellen Daten. Nur nach Validierung &amp; Tipp-Bestätigung, admin-only, im Audit protokolliert. Alternativ als Ops-Kommando: <code>docker compose run --rm app restore &lt;datei.dump.enc&gt;</code>.</p>
+			<p class="bkp__note" style="margin:.5rem .2rem 0"><strong>Zerstörerisch:</strong> ersetzt alle aktuellen Daten. Nur nach Validierung &amp; Tipp-Bestätigung, admin-only, auditiert. Alternativ: <code>docker compose run --rm app restore &lt;datei.dump.enc&gt;</code>.</p>
 		</div>
 	</div>
-
-	<p class="bkp__note">„Veraltet" = letztes geplantes Backup älter als 26&nbsp;Stunden. Jedes geschriebene Backup wird automatisch auf Wiederherstellbarkeit geprüft (Entschlüsselung + Archiv-Validierung) → „Restore getestet".</p>
 	{{end}}
 </section>
 {{end}}

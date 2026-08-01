@@ -36,9 +36,19 @@ type Status struct {
 	SizeBytes     int64     `json:"size_bytes"`
 	OffhostOK     *bool     `json:"offhost_ok,omitempty"`
 	S3OK          *bool     `json:"s3_ok,omitempty"`
+	LastS3        time.Time `json:"last_s3,omitempty"`
 	Encrypted     bool      `json:"encrypted"`
 	SchemaVersion string    `json:"schema_version,omitempty"`
 	RestoreTested time.Time `json:"restore_tested,omitempty"`
+}
+
+// Settings is the runtime backup schedule, editable in the GUI. Interval 0
+// disables that timer.
+type Settings struct {
+	VolumeIntervalHours int
+	VolumeKeep          int
+	S3IntervalHours     int
+	S3Keep              int
 }
 
 // S3Options configures an optional S3-compatible off-box destination.
@@ -62,6 +72,10 @@ type Options struct {
 	Keep        int
 	Interval    time.Duration
 	S3          S3Options
+	// SettingsFn returns the current GUI-editable schedule. When nil the service
+	// falls back to Interval/Keep. Called each scheduler tick so GUI edits apply
+	// without a restart.
+	SettingsFn func(context.Context) Settings
 }
 
 // BackupFile describes one stored encrypted dump for the admin panel list.
@@ -197,15 +211,56 @@ func (s *Service) CreateEncrypted(ctx context.Context) (data []byte, filename st
 	return enc, Filename(time.Now()), nil
 }
 
-// RunScheduled writes one encrypted dump to the backup dir, prunes old ones,
-// verifies the fresh dump is restorable, and updates status.json.
+// currentSettings returns the live GUI schedule, or the Options fallback.
+func (s *Service) currentSettings(ctx context.Context) Settings {
+	if s.opt.SettingsFn != nil {
+		return s.opt.SettingsFn(ctx)
+	}
+	h := int(s.opt.Interval / time.Hour)
+	return Settings{VolumeIntervalHours: h, VolumeKeep: s.opt.Keep, S3IntervalHours: h}
+}
+
+// readStatus loads status.json (best-effort) so a run can update its own fields
+// without clobbering the other destination's timestamps.
+func (s *Service) readStatus() Status {
+	var st Status
+	if s.opt.StatusFile == "" {
+		return st
+	}
+	b, err := os.ReadFile(s.opt.StatusFile) //nosec G304 -- operator-configured status file
+	if err != nil {
+		return st
+	}
+	_ = json.Unmarshal(b, &st)
+	return st
+}
+
+// RunScheduled makes a volume backup and (if configured) mirrors it to S3 — the
+// CLI `treckrr backup`. The scheduler uses runVolume/runS3Mirror independently.
 func (s *Service) RunScheduled(ctx context.Context) error {
 	if !s.Enabled() {
 		return ErrDisabled
 	}
+	set := s.currentSettings(ctx)
+	if err := s.runVolume(ctx, set.VolumeKeep); err != nil {
+		return err
+	}
+	if s.S3Enabled() {
+		_ = s.runS3Mirror(ctx, set.S3Keep)
+	}
+	return nil
+}
+
+// runVolume writes one encrypted dump to the volume, prunes to keep, verifies it
+// restores, and updates status — without touching S3.
+func (s *Service) runVolume(ctx context.Context, keep int) error {
+	st := s.readStatus()
+	st.Encrypted = true
+	st.SchemaVersion = s.SchemaVersion(ctx)
 	enc, name, err := s.CreateEncrypted(ctx)
 	if err != nil {
-		s.writeStatus(Status{OK: false, Encrypted: true, SchemaVersion: s.SchemaVersion(ctx)})
+		st.OK = false
+		s.writeStatus(st)
 		return err
 	}
 	if err := os.MkdirAll(s.opt.Dir, 0o750); err != nil {
@@ -214,22 +269,12 @@ func (s *Service) RunScheduled(ctx context.Context) error {
 	if err := writeFileAtomic(filepath.Join(s.opt.Dir, name), enc); err != nil {
 		return err
 	}
-	s.prune()
-	st := Status{
-		LastBackup:    time.Now(),
-		OK:            true,
-		SizeBytes:     int64(len(enc)),
-		Encrypted:     true,
-		SchemaVersion: s.SchemaVersion(ctx),
-	}
-	// Off-box copy to S3 (3-2-1). A failure is recorded but doesn't fail the
-	// backup — the local encrypted dump already exists.
-	if s.S3Enabled() {
-		ok := s.uploadS3(ctx, name, enc) == nil
-		st.S3OK = &ok
-	}
-	// A backup you have never restored is not a backup: confirm the fresh dump
-	// decrypts and is a well-formed archive before recording success.
+	s.prune(keep)
+	st.LastBackup = time.Now()
+	st.OK = true
+	st.SizeBytes = int64(len(enc))
+	// A backup you have never restored is not a backup: confirm it decrypts and
+	// is a well-formed archive before recording success.
 	if err := s.verifyRestorable(ctx, enc); err == nil {
 		st.RestoreTested = time.Now()
 	}
@@ -237,20 +282,53 @@ func (s *Service) RunScheduled(ctx context.Context) error {
 	return nil
 }
 
-// prune keeps only the newest opt.Keep dumps in the backup dir.
-func (s *Service) prune() {
-	if s.opt.Keep <= 0 {
+// runS3Mirror uploads the newest volume dump not already in the bucket, prunes S3
+// to s3keep, and records the S3 status/time.
+func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
+	if !s.S3Enabled() {
+		return nil
+	}
+	files, err := s.List()
+	if err != nil || len(files) == 0 {
+		return err
+	}
+	newest := files[0].Name
+	remote, _ := s.S3List(ctx)
+	for _, r := range remote {
+		if r.Name == newest { // already mirrored — just refresh the timer
+			st := s.readStatus()
+			ok := true
+			st.S3OK, st.LastS3 = &ok, time.Now()
+			s.writeStatus(st)
+			return nil
+		}
+	}
+	data, err := s.Open(newest)
+	if err != nil {
+		return err
+	}
+	uerr := s.uploadS3(ctx, newest, data)
+	ok := uerr == nil
+	st := s.readStatus()
+	st.S3OK, st.LastS3 = &ok, time.Now()
+	s.writeStatus(st)
+	if ok {
+		s.pruneS3(ctx, s3keep)
+	}
+	return uerr
+}
+
+// prune keeps only the newest keep dumps in the volume backup dir.
+func (s *Service) prune(keep int) {
+	if keep <= 0 {
 		return
 	}
 	entries, err := filepath.Glob(filepath.Join(s.opt.Dir, "treckrr-*.dump.enc"))
-	if err != nil {
-		return
-	}
-	if len(entries) <= s.opt.Keep {
+	if err != nil || len(entries) <= keep {
 		return
 	}
 	sort.Strings(entries) // timestamped names sort chronologically
-	for _, old := range entries[:len(entries)-s.opt.Keep] {
+	for _, old := range entries[:len(entries)-keep] {
 		_ = os.Remove(old)
 	}
 }
@@ -405,32 +483,75 @@ func (s *Service) Open(name string) ([]byte, error) {
 	return io.ReadAll(f)
 }
 
-// Loop runs a scheduled backup shortly after boot, then on opt.Interval, until
-// ctx is canceled. No-op when disabled.
+// Loop polls once a minute and runs the volume and S3 backups independently when
+// each is due (overdue on boot). Reading the schedule from the DB each tick means
+// GUI edits apply without a restart, and a mere restart no longer forces a backup.
 func (s *Service) Loop(ctx context.Context, logf func(string, ...any)) {
 	if !s.Enabled() {
 		return
 	}
-	run := func() {
-		c, cancel := context.WithTimeout(ctx, 10*time.Minute)
-		defer cancel()
-		if err := s.RunScheduled(c); err != nil {
-			logf("scheduled backup failed: %v", err)
-		} else {
-			logf("scheduled backup written to %s", s.opt.Dir)
-		}
-	}
-	run()
-	t := time.NewTicker(s.opt.Interval)
+	s.tick(ctx, logf)
+	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			run()
+			s.tick(ctx, logf)
 		}
 	}
+}
+
+func hours(n int) time.Duration { return time.Duration(n) * time.Hour }
+
+func (s *Service) tick(ctx context.Context, logf func(string, ...any)) {
+	set := s.currentSettings(ctx)
+	st := s.readStatus()
+	now := time.Now()
+	if set.VolumeIntervalHours > 0 && (st.LastBackup.IsZero() || now.Sub(st.LastBackup) >= hours(set.VolumeIntervalHours)) {
+		c, cancel := context.WithTimeout(ctx, 10*time.Minute)
+		if err := s.runVolume(c, set.VolumeKeep); err != nil {
+			logf("volume backup failed: %v", err)
+		} else {
+			logf("volume backup written to %s", s.opt.Dir)
+		}
+		cancel()
+	}
+	if s.S3Enabled() && set.S3IntervalHours > 0 {
+		st = s.readStatus()
+		if st.LastS3.IsZero() || now.Sub(st.LastS3) >= hours(set.S3IntervalHours) {
+			c, cancel := context.WithTimeout(ctx, 10*time.Minute)
+			if err := s.runS3Mirror(c, set.S3Keep); err != nil {
+				logf("s3 mirror failed: %v", err)
+			} else {
+				logf("s3 mirror updated")
+			}
+			cancel()
+		}
+	}
+}
+
+// ManualVolume runs a volume backup now (the panel's scheduled-backup trigger).
+func (s *Service) ManualVolume(ctx context.Context) error {
+	if !s.Enabled() {
+		return ErrDisabled
+	}
+	return s.runVolume(ctx, s.currentSettings(ctx).VolumeKeep)
+}
+
+// NextRuns returns when the next volume and S3 backups are due (zero = unknown or
+// disabled), for the panel.
+func (s *Service) NextRuns(ctx context.Context) (nextVolume, nextS3 time.Time) {
+	set := s.currentSettings(ctx)
+	st := s.readStatus()
+	if set.VolumeIntervalHours > 0 && !st.LastBackup.IsZero() {
+		nextVolume = st.LastBackup.Add(hours(set.VolumeIntervalHours))
+	}
+	if s.S3Enabled() && set.S3IntervalHours > 0 && !st.LastS3.IsZero() {
+		nextS3 = st.LastS3.Add(hours(set.S3IntervalHours))
+	}
+	return
 }
 
 // S3Enabled reports whether an off-box S3 destination is configured.
@@ -442,6 +563,24 @@ func (s *Service) s3Client() (*minio.Client, error) {
 		Creds:  credentials.NewStaticV4(o.AccessKey, o.SecretKey, ""),
 		Secure: o.UseSSL,
 	})
+}
+
+// pruneS3 keeps only the newest keep objects in the bucket (0 = keep all).
+func (s *Service) pruneS3(ctx context.Context, keep int) {
+	if keep <= 0 {
+		return
+	}
+	files, err := s.S3List(ctx)
+	if err != nil || len(files) <= keep {
+		return
+	}
+	cl, err := s.s3Client()
+	if err != nil {
+		return
+	}
+	for _, f := range files[keep:] { // S3List is newest-first
+		_ = cl.RemoveObject(ctx, s.opt.S3.Bucket, s.opt.S3.Prefix+f.Name, minio.RemoveObjectOptions{})
+	}
 }
 
 // uploadS3 puts one encrypted dump into the configured S3-compatible bucket, for
