@@ -9,6 +9,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"treckrr/internal/auth"
 	"treckrr/internal/models"
@@ -117,6 +118,12 @@ func (s *Store) CountAdmins(ctx context.Context) (int, error) {
 
 // AuthenticateUser validates credentials and returns the user on success.
 func (s *Store) AuthenticateUser(ctx context.Context, username, password string) (*models.User, error) {
+	// Strictly limit username to 100 runes and password to 72 bytes to defend against
+	// CPU-exhaustion (DoS) attacks on bcrypt hashing and unnecessary DB queries.
+	if utf8.RuneCountInString(username) > 100 || len(password) > 72 {
+		return nil, ErrNotFound
+	}
+
 	var (
 		u    models.User
 		hash string
