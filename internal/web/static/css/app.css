@@ -925,6 +925,10 @@ em { font-style: normal; color: var(--muted); }
 .beleg__hl { font-family: var(--font-mono); font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; opacity: .85; margin-top: .5rem; }
 .beleg__hv { font-family: var(--font-mono); font-weight: 700; font-size: 1.7rem; letter-spacing: -.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .beleg__hb { display: flex; flex-wrap: wrap; gap: .05rem .9rem; font-family: var(--font-mono); font-size: .73rem; opacity: .92; margin-top: .2rem; }
+/* Keep each summary figure intact ("−50,00 €", "14 h · 3 Buchungen") so it wraps
+   as a whole between items and never splits before the € — the image export
+   re-lays-out the flex row and would otherwise break at the space. */
+.beleg__hb span { white-space: nowrap; }
 
 .beleg__sec { font-family: var(--font-mono); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase;
 	color: var(--muted); padding: .7rem .9rem .15rem; }
