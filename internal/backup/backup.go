@@ -20,6 +20,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 // magic prefixes every encrypted dump so a wrong/plain file is rejected early.
@@ -32,10 +35,23 @@ type Status struct {
 	OK            bool      `json:"ok"`
 	SizeBytes     int64     `json:"size_bytes"`
 	OffhostOK     *bool     `json:"offhost_ok,omitempty"`
+	S3OK          *bool     `json:"s3_ok,omitempty"`
 	Encrypted     bool      `json:"encrypted"`
 	SchemaVersion string    `json:"schema_version,omitempty"`
 	RestoreTested time.Time `json:"restore_tested,omitempty"`
 }
+
+// S3Options configures an optional S3-compatible off-box destination.
+type S3Options struct {
+	Endpoint  string
+	Bucket    string
+	AccessKey string
+	SecretKey string
+	Prefix    string
+	UseSSL    bool
+}
+
+func (o S3Options) enabled() bool { return o.Endpoint != "" && o.Bucket != "" }
 
 // Options configures a Service. EncKey empty means backups are disabled.
 type Options struct {
@@ -45,6 +61,14 @@ type Options struct {
 	StatusFile  string
 	Keep        int
 	Interval    time.Duration
+	S3          S3Options
+}
+
+// BackupFile describes one stored encrypted dump for the admin panel list.
+type BackupFile struct {
+	Name    string
+	Size    int64
+	ModTime time.Time
 }
 
 // Service runs and restores encrypted backups.
@@ -198,6 +222,12 @@ func (s *Service) RunScheduled(ctx context.Context) error {
 		Encrypted:     true,
 		SchemaVersion: s.SchemaVersion(ctx),
 	}
+	// Off-box copy to S3 (3-2-1). A failure is recorded but doesn't fail the
+	// backup — the local encrypted dump already exists.
+	if s.S3Enabled() {
+		ok := s.uploadS3(ctx, name, enc) == nil
+		st.S3OK = &ok
+	}
 	// A backup you have never restored is not a backup: confirm the fresh dump
 	// decrypts and is a well-formed archive before recording success.
 	if err := s.verifyRestorable(ctx, enc); err == nil {
@@ -225,42 +255,35 @@ func (s *Service) prune() {
 	}
 }
 
-// verifyRestorable decrypts the archive and lists its table of contents via
-// pg_restore --list — a cheap integrity check that a corrupt/wrong-key/truncated
-// file fails.
-func (s *Service) verifyRestorable(ctx context.Context, enc []byte) error {
-	raw, err := decrypt(enc, s.key)
-	if err != nil {
-		return err
-	}
+// ValidateArchive writes the raw (decrypted) dump to a temp file and lists its
+// table of contents via pg_restore --list — proving it is a well-formed archive
+// — and returns the object count. A corrupt/truncated dump fails here.
+func (s *Service) ValidateArchive(ctx context.Context, raw []byte) (int, error) {
 	tmp, cleanup, err := writeTemp(raw)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer cleanup()
 	cmd := exec.CommandContext(ctx, "pg_restore", "--list", tmp)
-	var errBuf bytes.Buffer
+	var out, errBuf bytes.Buffer
+	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("pg_restore --list: %v: %s", err, strings.TrimSpace(errBuf.String()))
+		return 0, fmt.Errorf("not a valid archive: %s", strings.TrimSpace(errBuf.String()))
 	}
-	return nil
+	n := 0
+	for _, line := range strings.Split(out.String(), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, ";") {
+			n++
+		}
+	}
+	return n, nil
 }
 
-// Restore decrypts a backup file and restores it into targetURL, dropping and
-// recreating objects (--clean). This overwrites data — callers must confirm.
-func (s *Service) Restore(ctx context.Context, encFile, targetURL string) error {
-	if !s.Enabled() {
-		return ErrDisabled
-	}
-	enc, err := os.ReadFile(encFile) //nosec G304 -- operator-supplied backup path (CLI)
-	if err != nil {
-		return err
-	}
-	raw, err := decrypt(enc, s.key)
-	if err != nil {
-		return err
-	}
+// RestoreRaw restores decrypted dump bytes into targetURL, dropping and
+// recreating objects (--clean). Destructive — callers must confirm.
+func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) error {
 	tmp, cleanup, err := writeTemp(raw)
 	if err != nil {
 		return err
@@ -276,15 +299,47 @@ func (s *Service) Restore(ctx context.Context, encFile, targetURL string) error 
 	return nil
 }
 
+// verifyRestorable is the automatic post-write drill: decrypt with the service
+// key and validate the archive.
+func (s *Service) verifyRestorable(ctx context.Context, enc []byte) error {
+	raw, err := decrypt(enc, s.key)
+	if err != nil {
+		return err
+	}
+	_, err = s.ValidateArchive(ctx, raw)
+	return err
+}
+
+// DecryptWith decrypts using an operator-supplied key string — used by the GUI
+// restore, where the key is re-entered rather than taken from the environment.
+func DecryptWith(enc []byte, keySecret string) ([]byte, error) {
+	k := sha256.Sum256([]byte(keySecret))
+	return decrypt(enc, k[:])
+}
+
+// Restore decrypts a backup file (with the service key) and restores it. CLI use.
+func (s *Service) Restore(ctx context.Context, encFile, targetURL string) error {
+	if !s.Enabled() {
+		return ErrDisabled
+	}
+	enc, err := os.ReadFile(encFile) //nosec G304 -- operator-supplied backup path (CLI)
+	if err != nil {
+		return err
+	}
+	raw, err := decrypt(enc, s.key)
+	if err != nil {
+		return err
+	}
+	return s.RestoreRaw(ctx, raw, targetURL)
+}
+
 // TestReport summarizes a test-restore.
 type TestReport struct {
 	Objects       int
 	SchemaVersion string
 }
 
-// TestRestore validates a backup without touching the live DB: it decrypts and
-// lists the archive. It is the integrity drill behind the panel's "Restore
-// getestet" marker.
+// TestRestore validates a backup file without touching the live DB. CLI use.
 func (s *Service) TestRestore(ctx context.Context, encFile string) (TestReport, error) {
 	var rep TestReport
 	if !s.Enabled() {
@@ -298,26 +353,56 @@ func (s *Service) TestRestore(ctx context.Context, encFile string) (TestReport, 
 	if err != nil {
 		return rep, err
 	}
-	tmp, cleanup, err := writeTemp(raw)
+	n, err := s.ValidateArchive(ctx, raw)
 	if err != nil {
 		return rep, err
 	}
-	defer cleanup()
-	cmd := exec.CommandContext(ctx, "pg_restore", "--list", tmp)
-	var out, errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-	if err := cmd.Run(); err != nil {
-		return rep, fmt.Errorf("pg_restore --list: %v: %s", err, strings.TrimSpace(errBuf.String()))
-	}
-	for _, line := range strings.Split(out.String(), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, ";") {
-			rep.Objects++
-		}
-	}
+	rep.Objects = n
 	rep.SchemaVersion = s.SchemaVersion(ctx)
 	return rep, nil
+}
+
+// List returns the stored encrypted dumps, newest first.
+func (s *Service) List() ([]BackupFile, error) {
+	paths, err := filepath.Glob(filepath.Join(s.opt.Dir, "treckrr-*.dump.enc"))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BackupFile, 0, len(paths))
+	for _, p := range paths {
+		fi, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		out = append(out, BackupFile{Name: filepath.Base(p), Size: fi.Size(), ModTime: fi.ModTime()})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name > out[j].Name })
+	return out, nil
+}
+
+// validName guards a requested filename against traversal and enforces the
+// backup naming scheme.
+func validName(name string) bool {
+	return name == filepath.Base(name) &&
+		strings.HasPrefix(name, "treckrr-") && strings.HasSuffix(name, ".dump.enc")
+}
+
+// Open returns the bytes of a stored encrypted dump for download.
+func (s *Service) Open(name string) ([]byte, error) {
+	if !validName(name) {
+		return nil, fmt.Errorf("invalid backup name")
+	}
+	root, err := os.OpenRoot(s.opt.Dir)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	f, err := root.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(f)
 }
 
 // Loop runs a scheduled backup shortly after boot, then on opt.Interval, until
@@ -346,6 +431,25 @@ func (s *Service) Loop(ctx context.Context, logf func(string, ...any)) {
 			run()
 		}
 	}
+}
+
+// S3Enabled reports whether an off-box S3 destination is configured.
+func (s *Service) S3Enabled() bool { return s.opt.S3.enabled() }
+
+// uploadS3 puts one encrypted dump into the configured S3-compatible bucket, for
+// the 3-2-1 rule (a copy that does not sit next to the DB it protects).
+func (s *Service) uploadS3(ctx context.Context, name string, data []byte) error {
+	o := s.opt.S3
+	cl, err := minio.New(o.Endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(o.AccessKey, o.SecretKey, ""),
+		Secure: o.UseSSL,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = cl.PutObject(ctx, o.Bucket, o.Prefix+name, bytes.NewReader(data), int64(len(data)),
+		minio.PutObjectOptions{ContentType: "application/octet-stream"})
+	return err
 }
 
 func (s *Service) writeStatus(st Status) {

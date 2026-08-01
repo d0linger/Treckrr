@@ -46,6 +46,14 @@ func newBackup(cfg *config.Config, pool *sql.DB) *backup.Service {
 		StatusFile:  cfg.BackupStatusFile,
 		Keep:        cfg.BackupKeep,
 		Interval:    time.Duration(cfg.BackupIntervalHours) * time.Hour,
+		S3: backup.S3Options{
+			Endpoint:  cfg.S3Endpoint,
+			Bucket:    cfg.S3Bucket,
+			AccessKey: cfg.S3AccessKey,
+			SecretKey: cfg.S3SecretKey,
+			Prefix:    cfg.S3Prefix,
+			UseSSL:    cfg.S3UseSSL,
+		},
 	}, pool)
 }
 

@@ -1,6 +1,6 @@
 {{define "content"}}
 <section class="stack">
-	<h1 class="section-title">Backup</h1>
+	<h1 class="section-title">Backup &amp; Restore</h1>
 	{{with .Backup}}
 	<div class="card bkp bkp--{{.State}}">
 		<div class="bkp__head">
@@ -10,39 +10,100 @@
 		</div>
 		{{if .Configured}}
 		<dl class="bkp__meta">
-			<div><dt>Letztes Backup</dt><dd>{{if .LastBackup.IsZero}}—{{else}}{{date .LastBackup}} · vor {{.AgeHours}} h{{end}}</dd></div>
+			<div><dt>Letztes geplantes Backup</dt><dd>{{if .LastBackup.IsZero}}—{{else}}{{date .LastBackup}} · vor {{.AgeHours}} h{{end}}</dd></div>
 			<div><dt>Größe</dt><dd>{{.SizeLabel}}</dd></div>
 			<div><dt>Restore getestet</dt><dd>{{if .RestoreTested.IsZero}}<span class="bkp__warn">nie</span>{{else}}{{date .RestoreTested}}{{end}}</dd></div>
 			<div><dt>Schema-Stand</dt><dd>{{if .SchemaVersion}}{{.SchemaVersion}}{{else}}—{{end}}</dd></div>
+			{{if $.S3Enabled}}<div><dt>S3-Kopie</dt><dd>{{if .S3}}{{.S3}}{{else}}—{{end}}</dd></div>{{end}}
 			<div><dt>Off-Host-Kopie</dt><dd>{{.Offhost}}</dd></div>
 		</dl>
 		{{else}}
-		<p class="bkp__hint">Noch kein geplantes Backup gelaufen. Der App-Ticker schreibt verschlüsselte Dumps nach <code>BACKUP_DIR</code> — dieses Verzeichnis auf eine zweite Platte/NAS off-box syncen, sonst liegt das Backup neben der DB, die es schützt.</p>
+		<p class="bkp__hint">Noch kein geplantes Backup gelaufen. Der App-Ticker schreibt verschlüsselte Dumps nach <code>BACKUP_DIR</code> (Zeitplan über <code>BACKUP_INTERVAL_HOURS</code>).</p>
 		{{end}}
 	</div>
 
-	{{if .Enabled}}
-	<div class="card bkp__do">
-		<div>
-			<strong>Backup jetzt herunterladen</strong>
-			<p class="bkp__note" style="margin:.25rem 0 0">Die App erzeugt einen verschlüsselten <code>pg_dump</code> (<code>.dump.enc</code>) und bietet ihn zum Download an. Enthält alle Personen- &amp; Abrechnungsdaten — sicher ablegen.</p>
-		</div>
-		<form method="post" action="/admin/backup/run">
-			<button class="btn btn--primary" type="submit">Backup jetzt</button>
-		</form>
-	</div>
-	{{else}}
+	{{if not .Enabled}}
 	<p class="bkp__hint">Backups sind nicht konfiguriert. <code>BACKUP_ENCRYPTION_KEY</code> setzen (mind. 16 Zeichen, getrennt vom Session-Secret), dann werden On-Demand- und geplante Backups aktiv.</p>
 	{{end}}
+	{{end}}
 
+	{{if .Backup.Enabled}}
+	<!-- Zielorte -->
 	<div class="card">
-		<strong>Wiederherstellen</strong>
-		<p class="bkp__note" style="margin:.25rem 0 .5rem">Restore überschreibt die laufende DB — bewusst <em>kein</em> UI-Knopf. Als Ops-Kommando mit Tipp-Bestätigung (<code>RESTORE</code> eintippen):</p>
-		<pre class="bkp__cmd"><code>docker compose run --rm app restore &lt;datei.dump.enc&gt;</code></pre>
-		<p class="bkp__note" style="margin:.4rem 0 0">Vorab prüfen (ohne die DB anzufassen): <code>docker compose run --rm app restore --test &lt;datei.dump.enc&gt;</code> — entschlüsselt, validiert das Archiv, meldet Objekt-Anzahl &amp; Schema-Stand.</p>
+		<div class="bkp__sec">Backup erstellen — Zielorte</div>
+		<div class="bkp__do">
+			<div>
+				<strong>Browser-Download</strong>
+				<p class="bkp__note" style="margin:.25rem 0 0">Verschlüsselten Dump (<code>.dump.enc</code>) sofort erzeugen und herunterladen — enthält alle Personen- &amp; Abrechnungsdaten, sicher ablegen.</p>
+			</div>
+			<form method="post" action="/admin/backup/run">
+				<button class="btn btn--primary" type="submit">Backup jetzt</button>
+			</form>
+		</div>
+		<dl class="bkp__meta">
+			<div><dt>Volume (geplant)</dt><dd>aktiv · <code>BACKUP_DIR</code></dd></div>
+			<div><dt>S3 / Backblaze</dt><dd>{{if .S3Enabled}}aktiv · <code>S3_BUCKET</code>{{else}}optional · <code>S3_*</code> setzen{{end}}</dd></div>
+		</dl>
 	</div>
 
-	<p class="bkp__note">„Veraltet" heißt: das letzte geplante Backup ist älter als 26&nbsp;Stunden. Jedes geschriebene Backup wird automatisch auf Wiederherstellbarkeit geprüft (Entschlüsselung + Archiv-Validierung) → „Restore getestet".</p>
+	<!-- Geplante Backups: Liste -->
+	{{if .Files}}
+	<div class="card">
+		<div class="bkp__sec">Geplante Backups</div>
+		<ul class="bkp__files">
+			{{range .Files}}
+			<li>
+				<span class="bkp__fn">{{.Name}}</span>
+				<span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span>
+				<a class="link" href="/admin/backup/file/{{.Name}}">herunterladen ↓</a>
+			</li>
+			{{end}}
+		</ul>
+		<p class="bkp__note" style="margin:.5rem .2rem 0">Liegen im Volume neben der DB — per S3 (oben) oder Off-box-Sync auf eine zweite Platte/NAS kopieren.</p>
+	</div>
+	{{end}}
+
+	<!-- Schlüssel -->
+	<div class="card bkp__do">
+		<div>
+			<strong>Backup-Schlüssel</strong>
+			<p class="bkp__note" style="margin:.25rem 0 0">AES-256-GCM, definiert als <code>BACKUP_ENCRYPTION_KEY</code> in der Deployment-Konfiguration — bewusst <em>nicht</em> in der DB (er schützt genau diese DB). Beim Restore unten <strong>erneut eingeben</strong>.</p>
+		</div>
+		<span class="bkp__badge">● gesetzt</span>
+	</div>
+
+	<!-- Wiederherstellen (GUI) -->
+	<div class="card bkp--restore">
+		<div class="bkp__sec">Wiederherstellen</div>
+		<form method="post" action="/admin/backup/validate" enctype="multipart/form-data" class="form">
+			<label class="field"><span>1 · Backup-Datei (<code>.dump.enc</code>)</span>
+				<input class="input" type="file" name="file" accept=".enc" required></label>
+			<label class="field"><span>2 · Backup-Schlüssel — bestätigt, dass er zur Datei passt</span>
+				<input class="input" type="password" name="key" autocomplete="off" placeholder="BACKUP_ENCRYPTION_KEY" required></label>
+			<div class="btnrow">
+				<button class="btn" type="submit">Validieren (Vorschau)</button>
+			</div>
+		</form>
+		<p class="bkp__note" style="margin:.6rem .2rem">„Validieren" entschlüsselt in-memory und prüft das Archiv — <strong>ohne die DB anzufassen</strong>. Ergebnis erscheint als Meldung oben.</p>
+
+		<div class="bkp__danger">
+			<form method="post" action="/admin/backup/restore" enctype="multipart/form-data" class="form"
+				data-confirm="Wiederherstellen? Dies ÜBERSCHREIBT die laufende Datenbank vollständig mit dem Backup-Stand.">
+				<label class="field"><span>Datei erneut wählen</span>
+					<input class="input" type="file" name="file" accept=".enc" required></label>
+				<label class="field"><span>Backup-Schlüssel</span>
+					<input class="input" type="password" name="key" autocomplete="off" required></label>
+				<label class="field"><span>Zum Ausführen <code>RESTORE</code> eintippen</span>
+					<input class="input" type="text" name="confirm" autocomplete="off" placeholder="RESTORE" required></label>
+				<div class="btnrow">
+					<button class="btn btn--danger" type="submit">Wiederherstellen — überschreibt die Live-DB</button>
+				</div>
+			</form>
+			<p class="bkp__note" style="margin:.5rem .2rem 0"><strong>Zerstörerisch:</strong> ersetzt alle aktuellen Daten. Nur nach Validierung &amp; Tipp-Bestätigung, admin-only, im Audit protokolliert. Alternativ als Ops-Kommando: <code>docker compose run --rm app restore &lt;datei.dump.enc&gt;</code>.</p>
+		</div>
+	</div>
+
+	<p class="bkp__note">„Veraltet" = letztes geplantes Backup älter als 26&nbsp;Stunden. Jedes geschriebene Backup wird automatisch auf Wiederherstellbarkeit geprüft (Entschlüsselung + Archiv-Validierung) → „Restore getestet".</p>
 	{{end}}
 </section>
 {{end}}

@@ -1198,6 +1198,20 @@ em { font-style: normal; color: var(--muted); }
 .bkp__cmd { margin: 0; padding: .6rem .75rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px;
 	overflow-x: auto; font-family: var(--font-mono); font-size: .8rem; }
 .bkp__cmd code { background: none; padding: 0; }
+.bkp__sec { font-family: var(--font-mono); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase;
+	color: var(--muted); margin: 0 0 .6rem; }
+.bkp__files { list-style: none; margin: .2rem 0 0; padding: 0; }
+.bkp__files li { display: grid; grid-template-columns: 1fr auto; gap: .2rem 1rem; align-items: baseline;
+	padding: .5rem 0; border-top: 1px solid var(--card-hairline); }
+.bkp__files li:first-child { border-top: 0; }
+.bkp__fn { font-family: var(--font-mono); font-size: .8rem; overflow-wrap: anywhere; }
+.bkp__fm { font-family: var(--font-mono); font-size: .74rem; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.bkp__files a.link { grid-column: 2; font-size: .8rem; white-space: nowrap; }
+.bkp--restore .field span code, .bkp__do code { font-size: .82em; }
+.bkp__danger { margin-top: 1rem; padding: .9rem; border: 1px solid color-mix(in srgb, var(--owe) 40%, var(--border));
+	border-radius: 11px; background: color-mix(in srgb, var(--owe) 7%, transparent); }
+.btn--danger { background: var(--owe); color: #fff; border-color: var(--owe); }
+.btn--danger:hover { filter: brightness(1.05); }
 .logcard__meta .ip { font-variant-numeric: tabular-nums; }
 .abadge { display: inline-flex; align-items: center; font-size: var(--fs-xs); font-weight: 800;
 	padding: .12rem .5rem; border-radius: 999px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); white-space: nowrap; }

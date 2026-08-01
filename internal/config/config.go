@@ -39,6 +39,14 @@ type Config struct {
 	// encrypted dumps to retain (older ones are pruned).
 	BackupIntervalHours int
 	BackupKeep          int
+	// Optional S3-compatible off-box destination for scheduled backups (3-2-1).
+	// Empty S3Endpoint/S3Bucket disables it.
+	S3Endpoint  string
+	S3Bucket    string
+	S3AccessKey string
+	S3SecretKey string
+	S3Prefix    string
+	S3UseSSL    bool
 	// WebAuthn (passkeys). RPID is the effective domain (host only, no scheme);
 	// RPOrigin is the full origin the browser sees. Both must match the site.
 	RPID     string
@@ -61,6 +69,12 @@ func Load() (*Config, error) {
 		BackupDir:           getenv("BACKUP_DIR", "/backups"),
 		BackupIntervalHours: getenvInt("BACKUP_INTERVAL_HOURS", 24),
 		BackupKeep:          getenvInt("BACKUP_KEEP", 7),
+		S3Endpoint:          os.Getenv("S3_ENDPOINT"),
+		S3Bucket:            os.Getenv("S3_BUCKET"),
+		S3AccessKey:         os.Getenv("S3_ACCESS_KEY"),
+		S3SecretKey:         os.Getenv("S3_SECRET_KEY"),
+		S3Prefix:            os.Getenv("S3_PREFIX"),
+		S3UseSSL:            strings.EqualFold(getenv("S3_USE_SSL", "true"), "true"),
 		RPID:                getenv("RP_ID", "localhost"),
 		RPOrigin:            getenv("RP_ORIGIN", "http://localhost:8080"),
 	}
