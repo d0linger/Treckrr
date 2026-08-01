@@ -455,6 +455,12 @@ func entryUpdateDetail(prev, cur *models.Entry) string {
 		fieldChange{"Notiz", prev.Note, cur.Note},
 	)
 	if d == "" {
+		// Mirror the booking's own basis: hours × rate for time bookings, but
+		// quantity × unit price for a unit-based one (h × rate would be 0 there).
+		if cur.Unit != "" && cur.Unit != "h" {
+			return fmt.Sprintf("keine inhaltliche Änderung (%s %s × %s = %s €)",
+				cur.Quantity.StringFixed(2), cur.Unit, cur.UnitPrice.StringFixed(2), cur.Cost.StringFixed(2))
+		}
 		return fmt.Sprintf("keine inhaltliche Änderung (%s h × %s = %s €)",
 			cur.Hours.StringFixed(2), cur.HourlyRate.StringFixed(2), cur.Cost.StringFixed(2))
 	}

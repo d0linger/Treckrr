@@ -71,10 +71,13 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 		return models.Invoice{}, err
 	}
 	// Next sequence = highest existing suffix + 1 (robust to gaps, unlike count).
+	// Only numeric suffixes are considered, so a stray non-generated number
+	// (e.g. "2026-manual") can't crash the ::int cast.
 	var seq int
 	if err := tx.QueryRowContext(ctx,
-		`SELECT COALESCE(MAX(NULLIF(split_part(number,'-',2),'')::int), 0)+1
-		   FROM invoices WHERE billing_year_id=$1`, yearID).Scan(&seq); err != nil {
+		`SELECT COALESCE(MAX(split_part(number,'-',2)::int), 0)+1
+		   FROM invoices
+		  WHERE billing_year_id=$1 AND split_part(number,'-',2) ~ '^[0-9]+$'`, yearID).Scan(&seq); err != nil {
 		return models.Invoice{}, err
 	}
 	number := fmt.Sprintf("%d-%03d", year, seq)
