@@ -66,10 +66,14 @@ services:
       S3_PREFIX: ${S3_PREFIX:-}
       S3_USE_SSL: ${S3_USE_SSL:-true}
     # The app writes encrypted dumps here (scheduled) and reads status.json.
-    # Sync this directory off-box (second disk/NAS) — a backup next to the DB
-    # it protects is not a backup.
+    # A NAMED volume is used so it inherits the image's /backups ownership
+    # (uid 10001) — the app runs non-root and a root-owned bind mount would
+    # fail with EACCES. To use a host path instead, mount `./backups:/backups`
+    # and `chown 10001:10001 ./backups` on the host first.
+    # Sync the dumps off-box (second disk/NAS) — a backup next to the DB it
+    # protects is not a backup (e.g. the S3 destination below).
     volumes:
-      - ./backups:/backups
+      - backups:/backups
     ports:
       - "${HOST_PORT:-8080}:${APP_PORT:-8080}"
 
@@ -81,3 +85,4 @@ services:
 
 volumes:
   pgdata:
+  backups:
