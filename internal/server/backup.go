@@ -297,9 +297,57 @@ func (s *Server) handleBackupFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleBackupValidate decrypts an uploaded backup with the re-entered key and
-// validates the archive — no DB change. It is the safety preview before restore.
+// validates the archive — no DB change. For an AJAX request it returns JSON so
+// the panel can show the result inline without a reload (keeping the file/key
+// selection); a plain form POST falls back to a flash + redirect.
 func (s *Server) handleBackupValidate(w http.ResponseWriter, r *http.Request) {
-	s.backupUpload(w, r, false)
+	if !strings.Contains(r.Header.Get("Accept"), "application/json") {
+		s.backupUpload(w, r, false)
+		return
+	}
+	reply := func(ok bool, msg string) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": ok, "message": msg})
+	}
+	if s.backup == nil || !s.backup.Enabled() {
+		reply(false, "Backups sind nicht konfiguriert.")
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		reply(false, "Upload fehlgeschlagen (Datei zu groß?).")
+		return
+	}
+	key := strings.TrimSpace(r.FormValue("key"))
+	if key == "" {
+		reply(false, "Bitte den Backup-Schlüssel eingeben.")
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		reply(false, "Bitte eine Backup-Datei (.dump.enc) wählen.")
+		return
+	}
+	defer file.Close()
+	enc, err := io.ReadAll(file)
+	if err != nil {
+		reply(false, "Datei konnte nicht gelesen werden.")
+		return
+	}
+	raw, err := backup.DecryptWith(enc, key)
+	if err != nil {
+		s.audit(r, "backup_validate_failed", "backup", 0, "Entschlüsselung fehlgeschlagen (falscher Schlüssel oder beschädigte Datei)")
+		reply(false, "Entschlüsselung fehlgeschlagen — falscher Schlüssel oder beschädigte Datei.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+	objects, err := s.backup.ValidateArchive(ctx, raw)
+	if err != nil {
+		reply(false, "Kein gültiges Backup-Archiv: "+sanitizeLog(err.Error()))
+		return
+	}
+	s.audit(r, "backup_validate", "backup", 0, fmt.Sprintf("Upload validiert · %d Objekte", objects))
+	reply(true, fmt.Sprintf("Gültig ✓ — entschlüsselt, %d Objekte im Archiv.", objects))
 }
 
 // handleBackupRestore validates an uploaded backup and, only after the operator

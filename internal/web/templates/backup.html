@@ -125,26 +125,29 @@
 	</div>
 	{{end}}
 
-	<!-- Wiederherstellen (GUI) — eine Form: Datei + Schlüssel geteilt -->
+	<!-- Wiederherstellen (GUI) — eine Form, Datei+Schlüssel geteilt, AJAX-Validierung -->
 	<div class="card bkp--restore">
 		<div class="bkp__sec">Wiederherstellen</div>
-		<form method="post" enctype="multipart/form-data">
-			<p class="bkp__note" style="margin:0 0 .5rem">Backup-Datei (<code>.dump.enc</code>) + Schlüssel wählen. <strong>Validieren</strong> prüft das Archiv in-memory — ohne die DB anzufassen.</p>
+		<form method="post" enctype="multipart/form-data" data-restore-form>
+			<p class="bkp__note" style="margin:0 0 .6rem">Backup-Datei (<code>.dump.enc</code>) + Schlüssel wählen. <strong>Validieren</strong> prüft das Archiv in-memory — ohne die DB anzufassen.</p>
 			<div class="bkp__restore-row">
 				<input class="input bkp__restore-file" type="file" name="file" accept=".enc" required aria-label="Backup-Datei">
 				<input class="input bkp__restore-key" type="password" name="key" placeholder="Backup-Schlüssel" autocomplete="off" required aria-label="Backup-Schlüssel">
 			</div>
-			<div class="bkp__btnrow" style="margin:1rem 0 1.2rem">
-				<button class="btn btn--ghost" type="submit" formaction="/admin/backup/validate">Validieren (Vorschau)</button>
+			<div class="bkp__btnrow" style="margin:1.1rem 0 0">
+				<button class="btn btn--ghost" type="submit" formaction="/admin/backup/validate" data-validate-btn>Validieren (Vorschau)</button>
 			</div>
+			<div class="bkp__desc" data-validate-result hidden></div>
+
 			<div class="bkp__danger">
 				<div class="bkp__sec bkp__sec--danger">Zerstörerisch</div>
-				<p class="bkp__note" style="margin:0 0 .85rem">Überschreibt die Live-DB vollständig. Zum Ausführen <code>RESTORE</code> eintippen — admin-only, auditiert.</p>
-				<div class="bkp__restore-row" style="margin:.2rem 0 .9rem">
-					<input class="input bkp__restore-confirm" type="text" name="confirm" placeholder="RESTORE" autocomplete="off" aria-label="RESTORE eintippen">
+				<p class="bkp__note" style="margin:0 0 .8rem">Überschreibt die Live-DB vollständig — admin-only, auditiert.</p>
+				<label class="bkp__lbl" style="margin-top:0">Zum Ausführen <code>RESTORE</code> eintippen</label>
+				<input class="input bkp__restore-confirm" type="text" name="confirm" placeholder="RESTORE" autocomplete="off" aria-label="RESTORE eintippen">
+				<div class="bkp__btnrow" style="margin:.9rem 0 0">
 					<button class="btn btn--danger btn--primary" type="submit" formaction="/admin/backup/restore">Wiederherstellen</button>
 				</div>
-				<p class="bkp__note" style="margin:0">Alternativ als Ops-Kommando: <code>docker compose run --rm app restore &lt;datei.dump.enc&gt;</code>.</p>
+				<p class="bkp__note" style="margin:.9rem 0 0">Alternativ: <code>docker compose run --rm app restore &lt;datei.dump.enc&gt;</code>.</p>
 			</div>
 		</form>
 	</div>

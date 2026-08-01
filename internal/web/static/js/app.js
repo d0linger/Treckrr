@@ -820,4 +820,36 @@
 			render();
 		});
 	})();
+
+	// ---- Backup restore: validate via fetch so the file/key survive ---------
+	(function () {
+		var form = document.querySelector("[data-restore-form]");
+		if (!form) return;
+		var btn = form.querySelector("[data-validate-btn]");
+		var out = form.querySelector("[data-validate-result]");
+		if (!btn || !out) return;
+		btn.addEventListener("click", function (e) {
+			e.preventDefault();
+			if (!form.reportValidity()) return; // require file + key
+			btn.disabled = true;
+			out.hidden = false;
+			out.classList.remove("bkp__desc--bad");
+			out.textContent = "Prüfe …";
+			fetch("/admin/backup/validate", {
+				method: "POST",
+				body: new FormData(form),
+				headers: { "Accept": "application/json" },
+				credentials: "same-origin",
+			}).then(function (r) { return r.json(); })
+				.then(function (d) {
+					out.textContent = d.message || (d.ok ? "Gültig." : "Fehler.");
+					out.classList.toggle("bkp__desc--bad", !d.ok);
+				})
+				.catch(function () {
+					out.textContent = "Validierung fehlgeschlagen.";
+					out.classList.add("bkp__desc--bad");
+				})
+				.then(function () { btn.disabled = false; });
+		});
+	})();
 })();
