@@ -7,9 +7,9 @@
 
 	<div class="summary-card card">
 		<div>
-			<span class="summary-card__label">{{.Neighbor.Name}} · {{.Year.Year}}{{if .Ledger}} · Saldo{{end}}</span>
-			<span class="summary-card__value">{{money .Saldo}}</span>
-			{{if .Ledger}}<span class="summary-card__label">Leistungen {{money .TotalCost}} · Verrechnung {{money .LedgerSum}}</span>{{end}}
+			<span class="summary-card__label">{{.Neighbor.Name}} · {{.Year.Year}}{{if or .Ledger .Payments}} · {{if .Payments}}Offener Rest{{else}}Saldo{{end}}{{end}}</span>
+			<span class="summary-card__value">{{if .Payments}}{{money .Remaining}}{{else}}{{money .Saldo}}{{end}}</span>
+			{{if or .Ledger .Payments}}<span class="summary-card__label">Leistungen {{money .TotalCost}}{{if .Ledger}} · Verrechnung {{money .LedgerSum}}{{end}}{{if .Payments}} · Bezahlt {{money .PaidSum}}{{end}}</span>{{end}}
 		</div>
 		<div class="summary-card__meta">
 			<span>{{num .TotalHours}} h · {{len .Entries}} Buchungen</span>
