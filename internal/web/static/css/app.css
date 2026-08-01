@@ -1209,6 +1209,14 @@ em { font-style: normal; color: var(--muted); }
 .bkp__fn { font-family: var(--font-mono); font-size: .8rem; overflow-wrap: anywhere; }
 .bkp__fm { font-family: var(--font-mono); font-size: .74rem; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .bkp__files a.link { font-size: .82rem; font-weight: 700; white-space: nowrap; }
+.bkp__more { margin-top: .5rem; border-top: 1px solid var(--card-hairline); }
+.bkp__more > summary { list-style: none; cursor: pointer; padding: .55rem 0 .1rem; font-size: .8rem;
+	font-weight: 600; color: var(--accent); user-select: none; }
+.bkp__more > summary::-webkit-details-marker { display: none; }
+.bkp__more > summary::before { content: "▾ "; }
+.bkp__more[open] > summary::before { content: "▴ "; }
+.bkp__more > summary:hover { text-decoration: underline; }
+.bkp__more .bkp__files li:first-child { border-top: 1px solid var(--card-hairline); }
 .bkp--restore .field span code, .bkp__do code { font-size: .82em; }
 .bkp__sec--danger { color: var(--owe); }
 .bkp__restore-row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }

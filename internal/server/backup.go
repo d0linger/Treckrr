@@ -128,7 +128,7 @@ func (s *Server) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
 	data["S3Enabled"] = s3on
 	if st.Enabled {
 		if files, err := s.backup.List(); err == nil {
-			data["Files"] = toFileViews(files)
+			data["Files"], data["FilesMore"] = headTail(toFileViews(files), backupListLimit)
 		}
 	}
 	if s3on {
@@ -136,7 +136,7 @@ func (s *Server) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
 		if objs, err := s.backup.S3List(ctx); err == nil {
-			data["S3Files"] = toFileViews(objs)
+			data["S3Files"], data["S3FilesMore"] = headTail(toFileViews(objs), backupListLimit)
 		} else {
 			data["S3Error"] = sanitizeLog(err.Error())
 		}
@@ -228,6 +228,20 @@ func toFileViews(files []backup.BackupFile) []backupFileView {
 		views = append(views, backupFileView{Name: f.Name, Size: humanSize(f.Size), ModTime: f.ModTime})
 	}
 	return views
+}
+
+// backupListLimit is how many stored backups the panel shows before the rest
+// collapse behind a "+ N weitere" disclosure (so a high retention like 100
+// doesn't render 100 rows).
+const backupListLimit = 8
+
+// headTail splits views into the first n (always shown) and the remainder
+// (collapsed). tail is nil when there is nothing to collapse.
+func headTail(views []backupFileView, n int) (head, tail []backupFileView) {
+	if len(views) <= n {
+		return views, nil
+	}
+	return views[:n], views[n:]
 }
 
 // handleBackupS3Test checks the bucket is reachable and reports success/failure.

@@ -103,6 +103,20 @@
 			</li>
 			{{end}}
 		</ul>
+		{{if .FilesMore}}
+		<details class="bkp__more">
+			<summary>+ {{len .FilesMore}} weitere anzeigen</summary>
+			<ul class="bkp__files">
+				{{range .FilesMore}}
+				<li>
+					<span class="bkp__fn">{{.Name}}</span>
+					<span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span>
+					<a class="link" href="/admin/backup/file/{{.Name}}">↓</a>
+				</li>
+				{{end}}
+			</ul>
+		</details>
+		{{end}}
 	</div>
 	{{end}}
 
@@ -120,6 +134,16 @@
 			<li><span class="bkp__fn">{{.Name}}</span><span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span><a class="link" href="/admin/backup/s3/file/{{.Name}}">↓</a></li>
 			{{end}}
 		</ul>
+		{{if .S3FilesMore}}
+		<details class="bkp__more">
+			<summary>+ {{len .S3FilesMore}} weitere anzeigen</summary>
+			<ul class="bkp__files bkp__files--compact">
+				{{range .S3FilesMore}}
+				<li><span class="bkp__fn">{{.Name}}</span><span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span><a class="link" href="/admin/backup/s3/file/{{.Name}}">↓</a></li>
+				{{end}}
+			</ul>
+		</details>
+		{{end}}
 		{{else if not .S3Error}}<p class="bkp__note" style="margin:.4rem 0 0">Noch keine Objekte im Bucket.</p>{{end}}
 		<p class="bkp__note" style="margin:.4rem 0 0">Zugangsdaten in der Deployment-Konfig (<code>S3_*</code>), bewusst nicht in der DB.</p>
 	</div>
