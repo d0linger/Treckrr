@@ -70,7 +70,7 @@
 					<input class="input input--num" type="number" min="0" name="s3_keep" value="{{.S3Keep}}">
 				</div>
 			</div>
-			<div class="bkp__btnrow" style="margin-top:.9rem">
+			<div class="bkp__btnrow" style="margin-top:1.4rem">
 				<button class="btn btn--primary" type="submit">Zeitplan speichern</button>
 				<button class="btn btn--ghost" type="submit" formaction="/admin/backup/run-scheduled">Jetzt sichern (Volume)</button>
 			</div>
@@ -138,6 +138,7 @@
 		<p class="bkp__note" style="margin:.6rem .2rem">„Validieren" entschlüsselt in-memory und prüft das Archiv — <strong>ohne die DB anzufassen</strong>.</p>
 
 		<div class="bkp__danger">
+			<div class="bkp__sec bkp__sec--danger">Zerstörerisch</div>
 			<form method="post" action="/admin/backup/restore" enctype="multipart/form-data" class="form"
 				data-confirm="Wiederherstellen? Dies ÜBERSCHREIBT die laufende Datenbank vollständig mit dem Backup-Stand.">
 				<label class="field"><span>Datei erneut wählen</span>

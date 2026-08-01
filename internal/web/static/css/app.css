@@ -1176,16 +1176,18 @@ em { font-style: normal; color: var(--muted); }
 .logcard__meta { font-size: var(--fs-xs); color: var(--muted); overflow-wrap: break-word; }
 
 /* ---- Backup status panel (admin) -------------------------------------- */
-.bkp__head { display: flex; align-items: center; gap: .6rem; }
-.bkp__dot { width: .8rem; height: .8rem; border-radius: 50%; flex: 0 0 auto; background: var(--muted); }
-.bkp--ok .bkp__dot { background: var(--pay); }
-.bkp--stale .bkp__dot { background: #e0a03a; }
-.bkp--failed .bkp__dot { background: var(--owe); }
-.bkp__state { font-size: 1.05rem; }
-.bkp__meta { display: grid; gap: 0; margin: .8rem 0 0; }
-.bkp__meta div { display: flex; justify-content: space-between; gap: 1rem; border-top: 1px solid var(--card-hairline); padding: .4rem 0; }
-.bkp__meta dt { color: var(--muted); font-size: .85rem; margin: 0; }
-.bkp__meta dd { margin: 0; font-variant-numeric: tabular-nums; }
+.bkp__head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.bkp__dot { width: .85rem; height: .85rem; border-radius: 50%; flex: 0 0 auto; background: var(--muted);
+	box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 18%, transparent); }
+.bkp--ok .bkp__dot { background: var(--pay); box-shadow: 0 0 0 4px color-mix(in srgb, var(--pay) 20%, transparent); }
+.bkp--stale .bkp__dot { background: #e0a03a; box-shadow: 0 0 0 4px color-mix(in srgb, #e0a03a 22%, transparent); }
+.bkp--failed .bkp__dot { background: var(--owe); box-shadow: 0 0 0 4px color-mix(in srgb, var(--owe) 22%, transparent); }
+.bkp__state { font-size: 1.1rem; font-weight: 800; }
+/* Status overview as small tiles (matches the panel mockup). */
+.bkp__meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: .5rem; margin: .9rem 0 0; }
+.bkp__meta > div { background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: .5rem .6rem; }
+.bkp__meta dt { font-family: var(--font-mono); font-size: .56rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 .15rem; }
+.bkp__meta dd { margin: 0; font-weight: 600; font-size: .88rem; font-variant-numeric: tabular-nums; }
 .bkp__hint, .bkp__note { color: var(--muted); font-size: .88rem; line-height: 1.5; }
 .bkp__hint { margin: .6rem 0 0; }
 .bkp__note { margin: .2rem .2rem 0; font-size: .8rem; }
@@ -1201,13 +1203,14 @@ em { font-style: normal; color: var(--muted); }
 .bkp__sec { font-family: var(--font-mono); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase;
 	color: var(--muted); margin: 0 0 .6rem; }
 .bkp__files { list-style: none; margin: .2rem 0 0; padding: 0; }
-.bkp__files li { display: grid; grid-template-columns: 1fr auto; gap: .2rem 1rem; align-items: baseline;
+.bkp__files li { display: grid; grid-template-columns: 1fr auto auto; gap: .2rem .9rem; align-items: baseline;
 	padding: .5rem 0; border-top: 1px solid var(--card-hairline); }
 .bkp__files li:first-child { border-top: 0; }
 .bkp__fn { font-family: var(--font-mono); font-size: .8rem; overflow-wrap: anywhere; }
-.bkp__fm { font-family: var(--font-mono); font-size: .74rem; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
-.bkp__files a.link { grid-column: 2; font-size: .8rem; white-space: nowrap; }
+.bkp__fm { font-family: var(--font-mono); font-size: .74rem; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.bkp__files a.link { font-size: .82rem; font-weight: 700; white-space: nowrap; }
 .bkp--restore .field span code, .bkp__do code { font-size: .82em; }
+.bkp__sec--danger { color: var(--owe); }
 .bkp__danger { margin-top: 1rem; padding: .9rem; border: 1px solid color-mix(in srgb, var(--owe) 40%, var(--border));
 	border-radius: 11px; background: color-mix(in srgb, var(--owe) 7%, transparent); }
 .btn--danger { background: var(--owe); color: #fff; border-color: var(--owe); }
