@@ -177,11 +177,10 @@ type Options struct {
 	Dir         string
 	StatusFile  string
 	Keep        int
-	Interval    time.Duration
 	S3          S3Options
 	// SettingsFn returns the current GUI-editable schedule. When nil the service
-	// falls back to Interval/Keep. Called each scheduler tick so GUI edits apply
-	// without a restart.
+	// falls back to a fixed default cron and Keep. Called each scheduler tick so
+	// GUI edits apply without a restart.
 	SettingsFn func(context.Context) Settings
 }
 
@@ -267,18 +266,12 @@ func decrypt(enc, key []byte) ([]byte, error) {
 	return pt, nil
 }
 
-// Decrypt exposes decrypt for callers holding raw bytes (e.g. the restore CLI).
-func (s *Service) Decrypt(enc []byte) ([]byte, error) {
-	if !s.Enabled() {
-		return nil, ErrDisabled
-	}
-	return decrypt(enc, s.key)
-}
-
 // dump runs pg_dump in PostgreSQL's custom format (compressed, restorable with
 // pg_restore) against the configured database and returns the raw archive bytes.
 func (s *Service) dump(ctx context.Context) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "pg_dump",
+	// The connection URL comes from trusted deployment config (DATABASE_URL),
+	// not user input, and libpq offers no argv-free way to pass a full URI.
+	cmd := exec.CommandContext(ctx, "pg_dump", // #nosec G204
 		"--format=custom", "--no-owner", "--no-privileges", s.opt.DatabaseURL)
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
@@ -333,7 +326,8 @@ func (s *Service) readStatus() Status {
 	if s.opt.StatusFile == "" {
 		return st
 	}
-	b, err := os.ReadFile(s.opt.StatusFile) //nosec G304 -- operator-configured status file
+	// StatusFile is operator-configured deployment config, not user input.
+	b, err := os.ReadFile(s.opt.StatusFile) // #nosec G304
 	if err != nil {
 		return st
 	}
@@ -370,9 +364,13 @@ func (s *Service) runVolume(ctx context.Context, keep int) error {
 		return err
 	}
 	if err := os.MkdirAll(s.opt.Dir, 0o750); err != nil {
+		st.OK = false
+		s.writeStatus(st)
 		return err
 	}
 	if err := writeFileAtomic(filepath.Join(s.opt.Dir, name), enc); err != nil {
+		st.OK = false
+		s.writeStatus(st)
 		return err
 	}
 	s.prune(keep)
@@ -448,7 +446,8 @@ func (s *Service) ValidateArchive(ctx context.Context, raw []byte) (int, error) 
 		return 0, err
 	}
 	defer cleanup()
-	cmd := exec.CommandContext(ctx, "pg_restore", "--list", tmp)
+	// tmp is an internal temp file we just wrote, not user input.
+	cmd := exec.CommandContext(ctx, "pg_restore", "--list", tmp) // #nosec G204
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
@@ -473,7 +472,8 @@ func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) 
 		return err
 	}
 	defer cleanup()
-	cmd := exec.CommandContext(ctx, "pg_restore",
+	// targetURL comes from trusted deployment config, not user input.
+	cmd := exec.CommandContext(ctx, "pg_restore", // #nosec G204
 		"--clean", "--if-exists", "--no-owner", "--dbname="+targetURL, tmp)
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
@@ -506,7 +506,8 @@ func (s *Service) Restore(ctx context.Context, encFile, targetURL string) error 
 	if !s.Enabled() {
 		return ErrDisabled
 	}
-	enc, err := os.ReadFile(encFile) //nosec G304 -- operator-supplied backup path (CLI)
+	// encFile is an operator-supplied path from the restore CLI, not user input.
+	enc, err := os.ReadFile(encFile) // #nosec G304
 	if err != nil {
 		return err
 	}
@@ -529,7 +530,8 @@ func (s *Service) TestRestore(ctx context.Context, encFile string) (TestReport, 
 	if !s.Enabled() {
 		return rep, ErrDisabled
 	}
-	enc, err := os.ReadFile(encFile) //nosec G304 -- operator-supplied backup path (CLI)
+	// encFile is an operator-supplied path from the restore CLI, not user input.
+	enc, err := os.ReadFile(encFile) // #nosec G304
 	if err != nil {
 		return rep, err
 	}
@@ -712,7 +714,7 @@ func (s *Service) S3Test(ctx context.Context) error {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("Bucket %q nicht gefunden", s.opt.S3.Bucket)
+		return fmt.Errorf("bucket %q nicht gefunden", s.opt.S3.Bucket)
 	}
 	return nil
 }
@@ -776,7 +778,7 @@ func (s *Service) writeStatus(st Status) {
 // writeFileAtomic writes via a temp file + rename so readers never see a partial file.
 func writeFileAtomic(path string, data []byte) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o640); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
@@ -790,10 +792,15 @@ func writeTemp(raw []byte) (path string, cleanup func(), err error) {
 		return "", nil, err
 	}
 	if _, err := f.Write(raw); err != nil {
-		f.Close()
-		os.Remove(f.Name())
+		_ = f.Close()
+		_ = os.Remove(f.Name())
 		return "", nil, err
 	}
-	f.Close()
-	return f.Name(), func() { os.Remove(f.Name()) }, nil
+	// Surface a failed Close: it can mean the archive was not fully flushed,
+	// which would make pg_restore read a truncated file.
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
+		return "", nil, err
+	}
+	return f.Name(), func() { _ = os.Remove(f.Name()) }, nil
 }

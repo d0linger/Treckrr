@@ -205,9 +205,8 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Body != nil && r.Body != http.NoBody {
 			limit := int64(maxRequestBody)
-			// Restore uploads a full encrypted dump — exempt those routes.
-			if strings.HasPrefix(r.URL.Path, "/admin/backup/restore") ||
-				strings.HasPrefix(r.URL.Path, "/admin/backup/validate") {
+			// Restore uploads a full encrypted dump — exempt those exact routes.
+			if r.URL.Path == "/admin/backup/restore" || r.URL.Path == "/admin/backup/validate" {
 				limit = maxBackupUpload
 			}
 			r.Body = http.MaxBytesReader(w, r.Body, limit)

@@ -47,7 +47,6 @@ func newBackup(cfg *config.Config, pool *sql.DB, st *store.Store) *backup.Servic
 		Dir:         cfg.BackupDir,
 		StatusFile:  cfg.BackupStatusFile,
 		Keep:        cfg.BackupKeep,
-		Interval:    time.Duration(cfg.BackupIntervalHours) * time.Hour,
 		S3: backup.S3Options{
 			Endpoint:  cfg.S3Endpoint,
 			Bucket:    cfg.S3Bucket,
@@ -196,7 +195,7 @@ func openBackup() (*config.Config, *sql.DB, *backup.Service, error) {
 	}
 	bk := newBackup(cfg, pool, store.New(pool, cfg.EncryptionSecret))
 	if !bk.Enabled() {
-		pool.Close()
+		_ = pool.Close()
 		return nil, nil, nil, fmt.Errorf("backups are not configured (set BACKUP_ENCRYPTION_KEY)")
 	}
 	return cfg, pool, bk, nil

@@ -326,8 +326,8 @@ The app makes **AES-256-GCM encrypted** `pg_dump`s. Set a key to enable them:
 
 ```bash
 BACKUP_ENCRYPTION_KEY=...   # ≥16 chars, separate from SESSION_SECRET; NOT recoverable
-BACKUP_INTERVAL_HOURS=24    # scheduled cadence (in-app, no extra container)
 BACKUP_KEEP=7               # dumps to retain in BACKUP_DIR (default /backups)
+# The backup schedule (cron) is set in the admin Backup panel, not via env.
 ```
 
 - **On demand:** admin **Backup** panel → *Backup jetzt* streams a `.dump.enc`

@@ -184,5 +184,11 @@ func TestBackupPageRenders(t *testing.T) {
 		"NextVolume":     "02.08.2026 03:00",
 		"NextS3":         "02.08.2026 04:00",
 		"Files":          []map[string]any{{"Name": "treckrr-2026-08-01-030000.dump.enc", "Size": "57 KB", "ModTime": time.Now()}},
+		// Exercise the "+ N weitere" collapse branches for both lists.
+		"FilesMore":   []map[string]any{{"Name": "treckrr-2026-07-31-030000.dump.enc", "Size": "56 KB", "ModTime": time.Now()}},
+		"S3Enabled":   true,
+		"S3Bucket":    "s3-dp",
+		"S3Files":     []map[string]any{{"Name": "treckrr-2026-08-01-040000.dump.enc", "Size": "57 KB", "ModTime": time.Now()}},
+		"S3FilesMore": []map[string]any{{"Name": "treckrr-2026-07-31-040000.dump.enc", "Size": "56 KB", "ModTime": time.Now()}},
 	})
 }

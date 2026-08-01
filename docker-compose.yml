@@ -55,7 +55,7 @@ services:
       BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
       BACKUP_DIR: ${BACKUP_DIR:-/backups}
       BACKUP_STATUS_FILE: ${BACKUP_STATUS_FILE:-/backups/status.json}
-      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      # Schedule (cron) is configured in the admin Backup panel, not here.
       BACKUP_KEEP: ${BACKUP_KEEP:-7}
       # Optional off-box S3/Backblaze destination for scheduled backups (3-2-1).
       # Empty S3_ENDPOINT/S3_BUCKET disables it.
@@ -74,9 +74,10 @@ services:
       - "${HOST_PORT:-8080}:${APP_PORT:-8080}"
 
   # Backups are now produced by the app itself (encrypted, AES-256-GCM):
-  # on-demand from the admin Backup panel and on a timer (BACKUP_INTERVAL_HOURS).
-  # The separate backup container was removed. Restore is a deliberate CLI op:
-  #   docker compose run --rm app treckrr restore <file.dump.enc>
+  # on-demand from the admin Backup panel and on a schedule (cron, set in the panel).
+  # The separate backup container was removed. Restore is a deliberate CLI op
+  # (the entrypoint already runs /app/treckrr, so no binary name is needed):
+  #   docker compose run --rm app restore <file.dump.enc>
 
 volumes:
   pgdata:

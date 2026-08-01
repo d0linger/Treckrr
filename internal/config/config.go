@@ -35,10 +35,9 @@ type Config struct {
 	BackupEncryptionKey string
 	// BackupDir is where the scheduled in-app backup writer drops encrypted dumps.
 	BackupDir string
-	// BackupIntervalHours is the scheduled-backup cadence; BackupKeep is how many
-	// encrypted dumps to retain (older ones are pruned).
-	BackupIntervalHours int
-	BackupKeep          int
+	// BackupKeep is how many encrypted dumps to retain (older ones are pruned).
+	// The schedule itself is cron-based and configured in the admin panel.
+	BackupKeep int
 	// Optional S3-compatible off-box destination for scheduled backups (3-2-1).
 	// Empty S3Endpoint/S3Bucket disables it.
 	S3Endpoint  string
@@ -67,7 +66,6 @@ func Load() (*Config, error) {
 		BackupStatusFile:    getenv("BACKUP_STATUS_FILE", "/backups/status.json"),
 		BackupEncryptionKey: os.Getenv("BACKUP_ENCRYPTION_KEY"),
 		BackupDir:           getenv("BACKUP_DIR", "/backups"),
-		BackupIntervalHours: getenvInt("BACKUP_INTERVAL_HOURS", 24),
 		BackupKeep:          getenvInt("BACKUP_KEEP", 7),
 		S3Endpoint:          os.Getenv("S3_ENDPOINT"),
 		S3Bucket:            os.Getenv("S3_BUCKET"),
@@ -104,9 +102,6 @@ func Load() (*Config, error) {
 	}
 	return c, nil
 }
-
-// BackupEnabled reports whether on-demand and scheduled backups are configured.
-func (c *Config) BackupEnabled() bool { return c.BackupEncryptionKey != "" }
 
 func getenv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

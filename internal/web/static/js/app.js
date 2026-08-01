@@ -840,13 +840,17 @@
 				body: new FormData(form),
 				headers: { "Accept": "application/json" },
 				credentials: "same-origin",
-			}).then(function (r) { return r.json(); })
+			}).then(function (r) {
+				if (r.status === 413) { throw new Error("Datei zu groß."); }
+				if (!r.ok) { throw new Error("Validierung fehlgeschlagen (Status " + r.status + ")."); }
+				return r.json();
+			})
 				.then(function (d) {
 					out.textContent = d.message || (d.ok ? "Gültig." : "Fehler.");
 					out.classList.toggle("bkp__desc--bad", !d.ok);
 				})
-				.catch(function () {
-					out.textContent = "Validierung fehlgeschlagen.";
+				.catch(function (err) {
+					out.textContent = (err && err.message) || "Validierung fehlgeschlagen.";
 					out.classList.add("bkp__desc--bad");
 				})
 				.then(function () { btn.disabled = false; });

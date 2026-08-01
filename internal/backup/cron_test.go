@@ -1,6 +1,9 @@
 package backup
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestDescribeCron(t *testing.T) {
 	cases := map[string]string{
@@ -31,6 +34,27 @@ func TestValidCron(t *testing.T) {
 	for _, bad := range []string{"0 3 * *", "99 * * * *", "abc"} {
 		if ValidCron(bad) {
 			t.Errorf("ValidCron(%q) = true, want false", bad)
+		}
+	}
+}
+
+func TestCronDue(t *testing.T) {
+	at := func(y, m, d, h int) time.Time { return time.Date(y, time.Month(m), d, h, 0, 0, 0, time.UTC) }
+	now := at(2026, 8, 1, 12) // fixed reference: 2026-08-01 12:00
+	cases := []struct {
+		name string
+		expr string
+		last time.Time
+		want bool
+	}{
+		{"never-run triggers immediately", "0 3 * * *", time.Time{}, true},
+		{"already ran this window", "0 3 * * *", at(2026, 8, 1, 3), false},
+		{"overdue since yesterday", "0 3 * * *", at(2026, 7, 31, 3), true},
+		{"invalid expr never due", "nope", time.Time{}, false},
+	}
+	for _, c := range cases {
+		if got := cronDue(c.expr, c.last, now); got != c.want {
+			t.Errorf("%s: cronDue(%q, %v, %v) = %v, want %v", c.name, c.expr, c.last, now, got, c.want)
 		}
 	}
 }
