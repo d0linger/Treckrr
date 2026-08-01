@@ -1211,6 +1211,10 @@ em { font-style: normal; color: var(--muted); }
 .bkp__files a.link { font-size: .82rem; font-weight: 700; white-space: nowrap; }
 .bkp--restore .field span code, .bkp__do code { font-size: .82em; }
 .bkp__sec--danger { color: var(--owe); }
+.bkp__restore-row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.bkp__restore-file { flex: 1 1 15rem; min-width: 0; }
+.bkp__restore-key { flex: 0 1 13rem; }
+.bkp__restore-confirm { flex: 0 1 11rem; font-family: var(--font-mono); letter-spacing: .06em; }
 .bkp__danger { margin-top: 1rem; padding: .9rem; border: 1px solid color-mix(in srgb, var(--owe) 40%, var(--border));
 	border-radius: 11px; background: color-mix(in srgb, var(--owe) 7%, transparent); }
 .btn--danger { background: var(--owe); color: #fff; border-color: var(--owe); }

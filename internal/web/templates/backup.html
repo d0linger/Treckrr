@@ -125,32 +125,28 @@
 	</div>
 	{{end}}
 
-	<!-- Wiederherstellen (GUI) -->
+	<!-- Wiederherstellen (GUI) — eine Form: Datei + Schlüssel geteilt -->
 	<div class="card bkp--restore">
 		<div class="bkp__sec">Wiederherstellen</div>
-		<form method="post" action="/admin/backup/validate" enctype="multipart/form-data" class="form">
-			<label class="field"><span>1 · Backup-Datei (<code>.dump.enc</code>)</span>
-				<input class="input" type="file" name="file" accept=".enc" required></label>
-			<label class="field"><span>2 · Backup-Schlüssel — bestätigt, dass er zur Datei passt</span>
-				<input class="input" type="password" name="key" autocomplete="off" placeholder="BACKUP_ENCRYPTION_KEY" required></label>
-			<div class="bkp__btnrow"><button class="btn btn--ghost" type="submit">Validieren (Vorschau)</button></div>
+		<form method="post" enctype="multipart/form-data">
+			<p class="bkp__note" style="margin:0 0 .5rem">Backup-Datei (<code>.dump.enc</code>) + Schlüssel wählen. <strong>Validieren</strong> prüft das Archiv in-memory — ohne die DB anzufassen.</p>
+			<div class="bkp__restore-row">
+				<input class="input bkp__restore-file" type="file" name="file" accept=".enc" required aria-label="Backup-Datei">
+				<input class="input bkp__restore-key" type="password" name="key" placeholder="Backup-Schlüssel" autocomplete="off" required aria-label="Backup-Schlüssel">
+			</div>
+			<div class="bkp__btnrow" style="margin-top:.6rem">
+				<button class="btn btn--ghost" type="submit" formaction="/admin/backup/validate">Validieren (Vorschau)</button>
+			</div>
+			<div class="bkp__danger">
+				<div class="bkp__sec bkp__sec--danger">Zerstörerisch</div>
+				<p class="bkp__note" style="margin:0 0 .55rem">Überschreibt die Live-DB vollständig. Zum Ausführen <code>RESTORE</code> eintippen — admin-only, auditiert.</p>
+				<div class="bkp__restore-row">
+					<input class="input bkp__restore-confirm" type="text" name="confirm" placeholder="RESTORE" autocomplete="off" aria-label="RESTORE eintippen">
+					<button class="btn btn--danger btn--primary" type="submit" formaction="/admin/backup/restore">Wiederherstellen</button>
+				</div>
+				<p class="bkp__note" style="margin:.55rem 0 0">Alternativ als Ops-Kommando: <code>docker compose run --rm app restore &lt;datei.dump.enc&gt;</code>.</p>
+			</div>
 		</form>
-		<p class="bkp__note" style="margin:.6rem .2rem">„Validieren" entschlüsselt in-memory und prüft das Archiv — <strong>ohne die DB anzufassen</strong>.</p>
-
-		<div class="bkp__danger">
-			<div class="bkp__sec bkp__sec--danger">Zerstörerisch</div>
-			<form method="post" action="/admin/backup/restore" enctype="multipart/form-data" class="form"
-				data-confirm="Wiederherstellen? Dies ÜBERSCHREIBT die laufende Datenbank vollständig mit dem Backup-Stand.">
-				<label class="field"><span>Datei erneut wählen</span>
-					<input class="input" type="file" name="file" accept=".enc" required></label>
-				<label class="field"><span>Backup-Schlüssel</span>
-					<input class="input" type="password" name="key" autocomplete="off" required></label>
-				<label class="field"><span>Zum Ausführen <code>RESTORE</code> eintippen</span>
-					<input class="input" type="text" name="confirm" autocomplete="off" placeholder="RESTORE" required></label>
-				<div class="bkp__btnrow"><button class="btn btn--danger btn--primary" type="submit">Wiederherstellen — überschreibt die Live-DB</button></div>
-			</form>
-			<p class="bkp__note" style="margin:.5rem .2rem 0"><strong>Zerstörerisch:</strong> ersetzt alle aktuellen Daten. Nur nach Validierung &amp; Tipp-Bestätigung, admin-only, auditiert. Alternativ: <code>docker compose run --rm app restore &lt;datei.dump.enc&gt;</code>.</p>
-		</div>
 	</div>
 	{{end}}
 </section>
