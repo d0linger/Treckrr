@@ -6,13 +6,13 @@ import (
 	"treckrr/internal/models"
 )
 
-// EnsureBackupSettings inserts the single settings row from the given defaults
-// (seeded from the BACKUP_* env) if it does not exist yet. Idempotent.
+// EnsureBackupSettings inserts the single settings row from the given defaults if
+// it does not exist yet. Idempotent.
 func (s *Store) EnsureBackupSettings(ctx context.Context, def models.BackupSettings) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO backup_settings (id, volume_interval_hours, volume_keep, s3_interval_hours, s3_keep)
+		`INSERT INTO backup_settings (id, volume_cron, volume_keep, s3_cron, s3_keep)
 		 VALUES (1,$1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`,
-		def.VolumeIntervalHours, def.VolumeKeep, def.S3IntervalHours, def.S3Keep)
+		def.VolumeCron, def.VolumeKeep, def.S3Cron, def.S3Keep)
 	return err
 }
 
@@ -20,9 +20,9 @@ func (s *Store) EnsureBackupSettings(ctx context.Context, def models.BackupSetti
 func (s *Store) GetBackupSettings(ctx context.Context) (models.BackupSettings, error) {
 	var b models.BackupSettings
 	err := s.db.QueryRowContext(ctx,
-		`SELECT volume_interval_hours, volume_keep, s3_interval_hours, s3_keep
+		`SELECT volume_cron, volume_keep, s3_cron, s3_keep
 		   FROM backup_settings WHERE id=1`).
-		Scan(&b.VolumeIntervalHours, &b.VolumeKeep, &b.S3IntervalHours, &b.S3Keep)
+		Scan(&b.VolumeCron, &b.VolumeKeep, &b.S3Cron, &b.S3Keep)
 	return b, err
 }
 
@@ -30,8 +30,8 @@ func (s *Store) GetBackupSettings(ctx context.Context) (models.BackupSettings, e
 func (s *Store) UpdateBackupSettings(ctx context.Context, b models.BackupSettings) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE backup_settings
-		    SET volume_interval_hours=$1, volume_keep=$2, s3_interval_hours=$3, s3_keep=$4
+		    SET volume_cron=$1, volume_keep=$2, s3_cron=$3, s3_keep=$4
 		  WHERE id=1`,
-		b.VolumeIntervalHours, b.VolumeKeep, b.S3IntervalHours, b.S3Keep)
+		b.VolumeCron, b.VolumeKeep, b.S3Cron, b.S3Keep)
 	return err
 }

@@ -690,4 +690,78 @@
 			navigator.serviceWorker.register("/sw.js").catch(function () { /* ignore */ });
 		});
 	}
+
+	// ---- Backup panel: live cron description + next-run (progressive) --------
+	(function () {
+		var inputs = document.querySelectorAll("[data-cron-input]");
+		if (!inputs.length) return;
+		var DOW = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+		function pad(n) { return String(n).padStart(2, "0"); }
+		function num(s) { return /^\d+$/.test(s); }
+		function describe(expr) {
+			expr = (expr || "").trim();
+			if (!expr) return { ok: true, t: "Ausgeschaltet (kein Zeitplan)." };
+			var p = expr.split(/\s+/);
+			if (p.length !== 5) return { ok: false, t: "Ungültig: erwartet 5 Felder (Minute Stunde Tag Monat Wochentag)." };
+			var mi = p[0], ho = p[1], dom = p[2], mon = p[3], dow = p[4], m;
+			var star = dom === "*" && mon === "*" && dow === "*";
+			if ((m = mi.match(/^\*\/(\d+)$/)) && ho === "*" && star) return { ok: true, t: "Alle " + m[1] + " Minuten." };
+			if (mi === "*" && ho === "*" && star) return { ok: true, t: "Jede Minute." };
+			if (mi === "0" && ho === "*" && star) return { ok: true, t: "Stündlich (zur vollen Stunde)." };
+			if (num(mi) && ho === "*" && star) return { ok: true, t: "Stündlich um Minute " + mi + "." };
+			if ((m = ho.match(/^\*\/(\d+)$/)) && num(mi) && star) return { ok: true, t: "Alle " + m[1] + " Stunden (um Minute " + mi + ")." };
+			if (num(mi) && num(ho) && mon === "*") {
+				var time = pad(ho) + ":" + pad(mi) + " Uhr";
+				if (dom === "*" && dow === "*") return { ok: true, t: "Täglich um " + time + "." };
+				if (dom === "*" && num(dow)) return { ok: true, t: "Jeden " + DOW[parseInt(dow, 10) % 7] + " um " + time + "." };
+				if (dom !== "*" && dow === "*") return { ok: true, t: "Monatlich am " + dom + ". um " + time + "." };
+			}
+			return { ok: true, t: "Cron: " + expr + " (Standardausdruck)." };
+		}
+		function match(f, v) {
+			if (f === "*") return true;
+			return f.split(",").some(function (part) {
+				var mm = part.match(/^\*\/(\d+)$/);
+				if (mm) return v % parseInt(mm[1], 10) === 0;
+				return /^\d+$/.test(part) && parseInt(part, 10) === v;
+			});
+		}
+		function next(expr) {
+			expr = (expr || "").trim();
+			if (!expr) return "—";
+			var p = expr.split(/\s+/);
+			if (p.length !== 5) return "—";
+			var t = new Date(Date.now() + 60000); t.setSeconds(0, 0);
+			for (var i = 0; i < 60 * 24 * 40; i++) {
+				var d = t.getDay();
+				if (match(p[0], t.getMinutes()) && match(p[1], t.getHours()) && match(p[2], t.getDate()) &&
+					match(p[3], t.getMonth() + 1) && (p[4] === "*" || match(p[4], d) || (d === 0 && match(p[4], 7)))) {
+					return t.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+				}
+				t = new Date(t.getTime() + 60000);
+			}
+			return "—";
+		}
+		function wire(inp) {
+			var d = document.getElementById(inp.getAttribute("data-cron-desc"));
+			var n = document.getElementById(inp.getAttribute("data-cron-next"));
+			function upd() {
+				var r = describe(inp.value);
+				if (d) { d.textContent = r.t; d.classList.toggle("bkp__desc--bad", !r.ok); }
+				if (n) n.innerHTML = "nächste Ausführung: <strong>" + (r.ok ? next(inp.value) : "—") + "</strong>";
+			}
+			inp.addEventListener("input", upd); upd();
+		}
+		Array.prototype.forEach.call(inputs, wire);
+		document.querySelectorAll(".bkp__chips").forEach(function (row) {
+			var target = row.parentNode.querySelector('[name="' + row.getAttribute("data-cron-target") + '"]');
+			if (!target) return;
+			row.querySelectorAll(".bkp__chip").forEach(function (c) {
+				c.addEventListener("click", function () {
+					target.value = c.hasAttribute("data-cron-clear") ? "" : c.textContent.trim();
+					target.dispatchEvent(new Event("input"));
+				});
+			});
+		});
+	})();
 })();

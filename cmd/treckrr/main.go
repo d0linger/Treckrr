@@ -59,11 +59,7 @@ func newBackup(cfg *config.Config, pool *sql.DB, st *store.Store) *backup.Servic
 		SettingsFn: func(ctx context.Context) backup.Settings {
 			s, err := st.GetBackupSettings(ctx)
 			if err != nil {
-				return backup.Settings{
-					VolumeIntervalHours: cfg.BackupIntervalHours,
-					VolumeKeep:          cfg.BackupKeep,
-					S3IntervalHours:     cfg.BackupIntervalHours,
-				}
+				return backup.Settings{VolumeCron: "0 3 * * *", VolumeKeep: cfg.BackupKeep, S3Cron: "0 4 * * *"}
 			}
 			return backup.Settings(s)
 		},
@@ -104,9 +100,9 @@ func run() error {
 	// Encrypted backups: scheduled writer (in-app) + on-demand download handler.
 	// Seed the schedule from env on first boot; thereafter it is GUI-editable.
 	if err := st.EnsureBackupSettings(ctx, models.BackupSettings{
-		VolumeIntervalHours: cfg.BackupIntervalHours,
-		VolumeKeep:          cfg.BackupKeep,
-		S3IntervalHours:     cfg.BackupIntervalHours,
+		VolumeCron: "0 3 * * *",
+		VolumeKeep: cfg.BackupKeep,
+		S3Cron:     "0 4 * * *",
 	}); err != nil {
 		return err
 	}

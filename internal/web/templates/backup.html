@@ -27,33 +27,50 @@
 	{{end}}
 
 	{{if .Backup.Enabled}}
-	<!-- Zeitplan (GUI) -->
+	<!-- Zeitplan (Cron) -->
 	{{with .Settings}}
 	<div class="card">
-		<div class="bkp__sec">Zeitplan</div>
+		<div class="bkp__sec"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Zeitplan · Cron</div>
 		<form method="post" action="/admin/backup/settings">
 			<div class="bkp__sched">
 				<div class="bkp__sched-col">
-					<div class="bkp__sched-h">Volume <span class="bkp__muted">(neben der DB)</span></div>
-					<label class="field field--row"><span>Intervall (Std., 0 = aus)</span>
-						<input class="input input--num" type="number" min="0" name="volume_interval" value="{{.VolumeIntervalHours}}"></label>
-					<label class="field field--row"><span>Behalten (Anzahl)</span>
-						<input class="input input--num" type="number" min="0" name="volume_keep" value="{{.VolumeKeep}}"></label>
-					<div class="bkp__next">nächstes: <strong>{{$.NextVolume}}</strong></div>
+					<div class="bkp__sched-h">Volume <span class="bkp__muted">· neben der DB</span></div>
+					<label class="bkp__lbl">Cron-Ausdruck</label>
+					<input class="input input--mono" name="volume_cron" value="{{.VolumeCron}}" spellcheck="false" autocomplete="off" placeholder="0 3 * * *"
+						data-cron-input data-cron-desc="volDesc" data-cron-next="volNext">
+					<div class="bkp__chips" data-cron-target="volume_cron">
+						<button type="button" class="bkp__chip">0 3 * * *</button>
+						<button type="button" class="bkp__chip">0 */6 * * *</button>
+						<button type="button" class="bkp__chip">*/30 * * * *</button>
+						<button type="button" class="bkp__chip">0 3 * * 0</button>
+					</div>
+					<div class="bkp__desc" id="volDesc">{{$.VolumeCronDesc}}</div>
+					<div class="bkp__next" id="volNext">nächste Ausführung: <strong>{{$.NextVolume}}</strong></div>
+					<label class="bkp__lbl">Behalten (Anzahl)</label>
+					<input class="input input--num" type="number" min="0" name="volume_keep" value="{{.VolumeKeep}}">
 				</div>
 				<div class="bkp__sched-col">
-					<div class="bkp__sched-h">S3 {{if not $.S3Enabled}}<span class="bkp__muted">(S3_* nicht gesetzt)</span>{{end}}</div>
-					<label class="field field--row"><span>Intervall (Std., 0 = aus)</span>
-						<input class="input input--num" type="number" min="0" name="s3_interval" value="{{.S3IntervalHours}}"></label>
-					<label class="field field--row"><span>Behalten (0 = alle)</span>
-						<input class="input input--num" type="number" min="0" name="s3_keep" value="{{.S3Keep}}"></label>
-					<div class="bkp__next">nächstes: <strong>{{$.NextS3}}</strong></div>
+					<div class="bkp__sched-h">S3 {{if not $.S3Enabled}}<span class="bkp__muted">· S3_* nicht gesetzt</span>{{end}}</div>
+					<label class="bkp__lbl">Cron-Ausdruck</label>
+					<input class="input input--mono" name="s3_cron" value="{{.S3Cron}}" spellcheck="false" autocomplete="off" placeholder="0 4 * * *"
+						data-cron-input data-cron-desc="s3Desc" data-cron-next="s3Next">
+					<div class="bkp__chips" data-cron-target="s3_cron">
+						<button type="button" class="bkp__chip">0 4 * * *</button>
+						<button type="button" class="bkp__chip">0 4 * * 0</button>
+						<button type="button" class="bkp__chip">0 */12 * * *</button>
+						<button type="button" class="bkp__chip" data-cron-clear>aus</button>
+					</div>
+					<div class="bkp__desc" id="s3Desc">{{$.S3CronDesc}}</div>
+					<div class="bkp__next" id="s3Next">nächste Ausführung: <strong>{{$.NextS3}}</strong></div>
+					<label class="bkp__lbl">Behalten (0 = alle)</label>
+					<input class="input input--num" type="number" min="0" name="s3_keep" value="{{.S3Keep}}">
 				</div>
 			</div>
-			<div class="btnrow" style="margin-top:.6rem">
+			<div class="btnrow" style="margin-top:.8rem">
 				<button class="btn btn--primary" type="submit">Zeitplan speichern</button>
 				<button class="btn" type="submit" formaction="/admin/backup/run-scheduled">Jetzt sichern (Volume)</button>
 			</div>
+			<p class="bkp__note" style="margin:.5rem .1rem 0">Leerer Cron = Ziel aus. Format: <code>Minute Stunde Tag Monat Wochentag</code> · z. B. <code>0 3 * * *</code> = täglich 03:00.</p>
 		</form>
 	</div>
 	{{end}}

@@ -144,6 +144,8 @@ func (s *Server) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
 	if st.Enabled {
 		if bs, err := s.store.GetBackupSettings(r.Context()); err == nil {
 			data["Settings"] = bs
+			data["VolumeCronDesc"] = backup.DescribeCron(bs.VolumeCron)
+			data["S3CronDesc"] = backup.DescribeCron(bs.S3Cron)
 		}
 		nv, ns := s.backup.NextRuns(r.Context())
 		data["NextVolume"] = fmtNext(nv)
@@ -178,17 +180,22 @@ func (s *Server) handleBackupSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	bs := models.BackupSettings{
-		VolumeIntervalHours: clampAtoi(r.FormValue("volume_interval"), 24),
-		VolumeKeep:          clampAtoi(r.FormValue("volume_keep"), 7),
-		S3IntervalHours:     clampAtoi(r.FormValue("s3_interval"), 24),
-		S3Keep:              clampAtoi(r.FormValue("s3_keep"), 0),
+		VolumeCron: strings.TrimSpace(r.FormValue("volume_cron")),
+		VolumeKeep: clampAtoi(r.FormValue("volume_keep"), 7),
+		S3Cron:     strings.TrimSpace(r.FormValue("s3_cron")),
+		S3Keep:     clampAtoi(r.FormValue("s3_keep"), 0),
+	}
+	if !backup.ValidCron(bs.VolumeCron) || !backup.ValidCron(bs.S3Cron) {
+		s.setFlash(w, r, "error", "Ungültiger Cron-Ausdruck (Format: Minute Stunde Tag Monat Wochentag).")
+		redirect(w, r, "/admin/backup")
+		return
 	}
 	if err := s.store.UpdateBackupSettings(r.Context(), bs); err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	} else {
 		s.audit(r, "backup_settings", "backup", 0,
-			fmt.Sprintf("Volume %dh/behalte %d · S3 %dh/behalte %d",
-				bs.VolumeIntervalHours, bs.VolumeKeep, bs.S3IntervalHours, bs.S3Keep))
+			fmt.Sprintf("Volume %q/behalte %d · S3 %q/behalte %d",
+				bs.VolumeCron, bs.VolumeKeep, bs.S3Cron, bs.S3Keep))
 		s.setFlash(w, r, "success", "Backup-Zeitplan gespeichert.")
 	}
 	redirect(w, r, "/admin/backup")

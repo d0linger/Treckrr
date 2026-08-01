@@ -6,6 +6,7 @@ require (
 	github.com/go-webauthn/webauthn v0.17.4
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/minio/minio-go/v7 v7.2.1
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/shopspring/decimal v1.4.0
 	golang.org/x/crypto v0.54.0
 	rsc.io/qr v0.2.0

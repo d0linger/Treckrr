@@ -18,12 +18,119 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/robfig/cron/v3"
 )
+
+// parseCron parses a standard 5-field cron; empty/invalid yields ok=false.
+func parseCron(expr string) (cron.Schedule, bool) {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return nil, false
+	}
+	s, err := cron.ParseStandard(expr)
+	if err != nil {
+		return nil, false
+	}
+	return s, true
+}
+
+// ValidCron reports whether expr is empty (= off) or a valid cron.
+func ValidCron(expr string) bool {
+	if strings.TrimSpace(expr) == "" {
+		return true
+	}
+	_, ok := parseCron(expr)
+	return ok
+}
+
+// cronDue reports whether a run scheduled by expr is due now, given the last run.
+func cronDue(expr string, last, now time.Time) bool {
+	s, ok := parseCron(expr)
+	if !ok {
+		return false
+	}
+	return !now.Before(s.Next(last))
+}
+
+// cronNext returns the next scheduled time after from (zero if off/invalid).
+func cronNext(expr string, from time.Time) time.Time {
+	s, ok := parseCron(expr)
+	if !ok {
+		return time.Time{}
+	}
+	return s.Next(from)
+}
+
+var cronDOW = []string{"Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"}
+
+// DescribeCron renders a standard 5-field cron in plain German for the panel.
+// Unknown-but-valid expressions fall back to showing the raw expression.
+func DescribeCron(expr string) string {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return "Ausgeschaltet (kein Zeitplan)."
+	}
+	p := strings.Fields(expr)
+	if len(p) != 5 {
+		return "Ungültig: erwartet 5 Felder (Minute Stunde Tag Monat Wochentag)."
+	}
+	if _, ok := parseCron(expr); !ok {
+		return "Ungültiger Cron-Ausdruck."
+	}
+	mi, ho, dom, mon, dow := p[0], p[1], p[2], p[3], p[4]
+	num := func(s string) (int, bool) { n, err := strconv.Atoi(s); return n, err == nil }
+	star := func(a, b, c string) bool { return a == "*" && b == "*" && c == "*" }
+	if n, ok := everyN(mi); ok && ho == "*" && star(dom, mon, dow) {
+		return fmt.Sprintf("Alle %d Minuten.", n)
+	}
+	if mi == "*" && ho == "*" && star(dom, mon, dow) {
+		return "Jede Minute."
+	}
+	if mi == "0" && ho == "*" && star(dom, mon, dow) {
+		return "Stündlich (zur vollen Stunde)."
+	}
+	if _, ok := num(mi); ok && ho == "*" && star(dom, mon, dow) {
+		return "Stündlich um Minute " + mi + "."
+	}
+	if n, ok := everyN(ho); ok {
+		if _, ok2 := num(mi); ok2 && star(dom, mon, dow) {
+			return fmt.Sprintf("Alle %d Stunden (um Minute %s).", n, mi)
+		}
+	}
+	if m, ok := num(mi); ok {
+		if h, ok2 := num(ho); ok2 && mon == "*" {
+			t := fmt.Sprintf("%02d:%02d Uhr", h, m)
+			switch {
+			case dom == "*" && dow == "*":
+				return "Täglich um " + t + "."
+			case dom == "*" && dow != "*":
+				if d, ok3 := num(dow); ok3 {
+					return "Jeden " + cronDOW[d%7] + " um " + t + "."
+				}
+			case dom != "*" && dow == "*":
+				return "Monatlich am " + dom + ". um " + t + "."
+			}
+		}
+	}
+	return "Cron: " + expr + " (Standardausdruck)."
+}
+
+func everyN(field string) (int, bool) {
+	if !strings.HasPrefix(field, "*/") {
+		return 0, false
+	}
+	n, err := strconv.Atoi(field[2:])
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
+}
 
 // magic prefixes every encrypted dump so a wrong/plain file is rejected early.
 const magic = "TRKBK1"
@@ -42,13 +149,13 @@ type Status struct {
 	RestoreTested time.Time `json:"restore_tested,omitempty"`
 }
 
-// Settings is the runtime backup schedule, editable in the GUI. Interval 0
-// disables that timer.
+// Settings is the runtime backup schedule, editable in the GUI. An empty cron
+// disables that destination.
 type Settings struct {
-	VolumeIntervalHours int
-	VolumeKeep          int
-	S3IntervalHours     int
-	S3Keep              int
+	VolumeCron string
+	VolumeKeep int
+	S3Cron     string
+	S3Keep     int
 }
 
 // S3Options configures an optional S3-compatible off-box destination.
@@ -216,8 +323,7 @@ func (s *Service) currentSettings(ctx context.Context) Settings {
 	if s.opt.SettingsFn != nil {
 		return s.opt.SettingsFn(ctx)
 	}
-	h := int(s.opt.Interval / time.Hour)
-	return Settings{VolumeIntervalHours: h, VolumeKeep: s.opt.Keep, S3IntervalHours: h}
+	return Settings{VolumeCron: "0 3 * * *", VolumeKeep: s.opt.Keep, S3Cron: "0 4 * * *"}
 }
 
 // readStatus loads status.json (best-effort) so a run can update its own fields
@@ -503,13 +609,11 @@ func (s *Service) Loop(ctx context.Context, logf func(string, ...any)) {
 	}
 }
 
-func hours(n int) time.Duration { return time.Duration(n) * time.Hour }
-
 func (s *Service) tick(ctx context.Context, logf func(string, ...any)) {
 	set := s.currentSettings(ctx)
 	st := s.readStatus()
 	now := time.Now()
-	if set.VolumeIntervalHours > 0 && (st.LastBackup.IsZero() || now.Sub(st.LastBackup) >= hours(set.VolumeIntervalHours)) {
+	if cronDue(set.VolumeCron, st.LastBackup, now) {
 		c, cancel := context.WithTimeout(ctx, 10*time.Minute)
 		if err := s.runVolume(c, set.VolumeKeep); err != nil {
 			logf("volume backup failed: %v", err)
@@ -518,9 +622,9 @@ func (s *Service) tick(ctx context.Context, logf func(string, ...any)) {
 		}
 		cancel()
 	}
-	if s.S3Enabled() && set.S3IntervalHours > 0 {
+	if s.S3Enabled() {
 		st = s.readStatus()
-		if st.LastS3.IsZero() || now.Sub(st.LastS3) >= hours(set.S3IntervalHours) {
+		if cronDue(set.S3Cron, st.LastS3, now) {
 			c, cancel := context.WithTimeout(ctx, 10*time.Minute)
 			if err := s.runS3Mirror(c, set.S3Keep); err != nil {
 				logf("s3 mirror failed: %v", err)
@@ -544,12 +648,10 @@ func (s *Service) ManualVolume(ctx context.Context) error {
 // disabled), for the panel.
 func (s *Service) NextRuns(ctx context.Context) (nextVolume, nextS3 time.Time) {
 	set := s.currentSettings(ctx)
-	st := s.readStatus()
-	if set.VolumeIntervalHours > 0 && !st.LastBackup.IsZero() {
-		nextVolume = st.LastBackup.Add(hours(set.VolumeIntervalHours))
-	}
-	if s.S3Enabled() && set.S3IntervalHours > 0 && !st.LastS3.IsZero() {
-		nextS3 = st.LastS3.Add(hours(set.S3IntervalHours))
+	now := time.Now()
+	nextVolume = cronNext(set.VolumeCron, now)
+	if s.S3Enabled() {
+		nextS3 = cronNext(set.S3Cron, now)
 	}
 	return
 }

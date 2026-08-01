@@ -1215,13 +1215,23 @@ em { font-style: normal; color: var(--muted); }
 .bkp__sched { display: grid; grid-template-columns: 1fr; gap: .8rem; }
 @media (min-width: 560px) { .bkp__sched { grid-template-columns: 1fr 1fr; } }
 .bkp__sched-col { border: 1px solid var(--border); border-radius: 10px; padding: .7rem .8rem; background: var(--surface-2); }
-.bkp__sched-h { font-weight: 700; font-size: .92rem; margin-bottom: .5rem; }
+.bkp__sec .ic { color: var(--primary); vertical-align: -1px; margin-right: .1rem; }
+.bkp__sched-h { font-weight: 700; font-size: .95rem; margin-bottom: .6rem; }
 .bkp__muted { color: var(--muted); font-weight: 400; font-size: .8rem; }
-.bkp__next { font-family: var(--font-mono); font-size: .74rem; color: var(--muted); margin-top: .4rem; }
+.bkp__lbl { display: block; font-size: .72rem; color: var(--muted); margin: .55rem 0 .2rem; letter-spacing: .01em; }
+.bkp__lbl:first-of-type { margin-top: 0; }
+.input--mono { font-family: var(--font-mono); font-size: .88rem; letter-spacing: .02em; }
+.input--num { width: 100%; max-width: 7rem; text-align: right; font-variant-numeric: tabular-nums; }
+.bkp__chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .4rem; }
+.bkp__chip { font-family: var(--font-mono); font-size: .66rem; padding: .2rem .5rem; border-radius: 999px;
+	border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; }
+.bkp__chip:hover { border-color: var(--primary); color: var(--primary); }
+.bkp__desc { margin-top: .5rem; font-size: .82rem; line-height: 1.4; color: var(--primary); background: var(--primary-tint);
+	border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent); border-radius: 8px; padding: .42rem .55rem; }
+.bkp__desc--bad { color: var(--owe); background: color-mix(in srgb, var(--owe) 8%, transparent);
+	border-color: color-mix(in srgb, var(--owe) 35%, transparent); }
+.bkp__next { font-family: var(--font-mono); font-size: .72rem; color: var(--muted); margin-top: .4rem; }
 .bkp__next strong { color: var(--text); }
-.field--row { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin: 0 0 .4rem; }
-.field--row > span { margin: 0; font-size: .82rem; color: var(--muted); }
-.input--num { width: 6rem; text-align: right; font-variant-numeric: tabular-nums; }
 .bkp__s3-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
 .bkp__files--compact li { padding: .32rem 0; }
 .bkp__files--compact .bkp__fn { font-size: .74rem; }

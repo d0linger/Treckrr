@@ -228,12 +228,12 @@ type Payment struct {
 }
 
 // BackupSettings is the GUI-editable backup schedule: independent volume and S3
-// cadences (hours) and retention counts. An interval of 0 disables that timer.
+// cron expressions and retention counts. An empty cron disables that destination.
 type BackupSettings struct {
-	VolumeIntervalHours int
-	VolumeKeep          int
-	S3IntervalHours     int
-	S3Keep              int
+	VolumeCron string
+	VolumeKeep int
+	S3Cron     string
+	S3Keep     int
 }
 
 // Company holds the sender (Absender) details shown on an invoice-mode Beleg,
