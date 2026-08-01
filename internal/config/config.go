@@ -105,9 +105,6 @@ func Load() (*Config, error) {
 	return c, nil
 }
 
-// BackupEnabled reports whether on-demand and scheduled backups are configured.
-func (c *Config) BackupEnabled() bool { return c.BackupEncryptionKey != "" }
-
 func getenv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v

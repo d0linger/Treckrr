@@ -7,6 +7,23 @@ import (
 	"testing"
 )
 
+func TestValidName(t *testing.T) {
+	cases := map[string]bool{
+		"treckrr-2026-08-01-030000.dump.enc": true,
+		"../../etc/passwd":                   false,
+		"treckrr-x.dump.enc/../y":            false,
+		"treckrr-../evil.dump.enc":           false,
+		"":                                   false,
+		"foo.dump.enc":                       false, // missing treckrr- prefix
+		"treckrr-x.txt":                      false, // missing .dump.enc suffix
+	}
+	for name, want := range cases {
+		if got := validName(name); got != want {
+			t.Errorf("validName(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
 func TestEncryptDecryptRoundTrip(t *testing.T) {
 	k := sha256.Sum256([]byte("a-sufficiently-long-backup-key!!"))
 	plain := bytes.Repeat([]byte("PII+billing\x00\x01\xff"), 5000) // ~65 KB binary

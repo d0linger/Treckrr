@@ -74,9 +74,10 @@ services:
       - "${HOST_PORT:-8080}:${APP_PORT:-8080}"
 
   # Backups are now produced by the app itself (encrypted, AES-256-GCM):
-  # on-demand from the admin Backup panel and on a timer (BACKUP_INTERVAL_HOURS).
-  # The separate backup container was removed. Restore is a deliberate CLI op:
-  #   docker compose run --rm app treckrr restore <file.dump.enc>
+  # on-demand from the admin Backup panel and on a schedule (cron, set in the panel).
+  # The separate backup container was removed. Restore is a deliberate CLI op
+  # (the entrypoint already runs /app/treckrr, so no binary name is needed):
+  #   docker compose run --rm app restore <file.dump.enc>
 
 volumes:
   pgdata:

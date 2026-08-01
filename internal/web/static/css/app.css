@@ -1195,7 +1195,6 @@ em { font-style: normal; color: var(--muted); }
 	padding: .18rem .55rem; border-radius: 999px; background: var(--primary-tint); color: var(--primary);
 	border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); }
 .bkp__warn { color: #b04a2a; font-weight: 600; }
-.bkp--ok .bkp__warn { color: #b04a2a; }
 .bkp__do { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .bkp__cmd { margin: 0; padding: .6rem .75rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px;
 	overflow-x: auto; font-family: var(--font-mono); font-size: .8rem; }
@@ -1242,10 +1241,6 @@ em { font-style: normal; color: var(--muted); }
 .bkp__lbl:first-of-type { margin-top: 0; }
 .input--mono { font-family: var(--font-mono); font-size: .88rem; letter-spacing: .02em; }
 .input--num { width: 100%; max-width: 7rem; text-align: right; font-variant-numeric: tabular-nums; }
-.bkp__chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .4rem; }
-.bkp__chip { font-family: var(--font-mono); font-size: .66rem; padding: .2rem .5rem; border-radius: 999px;
-	border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; }
-.bkp__chip:hover { border-color: var(--primary); color: var(--primary); }
 .bkp__desc { margin-top: .5rem; font-size: .82rem; line-height: 1.4; color: var(--primary); background: var(--primary-tint);
 	border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent); border-radius: 8px; padding: .42rem .55rem; }
 .bkp__desc--bad { color: var(--owe); background: color-mix(in srgb, var(--owe) 8%, transparent);

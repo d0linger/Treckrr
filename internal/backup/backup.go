@@ -267,17 +267,12 @@ func decrypt(enc, key []byte) ([]byte, error) {
 	return pt, nil
 }
 
-// Decrypt exposes decrypt for callers holding raw bytes (e.g. the restore CLI).
-func (s *Service) Decrypt(enc []byte) ([]byte, error) {
-	if !s.Enabled() {
-		return nil, ErrDisabled
-	}
-	return decrypt(enc, s.key)
-}
-
 // dump runs pg_dump in PostgreSQL's custom format (compressed, restorable with
 // pg_restore) against the configured database and returns the raw archive bytes.
 func (s *Service) dump(ctx context.Context) ([]byte, error) {
+	// The connection URL comes from trusted deployment config (DATABASE_URL),
+	// not user input, and libpq offers no argv-free way to pass a full URI.
+	// gosec G204 is excluded for this package in .golangci.yml.
 	cmd := exec.CommandContext(ctx, "pg_dump",
 		"--format=custom", "--no-owner", "--no-privileges", s.opt.DatabaseURL)
 	var out, errBuf bytes.Buffer
@@ -370,9 +365,13 @@ func (s *Service) runVolume(ctx context.Context, keep int) error {
 		return err
 	}
 	if err := os.MkdirAll(s.opt.Dir, 0o750); err != nil {
+		st.OK = false
+		s.writeStatus(st)
 		return err
 	}
 	if err := writeFileAtomic(filepath.Join(s.opt.Dir, name), enc); err != nil {
+		st.OK = false
+		s.writeStatus(st)
 		return err
 	}
 	s.prune(keep)
@@ -473,6 +472,8 @@ func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) 
 		return err
 	}
 	defer cleanup()
+	// targetURL comes from trusted deployment config, not user input; gosec
+	// G204 is excluded for this package in .golangci.yml.
 	cmd := exec.CommandContext(ctx, "pg_restore",
 		"--clean", "--if-exists", "--no-owner", "--dbname="+targetURL, tmp)
 	var errBuf bytes.Buffer
@@ -712,7 +713,7 @@ func (s *Service) S3Test(ctx context.Context) error {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("Bucket %q nicht gefunden", s.opt.S3.Bucket)
+		return fmt.Errorf("bucket %q nicht gefunden", s.opt.S3.Bucket)
 	}
 	return nil
 }
@@ -776,7 +777,7 @@ func (s *Service) writeStatus(st Status) {
 // writeFileAtomic writes via a temp file + rename so readers never see a partial file.
 func writeFileAtomic(path string, data []byte) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o640); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

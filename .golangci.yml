@@ -46,6 +46,14 @@ linters:
           - gosec
         path: internal/totp/
         text: G505|G115
+      # G204 – pg_dump/pg_restore are launched with the database URL, which
+      #        comes from trusted deployment config (DATABASE_URL), not user
+      #        input; libpq offers no argv-free way to pass a full connection
+      #        URI (PGDATABASE does not URI-expand).
+      - linters:
+          - gosec
+        path: internal/backup/
+        text: G204
     paths:
       - third_party$
       - builtin$

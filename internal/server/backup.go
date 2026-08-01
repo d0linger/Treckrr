@@ -129,6 +129,8 @@ func (s *Server) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
 	if st.Enabled {
 		if files, err := s.backup.List(); err == nil {
 			data["Files"], data["FilesMore"] = headTail(toFileViews(files), backupListLimit)
+		} else {
+			log.Printf("backup panel: list volume backups: %v", sanitizeLog(err.Error()))
 		}
 	}
 	if s3on {
@@ -146,6 +148,8 @@ func (s *Server) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
 			data["Settings"] = bs
 			data["VolumeCronDesc"] = backup.DescribeCron(bs.VolumeCron)
 			data["S3CronDesc"] = backup.DescribeCron(bs.S3Cron)
+		} else {
+			log.Printf("backup panel: load backup settings: %v", sanitizeLog(err.Error()))
 		}
 		nv, ns := s.backup.NextRuns(r.Context())
 		data["NextVolume"] = fmtNext(nv)
@@ -431,11 +435,16 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 		return
 	}
 	if strings.TrimSpace(r.FormValue("confirm")) != "RESTORE" {
-		s.setFlash(w, r, "error", "Zum Ausführen bitte RESTORE eintippen (Groß­schreibung beachten).")
+		s.setFlash(w, r, "error", "Zum Ausführen bitte RESTORE eintippen (Großschreibung beachten).")
 		redirect(w, r, "/admin/backup")
 		return
 	}
-	if err := s.backup.RestoreRaw(ctx, raw, s.cfg.DatabaseURL); err != nil {
+	// A restore is destructive (drop + recreate). Detach from the request context
+	// so a client disconnect can't cancel pg_restore mid-way and leave the DB
+	// half-restored; give it its own fresh deadline.
+	rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+	defer rcancel()
+	if err := s.backup.RestoreRaw(rctx, raw, s.cfg.DatabaseURL); err != nil {
 		log.Printf("restore failed: %v", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Wiederherstellung fehlgeschlagen.")
 		redirect(w, r, "/admin/backup")
