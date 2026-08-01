@@ -49,63 +49,35 @@ services:
       RP_ORIGIN: ${RP_ORIGIN:-http://localhost:8080}
       # Break-glass admin password reset (see .env.example); off by default.
       ADMIN_PASSWORD_RESET: ${ADMIN_PASSWORD_RESET:-false}
-      # Backup status file for the admin Backup panel (needs the ./backups mount).
+      # Encrypted backups (AES-256-GCM). Set BACKUP_ENCRYPTION_KEY (≥16 chars,
+      # separate from SESSION_SECRET) to enable on-demand + scheduled backups.
+      # Empty = backups disabled. The key is NOT recoverable — store it safely.
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
+      BACKUP_DIR: ${BACKUP_DIR:-/backups}
       BACKUP_STATUS_FILE: ${BACKUP_STATUS_FILE:-/backups/status.json}
-    # Read-only view of the backup dir so the admin Backup panel can read status.json.
+      # Schedule (cron) is configured in the admin Backup panel, not here.
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      # Optional off-box S3/Backblaze destination for scheduled backups (3-2-1).
+      # Empty S3_ENDPOINT/S3_BUCKET disables it.
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_PREFIX: ${S3_PREFIX:-}
+      S3_USE_SSL: ${S3_USE_SSL:-true}
+    # The app writes encrypted dumps here (scheduled) and reads status.json.
+    # Sync this directory off-box (second disk/NAS) — a backup next to the DB
+    # it protects is not a backup.
     volumes:
-      - ./backups:/backups:ro
+      - ./backups:/backups
     ports:
       - "${HOST_PORT:-8080}:${APP_PORT:-8080}"
 
-  # Automatic daily database backups. Enable with:
-  #   docker compose --profile backup up -d
-  # Dumps land in ./backups (custom format, restore with scripts/restore.sh).
-  db-backup:
-    image: postgres:16-alpine
-    container_name: treckrr-backup
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    profiles: ["backup"]
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      PGPASSWORD: ${POSTGRES_PASSWORD:-treckrr-db-password-change-me}
-      PGUSER: ${POSTGRES_USER:-treckrr}
-      PGDATABASE: ${POSTGRES_DB:-treckrr}
-      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-86400}
-      BACKUP_KEEP: ${BACKUP_KEEP:-14}
-      # Optional off-host copy: a shell command run after each successful dump to
-      # mirror /backups to a second, independent location (rsync/rclone/S3/…).
-      # Empty = disabled. The tool must exist in this container's image.
-      BACKUP_SYNC_CMD: ${BACKUP_SYNC_CMD:-}
-    volumes:
-      - ./backups:/backups
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo "backup service started (interval $${BACKUP_INTERVAL}s, keep $${BACKUP_KEEP})";
-        while true; do
-          ts=$$(date +%Y%m%d-%H%M%S);
-          iso=$$(date -u +%Y-%m-%dT%H:%M:%SZ);
-          out="/backups/treckrr-$$ts.dump";
-          offhost=null;
-          if pg_dump -h db -F c -f "$$out"; then
-            ok=true; size=$$(wc -c < "$$out" | tr -d ' ');
-            echo "backup $$ts ok ($${size} bytes)";
-            if [ -n "$${BACKUP_SYNC_CMD}" ]; then
-              if sh -c "$${BACKUP_SYNC_CMD}"; then offhost=true; echo "offhost copy ok"; else offhost=false; echo "offhost copy FAILED"; fi;
-            fi;
-          else
-            ok=false; size=0;
-            rm -f "$$out";
-            echo "backup $$ts FAILED";
-          fi;
-          printf '{"last_backup":"%s","ok":%s,"size_bytes":%s,"offhost_ok":%s}\n' "$$iso" "$$ok" "$$size" "$$offhost" > /backups/status.json.tmp && mv /backups/status.json.tmp /backups/status.json;
-          ls -1t /backups/treckrr-*.dump 2>/dev/null | tail -n +$$((BACKUP_KEEP+1)) | xargs -r rm -f;
-          sleep "$${BACKUP_INTERVAL}";
-        done
+  # Backups are now produced by the app itself (encrypted, AES-256-GCM):
+  # on-demand from the admin Backup panel and on a schedule (cron, set in the panel).
+  # The separate backup container was removed. Restore is a deliberate CLI op
+  # (the entrypoint already runs /app/treckrr, so no binary name is needed):
+  #   docker compose run --rm app restore <file.dump.enc>
 
 volumes:
   pgdata:

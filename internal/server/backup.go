@@ -1,35 +1,39 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
+
+	"treckrr/internal/backup"
+	"treckrr/internal/models"
 )
 
 // backupMaxAge is how old the last successful backup may be before the panel
 // flags it stale (a little over a daily cadence).
 const backupMaxAge = 26 * time.Hour
 
-// backupStatus is the admin-panel view of the backup service's status.json.
+// backupStatus is the admin-panel view of the backup status.json.
 type backupStatus struct {
-	Configured bool
-	State      string // "ok" | "stale" | "failed" | "none"
-	LastBackup time.Time
-	AgeHours   int
-	SizeLabel  string
-	Offhost    string
-}
-
-// diskStatus is the on-disk shape written by the backup container.
-type diskStatus struct {
-	LastBackup time.Time `json:"last_backup"`
-	OK         bool      `json:"ok"`
-	SizeBytes  int64     `json:"size_bytes"`
-	OffhostOK  *bool     `json:"offhost_ok"`
+	Enabled       bool   // a BACKUP_ENCRYPTION_KEY is configured (on-demand available)
+	Configured    bool   // a status.json exists (scheduled backups have run)
+	State         string // "ok" | "stale" | "failed" | "none"
+	LastBackup    time.Time
+	AgeHours      int
+	SizeLabel     string
+	Offhost       string
+	Encrypted     bool
+	SchemaVersion string
+	RestoreTested time.Time
+	S3            string
 }
 
 // readBackupStatus loads and classifies the backup status file. Any problem
@@ -57,21 +61,31 @@ func readBackupStatus(path string) backupStatus {
 	if err != nil {
 		return backupStatus{State: "none"}
 	}
-	var d diskStatus
+	var d backup.Status
 	if err := json.Unmarshal(b, &d); err != nil {
 		return backupStatus{State: "none"}
 	}
 	st := backupStatus{
-		Configured: true,
-		LastBackup: d.LastBackup,
-		SizeLabel:  humanSize(d.SizeBytes),
-		Offhost:    "—",
+		Configured:    true,
+		LastBackup:    d.LastBackup,
+		SizeLabel:     humanSize(d.SizeBytes),
+		Offhost:       "—",
+		Encrypted:     d.Encrypted,
+		SchemaVersion: d.SchemaVersion,
+		RestoreTested: d.RestoreTested,
 	}
 	if d.OffhostOK != nil {
 		if *d.OffhostOK {
 			st.Offhost = "ok"
 		} else {
 			st.Offhost = "fehlgeschlagen"
+		}
+	}
+	if d.S3OK != nil {
+		if *d.S3OK {
+			st.S3 = "ok"
+		} else {
+			st.S3 = "fehlgeschlagen"
 		}
 	}
 	age := time.Since(d.LastBackup)
@@ -106,7 +120,368 @@ func humanSize(n int64) string {
 
 // handleBackupStatus renders the admin Backup panel from status.json.
 func (s *Server) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
+	st := readBackupStatus(s.cfg.BackupStatusFile)
+	st.Enabled = s.backup != nil && s.backup.Enabled()
 	data := s.newPage(w, r, "Backup", "backup")
-	data["Backup"] = readBackupStatus(s.cfg.BackupStatusFile)
+	data["Backup"] = st
+	s3on := st.Enabled && s.backup.S3Enabled()
+	data["S3Enabled"] = s3on
+	if st.Enabled {
+		if files, err := s.backup.List(); err == nil {
+			data["Files"], data["FilesMore"] = headTail(toFileViews(files), backupListLimit)
+		} else {
+			log.Printf("backup panel: list volume backups: %v", sanitizeLog(err.Error()))
+		}
+	}
+	if s3on {
+		data["S3Bucket"] = s.cfg.S3Bucket
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		if objs, err := s.backup.S3List(ctx); err == nil {
+			data["S3Files"], data["S3FilesMore"] = headTail(toFileViews(objs), backupListLimit)
+		} else {
+			data["S3Error"] = sanitizeLog(err.Error())
+		}
+	}
+	if st.Enabled {
+		if bs, err := s.store.GetBackupSettings(r.Context()); err == nil {
+			data["Settings"] = bs
+			data["VolumeCronDesc"] = backup.DescribeCron(bs.VolumeCron)
+			data["S3CronDesc"] = backup.DescribeCron(bs.S3Cron)
+		} else {
+			log.Printf("backup panel: load backup settings: %v", sanitizeLog(err.Error()))
+		}
+		nv, ns := s.backup.NextRuns(r.Context())
+		data["NextVolume"] = fmtNext(nv)
+		data["NextS3"] = fmtNext(ns)
+	}
 	s.render(w, r, "backup", data)
+}
+
+// handleBackupRunScheduled runs a volume backup now (the panel's manual trigger).
+func (s *Server) handleBackupRunScheduled(w http.ResponseWriter, r *http.Request) {
+	if s.backup == nil || !s.backup.Enabled() {
+		s.setFlash(w, r, "error", "Backups sind nicht konfiguriert.")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+	if err := s.backup.ManualVolume(ctx); err != nil {
+		log.Printf("manual backup failed: %v", sanitizeLog(err.Error()))
+		s.setFlash(w, r, "error", "Backup fehlgeschlagen.")
+	} else {
+		s.audit(r, "backup_run", "backup", 0, "Volume-Backup manuell erstellt")
+		s.setFlash(w, r, "success", "Volume-Backup erstellt.")
+	}
+	redirect(w, r, "/admin/backup")
+}
+
+// handleBackupSettings persists the GUI-edited backup schedule.
+func (s *Server) handleBackupSettings(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	bs := models.BackupSettings{
+		VolumeCron: strings.TrimSpace(r.FormValue("volume_cron")),
+		VolumeKeep: clampAtoi(r.FormValue("volume_keep"), 7),
+		S3Cron:     strings.TrimSpace(r.FormValue("s3_cron")),
+		S3Keep:     clampAtoi(r.FormValue("s3_keep"), 0),
+	}
+	if !backup.ValidCron(bs.VolumeCron) || !backup.ValidCron(bs.S3Cron) {
+		s.setFlash(w, r, "error", "Ungültiger Cron-Ausdruck (Format: Minute Stunde Tag Monat Wochentag).")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	if err := s.store.UpdateBackupSettings(r.Context(), bs); err != nil {
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+	} else {
+		s.audit(r, "backup_settings", "backup", 0,
+			fmt.Sprintf("Volume %q/behalte %d · S3 %q/behalte %d",
+				bs.VolumeCron, bs.VolumeKeep, bs.S3Cron, bs.S3Keep))
+		s.setFlash(w, r, "success", "Backup-Zeitplan gespeichert.")
+	}
+	redirect(w, r, "/admin/backup")
+}
+
+// fmtNext renders a next-run time for the panel ("—" when unknown/disabled).
+func fmtNext(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.Format("02.01.2006 15:04")
+}
+
+// clampAtoi parses a non-negative int form value, falling back to def and
+// clamping to a sane ceiling.
+func clampAtoi(v string, def int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 {
+		return def
+	}
+	if n > 24*365 {
+		n = 24 * 365
+	}
+	return n
+}
+
+func toFileViews(files []backup.BackupFile) []backupFileView {
+	views := make([]backupFileView, 0, len(files))
+	for _, f := range files {
+		views = append(views, backupFileView{Name: f.Name, Size: humanSize(f.Size), ModTime: f.ModTime})
+	}
+	return views
+}
+
+// backupListLimit is how many stored backups the panel shows before the rest
+// collapse behind a "+ N weitere" disclosure (so a high retention like 100
+// doesn't render 100 rows).
+const backupListLimit = 8
+
+// headTail splits views into the first n (always shown) and the remainder
+// (collapsed). tail is nil when there is nothing to collapse.
+func headTail(views []backupFileView, n int) (head, tail []backupFileView) {
+	if len(views) <= n {
+		return views, nil
+	}
+	return views[:n], views[n:]
+}
+
+// handleBackupS3Test checks the bucket is reachable and reports success/failure.
+func (s *Server) handleBackupS3Test(w http.ResponseWriter, r *http.Request) {
+	if s.backup == nil || !s.backup.S3Enabled() {
+		s.setFlash(w, r, "error", "S3 ist nicht konfiguriert (S3_* setzen).")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	if err := s.backup.S3Test(ctx); err != nil {
+		s.setFlash(w, r, "error", "S3-Verbindung fehlgeschlagen: "+sanitizeLog(err.Error()))
+	} else {
+		s.setFlash(w, r, "success", "S3-Verbindung ok — Bucket erreichbar.")
+	}
+	redirect(w, r, "/admin/backup")
+}
+
+// handleBackupS3File streams a stored dump from the bucket (still encrypted).
+func (s *Server) handleBackupS3File(w http.ResponseWriter, r *http.Request) {
+	if s.backup == nil || !s.backup.S3Enabled() {
+		http.NotFound(w, r)
+		return
+	}
+	name := r.PathValue("name")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+	data, err := s.backup.S3Get(ctx, name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.audit(r, "backup_download", "backup", 0, "S3 · "+name)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+}
+
+// backupFileView is one row in the panel's stored-backups list.
+type backupFileView struct {
+	Name    string
+	Size    string
+	ModTime time.Time
+}
+
+// handleBackupFile streams a stored (scheduled) encrypted dump for download.
+func (s *Server) handleBackupFile(w http.ResponseWriter, r *http.Request) {
+	if s.backup == nil || !s.backup.Enabled() {
+		http.NotFound(w, r)
+		return
+	}
+	name := r.PathValue("name")
+	data, err := s.backup.Open(name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.audit(r, "backup_download", "backup", 0, name)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+}
+
+// handleBackupValidate decrypts an uploaded backup with the re-entered key and
+// validates the archive — no DB change. For an AJAX request it returns JSON so
+// the panel can show the result inline without a reload (keeping the file/key
+// selection); a plain form POST falls back to a flash + redirect.
+func (s *Server) handleBackupValidate(w http.ResponseWriter, r *http.Request) {
+	if !strings.Contains(r.Header.Get("Accept"), "application/json") {
+		s.backupUpload(w, r, false)
+		return
+	}
+	reply := func(ok bool, msg string) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": ok, "message": msg})
+	}
+	if s.backup == nil || !s.backup.Enabled() {
+		reply(false, "Backups sind nicht konfiguriert.")
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		reply(false, "Upload fehlgeschlagen (Datei zu groß?).")
+		return
+	}
+	key := strings.TrimSpace(r.FormValue("key"))
+	if key == "" {
+		reply(false, "Bitte den Backup-Schlüssel eingeben.")
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		reply(false, "Bitte eine Backup-Datei (.dump.enc) wählen.")
+		return
+	}
+	defer file.Close()
+	enc, err := io.ReadAll(file)
+	if err != nil {
+		reply(false, "Datei konnte nicht gelesen werden.")
+		return
+	}
+	raw, err := backup.DecryptWith(enc, key)
+	if err != nil {
+		s.audit(r, "backup_validate_failed", "backup", 0, "Entschlüsselung fehlgeschlagen (falscher Schlüssel oder beschädigte Datei)")
+		reply(false, "Entschlüsselung fehlgeschlagen — falscher Schlüssel oder beschädigte Datei.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+	objects, err := s.backup.ValidateArchive(ctx, raw)
+	if err != nil {
+		reply(false, "Kein gültiges Backup-Archiv: "+sanitizeLog(err.Error()))
+		return
+	}
+	s.audit(r, "backup_validate", "backup", 0, fmt.Sprintf("Upload validiert · %d Objekte", objects))
+	reply(true, fmt.Sprintf("Gültig ✓ — entschlüsselt, %d Objekte im Archiv.", objects))
+}
+
+// handleBackupRestore validates an uploaded backup and, only after the operator
+// re-enters the key and types RESTORE, overwrites the live database.
+func (s *Server) handleBackupRestore(w http.ResponseWriter, r *http.Request) {
+	s.backupUpload(w, r, true)
+}
+
+// backupUpload is the shared upload+decrypt+validate flow. When doRestore is
+// true and the typed confirmation matches, it restores over the live DB.
+func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore bool) {
+	if s.backup == nil || !s.backup.Enabled() {
+		s.setFlash(w, r, "error", "Backups sind nicht konfiguriert (BACKUP_ENCRYPTION_KEY setzen).")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		s.setFlash(w, r, "error", "Upload fehlgeschlagen (Datei zu groß?).")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	key := strings.TrimSpace(r.FormValue("key"))
+	if key == "" {
+		s.setFlash(w, r, "error", "Bitte den Backup-Schlüssel eingeben.")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		s.setFlash(w, r, "error", "Bitte eine Backup-Datei (.dump.enc) wählen.")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	defer file.Close()
+	enc, err := io.ReadAll(file)
+	if err != nil {
+		s.setFlash(w, r, "error", "Datei konnte nicht gelesen werden.")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	// The key is re-entered here and used only transiently — never stored.
+	raw, err := backup.DecryptWith(enc, key)
+	if err != nil {
+		// A failed decryption is security-relevant (wrong key / brute force): audit it.
+		action := "backup_validate_failed"
+		if doRestore {
+			action = "backup_restore_failed"
+		}
+		s.audit(r, action, "backup", 0, "Entschlüsselung fehlgeschlagen (falscher Schlüssel oder beschädigte Datei)")
+		s.setFlash(w, r, "error", "Entschlüsselung fehlgeschlagen — falscher Schlüssel oder beschädigte Datei.")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+	objects, err := s.backup.ValidateArchive(ctx, raw)
+	if err != nil {
+		s.setFlash(w, r, "error", "Kein gültiges Backup-Archiv: "+sanitizeLog(err.Error()))
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	if !doRestore {
+		s.audit(r, "backup_validate", "backup", 0, fmt.Sprintf("Upload validiert · %d Objekte", objects))
+		s.setFlash(w, r, "success",
+			fmt.Sprintf("Backup gültig ✓ — entschlüsselt, %d Objekte im Archiv. Zum Einspielen unten RESTORE eintippen.", objects))
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	if strings.TrimSpace(r.FormValue("confirm")) != "RESTORE" {
+		s.setFlash(w, r, "error", "Zum Ausführen bitte RESTORE eintippen (Großschreibung beachten).")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	// A restore is destructive (drop + recreate). Detach from the request context
+	// so a client disconnect can't cancel pg_restore mid-way and leave the DB
+	// half-restored; give it its own fresh deadline.
+	rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+	defer rcancel()
+	if err := s.backup.RestoreRaw(rctx, raw, s.cfg.DatabaseURL); err != nil {
+		log.Printf("restore failed: %v", sanitizeLog(err.Error()))
+		s.setFlash(w, r, "error", "Wiederherstellung fehlgeschlagen.")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	s.audit(r, "backup_restore", "backup", 0, fmt.Sprintf("%d Objekte aus Upload wiederhergestellt", objects))
+	s.setFlash(w, r, "success", "Wiederherstellung abgeschlossen. Bitte prüfen und ggf. neu anmelden.")
+	redirect(w, r, "/admin/backup")
+}
+
+// handleBackupRun makes an encrypted dump on demand and streams it to the browser
+// as a download — the operator stores it wherever they like. The DB is never
+// touched destructively here.
+func (s *Server) handleBackupRun(w http.ResponseWriter, r *http.Request) {
+	if s.backup == nil || !s.backup.Enabled() {
+		s.setFlash(w, r, "error", "Backups sind nicht konfiguriert (BACKUP_ENCRYPTION_KEY setzen).")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+	data, filename, err := s.backup.CreateEncrypted(ctx)
+	if err != nil {
+		log.Printf("on-demand backup failed: %v", sanitizeLog(err.Error()))
+		s.setFlash(w, r, "error", "Backup fehlgeschlagen.")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	s.audit(r, "backup_download", "backup", 0, filename+" · "+humanSize(int64(len(data))))
+	// The default server WriteTimeout is short; extend it for this one response so
+	// a larger dump can finish streaming.
+	if rc := http.NewResponseController(w); rc != nil {
+		_ = rc.SetWriteDeadline(time.Now().Add(5 * time.Minute))
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
 }

@@ -320,12 +320,26 @@ stack on the host, where `env_file` works: `cd /treckrr && docker compose up -d`
 </details>
 
 <details>
-<summary><strong>Automatic backups</strong></summary>
+<summary><strong>Encrypted backups &amp; restore</strong></summary>
+
+The app makes **AES-256-GCM encrypted** `pg_dump`s. Set a key to enable them:
 
 ```bash
-docker compose --profile backup up -d      # daily pg_dump into ./backups
-sh scripts/backup.sh                        # manual dump
-sh scripts/restore.sh backups/<file>.dump   # restore
+BACKUP_ENCRYPTION_KEY=...   # ≥16 chars, separate from SESSION_SECRET; NOT recoverable
+BACKUP_KEEP=7               # dumps to retain in BACKUP_DIR (default /backups)
+# The backup schedule (cron) is set in the admin Backup panel, not via env.
+```
+
+- **On demand:** admin **Backup** panel → *Backup jetzt* streams a `.dump.enc`
+  to your browser. Scheduled dumps also land in `BACKUP_DIR` and (optionally) S3.
+- **Off-box S3/Backblaze** (3-2-1): set `S3_ENDPOINT`, `S3_BUCKET`,
+  `S3_ACCESS_KEY`, `S3_SECRET_KEY` (and `S3_PREFIX`, `S3_USE_SSL`).
+- **Restore** overwrites the DB — from the panel (upload + re-enter key + type
+  `RESTORE`) or the CLI:
+
+```bash
+docker compose run --rm app restore --test <file.dump.enc>   # validate only
+docker compose run --rm app restore <file.dump.enc>          # destructive, asks to type RESTORE
 ```
 
 </details>

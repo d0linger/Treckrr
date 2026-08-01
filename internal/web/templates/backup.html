@@ -1,23 +1,180 @@
 {{define "content"}}
 <section class="stack">
-	<h1 class="section-title">Backup</h1>
+	<h1 class="section-title">Backup &amp; Restore</h1>
 	{{with .Backup}}
 	<div class="card bkp bkp--{{.State}}">
 		<div class="bkp__head">
 			<span class="bkp__dot" aria-hidden="true"></span>
-			<strong class="bkp__state">{{if eq .State "ok"}}Aktuell{{else if eq .State "stale"}}Veraltet{{else if eq .State "failed"}}Fehlgeschlagen{{else}}Nicht konfiguriert{{end}}</strong>
+			<strong class="bkp__state">{{if eq .State "ok"}}Aktuell{{else if eq .State "stale"}}Veraltet{{else if eq .State "failed"}}Fehlgeschlagen{{else}}Kein geplantes Backup{{end}}</strong>
+			{{if .Encrypted}}<span class="bkp__badge">verschlüsselt</span>{{end}}
 		</div>
 		{{if .Configured}}
 		<dl class="bkp__meta">
-			<div><dt>Letztes Backup</dt><dd>{{if .LastBackup.IsZero}}—{{else}}{{date .LastBackup}} · vor {{.AgeHours}} h{{end}}</dd></div>
+			<div><dt>Letztes Volume-Backup</dt><dd>{{if .LastBackup.IsZero}}—{{else}}{{date .LastBackup}} · vor {{.AgeHours}} h{{end}}</dd></div>
 			<div><dt>Größe</dt><dd>{{.SizeLabel}}</dd></div>
-			<div><dt>Off-Host-Kopie</dt><dd>{{.Offhost}}</dd></div>
+			<div><dt>Restore getestet</dt><dd>{{if .RestoreTested.IsZero}}<span class="bkp__warn">nie</span>{{else}}{{date .RestoreTested}}{{end}}</dd></div>
+			<div><dt>Schema-Stand</dt><dd>{{if .SchemaVersion}}{{.SchemaVersion}}{{else}}—{{end}}</dd></div>
+			{{if $.S3Enabled}}<div><dt>S3-Kopie</dt><dd>{{if .S3}}{{.S3}}{{else}}—{{end}}</dd></div>{{end}}
 		</dl>
 		{{else}}
-		<p class="bkp__hint">Kein <code>status.json</code> gefunden. Backup-Dienst aktivieren mit <code>docker compose --profile backup up -d</code> und <code>./backups</code> read-only in den App-Container mounten. Wiederherstellbarkeit prüfen: <code>sh scripts/restore-drill.sh</code>.</p>
+		<p class="bkp__hint">Noch kein Volume-Backup gelaufen. Zeitplan unten einstellen oder „Jetzt sichern“.</p>
 		{{end}}
 	</div>
-	<p class="bkp__note">Der Backup-Status wird vom Backup-Dienst geschrieben (letzter Lauf, Off-Host-Kopie). „Veraltet" heißt: das letzte Backup ist älter als 26&nbsp;Stunden.</p>
+
+	{{if not .Enabled}}
+	<p class="bkp__hint">Backups sind nicht konfiguriert. <code>BACKUP_ENCRYPTION_KEY</code> setzen (mind. 16 Zeichen, getrennt vom Session-Secret), dann werden On-Demand- und geplante Backups aktiv.</p>
+	{{end}}
+	{{end}}
+
+	{{if .Backup.Enabled}}
+	<!-- Zeitplan (Cron) -->
+	{{with .Settings}}
+	<div class="card">
+		<div class="bkp__sec"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Zeitplan · Cron</div>
+		<form method="post" action="/admin/backup/settings">
+			<div class="bkp__sched">
+				<div class="bkp__sched-col" data-sched-col data-default-time="03:00" data-default-dow="1">
+					<div class="bkp__sched-h">Volume <span class="bkp__muted">· neben der DB</span></div>
+					<div class="bkp__seg" data-cron-modes hidden>
+						<button type="button" data-m="daily">Täglich</button>
+						<button type="button" data-m="hours">Alle N Std.</button>
+						<button type="button" data-m="weekly">Wöchentlich</button>
+						<button type="button" data-m="cron">Cron</button>
+					</div>
+					<div class="bkp__cron-rows"></div>
+					<label class="bkp__lbl bkp__cron-label">Cron-Ausdruck</label>
+					<input class="input input--mono bkp__cron-input" name="volume_cron" value="{{.VolumeCron}}" spellcheck="false" autocomplete="off" placeholder="0 3 * * *">
+					<div class="bkp__desc">{{$.VolumeCronDesc}}</div>
+					<div class="bkp__tlbl" hidden>Nächste Läufe</div>
+					<div class="bkp__timeline"></div>
+					<div class="bkp__next">nächste Ausführung: <strong>{{$.NextVolume}}</strong></div>
+					<label class="bkp__lbl">Behalten (Anzahl)</label>
+					<input class="input input--num" type="number" min="0" name="volume_keep" value="{{.VolumeKeep}}">
+				</div>
+				<div class="bkp__sched-col" data-sched-col data-default-time="04:00" data-default-dow="0">
+					<div class="bkp__sched-h">S3 {{if not $.S3Enabled}}<span class="bkp__muted">· S3_* nicht gesetzt</span>{{end}}</div>
+					<div class="bkp__seg" data-cron-modes hidden>
+						<button type="button" data-m="daily">Täglich</button>
+						<button type="button" data-m="hours">Alle N Std.</button>
+						<button type="button" data-m="weekly">Wöchentlich</button>
+						<button type="button" data-m="cron">Cron</button>
+					</div>
+					<div class="bkp__cron-rows"></div>
+					<label class="bkp__lbl bkp__cron-label">Cron-Ausdruck</label>
+					<input class="input input--mono bkp__cron-input" name="s3_cron" value="{{.S3Cron}}" spellcheck="false" autocomplete="off" placeholder="0 4 * * *">
+					<div class="bkp__desc">{{$.S3CronDesc}}</div>
+					<div class="bkp__tlbl" hidden>Nächste Läufe</div>
+					<div class="bkp__timeline"></div>
+					<div class="bkp__next">nächste Ausführung: <strong>{{$.NextS3}}</strong></div>
+					<label class="bkp__lbl">Behalten (0 = alle)</label>
+					<input class="input input--num" type="number" min="0" name="s3_keep" value="{{.S3Keep}}">
+				</div>
+			</div>
+			<div class="bkp__btnrow" style="margin-top:1.4rem">
+				<button class="btn btn--primary" type="submit">Zeitplan speichern</button>
+				<button class="btn btn--ghost" type="submit" formaction="/admin/backup/run-scheduled">Jetzt sichern (Volume)</button>
+			</div>
+			<p class="bkp__note" style="margin:.5rem .1rem 0">Modus wählen oder eigenen Cron eintippen — gespeichert wird immer ein Standard-Cron (<code>Minute Stunde Tag Monat Wochentag</code>). Leer = Ziel aus.</p>
+		</form>
+	</div>
+	{{end}}
+
+	<!-- On-demand Browser-Download -->
+	<div class="card bkp__do">
+		<div>
+			<strong>Sofort herunterladen</strong>
+			<p class="bkp__note" style="margin:.25rem 0 0">Verschlüsselten Dump (<code>.dump.enc</code>) jetzt erzeugen und im Browser speichern — enthält alle Personen- &amp; Abrechnungsdaten.</p>
+		</div>
+		<form method="post" action="/admin/backup/run">
+			<button class="btn btn--primary" type="submit">Backup jetzt ↓</button>
+		</form>
+	</div>
+
+	<!-- Geplante Backups (Volume) -->
+	{{if .Files}}
+	<div class="card">
+		<div class="bkp__sec">Volume-Backups · <code>BACKUP_DIR</code></div>
+		<ul class="bkp__files">
+			{{range .Files}}
+			<li>
+				<span class="bkp__fn">{{.Name}}</span>
+				<span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span>
+				<a class="link" href="/admin/backup/file/{{.Name}}">↓</a>
+			</li>
+			{{end}}
+		</ul>
+		{{if .FilesMore}}
+		<details class="bkp__more">
+			<summary>+ {{len .FilesMore}} weitere anzeigen</summary>
+			<ul class="bkp__files">
+				{{range .FilesMore}}
+				<li>
+					<span class="bkp__fn">{{.Name}}</span>
+					<span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span>
+					<a class="link" href="/admin/backup/file/{{.Name}}">↓</a>
+				</li>
+				{{end}}
+			</ul>
+		</details>
+		{{end}}
+	</div>
+	{{end}}
+
+	<!-- S3-Bucket-Explorer (kompakt) -->
+	{{if .S3Enabled}}
+	<div class="card bkp__s3">
+		<div class="bkp__s3-head">
+			<div class="bkp__sec" style="margin:0">S3 · <code>{{.S3Bucket}}</code></div>
+			<form method="post" action="/admin/backup/s3/test"><button class="btn btn--sm" type="submit">Verbindung testen</button></form>
+		</div>
+		{{if .S3Error}}<p class="bkp__note bkp__warn" style="margin:.4rem 0 0">Bucket nicht lesbar: {{.S3Error}}</p>{{end}}
+		{{if .S3Files}}
+		<ul class="bkp__files bkp__files--compact">
+			{{range .S3Files}}
+			<li><span class="bkp__fn">{{.Name}}</span><span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span><a class="link" href="/admin/backup/s3/file/{{.Name}}">↓</a></li>
+			{{end}}
+		</ul>
+		{{if .S3FilesMore}}
+		<details class="bkp__more">
+			<summary>+ {{len .S3FilesMore}} weitere anzeigen</summary>
+			<ul class="bkp__files bkp__files--compact">
+				{{range .S3FilesMore}}
+				<li><span class="bkp__fn">{{.Name}}</span><span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span><a class="link" href="/admin/backup/s3/file/{{.Name}}">↓</a></li>
+				{{end}}
+			</ul>
+		</details>
+		{{end}}
+		{{else if not .S3Error}}<p class="bkp__note" style="margin:.4rem 0 0">Noch keine Objekte im Bucket.</p>{{end}}
+		<p class="bkp__note" style="margin:.4rem 0 0">Zugangsdaten in der Deployment-Konfig (<code>S3_*</code>), bewusst nicht in der DB.</p>
+	</div>
+	{{end}}
+
+	<!-- Wiederherstellen (GUI) — eine Form, Datei+Schlüssel geteilt, AJAX-Validierung -->
+	<div class="card bkp--restore">
+		<div class="bkp__sec">Wiederherstellen</div>
+		<form method="post" enctype="multipart/form-data" data-restore-form>
+			<p class="bkp__note" style="margin:0 0 .6rem">Backup-Datei (<code>.dump.enc</code>) + Schlüssel wählen. <strong>Validieren</strong> prüft das Archiv in-memory — ohne die DB anzufassen.</p>
+			<div class="bkp__restore-row">
+				<input class="input bkp__restore-file" type="file" name="file" accept=".enc" required aria-label="Backup-Datei">
+				<input class="input bkp__restore-key" type="password" name="key" placeholder="Backup-Schlüssel" autocomplete="off" required aria-label="Backup-Schlüssel">
+			</div>
+			<div class="bkp__btnrow" style="margin:1.1rem 0 0">
+				<button class="btn btn--ghost" type="submit" formaction="/admin/backup/validate" data-validate-btn>Validieren (Vorschau)</button>
+			</div>
+			<div class="bkp__desc" data-validate-result hidden></div>
+
+			<div class="bkp__danger">
+				<div class="bkp__sec bkp__sec--danger">Zerstörerisch</div>
+				<p class="bkp__note" style="margin:0 0 .8rem">Überschreibt die Live-DB vollständig — admin-only, auditiert.</p>
+				<label class="bkp__lbl" style="margin-top:0">Zum Ausführen <code>RESTORE</code> eintippen</label>
+				<input class="input bkp__restore-confirm" type="text" name="confirm" placeholder="RESTORE" autocomplete="off" aria-label="RESTORE eintippen">
+				<div class="bkp__btnrow" style="margin:.9rem 0 0">
+					<button class="btn btn--danger btn--primary" type="submit" formaction="/admin/backup/restore">Wiederherstellen</button>
+				</div>
+				<p class="bkp__note" style="margin:.9rem 0 0">Alternativ: <code>docker compose run --rm app restore &lt;datei.dump.enc&gt;</code>.</p>
+			</div>
+		</form>
+	</div>
 	{{end}}
 </section>
 {{end}}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-webauthn/webauthn/webauthn"
 
+	"treckrr/internal/backup"
 	"treckrr/internal/config"
 	"treckrr/internal/models"
 	"treckrr/internal/store"
@@ -26,13 +27,14 @@ const (
 type Server struct {
 	cfg       *config.Config
 	store     *store.Store
+	backup    *backup.Service
 	templates map[string]*template.Template
 	logins    *loginLimiter
 	wa        *webauthn.WebAuthn
 }
 
 // New constructs a Server and parses templates.
-func New(cfg *config.Config, st *store.Store) (*Server, error) {
+func New(cfg *config.Config, st *store.Store, bk *backup.Service) (*Server, error) {
 	tpl, err := web.Templates()
 	if err != nil {
 		return nil, err
@@ -45,7 +47,7 @@ func New(cfg *config.Config, st *store.Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, store: st, templates: tpl, logins: newLoginLimiter(st), wa: wa}, nil
+	return &Server{cfg: cfg, store: st, backup: bk, templates: tpl, logins: newLoginLimiter(st), wa: wa}, nil
 }
 
 type ctxKey string
@@ -160,6 +162,14 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /admin/audit", s.admin(s.handleAudit))
 	mux.Handle("GET /admin/audit/export", s.admin(s.handleAuditExport))
 	mux.Handle("GET /admin/backup", s.admin(s.handleBackupStatus))
+	mux.Handle("POST /admin/backup/run", s.admin(s.handleBackupRun))
+	mux.Handle("POST /admin/backup/run-scheduled", s.admin(s.handleBackupRunScheduled))
+	mux.Handle("POST /admin/backup/settings", s.admin(s.handleBackupSettings))
+	mux.Handle("GET /admin/backup/file/{name}", s.admin(s.handleBackupFile))
+	mux.Handle("POST /admin/backup/validate", s.admin(s.handleBackupValidate))
+	mux.Handle("POST /admin/backup/restore", s.admin(s.handleBackupRestore))
+	mux.Handle("POST /admin/backup/s3/test", s.admin(s.handleBackupS3Test))
+	mux.Handle("GET /admin/backup/s3/file/{name}", s.admin(s.handleBackupS3File))
 	mux.Handle("GET /admin/company", s.auth(s.handleCompany))
 	mux.Handle("POST /admin/company", s.auth(s.handleCompanySave))
 	mux.Handle("GET /admin/users", s.admin(s.handleUsers))
@@ -179,6 +189,9 @@ func (s *Server) Handler() http.Handler {
 // cheap DoS vector — is read only up to the limit and then fails, instead of being
 // buffered unbounded by ParseForm, without ever constraining legitimate use.
 const maxRequestBody = 1 << 20 // 1 MiB
+// maxBackupUpload is the ceiling for restore uploads (a full encrypted dump);
+// the 1 MiB cap applies to every other route.
+const maxBackupUpload = 512 << 20 // 512 MiB
 
 // limitBody wraps the request body in an http.MaxBytesReader so a client cannot
 // stream an unbounded payload into ParseForm (and onward into bcrypt, decoding,
@@ -191,7 +204,12 @@ const maxRequestBody = 1 << 20 // 1 MiB
 func (s *Server) limitBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Body != nil && r.Body != http.NoBody {
-			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+			limit := int64(maxRequestBody)
+			// Restore uploads a full encrypted dump — exempt those exact routes.
+			if r.URL.Path == "/admin/backup/restore" || r.URL.Path == "/admin/backup/validate" {
+				limit = maxBackupUpload
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		next.ServeHTTP(w, r)
 	})

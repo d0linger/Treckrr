@@ -19,12 +19,16 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/treckrr ./cmd/treckrr
 FROM alpine:3.24
 
 # Non-root user & CA certs (for completeness; app talks only to local DB).
-RUN apk add --no-cache ca-certificates tzdata wget \
+# postgresql16-client provides pg_dump/pg_restore for encrypted backups; the
+# major version must match the Postgres server (postgres:16-alpine).
+RUN apk add --no-cache ca-certificates tzdata wget postgresql16-client \
 	&& adduser -D -u 10001 treckrr
 ENV TZ=Europe/Vienna
 
 WORKDIR /app
 COPY --from=build /out/treckrr /app/treckrr
+# So `docker exec treckrr-app treckrr restore …` resolves the binary.
+ENV PATH="/app:${PATH}"
 
 USER treckrr
 EXPOSE 8080

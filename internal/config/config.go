@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -25,9 +26,26 @@ type Config struct {
 	// resets the existing admin's password to AdminPassword (and revokes sessions).
 	// Off by default so a normal restart never reverts a UI-changed password.
 	AdminPasswordReset bool
-	// BackupStatusFile is the path to the backup service's status.json, surfaced
-	// on the admin Backup panel. Absent/unreadable -> panel shows "not configured".
+	// BackupStatusFile is the path to the backup status.json, surfaced on the
+	// admin Backup panel. Absent/unreadable -> panel shows "not configured".
 	BackupStatusFile string
+	// BackupEncryptionKey encrypts every backup at rest (AES-256-GCM). It is
+	// deliberately separate from SessionSecret/EncryptionSecret so the backup key
+	// can be held apart from the running app's secrets. Empty -> backups disabled.
+	BackupEncryptionKey string
+	// BackupDir is where the scheduled in-app backup writer drops encrypted dumps.
+	BackupDir string
+	// BackupKeep is how many encrypted dumps to retain (older ones are pruned).
+	// The schedule itself is cron-based and configured in the admin panel.
+	BackupKeep int
+	// Optional S3-compatible off-box destination for scheduled backups (3-2-1).
+	// Empty S3Endpoint/S3Bucket disables it.
+	S3Endpoint  string
+	S3Bucket    string
+	S3AccessKey string
+	S3SecretKey string
+	S3Prefix    string
+	S3UseSSL    bool
 	// WebAuthn (passkeys). RPID is the effective domain (host only, no scheme);
 	// RPOrigin is the full origin the browser sees. Both must match the site.
 	RPID     string
@@ -37,17 +55,26 @@ type Config struct {
 // Load reads configuration from the environment and validates required values.
 func Load() (*Config, error) {
 	c := &Config{
-		Port:               getenv("APP_PORT", "8080"),
-		DatabaseURL:        os.Getenv("DATABASE_URL"),
-		SessionSecret:      os.Getenv("SESSION_SECRET"),
-		CookieSecure:       strings.EqualFold(getenv("COOKIE_SECURE", "false"), "true"),
-		TrustProxy:         strings.EqualFold(getenv("TRUST_PROXY", "false"), "true"),
-		AdminUsername:      getenv("ADMIN_USERNAME", "admin"),
-		AdminPassword:      os.Getenv("ADMIN_PASSWORD"),
-		AdminPasswordReset: strings.EqualFold(getenv("ADMIN_PASSWORD_RESET", "false"), "true"),
-		BackupStatusFile:   getenv("BACKUP_STATUS_FILE", "/backups/status.json"),
-		RPID:               getenv("RP_ID", "localhost"),
-		RPOrigin:           getenv("RP_ORIGIN", "http://localhost:8080"),
+		Port:                getenv("APP_PORT", "8080"),
+		DatabaseURL:         os.Getenv("DATABASE_URL"),
+		SessionSecret:       os.Getenv("SESSION_SECRET"),
+		CookieSecure:        strings.EqualFold(getenv("COOKIE_SECURE", "false"), "true"),
+		TrustProxy:          strings.EqualFold(getenv("TRUST_PROXY", "false"), "true"),
+		AdminUsername:       getenv("ADMIN_USERNAME", "admin"),
+		AdminPassword:       os.Getenv("ADMIN_PASSWORD"),
+		AdminPasswordReset:  strings.EqualFold(getenv("ADMIN_PASSWORD_RESET", "false"), "true"),
+		BackupStatusFile:    getenv("BACKUP_STATUS_FILE", "/backups/status.json"),
+		BackupEncryptionKey: os.Getenv("BACKUP_ENCRYPTION_KEY"),
+		BackupDir:           getenv("BACKUP_DIR", "/backups"),
+		BackupKeep:          getenvInt("BACKUP_KEEP", 7),
+		S3Endpoint:          os.Getenv("S3_ENDPOINT"),
+		S3Bucket:            os.Getenv("S3_BUCKET"),
+		S3AccessKey:         os.Getenv("S3_ACCESS_KEY"),
+		S3SecretKey:         os.Getenv("S3_SECRET_KEY"),
+		S3Prefix:            os.Getenv("S3_PREFIX"),
+		S3UseSSL:            strings.EqualFold(getenv("S3_USE_SSL", "true"), "true"),
+		RPID:                getenv("RP_ID", "localhost"),
+		RPOrigin:            getenv("RP_ORIGIN", "http://localhost:8080"),
 	}
 
 	// Data-at-rest encryption key. Defaults to SessionSecret so existing
@@ -68,12 +95,31 @@ func Load() (*Config, error) {
 	if c.AdminPassword == "" {
 		return nil, fmt.Errorf("ADMIN_PASSWORD is required to bootstrap the admin user")
 	}
+	// Backups are optional (unset = off). If a key is set it must be a real
+	// secret: reject a whitespace-only value (it would derive a guessable key)
+	// and require real length. The original key bytes are kept untrimmed.
+	if strings.TrimSpace(c.BackupEncryptionKey) == "" {
+		if c.BackupEncryptionKey != "" {
+			return nil, fmt.Errorf("BACKUP_ENCRYPTION_KEY must not be whitespace only (leave it unset to disable backups)")
+		}
+	} else if len(c.BackupEncryptionKey) < 16 {
+		return nil, fmt.Errorf("BACKUP_ENCRYPTION_KEY must be at least 16 characters")
+	}
 	return c, nil
 }
 
 func getenv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getenvInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
 	}
 	return fallback
 }

@@ -227,6 +227,15 @@ type Payment struct {
 	Created       time.Time
 }
 
+// BackupSettings is the GUI-editable backup schedule: independent volume and S3
+// cron expressions and retention counts. An empty cron disables that destination.
+type BackupSettings struct {
+	VolumeCron string
+	VolumeKeep int
+	S3Cron     string
+	S3Keep     int
+}
+
 // Company holds the sender (Absender) details shown on an invoice-mode Beleg,
 // plus the tax treatment: "pauschal" shows only TaxNote; "regel" adds a VAT
 // breakdown at VATRate.
