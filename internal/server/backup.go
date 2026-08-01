@@ -3,8 +3,10 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -38,7 +40,20 @@ func readBackupStatus(path string) backupStatus {
 		return backupStatus{State: "none"}
 	}
 	// path is operator configuration (cfg.BackupStatusFile), never user input.
-	b, err := os.ReadFile(path) //nosec G304 -- operator-configured status file path
+	// Read it through an os.Root scoped to its directory so the access can't
+	// traverse outside that directory (satisfies gosec G304 without a blanket
+	// suppression).
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return backupStatus{State: "none"}
+	}
+	defer root.Close()
+	f, err := root.Open(filepath.Base(path))
+	if err != nil {
+		return backupStatus{State: "none"}
+	}
+	defer f.Close()
+	b, err := io.ReadAll(f)
 	if err != nil {
 		return backupStatus{State: "none"}
 	}
