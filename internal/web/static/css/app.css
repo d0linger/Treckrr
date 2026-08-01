@@ -1037,6 +1037,9 @@ em { font-style: normal; color: var(--muted); }
 .beleg__inv-addr { white-space: pre-line; }
 .beleg__invtax { padding-top: .3rem; }
 .beleg__inv-note { font-size: .74rem; color: var(--muted); font-style: italic; padding: .5rem .9rem .2rem; }
+/* Soft § 11 reminder: recipient UID missing on an invoice over €10,000 gross. */
+.beleg__inv-warn { margin: .2rem .9rem 0; padding: .5rem .65rem; border-radius: 8px; font-size: .78rem; line-height: 1.4;
+	background: #fbf3df; border: 1px solid #e6cf93; color: #6b4d0e; }
 
 .beleg-toast { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom)); transform: translate(-50%, 12px);
 	background: var(--text); color: var(--bg); font-weight: 600; font-size: .88rem; padding: .6rem 1rem; border-radius: 12px;

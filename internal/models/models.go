@@ -147,6 +147,7 @@ type Neighbor struct {
 	Name     string
 	Note     string
 	Address  string // optional, for the invoice recipient block
+	TaxID    string // optional recipient UID/tax number (§ 11 on invoices > 10k)
 	Archived bool
 	Created  time.Time
 }

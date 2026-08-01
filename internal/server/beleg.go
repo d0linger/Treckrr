@@ -232,7 +232,12 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		if e.Voided {
 			continue
 		}
+		// Same precedence as the flat view: task label, else the booking note,
+		// else "Sonstige" — so the grouped view labels match.
 		label := e.TaskLabel
+		if label == "" {
+			label = e.Note
+		}
 		if label == "" {
 			label = "Sonstige"
 		}
@@ -321,6 +326,10 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["InvPaidUSt"] = invPaidUSt
 	// Amount still to pay: gross services, less mutual Verrechnung, less payments.
 	data["InvRest"] = invBrutto.Add(ledgerSum).Sub(paidSum)
+	// § 11: the recipient's UID/tax number is required on invoices over €10,000
+	// gross. Soft reminder only — it never blocks issuing.
+	data["InvNeedRecipientVATID"] = invBrutto.GreaterThan(decimal.NewFromInt(10000)) &&
+		strings.TrimSpace(neighbor.TaxID) == ""
 	data["GrundTractors"] = gTractors
 	data["GrundMachines"] = gMachines
 	data["HasGrund"] = len(gTractors) > 0 || len(gMachines) > 0

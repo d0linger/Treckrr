@@ -16,7 +16,7 @@ import (
 // ListNeighbors returns all neighbors (active first, then archived).
 func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, note, address, archived, created_at FROM neighbors ORDER BY archived, name`)
+		`SELECT id, name, note, address, tax_id, archived, created_at FROM neighbors ORDER BY archived, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +24,7 @@ func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 	var out []models.Neighbor
 	for rows.Next() {
 		var n models.Neighbor
-		if err := rows.Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.Archived, &n.Created); err != nil {
+		if err := rows.Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Archived, &n.Created); err != nil {
 			return nil, err
 		}
 		out = append(out, n)
@@ -36,8 +36,8 @@ func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 func (s *Store) GetNeighbor(ctx context.Context, id int64) (*models.Neighbor, error) {
 	var n models.Neighbor
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, note, address, archived, created_at FROM neighbors WHERE id=$1`, id).
-		Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.Archived, &n.Created)
+		`SELECT id, name, note, address, tax_id, archived, created_at FROM neighbors WHERE id=$1`, id).
+		Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Archived, &n.Created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -59,9 +59,9 @@ func (s *Store) CreateNeighbor(ctx context.Context, name, note string) (int64, e
 }
 
 // UpdateNeighbor updates a neighbor.
-func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note, address string) error {
+func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note, address, taxID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE neighbors SET name=$1, note=$2, address=$3 WHERE id=$4`, name, note, address, id)
+		`UPDATE neighbors SET name=$1, note=$2, address=$3, tax_id=$4 WHERE id=$5`, name, note, address, taxID, id)
 	return err
 }
 
