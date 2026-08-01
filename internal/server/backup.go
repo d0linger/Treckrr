@@ -123,17 +123,71 @@ func (s *Server) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
 	st.Enabled = s.backup != nil && s.backup.Enabled()
 	data := s.newPage(w, r, "Backup", "backup")
 	data["Backup"] = st
-	data["S3Enabled"] = st.Enabled && s.backup.S3Enabled()
+	s3on := st.Enabled && s.backup.S3Enabled()
+	data["S3Enabled"] = s3on
 	if st.Enabled {
 		if files, err := s.backup.List(); err == nil {
-			views := make([]backupFileView, 0, len(files))
-			for _, f := range files {
-				views = append(views, backupFileView{Name: f.Name, Size: humanSize(f.Size), ModTime: f.ModTime})
-			}
-			data["Files"] = views
+			data["Files"] = toFileViews(files)
+		}
+	}
+	if s3on {
+		data["S3Bucket"] = s.cfg.S3Bucket
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		if objs, err := s.backup.S3List(ctx); err == nil {
+			data["S3Files"] = toFileViews(objs)
+		} else {
+			data["S3Error"] = sanitizeLog(err.Error())
 		}
 	}
 	s.render(w, r, "backup", data)
+}
+
+func toFileViews(files []backup.BackupFile) []backupFileView {
+	views := make([]backupFileView, 0, len(files))
+	for _, f := range files {
+		views = append(views, backupFileView{Name: f.Name, Size: humanSize(f.Size), ModTime: f.ModTime})
+	}
+	return views
+}
+
+// handleBackupS3Test checks the bucket is reachable and reports success/failure.
+func (s *Server) handleBackupS3Test(w http.ResponseWriter, r *http.Request) {
+	if s.backup == nil || !s.backup.S3Enabled() {
+		s.setFlash(w, r, "error", "S3 ist nicht konfiguriert (S3_* setzen).")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	if err := s.backup.S3Test(ctx); err != nil {
+		s.setFlash(w, r, "error", "S3-Verbindung fehlgeschlagen: "+sanitizeLog(err.Error()))
+	} else {
+		s.setFlash(w, r, "success", "S3-Verbindung ok — Bucket erreichbar.")
+	}
+	redirect(w, r, "/admin/backup")
+}
+
+// handleBackupS3File streams a stored dump from the bucket (still encrypted).
+func (s *Server) handleBackupS3File(w http.ResponseWriter, r *http.Request) {
+	if s.backup == nil || !s.backup.S3Enabled() {
+		http.NotFound(w, r)
+		return
+	}
+	name := r.PathValue("name")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+	data, err := s.backup.S3Get(ctx, name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.audit(r, "backup_download", "backup", 0, "S3 · "+name)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
 }
 
 // backupFileView is one row in the panel's stored-backups list.
@@ -210,6 +264,12 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 	// The key is re-entered here and used only transiently — never stored.
 	raw, err := backup.DecryptWith(enc, key)
 	if err != nil {
+		// A failed decryption is security-relevant (wrong key / brute force): audit it.
+		action := "backup_validate_failed"
+		if doRestore {
+			action = "backup_restore_failed"
+		}
+		s.audit(r, action, "backup", 0, "Entschlüsselung fehlgeschlagen (falscher Schlüssel oder beschädigte Datei)")
 		s.setFlash(w, r, "error", "Entschlüsselung fehlgeschlagen — falscher Schlüssel oder beschädigte Datei.")
 		redirect(w, r, "/admin/backup")
 		return
@@ -223,6 +283,7 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 		return
 	}
 	if !doRestore {
+		s.audit(r, "backup_validate", "backup", 0, fmt.Sprintf("Upload validiert · %d Objekte", objects))
 		s.setFlash(w, r, "success",
 			fmt.Sprintf("Backup gültig ✓ — entschlüsselt, %d Objekte im Archiv. Zum Einspielen unten RESTORE eintippen.", objects))
 		redirect(w, r, "/admin/backup")

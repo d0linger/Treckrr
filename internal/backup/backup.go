@@ -436,20 +436,89 @@ func (s *Service) Loop(ctx context.Context, logf func(string, ...any)) {
 // S3Enabled reports whether an off-box S3 destination is configured.
 func (s *Service) S3Enabled() bool { return s.opt.S3.enabled() }
 
-// uploadS3 puts one encrypted dump into the configured S3-compatible bucket, for
-// the 3-2-1 rule (a copy that does not sit next to the DB it protects).
-func (s *Service) uploadS3(ctx context.Context, name string, data []byte) error {
+func (s *Service) s3Client() (*minio.Client, error) {
 	o := s.opt.S3
-	cl, err := minio.New(o.Endpoint, &minio.Options{
+	return minio.New(o.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(o.AccessKey, o.SecretKey, ""),
 		Secure: o.UseSSL,
 	})
+}
+
+// uploadS3 puts one encrypted dump into the configured S3-compatible bucket, for
+// the 3-2-1 rule (a copy that does not sit next to the DB it protects).
+func (s *Service) uploadS3(ctx context.Context, name string, data []byte) error {
+	cl, err := s.s3Client()
 	if err != nil {
 		return err
 	}
-	_, err = cl.PutObject(ctx, o.Bucket, o.Prefix+name, bytes.NewReader(data), int64(len(data)),
+	_, err = cl.PutObject(ctx, s.opt.S3.Bucket, s.opt.S3.Prefix+name, bytes.NewReader(data), int64(len(data)),
 		minio.PutObjectOptions{ContentType: "application/octet-stream"})
 	return err
+}
+
+// S3Test checks that the configured bucket is reachable — the panel's
+// "Verbindung testen".
+func (s *Service) S3Test(ctx context.Context) error {
+	if !s.S3Enabled() {
+		return fmt.Errorf("S3 ist nicht konfiguriert")
+	}
+	cl, err := s.s3Client()
+	if err != nil {
+		return err
+	}
+	ok, err := cl.BucketExists(ctx, s.opt.S3.Bucket)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("Bucket %q nicht gefunden", s.opt.S3.Bucket)
+	}
+	return nil
+}
+
+// S3List returns the encrypted dumps stored in the bucket (the bucket explorer).
+func (s *Service) S3List(ctx context.Context) ([]BackupFile, error) {
+	if !s.S3Enabled() {
+		return nil, fmt.Errorf("S3 ist nicht konfiguriert")
+	}
+	cl, err := s.s3Client()
+	if err != nil {
+		return nil, err
+	}
+	var out []BackupFile
+	for obj := range cl.ListObjects(ctx, s.opt.S3.Bucket,
+		minio.ListObjectsOptions{Prefix: s.opt.S3.Prefix, Recursive: true}) {
+		if obj.Err != nil {
+			return nil, obj.Err
+		}
+		name := strings.TrimPrefix(obj.Key, s.opt.S3.Prefix)
+		if !strings.HasSuffix(name, ".dump.enc") {
+			continue
+		}
+		out = append(out, BackupFile{Name: name, Size: obj.Size, ModTime: obj.LastModified})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name > out[j].Name })
+	return out, nil
+}
+
+// S3Get downloads one object from the bucket (still encrypted).
+func (s *Service) S3Get(ctx context.Context, name string) ([]byte, error) {
+	if !s.S3Enabled() {
+		return nil, fmt.Errorf("S3 ist nicht konfiguriert")
+	}
+	if !validName(name) {
+		return nil, fmt.Errorf("invalid backup name")
+	}
+	cl, err := s.s3Client()
+	if err != nil {
+		return nil, err
+	}
+	obj, err := cl.GetObject(ctx, s.opt.S3.Bucket, s.opt.S3.Prefix+name, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer obj.Close()
+	return io.ReadAll(obj)
 }
 
 func (s *Service) writeStatus(st Status) {
