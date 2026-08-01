@@ -134,17 +134,17 @@
 				<input class="input bkp__restore-file" type="file" name="file" accept=".enc" required aria-label="Backup-Datei">
 				<input class="input bkp__restore-key" type="password" name="key" placeholder="Backup-Schlüssel" autocomplete="off" required aria-label="Backup-Schlüssel">
 			</div>
-			<div class="bkp__btnrow" style="margin-top:.6rem">
+			<div class="bkp__btnrow" style="margin:1rem 0 1.2rem">
 				<button class="btn btn--ghost" type="submit" formaction="/admin/backup/validate">Validieren (Vorschau)</button>
 			</div>
 			<div class="bkp__danger">
 				<div class="bkp__sec bkp__sec--danger">Zerstörerisch</div>
-				<p class="bkp__note" style="margin:0 0 .55rem">Überschreibt die Live-DB vollständig. Zum Ausführen <code>RESTORE</code> eintippen — admin-only, auditiert.</p>
-				<div class="bkp__restore-row">
+				<p class="bkp__note" style="margin:0 0 .85rem">Überschreibt die Live-DB vollständig. Zum Ausführen <code>RESTORE</code> eintippen — admin-only, auditiert.</p>
+				<div class="bkp__restore-row" style="margin:.2rem 0 .9rem">
 					<input class="input bkp__restore-confirm" type="text" name="confirm" placeholder="RESTORE" autocomplete="off" aria-label="RESTORE eintippen">
 					<button class="btn btn--danger btn--primary" type="submit" formaction="/admin/backup/restore">Wiederherstellen</button>
 				</div>
-				<p class="bkp__note" style="margin:.55rem 0 0">Alternativ als Ops-Kommando: <code>docker compose run --rm app restore &lt;datei.dump.enc&gt;</code>.</p>
+				<p class="bkp__note" style="margin:0">Alternativ als Ops-Kommando: <code>docker compose run --rm app restore &lt;datei.dump.enc&gt;</code>.</p>
 			</div>
 		</form>
 	</div>
