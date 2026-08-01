@@ -1187,7 +1187,7 @@ em { font-style: normal; color: var(--muted); }
 .bkp__meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: .5rem; margin: .9rem 0 0; }
 .bkp__meta > div { background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: .5rem .6rem; }
 .bkp__meta dt { font-family: var(--font-mono); font-size: .56rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 .15rem; }
-.bkp__meta dd { margin: 0; font-weight: 600; font-size: .88rem; font-variant-numeric: tabular-nums; }
+.bkp__meta dd { margin: 0; font-weight: 600; font-size: .88rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .bkp__hint, .bkp__note { color: var(--muted); font-size: .88rem; line-height: 1.5; }
 .bkp__hint { margin: .6rem 0 0; }
 .bkp__note { margin: .2rem .2rem 0; font-size: .8rem; }
