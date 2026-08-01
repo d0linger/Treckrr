@@ -121,6 +121,21 @@ func (s *Store) CountAdmins(ctx context.Context) (int, error) {
 
 // AuthenticateUser validates credentials and returns the user on success.
 func (s *Store) AuthenticateUser(ctx context.Context, username, password string) (*models.User, error) {
+	// Reject oversized credentials before any DB query or bcrypt work: an
+	// over-limit value can never match an account, so this keeps a huge
+	// username/password from driving a query or a (dummy) bcrypt comparison.
+	// The byte-length password check is O(1); count username runes incrementally
+	// and bail at the 101st rune so a giant username is never fully scanned.
+	if len(password) > 72 {
+		return nil, ErrNotFound
+	}
+	runes := 0
+	for range username {
+		runes++
+		if runes > 100 {
+			return nil, ErrNotFound
+		}
+	}
 	var (
 		u    models.User
 		hash string
