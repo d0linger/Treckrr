@@ -25,6 +25,13 @@ RUN apk add --no-cache ca-certificates tzdata wget postgresql16-client \
 	&& adduser -D -u 10001 treckrr
 ENV TZ=Europe/Vienna
 
+# Provision the backup dir owned by the non-root app user. A named volume
+# mounted here inherits this ownership on first creation, so uid 10001 can
+# write dumps; without this, os.MkdirAll("/backups") / writing dumps fails
+# with EACCES on a root-owned mount.
+RUN mkdir -p /backups && chown treckrr:treckrr /backups
+VOLUME ["/backups"]
+
 WORKDIR /app
 COPY --from=build /out/treckrr /app/treckrr
 # So `docker exec treckrr-app treckrr restore …` resolves the binary.
