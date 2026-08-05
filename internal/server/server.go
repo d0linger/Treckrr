@@ -286,7 +286,7 @@ func (s *Server) currentUser(r *http.Request) *models.User {
 // server-side expiry (slid in UserFromSession).
 func (s *Server) refreshSessionCookie(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
-		s.setCookie(w, r, &http.Cookie{
+		s.setCookie(w, r, &http.Cookie{ //nosec G124 -- attributes are set dynamically by setCookie helper
 			Name:   sessionCookie,
 			Value:  c.Value,
 			MaxAge: int(sessionTTL.Seconds()),

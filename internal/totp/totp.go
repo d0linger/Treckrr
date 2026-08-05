@@ -69,7 +69,11 @@ func ValidateStep(secret, input string) (uint64, bool) {
 	if len(input) != digits {
 		return 0, false
 	}
-	counter := uint64(time.Now().Unix() / period) //nosec G115 -- Unix time is non-negative
+	nowUnix := time.Now().Unix()
+	if nowUnix < 0 {
+		nowUnix = 0
+	}
+	counter := uint64(nowUnix / period) //nosec G115 -- Unix time is non-negative
 	for delta := -1; delta <= 1; delta++ {
 		probe := counter
 		if delta < 0 {

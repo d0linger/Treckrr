@@ -27,7 +27,7 @@ func (s *Server) handleTheme(w http.ResponseWriter, r *http.Request) {
 	default:
 		value = "auto"
 	}
-	s.setCookie(w, r, &http.Cookie{
+	s.setCookie(w, r, &http.Cookie{ //nosec G124 -- attributes are set dynamically by setCookie helper
 		Name:   themeCookie,
 		Value:  value,
 		MaxAge: 365 * 24 * 3600,

@@ -42,7 +42,7 @@ func (s *Server) serverError(w http.ResponseWriter, what string, err error) {
 	if err != nil {
 		errMsg = err.Error()
 	}
-	log.Printf("internal error (%s): %v", sanitizeLog(what), sanitizeLog(errMsg))
+	log.Printf("internal error (%s): %v", sanitizeLog(what), sanitizeLog(errMsg)) //nosec G706 -- sanitized using sanitizeLog helper
 	http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 }
 
@@ -60,7 +60,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 	// Render to a buffer first so a template error does not emit a half page.
 	var buf bytes.Buffer
 	if err := tpl.ExecuteTemplate(&buf, "layout", data); err != nil {
-		log.Printf("render %s: %v", sanitizeLog(page), sanitizeLog(err.Error()))
+		log.Printf("render %s: %v", sanitizeLog(page), sanitizeLog(err.Error())) //nosec G706 -- sanitized using sanitizeLog helper
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
@@ -74,7 +74,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 // ---- Flash messages (cookie based) --------------------------------------
 
 func (s *Server) setFlash(w http.ResponseWriter, r *http.Request, kind, msg string) {
-	s.setCookie(w, r, &http.Cookie{
+	s.setCookie(w, r, &http.Cookie{ //nosec G124 -- attributes are set dynamically by setCookie helper
 		Name:   flashCookie,
 		Value:  kind + "|" + url.QueryEscape(msg),
 		MaxAge: 30,
@@ -87,7 +87,7 @@ func (s *Server) readFlash(w http.ResponseWriter, r *http.Request) (msg, kind st
 	if err != nil || c.Value == "" {
 		return "", ""
 	}
-	s.setCookie(w, r, &http.Cookie{Name: flashCookie, Value: "", MaxAge: -1})
+	s.setCookie(w, r, &http.Cookie{Name: flashCookie, Value: "", MaxAge: -1}) //nosec G124 -- attributes are set dynamically by setCookie helper
 	parts := strings.SplitN(c.Value, "|", 2)
 	if len(parts) != 2 {
 		return "", ""

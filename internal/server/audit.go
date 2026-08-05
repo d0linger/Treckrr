@@ -231,7 +231,7 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 		if u := s.currentUser(r); u != nil {
 			user = u.Username
 		}
-		log.Printf("%s %s %d %s user=%s ip=%s",
+		log.Printf("%s %s %d %s user=%s ip=%s", //nosec G706 -- sanitized using sanitizeLog helper
 			sanitizeLog(r.Method), sanitizeLog(r.URL.Path), rec.status,
 			time.Since(start).Round(time.Millisecond), sanitizeLog(user), sanitizeLog(s.clientIP(r)))
 	})

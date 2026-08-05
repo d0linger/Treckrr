@@ -204,10 +204,14 @@ func (s *Store) SetTotp(ctx context.Context, userID int64, enabled bool, secret 
 // when it is strictly newer than the last accepted one, so a code replayed
 // within its validity window — even concurrently — is rejected exactly once.
 func (s *Store) AcceptTotpStep(ctx context.Context, userID int64, step uint64) (bool, error) {
+	stepInt := int64(0)
+	if step <= 0x7FFFFFFFFFFFFFFF {
+		stepInt = int64(step) //nosec G115 -- TOTP step (unix/30) fits int64 for millennia
+	}
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE users SET totp_last_step = $2
 		  WHERE id = $1 AND (totp_last_step IS NULL OR totp_last_step < $2)`,
-		userID, int64(step)) //nosec G115 -- TOTP step (unix/30) fits int64 for millennia
+		userID, stepInt)
 	if err != nil {
 		return false, err
 	}

@@ -117,7 +117,7 @@ func (s *Server) saveWASession(w http.ResponseWriter, r *http.Request, sd *webau
 	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
 	mac.Write(b)
 	val := base64.RawURLEncoding.EncodeToString(b) + "." + hex.EncodeToString(mac.Sum(nil))
-	s.setCookie(w, r, &http.Cookie{Name: waCookie, Value: val, MaxAge: 300})
+	s.setCookie(w, r, &http.Cookie{Name: waCookie, Value: val, MaxAge: 300}) //nosec G124 -- attributes are set dynamically by setCookie helper
 }
 
 func (s *Server) loadWASession(r *http.Request) (*webauthn.SessionData, bool) {
@@ -146,7 +146,7 @@ func (s *Server) loadWASession(r *http.Request) (*webauthn.SessionData, bool) {
 }
 
 func (s *Server) clearWASession(w http.ResponseWriter, r *http.Request) {
-	s.setCookie(w, r, &http.Cookie{Name: waCookie, Value: "", MaxAge: -1})
+	s.setCookie(w, r, &http.Cookie{Name: waCookie, Value: "", MaxAge: -1}) //nosec G124 -- attributes are set dynamically by setCookie helper
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

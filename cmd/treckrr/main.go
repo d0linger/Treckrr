@@ -245,7 +245,7 @@ func runRestore(args []string) error {
 	if err := bk.Restore(ctx, file, cfg.DatabaseURL); err != nil {
 		return err
 	}
-	log.Printf("restore complete from %s", file)
+	log.Printf("restore complete from %s", file) //nosec G706 -- CLI argument trusted
 	return nil
 }
 

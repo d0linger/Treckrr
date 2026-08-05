@@ -66,7 +66,13 @@ func (s *Store) ListWebauthnCredentials(ctx context.Context, userID int64) ([]mo
 			&c.Created, &c.LastUsed); err != nil {
 			return nil, err
 		}
-		c.SignCount = uint32(count) //nolint:gosec // sign_count is a small non-negative counter
+		clampedCount := count
+		if clampedCount < 0 {
+			clampedCount = 0
+		} else if clampedCount > 0xFFFFFFFF {
+			clampedCount = 0xFFFFFFFF
+		}
+		c.SignCount = uint32(clampedCount) //nolint:gosec // sign_count is a small non-negative counter
 		out = append(out, c)
 	}
 	return out, rows.Err()

@@ -105,7 +105,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if s.sensitiveBlocked(w, r, user.ID, "/login") {
 			return
 		}
-		s.setCookie(w, r, &http.Cookie{
+		s.setCookie(w, r, &http.Cookie{ //nosec G124 -- attributes are set dynamically by setCookie helper
 			Name:   pending2FACookie,
 			Value:  s.signPending2FA(user.ID),
 			MaxAge: int(pending2FATTL.Seconds()),
@@ -215,7 +215,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 		s.serverError(w, r.URL.Path, err)
 		return false
 	}
-	s.setCookie(w, r, &http.Cookie{
+	s.setCookie(w, r, &http.Cookie{ //nosec G124 -- attributes are set dynamically by setCookie helper
 		Name:   sessionCookie,
 		Value:  token,
 		MaxAge: int(sessionTTL.Seconds()),
@@ -261,7 +261,7 @@ func (s *Server) verifyPending2FA(value string) (int64, bool) {
 }
 
 func (s *Server) clearPending2FA(w http.ResponseWriter, r *http.Request) {
-	s.setCookie(w, r, &http.Cookie{Name: pending2FACookie, Value: "", MaxAge: -1})
+	s.setCookie(w, r, &http.Cookie{Name: pending2FACookie, Value: "", MaxAge: -1}) //nosec G124 -- attributes are set dynamically by setCookie helper
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -271,7 +271,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
 		_ = s.store.DeleteSession(r.Context(), c.Value)
 	}
-	s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
+	s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1}) //nosec G124 -- attributes are set dynamically by setCookie helper
 	redirect(w, r, "/login")
 }
 
