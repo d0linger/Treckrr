@@ -177,6 +177,36 @@ func (s *Server) handleBackupRunScheduled(w http.ResponseWriter, r *http.Request
 	redirect(w, r, "/admin/backup")
 }
 
+// handleBackupS3Run creates a fresh encrypted dump and uploads it to S3 now —
+// the panel's "Jetzt in S3 sichern". Independent of the volume schedule.
+func (s *Server) handleBackupS3Run(w http.ResponseWriter, r *http.Request) {
+	if s.backup == nil || !s.backup.Enabled() {
+		s.setFlash(w, r, "error", "Backups sind nicht konfiguriert.")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	if !s.backup.S3Enabled() {
+		s.setFlash(w, r, "error", "S3 ist nicht konfiguriert (S3_* setzen).")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	// The upload can take a while; extend the write deadline for this response.
+	if rc := http.NewResponseController(w); rc != nil {
+		_ = rc.SetWriteDeadline(time.Now().Add(15 * time.Minute))
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
+	defer cancel()
+	name, err := s.backup.ManualS3(ctx)
+	if err != nil {
+		log.Printf("manual S3 backup failed: %v", sanitizeLog(err.Error()))
+		s.setFlash(w, r, "error", "S3-Sicherung fehlgeschlagen.")
+	} else {
+		s.audit(r, "backup_s3_run", "backup", 0, "Backup manuell nach S3 gesichert · "+name)
+		s.setFlash(w, r, "success", "Backup nach S3 gesichert: "+name)
+	}
+	redirect(w, r, "/admin/backup")
+}
+
 // handleBackupSettings persists the GUI-edited backup schedule.
 func (s *Server) handleBackupSettings(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {

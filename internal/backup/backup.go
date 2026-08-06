@@ -646,6 +646,32 @@ func (s *Service) ManualVolume(ctx context.Context) error {
 	return s.runVolume(ctx, s.currentSettings(ctx).VolumeKeep)
 }
 
+// ManualS3 creates a fresh encrypted dump and uploads it straight to S3 now —
+// the panel's "Jetzt in S3 sichern". Independent of the volume backups (works
+// even when the volume schedule is off and no local dump exists) and never
+// prunes. Dumps in-memory, so it is safe under a read-only root filesystem.
+func (s *Service) ManualS3(ctx context.Context) (string, error) {
+	if !s.Enabled() {
+		return "", ErrDisabled
+	}
+	if !s.S3Enabled() {
+		return "", fmt.Errorf("S3 ist nicht konfiguriert")
+	}
+	enc, name, err := s.CreateEncrypted(ctx)
+	if err != nil {
+		return "", err
+	}
+	uerr := s.uploadS3(ctx, name, enc)
+	ok := uerr == nil
+	st := s.readStatus()
+	st.S3OK, st.LastS3 = &ok, time.Now()
+	s.writeStatus(st)
+	if uerr != nil {
+		return "", uerr
+	}
+	return name, nil
+}
+
 // NextRuns returns when the next volume and S3 backups are due (zero = unknown or
 // disabled), for the panel.
 func (s *Service) NextRuns(ctx context.Context) (nextVolume, nextS3 time.Time) {
