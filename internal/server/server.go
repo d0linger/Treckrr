@@ -169,6 +169,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/backup/validate", s.admin(s.handleBackupValidate))
 	mux.Handle("POST /admin/backup/restore", s.admin(s.handleBackupRestore))
 	mux.Handle("POST /admin/backup/s3/test", s.admin(s.handleBackupS3Test))
+	mux.Handle("POST /admin/backup/s3/run", s.admin(s.handleBackupS3Run))
 	mux.Handle("GET /admin/backup/s3/file/{name}", s.admin(s.handleBackupS3File))
 	mux.Handle("GET /admin/company", s.admin(s.handleCompany))
 	mux.Handle("POST /admin/company", s.admin(s.handleCompanySave))

@@ -806,18 +806,48 @@
 				refresh();
 			}
 
-			// Initialise mode + defaults from the saved cron.
-			var det = detectMode(cronInput.value);
-			mode = det.mode;
-			if (det.time) init.time = det.time;
-			if (det.dow) init.dow = det.dow;
-			if (det.n) init.n = det.n;
+			var auto = col.querySelector("[data-auto]");
 			seg.hidden = false;
 			cronInput.addEventListener("input", function () { if (mode === "cron") refresh(); });
 			Array.prototype.forEach.call(seg.querySelectorAll("button"), function (b) {
 				b.addEventListener("click", function () { mode = b.getAttribute("data-m"); render(); });
 			});
-			render();
+
+			// "Automatisch" toggles the whole destination on/off: unchecked writes an
+			// empty cron (= off); checked seeds a sensible default the first time.
+			function applyAuto(on, seed) {
+				col.classList.toggle("bkp__off", !on);
+				if (!on) {
+					cronInput.value = "";
+					desc.textContent = "Ausgeschaltet (kein Zeitplan).";
+					desc.classList.remove("bkp__desc--bad");
+					return;
+				}
+				if (seed && !cronInput.value.trim()) {
+					var t = (init.time || "03:00").split(":");
+					mode = "daily";
+					cronInput.value = (+t[1]) + " " + (+t[0]) + " * * *";
+				}
+				var d = detectMode(cronInput.value);
+				mode = d.mode;
+				if (d.time) init.time = d.time;
+				if (d.dow) init.dow = d.dow;
+				if (d.n) init.n = d.n;
+				render();
+			}
+
+			if (auto) {
+				auto.checked = cronInput.value.trim() !== "";
+				applyAuto(auto.checked, false);
+				auto.addEventListener("change", function () { applyAuto(auto.checked, true); });
+			} else {
+				var det = detectMode(cronInput.value);
+				mode = det.mode;
+				if (det.time) init.time = det.time;
+				if (det.dow) init.dow = det.dow;
+				if (det.n) init.n = det.n;
+				render();
+			}
 		});
 	})();
 

@@ -35,6 +35,7 @@
 			<div class="bkp__sched">
 				<div class="bkp__sched-col" data-sched-col data-default-time="03:00" data-default-dow="1">
 					<div class="bkp__sched-h">Volume <span class="bkp__muted">· neben der DB</span></div>
+					<label class="bkp__auto"><input type="checkbox" data-auto> Automatisch (Zeitplan aktiv)</label>
 					<div class="bkp__seg" data-cron-modes hidden>
 						<button type="button" data-m="daily">Täglich</button>
 						<button type="button" data-m="hours">Alle N Std.</button>
@@ -53,6 +54,7 @@
 				</div>
 				<div class="bkp__sched-col" data-sched-col data-default-time="04:00" data-default-dow="0">
 					<div class="bkp__sched-h">S3 {{if not $.S3Enabled}}<span class="bkp__muted">· S3_* nicht gesetzt</span>{{end}}</div>
+					<label class="bkp__auto"><input type="checkbox" data-auto> Automatisch (Zeitplan aktiv)</label>
 					<div class="bkp__seg" data-cron-modes hidden>
 						<button type="button" data-m="daily">Täglich</button>
 						<button type="button" data-m="hours">Alle N Std.</button>
@@ -99,7 +101,7 @@
 			<li>
 				<span class="bkp__fn">{{.Name}}</span>
 				<span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span>
-				<a class="link" href="/admin/backup/file/{{.Name}}">↓</a>
+				<a class="btn btn--sm btn--ghost bkp__dl" download href="/admin/backup/file/{{.Name}}">Download</a>
 			</li>
 			{{end}}
 		</ul>
@@ -111,7 +113,7 @@
 				<li>
 					<span class="bkp__fn">{{.Name}}</span>
 					<span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span>
-					<a class="link" href="/admin/backup/file/{{.Name}}">↓</a>
+					<a class="btn btn--sm btn--ghost bkp__dl" download href="/admin/backup/file/{{.Name}}">Download</a>
 				</li>
 				{{end}}
 			</ul>
@@ -125,13 +127,16 @@
 	<div class="card bkp__s3">
 		<div class="bkp__s3-head">
 			<div class="bkp__sec" style="margin:0">S3 · <code>{{.S3Bucket}}</code></div>
-			<form method="post" action="/admin/backup/s3/test"><button class="btn btn--sm" type="submit">Verbindung testen</button></form>
+			<div class="bkp__s3-actions">
+				<form method="post" action="/admin/backup/s3/run"><button class="btn btn--sm btn--primary" type="submit">Jetzt in S3 sichern</button></form>
+				<form method="post" action="/admin/backup/s3/test"><button class="btn btn--sm btn--ghost" type="submit">Verbindung testen</button></form>
+			</div>
 		</div>
 		{{if .S3Error}}<p class="bkp__note bkp__warn" style="margin:.4rem 0 0">Bucket nicht lesbar: {{.S3Error}}</p>{{end}}
 		{{if .S3Files}}
 		<ul class="bkp__files bkp__files--compact">
 			{{range .S3Files}}
-			<li><span class="bkp__fn">{{.Name}}</span><span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span><a class="link" href="/admin/backup/s3/file/{{.Name}}">↓</a></li>
+			<li><span class="bkp__fn">{{.Name}}</span><span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span><a class="btn btn--sm btn--ghost bkp__dl" download href="/admin/backup/s3/file/{{.Name}}">Download</a></li>
 			{{end}}
 		</ul>
 		{{if .S3FilesMore}}
@@ -139,7 +144,7 @@
 			<summary>+ {{len .S3FilesMore}} weitere anzeigen</summary>
 			<ul class="bkp__files bkp__files--compact">
 				{{range .S3FilesMore}}
-				<li><span class="bkp__fn">{{.Name}}</span><span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span><a class="link" href="/admin/backup/s3/file/{{.Name}}">↓</a></li>
+				<li><span class="bkp__fn">{{.Name}}</span><span class="bkp__fm">{{.Size}} · {{date .ModTime}}</span><a class="btn btn--sm btn--ghost bkp__dl" download href="/admin/backup/s3/file/{{.Name}}">Download</a></li>
 				{{end}}
 			</ul>
 		</details>
