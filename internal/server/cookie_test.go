@@ -7,6 +7,38 @@ import (
 	"testing"
 )
 
+// TestSameSiteStrictForShortLivedCookies ensures that the transitional short-lived cookies
+// (pending2FACookie and waCookie) are set with SameSite=Strict to protect against login-flow CSRF.
+func TestSameSiteStrictForShortLivedCookies(t *testing.T) {
+	s := testServer()
+
+	// Test pending2FACookie
+	rr1 := httptest.NewRecorder()
+	r1 := httptest.NewRequest(http.MethodGet, "/", nil)
+	s.setCookie(rr1, r1, &http.Cookie{
+		Name:     pending2FACookie,
+		Value:    "test-val",
+		SameSite: http.SameSiteStrictMode,
+	})
+	sc1 := rr1.Header().Get("Set-Cookie")
+	if !strings.Contains(sc1, "SameSite=Strict") {
+		t.Fatalf("expected SameSite=Strict for pending2FACookie, got %q", sc1)
+	}
+
+	// Test waCookie
+	rr2 := httptest.NewRecorder()
+	r2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	s.setCookie(rr2, r2, &http.Cookie{
+		Name:     waCookie,
+		Value:    "test-val",
+		SameSite: http.SameSiteStrictMode,
+	})
+	sc2 := rr2.Header().Get("Set-Cookie")
+	if !strings.Contains(sc2, "SameSite=Strict") {
+		t.Fatalf("expected SameSite=Strict for waCookie, got %q", sc2)
+	}
+}
+
 // TestSetCookieAppliesDefaults locks the exact regression that motivated the
 // cookie work: a cookie created without an explicit SameSite must still be
 // emitted with SameSite=Lax (and Path=/), and Secure must follow cookieSecure.

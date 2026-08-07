@@ -106,9 +106,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.setCookie(w, r, &http.Cookie{
-			Name:   pending2FACookie,
-			Value:  s.signPending2FA(user.ID),
-			MaxAge: int(pending2FATTL.Seconds()),
+			Name:     pending2FACookie,
+			Value:    s.signPending2FA(user.ID),
+			MaxAge:   int(pending2FATTL.Seconds()),
+			SameSite: http.SameSiteStrictMode, // Hardened to Strict for short-lived login flow
 		})
 		s.setFlash(w, r, "info", "Bitte den 6‑stelligen Code deiner Authenticator‑App eingeben.")
 		redirect(w, r, "/login")
