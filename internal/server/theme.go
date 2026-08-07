@@ -48,7 +48,8 @@ func safeReturnPath(r *http.Request, fallback string) string {
 		return fallback
 	}
 	// Only a local absolute path ("/...", but not "//host" or a scheme).
-	if !strings.HasPrefix(u.Path, "/") || strings.HasPrefix(u.Path, "//") {
+	// Reject backslashes in path to prevent potential open redirects via browser normalization (e.g. /\attacker.com).
+	if !strings.HasPrefix(u.Path, "/") || strings.HasPrefix(u.Path, "//") || strings.Contains(u.Path, "\\") {
 		return fallback
 	}
 	target := u.Path
