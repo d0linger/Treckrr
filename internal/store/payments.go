@@ -59,6 +59,17 @@ func (s *Store) GetPayment(ctx context.Context, id int64) (models.Payment, error
 	return p, err
 }
 
+// CountPaymentsForNeighborYear returns how many payments a neighbor has in a
+// year — used to block removing the neighbor from the year while payments exist
+// (which would orphan the rows and silently drop the year's paid total).
+func (s *Store) CountPaymentsForNeighborYear(ctx context.Context, yearID, neighborID int64) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM payments WHERE billing_year_id=$1 AND neighbor_id=$2`,
+		yearID, neighborID).Scan(&n)
+	return n, err
+}
+
 // DeletePayment removes a payment.
 func (s *Store) DeletePayment(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM payments WHERE id=$1`, id)

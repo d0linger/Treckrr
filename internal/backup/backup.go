@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -196,6 +197,26 @@ type Service struct {
 	opt Options
 	db  *sql.DB
 	key []byte // 32-byte AES-256 key, nil when disabled
+
+	mu         sync.Mutex // serializes status.json read-modify-write
+	volRetryAt time.Time  // earliest next volume attempt after a failure (tick goroutine only)
+	s3RetryAt  time.Time  // earliest next S3 attempt after a failure (tick goroutine only)
+}
+
+// statusRetryBackoff is how long the scheduler waits before retrying a failed
+// destination, so a persistent failure (DB down, disk full) doesn't turn into a
+// heavy pg_dump loop every minute.
+const statusRetryBackoff = 15 * time.Minute
+
+// updateStatus applies mutate to status.json under the lock, re-reading first so
+// a concurrent run's fields (e.g. the other destination's timestamps) are
+// preserved instead of clobbered by a stale read-modify-write.
+func (s *Service) updateStatus(mutate func(*Status)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.readStatus()
+	mutate(&st)
+	s.writeStatus(st)
 }
 
 // New builds a Service. When opt.EncKey is empty the service is disabled and all
@@ -354,35 +375,35 @@ func (s *Service) RunScheduled(ctx context.Context) error {
 // runVolume writes one encrypted dump to the volume, prunes to keep, verifies it
 // restores, and updates status — without touching S3.
 func (s *Service) runVolume(ctx context.Context, keep int) error {
-	st := s.readStatus()
-	st.Encrypted = true
-	st.SchemaVersion = s.SchemaVersion(ctx)
 	enc, name, err := s.CreateEncrypted(ctx)
 	if err != nil {
-		st.OK = false
-		s.writeStatus(st)
+		s.updateStatus(func(st *Status) { st.OK = false })
 		return err
 	}
 	if err := os.MkdirAll(s.opt.Dir, 0o750); err != nil {
-		st.OK = false
-		s.writeStatus(st)
+		s.updateStatus(func(st *Status) { st.OK = false })
 		return err
 	}
 	if err := writeFileAtomic(filepath.Join(s.opt.Dir, name), enc); err != nil {
-		st.OK = false
-		s.writeStatus(st)
+		s.updateStatus(func(st *Status) { st.OK = false })
 		return err
 	}
 	s.prune(keep)
-	st.LastBackup = time.Now()
-	st.OK = true
-	st.SizeBytes = int64(len(enc))
 	// A backup you have never restored is not a backup: confirm it decrypts and
 	// is a well-formed archive before recording success.
-	if err := s.verifyRestorable(ctx, enc); err == nil {
-		st.RestoreTested = time.Now()
-	}
-	s.writeStatus(st)
+	restoreTested := s.verifyRestorable(ctx, enc) == nil
+	schema := s.SchemaVersion(ctx)
+	now := time.Now()
+	s.updateStatus(func(st *Status) {
+		st.Encrypted = true
+		st.SchemaVersion = schema
+		st.LastBackup = now
+		st.OK = true
+		st.SizeBytes = int64(len(enc))
+		if restoreTested {
+			st.RestoreTested = now
+		}
+	})
 	return nil
 }
 
@@ -393,29 +414,37 @@ func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
 		return nil
 	}
 	files, err := s.List()
-	if err != nil || len(files) == 0 {
-		return err
-	}
-	newest := files[0].Name
-	remote, _ := s.S3List(ctx)
-	for _, r := range remote {
-		if r.Name == newest { // already mirrored — just refresh the timer
-			st := s.readStatus()
-			ok := true
-			st.S3OK, st.LastS3 = &ok, time.Now()
-			s.writeStatus(st)
-			return nil
-		}
-	}
-	data, err := s.Open(newest)
 	if err != nil {
 		return err
 	}
-	uerr := s.uploadS3(ctx, newest, data)
+	var name string
+	var data []byte
+	if len(files) > 0 {
+		newest := files[0].Name
+		remote, _ := s.S3List(ctx)
+		for _, r := range remote {
+			if r.Name == newest { // already mirrored — just refresh the timer
+				now := time.Now()
+				s.updateStatus(func(st *Status) { ok := true; st.S3OK, st.LastS3 = &ok, now })
+				return nil
+			}
+		}
+		name = newest
+		if data, err = s.Open(newest); err != nil {
+			return err
+		}
+	} else {
+		// No local volume dump (e.g. the volume schedule is off) — create a fresh
+		// one just for S3 so the off-box copy still happens rather than silently
+		// never running.
+		if data, name, err = s.CreateEncrypted(ctx); err != nil {
+			return err
+		}
+	}
+	uerr := s.uploadS3(ctx, name, data)
 	ok := uerr == nil
-	st := s.readStatus()
-	st.S3OK, st.LastS3 = &ok, time.Now()
-	s.writeStatus(st)
+	now := time.Now()
+	s.updateStatus(func(st *Status) { st.S3OK, st.LastS3 = &ok, now })
 	if ok {
 		s.pruneS3(ctx, s3keep)
 	}
@@ -615,22 +644,29 @@ func (s *Service) tick(ctx context.Context, logf func(string, ...any)) {
 	set := s.currentSettings(ctx)
 	st := s.readStatus()
 	now := time.Now()
-	if cronDue(set.VolumeCron, st.LastBackup, now) {
+	// The `now.After(retryAt)` guard bounds a persistently failing destination to
+	// one attempt per statusRetryBackoff instead of a heavy pg_dump every minute
+	// (LastBackup/LastS3 only advance on success, so cronDue stays true meanwhile).
+	if cronDue(set.VolumeCron, st.LastBackup, now) && now.After(s.volRetryAt) {
 		c, cancel := context.WithTimeout(ctx, 10*time.Minute)
 		if err := s.runVolume(c, set.VolumeKeep); err != nil {
+			s.volRetryAt = now.Add(statusRetryBackoff)
 			logf("volume backup failed: %v", err)
 		} else {
+			s.volRetryAt = time.Time{}
 			logf("volume backup written to %s", s.opt.Dir)
 		}
 		cancel()
 	}
 	if s.S3Enabled() {
 		st = s.readStatus()
-		if cronDue(set.S3Cron, st.LastS3, now) {
+		if cronDue(set.S3Cron, st.LastS3, now) && now.After(s.s3RetryAt) {
 			c, cancel := context.WithTimeout(ctx, 10*time.Minute)
 			if err := s.runS3Mirror(c, set.S3Keep); err != nil {
+				s.s3RetryAt = now.Add(statusRetryBackoff)
 				logf("s3 mirror failed: %v", err)
 			} else {
+				s.s3RetryAt = time.Time{}
 				logf("s3 mirror updated")
 			}
 			cancel()
@@ -663,9 +699,8 @@ func (s *Service) ManualS3(ctx context.Context) (string, error) {
 	}
 	uerr := s.uploadS3(ctx, name, enc)
 	ok := uerr == nil
-	st := s.readStatus()
-	st.S3OK, st.LastS3 = &ok, time.Now()
-	s.writeStatus(st)
+	now := time.Now()
+	s.updateStatus(func(st *Status) { st.S3OK, st.LastS3 = &ok, now })
 	if uerr != nil {
 		return "", uerr
 	}
@@ -801,10 +836,23 @@ func (s *Service) writeStatus(st Status) {
 	_ = writeFileAtomic(s.opt.StatusFile, b)
 }
 
-// writeFileAtomic writes via a temp file + rename so readers never see a partial file.
+// writeFileAtomic writes via a per-call unique temp file + rename so readers
+// never see a partial file and two concurrent writers can't interleave into a
+// shared temp (which previously corrupted status.json). os.CreateTemp yields
+// 0600 perms.
 func writeFileAtomic(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, path)

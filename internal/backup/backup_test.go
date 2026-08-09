@@ -3,9 +3,52 @@ package backup
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
+
+// TestWriteFileAtomicConcurrent locks the status.json corruption fix: many
+// concurrent writers to the same path must never leave a partial/interleaved
+// file, and no temp files may leak (each writer uses a unique temp + rename).
+func TestWriteFileAtomicConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "status.json")
+	const n = 40
+	payloads := make([][]byte, n)
+	for i := range payloads {
+		payloads[i] = []byte(fmt.Sprintf(`{"writer":%d,"ok":true}`, i))
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				if err := writeFileAtomic(path, payloads[i]); err != nil {
+					t.Errorf("writeFileAtomic: %v", err)
+					return
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	var v map[string]any
+	if err := json.Unmarshal(got, &v); err != nil {
+		t.Fatalf("final file is not valid JSON (corruption): %q: %v", got, err)
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(leftovers) != 0 {
+		t.Errorf("leftover temp files: %v", leftovers)
+	}
+}
 
 func TestValidName(t *testing.T) {
 	cases := map[string]bool{

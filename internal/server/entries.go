@@ -259,6 +259,24 @@ func (s *Server) handlePricingAPI(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+// neighborInYearOrRedirect guards booking creation against orphan rows: a
+// booking for a neighbor not in the year is invisible on the (membership-driven)
+// dashboard yet counted by stats/CSV, skewing the year's totals. Ledger and
+// payment creation already enforce the same membership check.
+func (s *Server) neighborInYearOrRedirect(w http.ResponseWriter, r *http.Request, yearID, neighborID int64) bool {
+	in, err := s.store.NeighborInYear(r.Context(), yearID, neighborID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return false
+	}
+	if !in {
+		s.setFlash(w, r, "error", "Nachbar ist diesem Abrechnungsjahr nicht zugeordnet.")
+		redirect(w, r, dashboardURL(yearID))
+		return false
+	}
+	return true
+}
+
 func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
@@ -275,6 +293,9 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	if year.Completed() {
 		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen – es können keine Buchungen mehr erfasst werden.")
 		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
+	if !s.neighborInYearOrRedirect(w, r, year.ID, neighborID) {
 		return
 	}
 
@@ -905,6 +926,9 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	if year.Completed() {
 		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
 		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
+	if !s.neighborInYearOrRedirect(w, r, year.ID, neighborID) {
 		return
 	}
 

@@ -120,6 +120,11 @@ func (s *Server) writeCSV(w http.ResponseWriter, filename string, entries []mode
 
 	var total decimal.Decimal
 	for _, e := range entries {
+		// Skip voided (stornierte) bookings so the export matches every other
+		// total in the app, which all sum with `AND NOT voided`.
+		if e.Voided {
+			continue
+		}
 		_ = cw.Write([]string{
 			csvSafe(names[e.NeighborID]),
 			web.Date(e.Date),

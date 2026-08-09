@@ -163,6 +163,16 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 		redirect(w, r, dashboardURL(yearID))
 		return
 	}
+	payCount, err := s.store.CountPaymentsForNeighborYear(r.Context(), yearID, neighborID)
+	if err != nil {
+		s.serverError(w, "remove neighbor: count payments", err)
+		return
+	}
+	if payCount > 0 {
+		s.setFlash(w, r, "error", "Nachbar hat noch Zahlungen in diesem Jahr und kann nicht entfernt werden.")
+		redirect(w, r, dashboardURL(yearID))
+		return
+	}
 	if err := s.store.RemoveNeighborFromYear(r.Context(), yearID, neighborID); err != nil {
 		s.serverError(w, "remove neighbor from year", err)
 		return
