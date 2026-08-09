@@ -320,7 +320,7 @@ func (s *Service) dump(ctx context.Context) ([]byte, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("pg_dump: %v: %s", err, strings.TrimSpace(errBuf.String()))
+		return nil, fmt.Errorf("pg_dump: %w: %s", err, strings.TrimSpace(errBuf.String()))
 	}
 	return out.Bytes(), nil
 }
@@ -389,7 +389,10 @@ func (s *Service) RunScheduled(ctx context.Context) error {
 		return err
 	}
 	if s.S3Enabled() {
-		_ = s.runS3Mirror(ctx, set.S3Keep)
+		// Surface the S3 result: the volume dump already succeeded above, but a
+		// failed off-box copy must not be reported as overall success (3-2-1), so
+		// the CLI `treckrr backup` exits non-zero and cron can alert.
+		return s.runS3Mirror(ctx, set.S3Keep)
 	}
 	return nil
 }
@@ -532,7 +535,7 @@ func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) 
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("pg_restore: %v: %s", err, strings.TrimSpace(errBuf.String()))
+		return fmt.Errorf("pg_restore: %w: %s", err, strings.TrimSpace(errBuf.String()))
 	}
 	return nil
 }
@@ -673,7 +676,7 @@ func (s *Service) tick(ctx context.Context, logf func(string, ...any)) {
 	// one attempt per statusRetryBackoff instead of a heavy pg_dump every minute
 	// (LastBackup/LastS3 only advance on success, so cronDue stays true meanwhile).
 	if cronDue(set.VolumeCron, st.LastBackup, now) && now.After(s.volRetryAt) {
-		c, cancel := context.WithTimeout(ctx, 10*time.Minute)
+		c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
 		if err := s.runVolume(c, set.VolumeKeep); err != nil {
 			s.volRetryAt = now.Add(statusRetryBackoff)
 			logf("volume backup failed: %v", err)
@@ -686,7 +689,7 @@ func (s *Service) tick(ctx context.Context, logf func(string, ...any)) {
 	if s.S3Enabled() {
 		st = s.readStatus()
 		if cronDue(set.S3Cron, st.LastS3, now) && now.After(s.s3RetryAt) {
-			c, cancel := context.WithTimeout(ctx, 10*time.Minute)
+			c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
 			if err := s.runS3Mirror(c, set.S3Keep); err != nil {
 				s.s3RetryAt = now.Add(statusRetryBackoff)
 				logf("s3 mirror failed: %v", err)

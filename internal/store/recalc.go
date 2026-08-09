@@ -188,7 +188,8 @@ func (s *Store) ApplyRecalc(ctx context.Context, yearID int64, neighborID *int64
 		// values the preview was computed from. If it was edited concurrently
 		// since then, abort rather than clobber the newer data.
 		res, e := tx.ExecContext(ctx, `
-			UPDATE entries SET hourly_rate=$1, cost=$2, tractor_label=$3, load_label=$4, machine_labels=$5
+			UPDATE entries SET hourly_rate=$1, cost=$2, tractor_label=$3, load_label=$4, machine_labels=$5,
+			       unit_price = CASE WHEN unit='h' THEN $1 ELSE unit_price END
 			 WHERE id=$6 AND hourly_rate=$7 AND cost=$8`,
 			r.NewRate, r.NewCost, r.TractorLabel, r.LoadLabel, r.MachineLabels, r.EntryID, r.OldRate, r.OldCost)
 		if e != nil {
