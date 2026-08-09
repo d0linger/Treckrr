@@ -276,13 +276,15 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Durati
 // UserFromSession resolves a session token to its (non-expired) user. On each
 // hit it refreshes last-seen and slides the expiry forward by slideTTL, so an
 // actively-used session stays alive (rolling window) and only expires after
-// slideTTL of inactivity.
-func (s *Store) UserFromSession(ctx context.Context, token string, slideTTL time.Duration) (*models.User, error) {
+// slideTTL of inactivity. absoluteTTL additionally caps the total lifetime from
+// creation, so a stolen token can't be kept alive indefinitely by sliding.
+func (s *Store) UserFromSession(ctx context.Context, token string, slideTTL, absoluteTTL time.Duration) (*models.User, error) {
 	th := HashToken(token)
 	u, err := scanUser(s.db.QueryRowContext(ctx,
 		`SELECT u.id, u.username, u.email, u.role, u.is_admin, u.must_change_password, u.totp_enabled, u.created_at
 		   FROM sessions s JOIN users u ON u.id = s.user_id
-		  WHERE s.token=$1 AND s.expires_at > now()`, th))
+		  WHERE s.token=$1 AND s.expires_at > now()
+		    AND s.created_at > now() - make_interval(secs => $2)`, th, absoluteTTL.Seconds()))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

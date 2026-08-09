@@ -21,6 +21,9 @@ const (
 	sessionCookie = "treckrr_session"
 	flashCookie   = "treckrr_flash"
 	sessionTTL    = 30 * 24 * time.Hour
+	// sessionAbsoluteTTL caps a session's total lifetime from creation regardless
+	// of sliding refresh, so a stolen token can't be renewed indefinitely.
+	sessionAbsoluteTTL = 90 * 24 * time.Hour
 )
 
 // Server holds shared dependencies for the HTTP handlers.
@@ -263,6 +266,12 @@ func (s *Server) admin(h http.HandlerFunc) http.Handler {
 			http.Error(w, "Zugriff verweigert", http.StatusForbidden)
 			return
 		}
+		// Force a pending password change before any admin action (mirrors auth()).
+		// No /admin route is the change-password page, so redirect unconditionally.
+		if user.MustChangePassword {
+			http.Redirect(w, r, "/account/password", http.StatusSeeOther)
+			return
+		}
 		s.refreshSessionCookie(w, r)
 		ctx := context.WithValue(r.Context(), userCtxKey, user)
 		h(w, r.WithContext(ctx))
@@ -275,7 +284,7 @@ func (s *Server) currentUser(r *http.Request) *models.User {
 	if err != nil || c.Value == "" {
 		return nil
 	}
-	user, err := s.store.UserFromSession(r.Context(), c.Value, sessionTTL)
+	user, err := s.store.UserFromSession(r.Context(), c.Value, sessionTTL, sessionAbsoluteTTL)
 	if err != nil {
 		return nil
 	}
@@ -379,8 +388,18 @@ func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, c *http.Cooki
 	http.SetCookie(w, c) //nosec G124 -- attributes are set dynamically or by caller
 }
 
-// sanitizeLog strips CR/LF from request-derived values so they cannot forge
-// additional log lines (log injection).
+// sanitizeLog replaces control characters in request-derived values with a
+// space so they cannot forge additional log lines (CR/LF injection) or emit ANSI
+// escape sequences that spoof the display of an operator tailing the logs in a
+// terminal. Printable runes (incl. umlauts and other non-ASCII text) pass through.
 func sanitizeLog(s string) string {
-	return strings.NewReplacer("\n", " ", "\r", " ").Replace(s)
+	return strings.Map(func(r rune) rune {
+		if r == '\t' {
+			return ' '
+		}
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, s)
 }

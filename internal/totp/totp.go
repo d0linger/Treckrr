@@ -7,6 +7,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1" //nosec G505 -- RFC 6238 (TOTP) mandates HMAC-SHA1; required for authenticator-app compatibility
+	"crypto/subtle"
 	"encoding/base32"
 	"encoding/binary"
 	"fmt"
@@ -77,7 +78,7 @@ func ValidateStep(secret, input string) (uint64, bool) {
 		} else {
 			probe += uint64(delta) //nosec G115 -- delta is 0 or 1 (non-negative)
 		}
-		if c, err := code(secret, probe); err == nil && c == input {
+		if c, err := code(secret, probe); err == nil && subtle.ConstantTimeCompare([]byte(c), []byte(input)) == 1 {
 			return probe, true
 		}
 	}

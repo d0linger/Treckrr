@@ -2,16 +2,54 @@ package server
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"net/http"
 	"regexp"
+	"time"
 )
 
 const (
 	csrfFieldName  = "csrf_token"
 	csrfHeaderName = "X-CSRF-Token"
+	// loginCSRFCookie holds a random signing seed for the pre-session login form.
+	loginCSRFCookie = "treckrr_lcsrf"
 )
+
+// loginCSRFToken returns the CSRF token for the pre-session login form, setting a
+// fresh random signing-seed cookie when none is present. POST /login has no
+// session yet, so the general csrf()/csrfToken() path can't protect it; this
+// seeded double-submit token closes the login-CSRF gap (an attacker can't read
+// the HttpOnly seed cookie, so can't forge a matching token).
+func (s *Server) loginCSRFToken(w http.ResponseWriter, r *http.Request) string {
+	if c, err := r.Cookie(loginCSRFCookie); err == nil && c.Value != "" {
+		return s.signLoginCSRF(c.Value)
+	}
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+	seed := base64.RawURLEncoding.EncodeToString(b)
+	s.setCookie(w, r, &http.Cookie{Name: loginCSRFCookie, Value: seed, MaxAge: int((30 * time.Minute).Seconds())})
+	return s.signLoginCSRF(seed)
+}
+
+func (s *Server) signLoginCSRF(seed string) string {
+	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
+	mac.Write([]byte("csrflogin:" + seed))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// verifyLoginCSRF checks the submitted login-form token against the seed cookie.
+func (s *Server) verifyLoginCSRF(r *http.Request) bool {
+	c, err := r.Cookie(loginCSRFCookie)
+	if err != nil || c.Value == "" {
+		return false
+	}
+	got := r.FormValue(csrfFieldName)
+	return got != "" && hmac.Equal([]byte(got), []byte(s.signLoginCSRF(c.Value)))
+}
 
 // formOpenTag matches an HTML <form ...> opening tag that submits via POST.
 // [^>] also matches newlines, so multi-line form tags are handled; method="get"

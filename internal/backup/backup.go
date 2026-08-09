@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -287,13 +288,34 @@ func decrypt(enc, key []byte) ([]byte, error) {
 	return pt, nil
 }
 
+// dbURLEnv splits a postgres connection URL into a password-free URL plus a
+// child-process environment that carries the password via PGPASSWORD, so the
+// password never appears in the process argv (visible via ps / /proc/<pid>/cmdline
+// to any co-located process). A URL without an embedded password is returned
+// unchanged. libpq reads PGPASSWORD when the URL omits the password.
+func dbURLEnv(rawURL string) (cleanURL string, env []string) {
+	env = os.Environ()
+	u, err := url.Parse(rawURL)
+	if err != nil || u.User == nil {
+		return rawURL, env
+	}
+	pw, ok := u.User.Password()
+	if !ok {
+		return rawURL, env
+	}
+	u.User = url.User(u.User.Username()) // strip the password from the argv URL
+	return u.String(), append(env, "PGPASSWORD="+pw)
+}
+
 // dump runs pg_dump in PostgreSQL's custom format (compressed, restorable with
 // pg_restore) against the configured database and returns the raw archive bytes.
 func (s *Service) dump(ctx context.Context) ([]byte, error) {
-	// The connection URL comes from trusted deployment config (DATABASE_URL),
-	// not user input, and libpq offers no argv-free way to pass a full URI.
+	// DATABASE_URL is trusted deployment config, not user input; the password is
+	// passed via PGPASSWORD (see dbURLEnv), not on the command line.
+	dbURL, env := dbURLEnv(s.opt.DatabaseURL)
 	cmd := exec.CommandContext(ctx, "pg_dump", // #nosec G204
-		"--format=custom", "--no-owner", "--no-privileges", s.opt.DatabaseURL)
+		"--format=custom", "--no-owner", "--no-privileges", dbURL)
+	cmd.Env = env
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
@@ -501,9 +523,12 @@ func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) 
 		return err
 	}
 	defer cleanup()
-	// targetURL comes from trusted deployment config, not user input.
+	// targetURL is trusted deployment config; its password is passed via
+	// PGPASSWORD (see dbURLEnv), not on the command line.
+	dbURL, env := dbURLEnv(targetURL)
 	cmd := exec.CommandContext(ctx, "pg_restore", // #nosec G204
-		"--clean", "--if-exists", "--no-owner", "--dbname="+targetURL, tmp)
+		"--clean", "--if-exists", "--no-owner", "--dbname="+dbURL, tmp)
+	cmd.Env = env
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
