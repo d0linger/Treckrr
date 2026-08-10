@@ -310,17 +310,36 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	// reduce the amount still to pay. USt is shown for §22 (pauschal) and regel,
 	// not for Kleinunternehmer.
 	invShowVAT := (company.TaxMode == "pauschal" || company.TaxMode == "regel") && company.VATRate.IsPositive()
+	invRate := company.VATRate
 	invNet := cost
-	var invUSt, invPaidUSt decimal.Decimal
+	var invUSt decimal.Decimal
 	if invShowVAT {
-		rate := company.VATRate.Div(decimal.NewFromInt(100))
+		rate := invRate.Div(decimal.NewFromInt(100))
 		invUSt = invNet.Mul(rate).Round(2)
-		// USt share contained in the (gross) payments already received.
-		invPaidUSt = paidSum.Mul(rate).Div(decimal.NewFromInt(1).Add(rate)).Round(2)
 	}
 	invBrutto := invNet.Add(invUSt)
+	// Festschreibung: once a Rechnung is issued, its substance is frozen. Render the
+	// document (net/USt/brutto/rate) from the immutable snapshot instead of a live
+	// recompute; the settlement side (ledger, payments, remaining) stays live below.
+	// At issuance/backfill the snapshot equals the live values, so this changes no
+	// displayed amount — it only keeps the document stable if bookings change later.
+	if hasInvoice && invoice.Content != nil {
+		c := invoice.Content
+		invShowVAT = c.ShowVAT
+		invRate = c.VATRate
+		invNet = c.Net
+		invUSt = c.VATAmount
+		invBrutto = c.Gross
+	}
+	// USt share contained in the (gross) payments already received, at the
+	// invoice's rate.
+	var invPaidUSt decimal.Decimal
+	if invShowVAT && invRate.IsPositive() {
+		rate := invRate.Div(decimal.NewFromInt(100))
+		invPaidUSt = paidSum.Mul(rate).Div(decimal.NewFromInt(1).Add(rate)).Round(2)
+	}
 	data["InvShowVAT"] = invShowVAT
-	data["InvRate"] = company.VATRate
+	data["InvRate"] = invRate
 	data["InvNet"] = invNet
 	data["InvUSt"] = invUSt
 	data["InvBrutto"] = invBrutto
