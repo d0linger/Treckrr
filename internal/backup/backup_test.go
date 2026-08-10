@@ -2,6 +2,9 @@ package backup
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -74,8 +77,8 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
-	if !strings.HasPrefix(string(enc), magic) {
-		t.Fatalf("ciphertext missing magic header")
+	if !strings.HasPrefix(string(enc), magicV2) {
+		t.Fatalf("new ciphertext must carry the TRKBK2 header")
 	}
 	if bytes.Contains(enc, plain) {
 		t.Fatalf("plaintext leaked into ciphertext")
@@ -116,5 +119,42 @@ func TestDecryptRejectsTruncation(t *testing.T) {
 	}
 	if _, err := decrypt(enc[:len(enc)-5], k[:]); err == nil {
 		t.Fatal("expected decrypt to fail on a truncated backup")
+	}
+}
+
+// TestDecryptLegacyTRKBK1 locks backward compatibility: a dump written in the
+// old TRKBK1 format (bare sha256(secret) key, no salt) must still decrypt with
+// the raw secret after the switch to Argon2id/TRKBK2.
+func TestDecryptLegacyTRKBK1(t *testing.T) {
+	secret := []byte("legacy-secret-legacy-secret-1234")
+	plain := []byte("old encrypted database dump payload")
+
+	// Build a TRKBK1 blob exactly as the pre-Argon2id code did.
+	k := sha256.Sum256(secret)
+	block, err := aes.NewCipher(k[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		t.Fatal(err)
+	}
+	legacy := append([]byte(magicV1), nonce...)
+	legacy = gcm.Seal(legacy, nonce, plain, nil)
+
+	// The new decrypt (given the raw secret) must read the old format.
+	got, err := decrypt(legacy, secret)
+	if err != nil {
+		t.Fatalf("legacy TRKBK1 decrypt failed: %v", err)
+	}
+	if !bytes.Equal(got, plain) {
+		t.Fatal("legacy round-trip mismatch")
+	}
+	if _, err := DecryptWith(legacy, string(secret)); err != nil {
+		t.Fatalf("DecryptWith on legacy dump failed: %v", err)
 	}
 }

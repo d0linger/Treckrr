@@ -27,6 +27,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/robfig/cron/v3"
+	"golang.org/x/crypto/argon2"
 )
 
 // parseCron parses a standard 5-field cron; empty/invalid yields ok=false.
@@ -134,8 +135,27 @@ func everyN(field string) (int, bool) {
 	return n, true
 }
 
-// magic prefixes every encrypted dump so a wrong/plain file is rejected early.
-const magic = "TRKBK1"
+// A magic header prefixes every encrypted dump so a wrong/plain file is rejected
+// early. TRKBK1 derived the AES key as a bare sha256(secret); TRKBK2 uses
+// Argon2id over a per-file random salt (memory-hard, salted) and stores that
+// salt after the magic. Both are still decryptable; new dumps are always TRKBK2.
+const (
+	magicV1  = "TRKBK1"
+	magicV2  = "TRKBK2"
+	magicLen = 6 // both magics are 6 bytes
+	saltLen  = 16
+	// Argon2id parameters (moderate): 64 MiB, 1 pass, 4 lanes → 32-byte AES key.
+	argonTime    = 1
+	argonMemory  = 64 * 1024 // KiB
+	argonThreads = 4
+	argonKeyLen  = 32
+)
+
+// deriveKey turns the raw backup secret into a 32-byte AES-256 key using Argon2id
+// over the given salt.
+func deriveKey(secret, salt []byte) []byte {
+	return argon2.IDKey(secret, salt, argonTime, argonMemory, argonThreads, argonKeyLen)
+}
 
 // Status is the on-disk shape written after each scheduled backup and read by the
 // admin panel. Timestamps are zero when the event never happened.
@@ -195,9 +215,9 @@ type BackupFile struct {
 
 // Service runs and restores encrypted backups.
 type Service struct {
-	opt Options
-	db  *sql.DB
-	key []byte // 32-byte AES-256 key, nil when disabled
+	opt    Options
+	db     *sql.DB
+	secret []byte // raw backup-key secret; the AES key is derived per file, nil when disabled
 
 	mu         sync.Mutex // serializes status.json read-modify-write
 	volRetryAt time.Time  // earliest next volume attempt after a failure (tick goroutine only)
@@ -225,14 +245,13 @@ func (s *Service) updateStatus(mutate func(*Status)) {
 func New(opt Options, db *sql.DB) *Service {
 	s := &Service{opt: opt, db: db}
 	if opt.EncKey != "" {
-		k := sha256.Sum256([]byte(opt.EncKey))
-		s.key = k[:]
+		s.secret = []byte(opt.EncKey)
 	}
 	return s
 }
 
 // Enabled reports whether a backup key is configured.
-func (s *Service) Enabled() bool { return s.key != nil }
+func (s *Service) Enabled() bool { return s.secret != nil }
 
 // ErrDisabled is returned when no BACKUP_ENCRYPTION_KEY is configured.
 var ErrDisabled = fmt.Errorf("backups are not configured (set BACKUP_ENCRYPTION_KEY)")
@@ -242,11 +261,17 @@ func Filename(t time.Time) string {
 	return "treckrr-" + t.Format("2006-01-02-150405") + ".dump.enc"
 }
 
-// encrypt seals plaintext with AES-256-GCM: magic || nonce || ciphertext(+tag).
-// One-shot (the dump fits comfortably in memory); the GCM tag covers the whole
-// message, so any truncation or tampering fails on decrypt.
-func encrypt(plaintext, key []byte) ([]byte, error) {
-	block, err := aes.NewCipher(key)
+// encrypt seals plaintext with AES-256-GCM into the TRKBK2 layout:
+// magicV2 || salt(16) || nonce || ciphertext(+tag). The AES key is derived from
+// the raw secret via Argon2id over the per-file random salt. One-shot (the dump
+// fits comfortably in memory); the GCM tag covers the whole message, so any
+// truncation or tampering fails on decrypt.
+func encrypt(plaintext, secret []byte) ([]byte, error) {
+	salt := make([]byte, saltLen)
+	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher(deriveKey(secret, salt))
 	if err != nil {
 		return nil, err
 	}
@@ -258,16 +283,28 @@ func encrypt(plaintext, key []byte) ([]byte, error) {
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return nil, err
 	}
-	out := append([]byte(magic), nonce...)
+	out := append([]byte(magicV2), salt...)
+	out = append(out, nonce...)
 	return gcm.Seal(out, nonce, plaintext, nil), nil
 }
 
-// decrypt reverses encrypt, rejecting a bad magic (wrong file) or bad key/tag.
-func decrypt(enc, key []byte) ([]byte, error) {
-	if len(enc) < len(magic) || string(enc[:len(magic)]) != magic {
+// decrypt reverses encrypt for both formats, choosing the key derivation from
+// the magic header: TRKBK2 → Argon2id over the stored salt; TRKBK1 (legacy) →
+// bare sha256(secret). A wrong/plain file is rejected on the header.
+func decrypt(enc, secret []byte) ([]byte, error) {
+	var key []byte
+	switch {
+	case len(enc) >= magicLen+saltLen && string(enc[:magicLen]) == magicV2:
+		salt := enc[magicLen : magicLen+saltLen]
+		key = deriveKey(secret, salt)
+		enc = enc[magicLen+saltLen:]
+	case len(enc) >= magicLen && string(enc[:magicLen]) == magicV1:
+		k := sha256.Sum256(secret)
+		key = k[:]
+		enc = enc[magicLen:]
+	default:
 		return nil, fmt.Errorf("not a Treckrr backup (bad header)")
 	}
-	enc = enc[len(magic):]
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -347,7 +384,7 @@ func (s *Service) CreateEncrypted(ctx context.Context) (data []byte, filename st
 	if err != nil {
 		return nil, "", err
 	}
-	enc, err := encrypt(raw, s.key)
+	enc, err := encrypt(raw, s.secret)
 	if err != nil {
 		return nil, "", err
 	}
@@ -543,7 +580,7 @@ func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) 
 // verifyRestorable is the automatic post-write drill: decrypt with the service
 // key and validate the archive.
 func (s *Service) verifyRestorable(ctx context.Context, enc []byte) error {
-	raw, err := decrypt(enc, s.key)
+	raw, err := decrypt(enc, s.secret)
 	if err != nil {
 		return err
 	}
@@ -554,8 +591,7 @@ func (s *Service) verifyRestorable(ctx context.Context, enc []byte) error {
 // DecryptWith decrypts using an operator-supplied key string — used by the GUI
 // restore, where the key is re-entered rather than taken from the environment.
 func DecryptWith(enc []byte, keySecret string) ([]byte, error) {
-	k := sha256.Sum256([]byte(keySecret))
-	return decrypt(enc, k[:])
+	return decrypt(enc, []byte(keySecret))
 }
 
 // Restore decrypts a backup file (with the service key) and restores it. CLI use.
@@ -568,7 +604,7 @@ func (s *Service) Restore(ctx context.Context, encFile, targetURL string) error 
 	if err != nil {
 		return err
 	}
-	raw, err := decrypt(enc, s.key)
+	raw, err := decrypt(enc, s.secret)
 	if err != nil {
 		return err
 	}
@@ -592,7 +628,7 @@ func (s *Service) TestRestore(ctx context.Context, encFile string) (TestReport, 
 	if err != nil {
 		return rep, err
 	}
-	raw, err := decrypt(enc, s.key)
+	raw, err := decrypt(enc, s.secret)
 	if err != nil {
 		return rep, err
 	}
