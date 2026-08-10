@@ -137,10 +137,13 @@
 			{{if .Ledger}}
 			<div class="beleg__lsub beleg__lsub--muted"><span></span><span>Verrechnung</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvLedger}}</span></div>
 			{{end}}
+			{{if .HasCredits}}
+			<div class="beleg__lsub beleg__lsub--muted"><span></span><span>abzüglich Gutschrift (§ 16 UStG)</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvCredits}}</span></div>
+			{{end}}
 			{{if .HasPayments}}
 			<div class="beleg__lsub beleg__lsub--muted"><span></span><span>abzüglich bereits bezahlt{{if .InvShowVAT}} (davon USt {{money .InvPaidUSt}}){{end}}</span><span class="beleg__r"></span><span class="beleg__r">−{{money .PaidSum}}</span></div>
 			{{end}}
-			{{if or .Ledger .HasPayments}}
+			{{if or .Ledger .HasPayments .HasCredits}}
 			<div class="beleg__lsub"><span></span><span>Restbetrag zu zahlen</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvRest}}</span></div>
 			{{end}}
 			{{with .Company.TaxNote}}<div class="beleg__inv-note">{{.}}</div>{{end}}
@@ -181,6 +184,32 @@
 			<input type="hidden" name="year_id" value="{{.Year.ID}}">
 			<button type="submit" class="btn btn--ghost btn--block">Als Rechnung ausstellen (Nummer vergeben)</button>
 		</form>
+		{{end}}
+		{{if .HasInvoice}}
+		<div class="beleg__invacts stack">
+			{{if .HasDocuments}}
+			<div class="beleg__doclist">
+				<div class="beleg__doclist-h">Belegverlauf</div>
+				{{range .Documents}}
+				<div class="beleg__docrow">
+					<span class="beleg__docno">{{.Number}}</span>
+					<span class="beleg__dockind">{{if eq .Kind "invoice"}}Rechnung{{if eq .Status "canceled"}} · storniert{{end}}{{else if eq .Kind "storno"}}Storno{{else}}Gutschrift{{end}}</span>
+					{{if .Content}}<span class="beleg__r">{{money .Content.Gross}}</span>{{end}}
+				</div>
+				{{end}}
+			</div>
+			{{end}}
+			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/gutschrift" class="beleg__gform">
+				<input type="hidden" name="year_id" value="{{.Year.ID}}">
+				<input type="text" inputmode="decimal" name="amount" placeholder="Betrag brutto (€)" aria-label="Gutschrift-Betrag brutto" required>
+				<input type="text" name="note" maxlength="200" placeholder="Grund (z. B. 3 % Skonto)" aria-label="Grund der Gutschrift">
+				<button type="submit" class="btn btn--ghost">Gutschrift / Skonto (§ 16)</button>
+			</form>
+			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/storno" data-confirm="Rechnung {{.Invoice.Number}} stornieren? Es wird ein Storno-Beleg erstellt und die Buchungen werden wieder freigegeben.">
+				<input type="hidden" name="year_id" value="{{.Year.ID}}">
+				<button type="submit" class="btn btn--ghost btn--block">Rechnung stornieren</button>
+			</form>
+		</div>
 		{{end}}
 	</div>
 </section>

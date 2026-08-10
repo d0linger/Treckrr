@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -277,6 +278,102 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 		}
 		if len(aRows) != 0 {
 			t.Fatalf("recalc of a frozen neighbor should be empty, got %d rows", len(aRows))
+		}
+	})
+
+	t.Run("storno cancels the invoice, unlocks, and allows re-issue", func(t *testing.T) {
+		yearID, nid, _ := setup(t, 2086, "regel", "13")
+		iv, err := st.IssueInvoice(ctx, yearID, nid, 2086)
+		if err != nil {
+			t.Fatalf("issue: %v", err)
+		}
+		if iv.Number != "2086-001" {
+			t.Fatalf("first number = %s", iv.Number)
+		}
+
+		sv, err := st.StornoInvoice(ctx, yearID, nid)
+		if err != nil {
+			t.Fatalf("storno: %v", err)
+		}
+		if sv.Number != "2086-001-S" || sv.Kind != "storno" || sv.ReferencesInvoiceID == nil || *sv.ReferencesInvoiceID != iv.ID {
+			t.Fatalf("storno doc wrong: %+v", sv)
+		}
+		// The storno fully reverses the original (gross negated to the cent).
+		if sv.Content == nil || sv.Content.Gross.StringFixed(2) != "-246.34" {
+			t.Fatalf("storno gross = %+v", sv.Content)
+		}
+		// The active invoice is gone → neighbor unlocked, Beleg back to live.
+		if _, err := st.GetInvoice(ctx, yearID, nid); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("expected no active invoice after storno, got %v", err)
+		}
+		if ids, err := st.InvoicedNeighborIDs(ctx, yearID); err != nil {
+			t.Fatalf("invoiced ids: %v", err)
+		} else if ids[nid] {
+			t.Fatalf("neighbor should be unlocked after storno")
+		}
+		// Re-issue picks the next sequence in the year (gapless-ish).
+		again, err := st.IssueInvoice(ctx, yearID, nid, 2086)
+		if err != nil {
+			t.Fatalf("re-issue: %v", err)
+		}
+		if again.Number != "2086-002" {
+			t.Fatalf("re-issued number = %s (want 2086-002)", again.Number)
+		}
+		// History now holds the original, its storno, and the re-issue.
+		docs, err := st.ListInvoiceDocuments(ctx, yearID, nid)
+		if err != nil {
+			t.Fatalf("docs: %v", err)
+		}
+		if len(docs) != 3 {
+			t.Fatalf("expected 3 documents, got %d", len(docs))
+		}
+	})
+
+	t.Run("gutschrift splits the VAT and caps at the invoice gross", func(t *testing.T) {
+		yearID, nid, _ := setup(t, 2087, "regel", "13")
+		if _, err := st.IssueInvoice(ctx, yearID, nid, 2087); err != nil {
+			t.Fatalf("issue: %v", err)
+		}
+		// 24.63 € gross Skonto at 13%: net 21.80, USt 2.83, stored negative.
+		g, err := st.GutschriftInvoice(ctx, yearID, nid, dec("24.63"), "3% Skonto")
+		if err != nil {
+			t.Fatalf("gutschrift: %v", err)
+		}
+		if g.Number != "2087-001-G" || g.Kind != "gutschrift" {
+			t.Fatalf("gutschrift doc wrong: %+v", g)
+		}
+		if g.Content.Net.StringFixed(2) != "-21.80" || g.Content.VATAmount.StringFixed(2) != "-2.83" || g.Content.Gross.StringFixed(2) != "-24.63" {
+			t.Fatalf("gutschrift split wrong: net=%s ust=%s gross=%s", g.Content.Net, g.Content.VATAmount, g.Content.Gross)
+		}
+		// The original invoice stays active (neighbor stays locked).
+		if _, err := st.GetInvoice(ctx, yearID, nid); err != nil {
+			t.Fatalf("original should stay active: %v", err)
+		}
+		// A second credit note gets -G2.
+		g2, err := st.GutschriftInvoice(ctx, yearID, nid, dec("10.00"), "")
+		if err != nil {
+			t.Fatalf("gutschrift2: %v", err)
+		}
+		if g2.Number != "2087-001-G2" {
+			t.Fatalf("second gutschrift number = %s", g2.Number)
+		}
+		// A credit exceeding the remaining gross is rejected.
+		if _, err := st.GutschriftInvoice(ctx, yearID, nid, dec("500.00"), ""); !errors.Is(err, store.ErrGutschriftTooLarge) {
+			t.Fatalf("expected ErrGutschriftTooLarge, got %v", err)
+		}
+	})
+
+	t.Run("gutschrift on a Kleinunternehmer invoice is all net", func(t *testing.T) {
+		yearID, nid, _ := setup(t, 2088, "kleinunternehmer", "0")
+		if _, err := st.IssueInvoice(ctx, yearID, nid, 2088); err != nil {
+			t.Fatalf("issue: %v", err)
+		}
+		g, err := st.GutschriftInvoice(ctx, yearID, nid, dec("20.00"), "Nachlass")
+		if err != nil {
+			t.Fatalf("gutschrift: %v", err)
+		}
+		if g.Content.Net.StringFixed(2) != "-20.00" || !g.Content.VATAmount.IsZero() || g.Content.Gross.StringFixed(2) != "-20.00" {
+			t.Fatalf("kleinunternehmer gutschrift: net=%s ust=%s gross=%s", g.Content.Net, g.Content.VATAmount, g.Content.Gross)
 		}
 	})
 }

@@ -277,6 +277,16 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	company, _ := s.store.GetCompany(r.Context())
 	invoice, invErr := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
 	hasInvoice := invErr == nil
+	// Document history (invoice, its storno, credit notes) and the total credited by
+	// active Gutschriften (their gross is stored negative). Best-effort: on error the
+	// history stays empty and no credit is applied.
+	documents, _ := s.store.ListInvoiceDocuments(r.Context(), year.ID, neighbor.ID)
+	var invCredits decimal.Decimal // negative: sum of active credit-note gross
+	for _, d := range documents {
+		if d.Kind == "gutschrift" && d.Status == "issued" && d.Content != nil {
+			invCredits = invCredits.Add(d.Content.Gross)
+		}
+	}
 
 	data := s.newPage(w, r, neighbor.Name+" · Beleg", "dashboard")
 	if err := s.withYearSelector(r, data, year); err != nil {
@@ -345,8 +355,14 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["InvBrutto"] = invBrutto
 	data["InvLedger"] = ledgerSum
 	data["InvPaidUSt"] = invPaidUSt
-	// Amount still to pay: gross services, less mutual Verrechnung, less payments.
-	data["InvRest"] = invBrutto.Add(ledgerSum).Sub(paidSum)
+	data["Documents"] = documents
+	data["HasDocuments"] = len(documents) > 1 // more than the invoice itself
+	data["InvCredits"] = invCredits           // negative sum of credit notes
+	data["HasCredits"] = invCredits.IsNegative()
+	// Amount still to pay: gross services, less credit notes, less mutual
+	// Verrechnung, less payments. invCredits is negative, so it reduces the total;
+	// it is zero without any Gutschrift, leaving the previous value unchanged.
+	data["InvRest"] = invBrutto.Add(invCredits).Add(ledgerSum).Sub(paidSum)
 	// § 11: the recipient's UID/tax number is required on invoices over €10,000
 	// gross. Soft reminder only — it never blocks issuing.
 	data["InvNeedRecipientVATID"] = invBrutto.GreaterThan(decimal.NewFromInt(10000)) &&
@@ -426,4 +442,73 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, "invoice_issue", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Rechnung "+iv.Number)
 	s.setFlash(w, r, "success", "Rechnung "+iv.Number+" ausgestellt.")
 	redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID))
+}
+
+// handleInvoiceStorno cancels the active invoice (issues a Storno document and
+// marks the original canceled), which unlocks the neighbor's bookings again.
+func (s *Server) handleInvoiceStorno(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	yearID := s.yearIDFromForm(r)
+	if yearID == 0 {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
+	sv, err := s.store.StornoInvoice(r.Context(), yearID, neighborID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.setFlash(w, r, "error", "Keine aktive Rechnung zum Stornieren.")
+	case err != nil:
+		s.setFlash(w, r, "error", "Storno fehlgeschlagen.")
+	default:
+		s.audit(r, "invoice_storno", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Storno "+sv.Number)
+		s.setFlash(w, r, "success", "Rechnung storniert ("+sv.Number+"). Die Buchungen sind wieder bearbeitbar.")
+	}
+	redirect(w, r, back)
+}
+
+// handleInvoiceGutschrift issues a credit note (§ 16 UStG Entgeltminderung, e.g. a
+// Skonto) reducing the active invoice by a gross amount. The original stays active.
+func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	yearID := s.yearIDFromForm(r)
+	if yearID == 0 {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID)
+	note := trimmed(r, "note")
+	if s.tooLong(w, r, "Grund", note, maxNoteLen) {
+		redirect(w, r, back)
+		return
+	}
+	gv, err := s.store.GutschriftInvoice(r.Context(), yearID, neighborID, formDecimal(r, "amount").Abs(), note)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.setFlash(w, r, "error", "Keine aktive Rechnung für eine Gutschrift.")
+	case errors.Is(err, store.ErrGutschriftTooLarge):
+		s.setFlash(w, r, "error", "Die Gutschrift übersteigt den offenen Rechnungsbetrag.")
+	case err != nil:
+		s.setFlash(w, r, "error", "Gutschrift fehlgeschlagen – bitte einen Betrag größer 0 angeben.")
+	default:
+		s.audit(r, "invoice_gutschrift", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Gutschrift "+gv.Number)
+		s.setFlash(w, r, "success", "Gutschrift "+gv.Number+" erstellt.")
+	}
+	redirect(w, r, back)
 }

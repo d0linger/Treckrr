@@ -18,6 +18,10 @@ import (
 // ErrNotFound is returned when a requested row does not exist.
 var ErrNotFound = errors.New("not found")
 
+// ErrGutschriftTooLarge is returned when a credit note would exceed the invoice's
+// remaining (uncredited) gross amount.
+var ErrGutschriftTooLarge = errors.New("gutschrift exceeds invoice")
+
 // Store wraps the database connection pool.
 type Store struct {
 	db      *sql.DB

@@ -288,19 +288,7 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 		return models.Invoice{}, err
 	}
 	number := fmt.Sprintf("%d-%03d", year, seq)
-	issuerJSON, _ := json.Marshal(content.Issuer)
-	recipientJSON, _ := json.Marshal(content.Recipient)
-	linesJSON, _ := json.Marshal(content.Lines)
-	iv, err := scanInvoice(tx.QueryRowContext(ctx, `
-		INSERT INTO invoices
-		  (billing_year_id, neighbor_id, number, kind, status, payment_reference,
-		   net, vat_rate, vat_amount, gross, show_vat, tax_mode, tax_note,
-		   service_from, service_to, issuer, recipient, lines, content_hash)
-		VALUES ($1,$2,$3,'invoice','issued',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-		RETURNING `+invoiceCols,
-		yearID, neighborID, number, number,
-		content.Net, content.VATRate, content.VATAmount, content.Gross, content.ShowVAT, content.TaxMode, content.TaxNote,
-		nullDate(content.ServiceFrom), nullDate(content.ServiceTo), issuerJSON, recipientJSON, linesJSON, content.Hash))
+	iv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, number, "invoice", nil, content)
 	if err != nil {
 		return models.Invoice{}, err
 	}
