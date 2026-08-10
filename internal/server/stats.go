@@ -43,7 +43,7 @@ func makeSpark(vals []decimal.Decimal, years []int, fmtVal func(decimal.Decimal)
 	for i, v := range vals {
 		f, _ := v.Float64()
 		fs[i] = f
-		lo, hi = math.Min(lo, f), math.Max(hi, f)
+		lo, hi = min(lo, f), max(hi, f)
 	}
 	rng := hi - lo
 	half := 50.0 / float64(n-1)
@@ -64,10 +64,10 @@ func makeSpark(vals []decimal.Decimal, years []int, fmtVal func(decimal.Decimal)
 		if i < len(years) {
 			tip = strconv.Itoa(years[i]) + " · " + fmtVal(vals[i])
 		}
-		hx := math.Max(0, x-half)
+		hx := max(0, x-half)
 		pts[i] = sparkPoint{
 			X: fmt.Sprintf("%.1f", x), Y: fmt.Sprintf("%.1f", y), Tip: tip,
-			HitX: fmt.Sprintf("%.1f", hx), HitW: fmt.Sprintf("%.1f", math.Min(100, x+half)-hx),
+			HitX: fmt.Sprintf("%.1f", hx), HitW: fmt.Sprintf("%.1f", min(100, x+half)-hx),
 		}
 		lastX, lastY = x, y
 	}
@@ -92,13 +92,13 @@ type barPair struct {
 func makeBarPair(prev, cur decimal.Decimal, prevYear, curYear int, fmtVal func(decimal.Decimal) string) *barPair {
 	pf, _ := prev.Float64()
 	cf, _ := cur.Float64()
-	max := math.Max(pf, cf)
-	if max <= 0 {
-		max = 1
+	peak := max(pf, cf)
+	if peak <= 0 {
+		peak = 1
 	}
 	const base, maxH = 32.0, 28.0
-	ph := math.Max(2, pf/max*maxH)
-	ch := math.Max(2, cf/max*maxH)
+	ph := max(2, pf/peak*maxH)
+	ch := max(2, cf/peak*maxH)
 	f := func(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
 	return &barPair{
 		PrevH: f(ph), PrevY: f(base - ph),
