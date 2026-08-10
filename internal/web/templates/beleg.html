@@ -185,10 +185,7 @@
 			{{end}}
 		</div>
 		{{if not .HasInvoice}}
-		<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice" data-confirm="Rechnung ausstellen? Die Rechnungsnummer wird fest vergeben und bleibt bestehen.">
-			<input type="hidden" name="year_id" value="{{.Year.ID}}">
-			<button type="submit" class="btn btn--primary btn--block">Rechnung ausstellen &amp; festschreiben</button>
-		</form>
+		<a class="btn btn--primary btn--block" href="/neighbors/{{.Neighbor.ID}}/invoice/confirm?year={{.Year.ID}}">Rechnung ausstellen &amp; festschreiben</a>
 		{{end}}
 		{{if .HasDocuments}}
 		<div class="beleg__doclist">

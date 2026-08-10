@@ -155,6 +155,45 @@ func TestBelegPageRenders(t *testing.T) {
 	}
 }
 
+func TestInvoiceConfirmRenders(t *testing.T) {
+	d := decimal.NewFromFloat
+	base := func(canIssue bool, checks []map[string]any) map[string]any {
+		return map[string]any{
+			"Title":    "Festschreiben",
+			"Neighbor": map[string]any{"ID": int64(2), "Name": "Florian"},
+			"Year":     map[string]any{"ID": int64(1), "Year": 2026},
+			"BackURL":  "/neighbors/2/beleg?year=1",
+			"CanIssue": canIssue,
+			"Content":  map[string]any{"ShowVAT": true, "Net": d(218), "VATRate": d(13), "VATAmount": d(28.34), "Gross": d(246.34)},
+			"Checks":   checks,
+		}
+	}
+
+	// Incomplete: a failing §11 item → checklist shown, no issue button.
+	bad := execPage(t, "invoice_confirm", base(false, []map[string]any{
+		{"Label": "Absender-Name", "Detail": "Hof Bergmann", "OK": true},
+		{"Label": "Empfänger-Adresse", "Detail": "fehlt", "OK": false},
+	}))
+	for _, want := range []string{"§ 11 UStG", "Absender-Name", "Empfänger-Adresse", "nicht möglich"} {
+		if !strings.Contains(bad, want) {
+			t.Errorf("confirm(incomplete) missing %q", want)
+		}
+	}
+	if strings.Contains(bad, "Jetzt festschreiben") {
+		t.Errorf("incomplete confirm must not offer the festschreiben button")
+	}
+
+	// Complete: snapshot preview + issue button.
+	ok := execPage(t, "invoice_confirm", base(true, []map[string]any{
+		{"Label": "Absender-Name", "Detail": "Hof Bergmann", "OK": true},
+	}))
+	for _, want := range []string{"Snapshot-Vorschau", "Jetzt festschreiben", "246,34"} {
+		if !strings.Contains(ok, want) {
+			t.Errorf("confirm(complete) missing %q", want)
+		}
+	}
+}
+
 func TestComparePageRendersWithDiffs(t *testing.T) {
 	d := decimal.NewFromFloat
 	rows := []map[string]any{

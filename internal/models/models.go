@@ -292,33 +292,56 @@ type InvoiceContent struct {
 // recipient's UID is a mandatory invoice field.
 var invoiceUIDThreshold = decimal.NewFromInt(10000)
 
-// MissingMandatory returns the human-readable list of § 11 UStG invoice
-// requirements this content does not yet satisfy. An empty slice means the
-// content may be issued as a formal Rechnung. It is tax-mode aware: a VAT mode
-// (pauschal/regel) without a positive rate is inconsistent, while a
-// Kleinunternehmer invoice legitimately shows no VAT.
+// MandatoryCheck is one § 11 UStG line item for the pre-issuance checklist.
+type MandatoryCheck struct {
+	Label  string // what is required
+	Detail string // the current value (or empty when missing)
+	OK     bool   // satisfied
+}
+
+// MandatoryChecks returns the § 11 UStG requirements as a checklist (both passed
+// and failed), the single source the block-on-issue and the confirmation UI share.
+// It is tax-mode aware: the VAT line applies only to pauschal/regel, the UID line
+// only above the €10.000 threshold.
+func (c InvoiceContent) MandatoryChecks() []MandatoryCheck {
+	firstLine := func(s string) string {
+		s = strings.TrimSpace(s)
+		if i := strings.IndexByte(s, '\n'); i >= 0 {
+			return strings.TrimSpace(s[:i])
+		}
+		return s
+	}
+	period := ""
+	if !c.ServiceFrom.IsZero() {
+		period = c.ServiceFrom.Format("02.01.2006")
+		if !c.ServiceTo.IsZero() && !c.ServiceTo.Equal(c.ServiceFrom) {
+			period += "–" + c.ServiceTo.Format("02.01.2006")
+		}
+	}
+	checks := []MandatoryCheck{
+		{"Absender-Name", firstLine(c.Issuer.Name), strings.TrimSpace(c.Issuer.Name) != ""},
+		{"Absender-Adresse", firstLine(c.Issuer.Address), strings.TrimSpace(c.Issuer.Address) != ""},
+		{"Empfänger-Name", firstLine(c.Recipient.Name), strings.TrimSpace(c.Recipient.Name) != ""},
+		{"Empfänger-Adresse", firstLine(c.Recipient.Address), strings.TrimSpace(c.Recipient.Address) != ""},
+		{"Leistungszeitraum", period, len(c.Lines) > 0},
+	}
+	if c.TaxMode == "pauschal" || c.TaxMode == "regel" {
+		checks = append(checks, MandatoryCheck{"USt-Ausweis", c.VATRate.StringFixed(0) + " %", c.ShowVAT})
+	}
+	if c.Gross.GreaterThan(invoiceUIDThreshold) {
+		checks = append(checks, MandatoryCheck{"Empfänger-UID (> 10.000 €)", firstLine(c.Recipient.TaxID), strings.TrimSpace(c.Recipient.TaxID) != ""})
+	}
+	return checks
+}
+
+// MissingMandatory returns the labels of the § 11 requirements not yet satisfied.
+// An empty slice means the content may be issued as a formal Rechnung.
 func (c InvoiceContent) MissingMandatory() []string {
 	var m []string
-	if strings.TrimSpace(c.Issuer.Name) == "" {
-		m = append(m, "Absender-Name (Betriebsdaten)")
-	}
-	if strings.TrimSpace(c.Issuer.Address) == "" {
-		m = append(m, "Absender-Adresse (Betriebsdaten)")
-	}
-	if strings.TrimSpace(c.Recipient.Name) == "" {
-		m = append(m, "Empfänger-Name")
-	}
-	if strings.TrimSpace(c.Recipient.Address) == "" {
-		m = append(m, "Empfänger-Adresse")
-	}
-	if len(c.Lines) == 0 {
-		m = append(m, "keine abrechenbaren Buchungen (Leistungszeitraum)")
-	}
-	if (c.TaxMode == "pauschal" || c.TaxMode == "regel") && !c.ShowVAT {
-		m = append(m, "USt-Satz > 0 (Modus \""+c.TaxMode+"\" ohne Steuersatz)")
-	}
-	if c.Gross.GreaterThan(invoiceUIDThreshold) && strings.TrimSpace(c.Recipient.TaxID) == "" {
-		m = append(m, "Empfänger-UID (Rechnungsbetrag über 10.000 €)")
+	for _, ch := range c.MandatoryChecks() {
+		if !ch.OK {
+			m = append(m, ch.Label)
+		}
 	}
 	return m
 }

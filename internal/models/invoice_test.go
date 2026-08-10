@@ -34,9 +34,9 @@ func TestMissingMandatory(t *testing.T) {
 		{"blank issuer address", func(c *InvoiceContent) { c.Issuer.Address = "  " }, "Absender-Adresse"},
 		{"no recipient name", func(c *InvoiceContent) { c.Recipient.Name = "" }, "Empfänger-Name"},
 		{"no recipient address", func(c *InvoiceContent) { c.Recipient.Address = "" }, "Empfänger-Adresse"},
-		{"no lines", func(c *InvoiceContent) { c.Lines = nil }, "keine abrechenbaren"},
-		{"regel without rate", func(c *InvoiceContent) { c.TaxMode = "regel"; c.ShowVAT = false }, "USt-Satz"},
-		{"pauschal without rate", func(c *InvoiceContent) { c.TaxMode = "pauschal"; c.ShowVAT = false }, "USt-Satz"},
+		{"no lines", func(c *InvoiceContent) { c.Lines = nil }, "Leistungszeitraum"},
+		{"regel without rate", func(c *InvoiceContent) { c.TaxMode = "regel"; c.ShowVAT = false }, "USt-Ausweis"},
+		{"pauschal without rate", func(c *InvoiceContent) { c.TaxMode = "pauschal"; c.ShowVAT = false }, "USt-Ausweis"},
 		{"over 10k without UID", func(c *InvoiceContent) { c.Gross = dec("10000.01"); c.Recipient.TaxID = "" }, "Empfänger-UID"},
 	}
 	for _, tc := range cases {

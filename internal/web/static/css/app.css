@@ -1033,6 +1033,23 @@ em { font-style: normal; color: var(--muted); }
 .beleg__inv-hash { font-family: var(--font-mono); font-size: .62rem; color: var(--muted); padding: .15rem .9rem 0; letter-spacing: .02em; }
 .beleg__sform { display: flex; flex-direction: column; gap: .4rem; }
 
+/* Invoice confirmation page: §11 checklist + snapshot preview. */
+.cfm-h { font-family: var(--font-mono); font-size: .64rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-bottom: .5rem; }
+.cfm-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cfm-check { display: grid; grid-template-columns: 1.4rem 1fr auto; gap: .5rem; align-items: baseline; padding: .4rem 0; border-top: 1px solid var(--card-hairline); }
+.cfm-check:first-child { border-top: 0; }
+.cfm-mk { width: 1.15rem; height: 1.15rem; border-radius: 6px; display: grid; place-items: center; font-size: .72rem; font-weight: 800; align-self: center; }
+.cfm-check--ok .cfm-mk { background: var(--primary); color: var(--on-primary, #fff); }
+.cfm-check--bad .cfm-mk { background: var(--danger); color: #fff; }
+.cfm-lbl { font-weight: 600; font-size: .9rem; }
+.cfm-check--bad .cfm-lbl { color: var(--danger); }
+.cfm-det { font-family: var(--font-mono); font-size: .8rem; color: var(--muted); text-align: right; }
+.cfm-prev { display: flex; flex-direction: column; gap: .1rem; }
+.cfm-prev-row { display: flex; justify-content: space-between; gap: 1rem; padding: .22rem 0; }
+.cfm-prev-row--mut { color: var(--muted); font-size: .9rem; }
+.cfm-prev-row--tot { border-top: 1px solid var(--hairline-strong, var(--border)); margin-top: .2rem; padding-top: .4rem; font-weight: 700; font-size: 1.05rem; }
+.cfm-prev-row .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
 /* Payment instruction on the issued invoice (IBAN + reference), part of the
    printed document. Distinct from .beleg__pay (the live Zahlungen section). */
 .beleg__payinfo { display: flex; flex-direction: column; gap: .12rem; padding: .5rem .9rem .2rem; }

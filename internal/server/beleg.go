@@ -406,6 +406,53 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "beleg", data)
 }
 
+// handleInvoiceConfirm renders the pre-issuance confirmation: the § 11 checklist
+// and, when complete, the frozen-snapshot preview with the festschreiben button.
+func (s *Server) handleInvoiceConfirm(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	yearID := formInt64(r, "year")
+	if yearID == 0 {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	year, err := s.store.GetBillingYear(r.Context(), yearID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
+	// Already issued → nothing to confirm; show the Beleg (storno/gutschrift live there).
+	if _, err := s.store.GetInvoice(r.Context(), yearID, neighborID); err == nil {
+		redirect(w, r, back+"&rechnung=1")
+		return
+	} else if !errors.Is(err, store.ErrNotFound) {
+		s.serverError(w, "invoice confirm: lookup", err)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), neighborID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	content, err := s.store.BuildInvoiceContent(r.Context(), yearID, neighborID)
+	if err != nil {
+		s.serverError(w, "invoice confirm: build", err)
+		return
+	}
+	data := s.newPage(w, r, neighbor.Name+" · Festschreiben", "dashboard")
+	data["Neighbor"] = neighbor
+	data["Year"] = year
+	data["Checks"] = content.MandatoryChecks()
+	data["CanIssue"] = len(content.MissingMandatory()) == 0
+	data["Content"] = content
+	data["BackURL"] = back
+	s.render(w, r, "invoice_confirm", data)
+}
+
 // handleInvoiceIssue assigns and stores a sequential invoice number for a
 // neighbor+year (fixed once), then shows the Beleg in Rechnung mode.
 func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
