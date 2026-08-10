@@ -203,16 +203,12 @@
 		<div class="beleg__invacts stack">
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/gutschrift" class="beleg__gform">
 				<input type="hidden" name="year_id" value="{{.Year.ID}}">
-				<div class="beleg__gform-h">Gutschrift / Skonto <span>· § 16 UStG</span></div>
+				<div class="beleg__gform-h">Gutschrift <span>· § 16 UStG</span></div>
 				<input class="input" type="text" inputmode="decimal" name="amount" placeholder="Betrag brutto (€)" aria-label="Gutschrift-Betrag brutto" required>
-				<input class="input" type="text" name="note" maxlength="200" placeholder="Grund (z. B. 3 % Skonto)" aria-label="Grund der Gutschrift">
+				<input class="input" type="text" name="note" maxlength="200" placeholder="Grund (z. B. Nachlass)" aria-label="Grund der Gutschrift">
 				<button type="submit" class="btn btn--primary">Gutschrift erstellen</button>
 			</form>
-			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/storno" class="beleg__sform" data-confirm="Rechnung {{.Invoice.Number}} stornieren? Es wird ein Storno-Beleg erstellt und die Buchungen werden wieder freigegeben.">
-				<input type="hidden" name="year_id" value="{{.Year.ID}}">
-				<input class="input" type="text" name="reason" maxlength="200" placeholder="Storno-Grund (optional, protokolliert)" aria-label="Storno-Grund">
-				<button type="submit" class="btn btn--danger btn--block">Rechnung stornieren</button>
-			</form>
+			<a class="btn btn--danger btn--block" href="/neighbors/{{.Neighbor.ID}}/invoice/storno/confirm?year={{.Year.ID}}">Rechnung stornieren …</a>
 		</div>
 		{{end}}
 	</div>

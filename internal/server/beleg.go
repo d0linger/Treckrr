@@ -521,6 +521,47 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID))
 }
 
+// handleStornoConfirm renders the storno confirmation, where the reason is
+// entered before the invoice is canceled.
+func (s *Server) handleStornoConfirm(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	yearID := formInt64(r, "year")
+	if yearID == 0 {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	year, err := s.store.GetBillingYear(r.Context(), yearID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID)
+	iv, err := s.store.GetInvoice(r.Context(), yearID, neighborID)
+	if errors.Is(err, store.ErrNotFound) {
+		redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
+		return
+	}
+	if err != nil {
+		s.serverError(w, "storno confirm: lookup", err)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), neighborID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	data := s.newPage(w, r, neighbor.Name+" · Storno", "dashboard")
+	data["Neighbor"] = neighbor
+	data["Year"] = year
+	data["Invoice"] = iv
+	data["BackURL"] = back
+	s.render(w, r, "storno_confirm", data)
+}
+
 // handleInvoiceStorno cancels the active invoice (issues a Storno document and
 // marks the original canceled), which unlocks the neighbor's bookings again.
 func (s *Server) handleInvoiceStorno(w http.ResponseWriter, r *http.Request) {

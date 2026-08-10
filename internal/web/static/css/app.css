@@ -1031,7 +1031,6 @@ em { font-style: normal; color: var(--muted); }
 	color: var(--primary); background: var(--primary-tint); border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
 	border-radius: 999px; padding: .1rem .45rem; margin-left: .35rem; }
 .beleg__inv-hash { font-family: var(--font-mono); font-size: .62rem; color: var(--muted); padding: .15rem .9rem 0; letter-spacing: .02em; }
-.beleg__sform { display: flex; flex-direction: column; gap: .4rem; }
 
 /* Invoice confirmation page: §11 checklist + snapshot preview. */
 .cfm-h { font-family: var(--font-mono); font-size: .64rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-bottom: .5rem; }
