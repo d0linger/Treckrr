@@ -246,10 +246,49 @@ type Company struct {
 	TaxNote string
 	TaxMode string
 	VATRate decimal.Decimal
+	IBAN    string // optional issuer bank account for a payable invoice
 }
 
-// Invoice is a Beleg issued as a formal Rechnung: a sequential number per year,
-// fixed at issue time, for one neighbor and year.
+// InvoiceParty is a frozen issuer/recipient block on an invoice snapshot.
+type InvoiceParty struct {
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	TaxID   string `json:"tax_id"` // issuer UID / recipient UID or tax number
+}
+
+// InvoiceLine is one frozen line item of an invoice snapshot.
+type InvoiceLine struct {
+	Date      time.Time       `json:"date"`
+	Label     string          `json:"label"`
+	Unit      string          `json:"unit"`
+	Quantity  decimal.Decimal `json:"qty"`
+	UnitPrice decimal.Decimal `json:"unit_price"`
+	Cost      decimal.Decimal `json:"cost"`
+}
+
+// InvoiceContent is the immutable substance of an invoice, frozen at issuance
+// (Festschreibung) so the document never changes even as bookings/prices do.
+// The settlement side (ledger, payments, remaining) is deliberately NOT part of
+// it — that stays live because it evolves after the invoice is handed over.
+type InvoiceContent struct {
+	Net         decimal.Decimal `json:"net"`
+	VATRate     decimal.Decimal `json:"vat_rate"`
+	VATAmount   decimal.Decimal `json:"vat_amount"`
+	Gross       decimal.Decimal `json:"gross"`
+	ShowVAT     bool            `json:"show_vat"`
+	TaxMode     string          `json:"tax_mode"`
+	TaxNote     string          `json:"tax_note"`
+	ServiceFrom time.Time       `json:"service_from"`
+	ServiceTo   time.Time       `json:"service_to"`
+	Issuer      InvoiceParty    `json:"issuer"`
+	Recipient   InvoiceParty    `json:"recipient"`
+	Lines       []InvoiceLine   `json:"lines"`
+	Hash        string          `json:"-"` // sha256 over the canonical content
+}
+
+// Invoice is a Beleg issued as a formal Rechnung. Since Festschreibung it also
+// carries the frozen content snapshot and the document kind/status so an invoice
+// can be stornoed and a Gutschrift issued (a document history per neighbor+year).
 type Invoice struct {
 	ID            int64
 	BillingYearID int64
@@ -257,6 +296,12 @@ type Invoice struct {
 	Number        string
 	IssuedOn      time.Time
 	Created       time.Time
+
+	Kind                string // invoice | storno | gutschrift
+	Status              string // issued | canceled
+	ReferencesInvoiceID *int64 // storno/gutschrift → the original invoice
+	PaymentReference    string
+	Content             *InvoiceContent // nil for legacy rows not yet backfilled
 }
 
 // AuditEntry is one recorded action in the audit trail.

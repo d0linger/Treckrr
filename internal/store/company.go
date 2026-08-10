@@ -2,9 +2,15 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
+
+	"github.com/shopspring/decimal"
 
 	"treckrr/internal/models"
 )
@@ -13,39 +19,167 @@ import (
 func (s *Store) GetCompany(ctx context.Context) (models.Company, error) {
 	var c models.Company
 	err := s.db.QueryRowContext(ctx,
-		`SELECT name, address, tax_id, tax_note, tax_mode, vat_rate FROM company WHERE id=1`).
-		Scan(&c.Name, &c.Address, &c.TaxID, &c.TaxNote, &c.TaxMode, &c.VATRate)
+		`SELECT name, address, tax_id, tax_note, tax_mode, vat_rate, iban FROM company WHERE id=1`).
+		Scan(&c.Name, &c.Address, &c.TaxID, &c.TaxNote, &c.TaxMode, &c.VATRate, &c.IBAN)
 	return c, err
 }
 
 // UpdateCompany saves the company (Absender) settings.
 func (s *Store) UpdateCompany(ctx context.Context, c models.Company) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE company SET name=$1, address=$2, tax_id=$3, tax_note=$4, tax_mode=$5, vat_rate=$6 WHERE id=1`,
-		c.Name, c.Address, c.TaxID, c.TaxNote, c.TaxMode, c.VATRate)
+		`UPDATE company SET name=$1, address=$2, tax_id=$3, tax_note=$4, tax_mode=$5, vat_rate=$6, iban=$7 WHERE id=1`,
+		c.Name, c.Address, c.TaxID, c.TaxNote, c.TaxMode, c.VATRate, c.IBAN)
 	return err
 }
 
-// GetInvoice returns the issued invoice for a (year, neighbor), or ErrNotFound.
-func (s *Store) GetInvoice(ctx context.Context, yearID, neighborID int64) (models.Invoice, error) {
+// invoiceCols is the shared column list for scanning a full invoice (identity +
+// frozen Festschreibung snapshot).
+const invoiceCols = `id, billing_year_id, neighbor_id, number, issued_on, created_at,
+	kind, status, references_invoice_id, payment_reference,
+	net, vat_rate, vat_amount, gross, show_vat, tax_mode, tax_note,
+	service_from, service_to, issuer, recipient, lines, content_hash`
+
+// scanInvoice reads a full invoice row. The snapshot columns are NULL for legacy
+// rows issued before Festschreibung, in which case Content stays nil.
+func scanInvoice(sc scanner) (models.Invoice, error) {
 	var iv models.Invoice
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, billing_year_id, neighbor_id, number, issued_on, created_at
-		   FROM invoices WHERE billing_year_id=$1 AND neighbor_id=$2`, yearID, neighborID).
-		Scan(&iv.ID, &iv.BillingYearID, &iv.NeighborID, &iv.Number, &iv.IssuedOn, &iv.Created)
+	var refID sql.NullInt64
+	var net, vatRate, vatAmt, gross decimal.NullDecimal
+	var showVAT bool
+	var taxMode, taxNote, hash string
+	var sFrom, sTo sql.NullTime
+	var issuer, recipient, lines []byte
+	if err := sc.Scan(
+		&iv.ID, &iv.BillingYearID, &iv.NeighborID, &iv.Number, &iv.IssuedOn, &iv.Created,
+		&iv.Kind, &iv.Status, &refID, &iv.PaymentReference,
+		&net, &vatRate, &vatAmt, &gross, &showVAT, &taxMode, &taxNote,
+		&sFrom, &sTo, &issuer, &recipient, &lines, &hash,
+	); err != nil {
+		return iv, err
+	}
+	if refID.Valid {
+		id := refID.Int64
+		iv.ReferencesInvoiceID = &id
+	}
+	if net.Valid { // a Festschreibung snapshot is present
+		c := &models.InvoiceContent{
+			Net: net.Decimal, VATRate: vatRate.Decimal, VATAmount: vatAmt.Decimal, Gross: gross.Decimal,
+			ShowVAT: showVAT, TaxMode: taxMode, TaxNote: taxNote, Hash: hash,
+		}
+		if sFrom.Valid {
+			c.ServiceFrom = sFrom.Time
+		}
+		if sTo.Valid {
+			c.ServiceTo = sTo.Time
+		}
+		_ = json.Unmarshal(issuer, &c.Issuer)
+		_ = json.Unmarshal(recipient, &c.Recipient)
+		_ = json.Unmarshal(lines, &c.Lines)
+		iv.Content = c
+	}
+	return iv, nil
+}
+
+// GetInvoice returns the active issued invoice for a (year, neighbor) — the one
+// current, non-canceled Rechnung — or ErrNotFound.
+func (s *Store) GetInvoice(ctx context.Context, yearID, neighborID int64) (models.Invoice, error) {
+	iv, err := scanInvoice(s.db.QueryRowContext(ctx,
+		`SELECT `+invoiceCols+` FROM invoices
+		  WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='invoice' AND status='issued'`,
+		yearID, neighborID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return iv, ErrNotFound
 	}
 	return iv, err
 }
 
-// IssueInvoice assigns the next sequential number within the year (e.g.
-// "2026-001") and stores it, or returns the existing invoice if already issued.
-// The number is fixed once, so the document stays stable.
+// BuildInvoiceContent computes the invoice substance from the current live data,
+// reproducing exactly what the Beleg shows: USt is charged on the Leistungsentgelt
+// (non-voided bookings), shown only for pauschal/regel with a positive rate. This
+// is the content IssueInvoice freezes (and the backfill re-freezes).
+func (s *Store) BuildInvoiceContent(ctx context.Context, yearID, neighborID int64) (models.InvoiceContent, error) {
+	company, err := s.GetCompany(ctx)
+	if err != nil {
+		return models.InvoiceContent{}, err
+	}
+	neighbor, err := s.GetNeighbor(ctx, neighborID)
+	if err != nil {
+		return models.InvoiceContent{}, err
+	}
+	net, _, err := s.NeighborTotal(ctx, neighborID, yearID)
+	if err != nil {
+		return models.InvoiceContent{}, err
+	}
+	entries, err := s.ListEntries(ctx, neighborID, yearID)
+	if err != nil {
+		return models.InvoiceContent{}, err
+	}
+	showVAT := (company.TaxMode == "pauschal" || company.TaxMode == "regel") && company.VATRate.IsPositive()
+	var vat decimal.Decimal
+	if showVAT {
+		rate := company.VATRate.Div(decimal.NewFromInt(100))
+		vat = net.Mul(rate).Round(2)
+	}
+	c := models.InvoiceContent{
+		Net: net, VATRate: company.VATRate, VATAmount: vat, Gross: net.Add(vat),
+		ShowVAT: showVAT, TaxMode: company.TaxMode, TaxNote: company.TaxNote,
+		Issuer:    models.InvoiceParty{Name: company.Name, Address: company.Address, TaxID: company.TaxID},
+		Recipient: models.InvoiceParty{Name: neighbor.Name, Address: neighbor.Address, TaxID: neighbor.TaxID},
+	}
+	for _, e := range entries {
+		if e.Voided {
+			continue
+		}
+		label := e.TaskLabel
+		if label == "" {
+			label = e.Note
+		}
+		if label == "" {
+			label = "Sonstige"
+		}
+		qty, up := e.Hours, e.HourlyRate
+		if e.Unit != "" && e.Unit != "h" {
+			qty, up = e.Quantity, e.UnitPrice
+		}
+		c.Lines = append(c.Lines, models.InvoiceLine{
+			Date: e.Date, Label: label, Unit: e.Unit, Quantity: qty, UnitPrice: up, Cost: e.Cost,
+		})
+		if c.ServiceFrom.IsZero() || e.Date.Before(c.ServiceFrom) {
+			c.ServiceFrom = e.Date
+		}
+		if e.Date.After(c.ServiceTo) {
+			c.ServiceTo = e.Date
+		}
+	}
+	c.Hash = invoiceContentHash(c)
+	return c, nil
+}
+
+func invoiceContentHash(c models.InvoiceContent) string {
+	b, _ := json.Marshal(c) // Hash field is json:"-", so it is excluded from the digest
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func nullDate(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t
+}
+
+// IssueInvoice freezes the current invoice content (Festschreibung) under a
+// sequential per-year number and stores it, or returns the existing active
+// invoice if one is already issued (idempotent). Content and number are fixed
+// once, so the document stays stable regardless of later booking/price changes.
 func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year int) (models.Invoice, error) {
 	if iv, err := s.GetInvoice(ctx, yearID, neighborID); err == nil {
 		return iv, nil
 	} else if !errors.Is(err, ErrNotFound) {
+		return models.Invoice{}, err
+	}
+	content, err := s.BuildInvoiceContent(ctx, yearID, neighborID)
+	if err != nil {
 		return models.Invoice{}, err
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -53,40 +187,45 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 		return models.Invoice{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	// Serialize number allocation per year so two concurrent issues (even for
-	// different neighbors) can't be handed the same sequence. The lock is held
-	// until Commit/Rollback.
+	// Serialize number allocation per year (held until commit).
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, yearID); err != nil {
 		return models.Invoice{}, err
 	}
 	// Re-check under the lock: a concurrent request may have just issued it.
-	var existing models.Invoice
-	err = tx.QueryRowContext(ctx,
-		`SELECT id, billing_year_id, neighbor_id, number, issued_on, created_at
-		   FROM invoices WHERE billing_year_id=$1 AND neighbor_id=$2`, yearID, neighborID).
-		Scan(&existing.ID, &existing.BillingYearID, &existing.NeighborID, &existing.Number, &existing.IssuedOn, &existing.Created)
-	if err == nil {
-		return existing, tx.Commit()
+	if iv, err := scanInvoice(tx.QueryRowContext(ctx,
+		`SELECT `+invoiceCols+` FROM invoices
+		  WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='invoice' AND status='issued'`,
+		yearID, neighborID)); err == nil {
+		return iv, tx.Commit()
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return models.Invoice{}, err
 	}
-	// Next sequence = highest existing suffix + 1 (robust to gaps, unlike count).
-	// Only numeric suffixes are considered, so a stray non-generated number
-	// (e.g. "2026-manual") can't crash the ::int cast.
+	// Next sequence = highest existing invoice suffix + 1 (robust to gaps). Only
+	// numeric suffixes of kind='invoice' are counted, so storno/gutschrift
+	// suffixes (…-S / …-G) can't skew or crash the ::int cast.
 	var seq int
 	if err := tx.QueryRowContext(ctx,
 		`SELECT COALESCE(MAX(split_part(number,'-',2)::int), 0)+1
 		   FROM invoices
-		  WHERE billing_year_id=$1 AND split_part(number,'-',2) ~ '^[0-9]+$'`, yearID).Scan(&seq); err != nil {
+		  WHERE billing_year_id=$1 AND kind='invoice' AND split_part(number,'-',2) ~ '^[0-9]+$'`,
+		yearID).Scan(&seq); err != nil {
 		return models.Invoice{}, err
 	}
 	number := fmt.Sprintf("%d-%03d", year, seq)
-	var iv models.Invoice
-	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO invoices (billing_year_id, neighbor_id, number) VALUES ($1,$2,$3)
-		 RETURNING id, billing_year_id, neighbor_id, number, issued_on, created_at`,
-		yearID, neighborID, number).
-		Scan(&iv.ID, &iv.BillingYearID, &iv.NeighborID, &iv.Number, &iv.IssuedOn, &iv.Created); err != nil {
+	issuerJSON, _ := json.Marshal(content.Issuer)
+	recipientJSON, _ := json.Marshal(content.Recipient)
+	linesJSON, _ := json.Marshal(content.Lines)
+	iv, err := scanInvoice(tx.QueryRowContext(ctx, `
+		INSERT INTO invoices
+		  (billing_year_id, neighbor_id, number, kind, status, payment_reference,
+		   net, vat_rate, vat_amount, gross, show_vat, tax_mode, tax_note,
+		   service_from, service_to, issuer, recipient, lines, content_hash)
+		VALUES ($1,$2,$3,'invoice','issued',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+		RETURNING `+invoiceCols,
+		yearID, neighborID, number, number,
+		content.Net, content.VATRate, content.VATAmount, content.Gross, content.ShowVAT, content.TaxMode, content.TaxNote,
+		nullDate(content.ServiceFrom), nullDate(content.ServiceTo), issuerJSON, recipientJSON, linesJSON, content.Hash))
+	if err != nil {
 		return models.Invoice{}, err
 	}
 	return iv, tx.Commit()

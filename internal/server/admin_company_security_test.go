@@ -60,7 +60,7 @@ type mockCompanySecRows struct {
 
 func (r *mockCompanySecRows) Columns() []string {
 	if strings.Contains(r.query, "company") {
-		return []string{"name", "address", "tax_id", "tax_note", "tax_mode", "vat_rate"}
+		return []string{"name", "address", "tax_id", "tax_note", "tax_mode", "vat_rate", "iban"}
 	}
 	return []string{"id", "username", "email", "role", "is_admin", "must_change_password", "totp_enabled", "created_at"}
 }
@@ -79,6 +79,7 @@ func (r *mockCompanySecRows) Next(dest []driver.Value) error {
 		dest[3] = "Note"
 		dest[4] = "pauschal"
 		dest[5] = float64(0.0)
+		dest[6] = ""
 	} else {
 		dest[0] = int64(123)
 		dest[1] = "testuser"
