@@ -1021,6 +1021,12 @@ em { font-style: normal; color: var(--muted); }
 .beleg__gform { display: grid; grid-template-columns: 1fr 1fr auto; gap: .5rem; align-items: center; }
 .beleg__gform input { min-width: 0; }
 @media (max-width: 30rem) { .beleg__gform { grid-template-columns: 1fr; } }
+
+/* Payment instruction on the issued invoice (IBAN + reference), part of the
+   printed document. */
+.beleg__pay { display: flex; flex-direction: column; gap: .12rem; padding: .5rem .9rem .2rem; }
+.beleg__pay-k { font-family: var(--font-mono); font-size: .6rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.beleg__pay-v { font-size: .82rem; }
 [data-beleg-grund][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 [data-beleg-grund][aria-pressed="true"] .ic { color: var(--on-primary); }
 [data-beleg-rechnung][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }

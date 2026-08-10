@@ -10,6 +10,8 @@
 			<textarea class="input" name="address" rows="2" placeholder="Straße, PLZ Ort">{{.Address}}</textarea></label>
 		<label class="field"><span>UID / Steuernummer</span>
 			<input class="input" name="tax_id" value="{{.TaxID}}" placeholder="z. B. ATU12345678"></label>
+		<label class="field"><span>IBAN (für Zahlungshinweis auf der Rechnung)</span>
+			<input class="input" name="iban" value="{{.IBAN}}" placeholder="z. B. AT61 1904 3002 3457 3201 – leer lassen: kein IBAN-Ausweis"></label>
 		<label class="field"><span>Besteuerung</span>
 			<select class="select" name="tax_mode">
 				<option value="kleinunternehmer" {{if eq .TaxMode "kleinunternehmer"}}selected{{end}}>Kleinunternehmer – kein USt-Ausweis</option>
