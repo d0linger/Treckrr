@@ -279,8 +279,19 @@ func (s *Server) admin(h http.HandlerFunc) http.Handler {
 }
 
 // currentUser resolves the session cookie to a user, or nil.
+// sessionCookieName returns the session cookie name, prefixed with __Host- when
+// the cookie is Secure (HTTPS). The prefix binds the cookie to Secure + Path=/ +
+// no Domain (browser-enforced), hardening it against subdomain injection. It is
+// omitted over plain HTTP (local dev), where browsers reject __Host- cookies.
+func (s *Server) sessionCookieName(r *http.Request) string {
+	if s.cookieSecure(r) {
+		return "__Host-" + sessionCookie
+	}
+	return sessionCookie
+}
+
 func (s *Server) currentUser(r *http.Request) *models.User {
-	c, err := r.Cookie(sessionCookie)
+	c, err := r.Cookie(s.sessionCookieName(r))
 	if err != nil || c.Value == "" {
 		return nil
 	}
@@ -295,9 +306,10 @@ func (s *Server) currentUser(r *http.Request) *models.User {
 // actively-used session keeps a live browser cookie in step with the rolling
 // server-side expiry (slid in UserFromSession).
 func (s *Server) refreshSessionCookie(w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
+	name := s.sessionCookieName(r)
+	if c, err := r.Cookie(name); err == nil && c.Value != "" {
 		s.setCookie(w, r, &http.Cookie{
-			Name:   sessionCookie,
+			Name:   name,
 			Value:  c.Value,
 			MaxAge: int(sessionTTL.Seconds()),
 		})

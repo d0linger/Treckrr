@@ -62,7 +62,7 @@ var formOpenTag = regexp.MustCompile(`(?i)<form\b[^>]*\bmethod\s*=\s*["']post["'
 // cross-site request. Returns "" when no qualifying cookie is present.
 func (s *Server) csrfToken(r *http.Request) string {
 	// Priority 1: established session.
-	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
+	if c, err := r.Cookie(s.sessionCookieName(r)); err == nil && c.Value != "" {
 		mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
 		mac.Write([]byte("csrf:" + c.Value))
 		return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))

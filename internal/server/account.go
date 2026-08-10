@@ -83,7 +83,7 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 	s.sensitiveReset(r, user.ID)
 	// Invalidate every other session on password change; keep the current one.
 	keepToken := ""
-	if c, err := r.Cookie(sessionCookie); err == nil {
+	if c, err := r.Cookie(s.sessionCookieName(r)); err == nil {
 		keepToken = c.Value
 	}
 	// Load-bearing: revoke all other sessions on password change. Surface a
@@ -282,7 +282,7 @@ func (s *Server) handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSessionRevokeOthers(w http.ResponseWriter, r *http.Request) {
 	user := userFromCtx(r)
 	current := ""
-	if c, err := r.Cookie(sessionCookie); err == nil {
+	if c, err := r.Cookie(s.sessionCookieName(r)); err == nil {
 		current = c.Value
 	}
 	if err := s.store.DeleteUserSessionsExcept(r.Context(), user.ID, current); err != nil {

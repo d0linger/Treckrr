@@ -225,7 +225,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 		return false
 	}
 	s.setCookie(w, r, &http.Cookie{
-		Name:   sessionCookie,
+		Name:   s.sessionCookieName(r),
 		Value:  token,
 		MaxAge: int(sessionTTL.Seconds()),
 	})
@@ -277,10 +277,10 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if u := s.currentUser(r); u != nil {
 		_ = s.store.AddAudit(r.Context(), &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r))
 	}
-	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
+	if c, err := r.Cookie(s.sessionCookieName(r)); err == nil && c.Value != "" {
 		_ = s.store.DeleteSession(r.Context(), c.Value)
 	}
-	s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
+	s.setCookie(w, r, &http.Cookie{Name: s.sessionCookieName(r), Value: "", MaxAge: -1})
 	redirect(w, r, "/login")
 }
 
@@ -293,7 +293,7 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	// Sessions carry the stored token *hash*; hash the current cookie to match.
 	currentHash := ""
-	if c, err := r.Cookie(sessionCookie); err == nil {
+	if c, err := r.Cookie(s.sessionCookieName(r)); err == nil {
 		currentHash = store.HashToken(c.Value)
 	}
 	for i := range sessions {
