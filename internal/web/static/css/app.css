@@ -1018,9 +1018,13 @@ em { font-style: normal; color: var(--muted); }
 .beleg__docno { font-family: var(--font-mono); font-size: .82rem; font-weight: 600; }
 .beleg__dockind { font-size: .78rem; color: var(--muted); }
 .beleg__docrow .beleg__r { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .82rem; text-align: right; }
-.beleg__gform { display: grid; grid-template-columns: 1fr 1fr auto; gap: .5rem; align-items: center; }
-.beleg__gform input { min-width: 0; }
-@media (max-width: 30rem) { .beleg__gform { grid-template-columns: 1fr; } }
+.beleg__gform { display: grid; grid-template-columns: minmax(8rem, 11rem) 1fr auto; gap: .5rem; align-items: center;
+	padding: .7rem .8rem; border: 1px solid var(--card-hairline); border-radius: 12px; background: var(--surface); }
+.beleg__gform-h { grid-column: 1 / -1; font-family: var(--font-mono); font-size: .62rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.beleg__gform-h span { color: var(--muted); opacity: .8; }
+.beleg__gform .input { min-width: 0; }
+.beleg__gform .btn { white-space: nowrap; }
+@media (max-width: 34rem) { .beleg__gform { grid-template-columns: 1fr; } }
 
 /* Payment instruction on the issued invoice (IBAN + reference), part of the
    printed document. Distinct from .beleg__pay (the live Zahlungen section). */

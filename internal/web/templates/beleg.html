@@ -186,7 +186,7 @@
 		{{if not .HasInvoice}}
 		<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice" data-confirm="Rechnung ausstellen? Die Rechnungsnummer wird fest vergeben und bleibt bestehen.">
 			<input type="hidden" name="year_id" value="{{.Year.ID}}">
-			<button type="submit" class="btn btn--ghost btn--block">Als Rechnung ausstellen (Nummer vergeben)</button>
+			<button type="submit" class="btn btn--primary btn--block">Rechnung ausstellen &amp; festschreiben</button>
 		</form>
 		{{end}}
 		{{if .HasDocuments}}
@@ -205,9 +205,10 @@
 		<div class="beleg__invacts stack">
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/gutschrift" class="beleg__gform">
 				<input type="hidden" name="year_id" value="{{.Year.ID}}">
-				<input type="text" inputmode="decimal" name="amount" placeholder="Betrag brutto (€)" aria-label="Gutschrift-Betrag brutto" required>
-				<input type="text" name="note" maxlength="200" placeholder="Grund (z. B. 3 % Skonto)" aria-label="Grund der Gutschrift">
-				<button type="submit" class="btn btn--ghost">Gutschrift / Skonto (§ 16)</button>
+				<div class="beleg__gform-h">Gutschrift / Skonto <span>· § 16 UStG</span></div>
+				<input class="input" type="text" inputmode="decimal" name="amount" placeholder="Betrag brutto (€)" aria-label="Gutschrift-Betrag brutto" required>
+				<input class="input" type="text" name="note" maxlength="200" placeholder="Grund (z. B. 3 % Skonto)" aria-label="Grund der Gutschrift">
+				<button type="submit" class="btn btn--primary">Gutschrift erstellen</button>
 			</form>
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/storno" data-confirm="Rechnung {{.Invoice.Number}} stornieren? Es wird ein Storno-Beleg erstellt und die Buchungen werden wieder freigegeben.">
 				<input type="hidden" name="year_id" value="{{.Year.ID}}">
