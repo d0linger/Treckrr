@@ -15,15 +15,22 @@ import (
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
+// Pool sizing, shared by Connect and ResetPool so a reset restores the same caps.
+const (
+	maxOpenConns    = 10
+	maxIdleConns    = 5
+	connMaxLifetime = time.Hour
+)
+
 // Connect opens a connection pool and waits until the database is reachable.
 func Connect(ctx context.Context, dsn string) (*sql.DB, error) {
 	pool, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
-	pool.SetMaxOpenConns(10)
-	pool.SetMaxIdleConns(5)
-	pool.SetConnMaxLifetime(time.Hour)
+	pool.SetMaxOpenConns(maxOpenConns)
+	pool.SetMaxIdleConns(maxIdleConns)
+	pool.SetConnMaxLifetime(connMaxLifetime)
 
 	// Retry until Postgres accepts connections (it may still be starting up).
 	deadline := time.Now().Add(60 * time.Second)
@@ -43,6 +50,18 @@ func Connect(ctx context.Context, dsn string) (*sql.DB, error) {
 		case <-time.After(2 * time.Second):
 		}
 	}
+}
+
+// ResetPool discards the pooled connections so none keeps a prepared statement
+// bound to a table that a `pg_restore --clean` just dropped and recreated — the
+// classic "cached plan must not change result type" after an in-place restore.
+// database/sql has no Reset() like pgxpool: dropping the idle limit to zero closes
+// every idle connection synchronously, and restoring it lets the pool reopen fresh
+// connections (with an empty statement cache) on demand. Call it before re-running
+// Migrate so the migration and all later queries run on clean connections.
+func ResetPool(pool *sql.DB) {
+	pool.SetMaxIdleConns(0)
+	pool.SetMaxIdleConns(maxIdleConns)
 }
 
 // migrateLockKey is a fixed advisory-lock key that serializes Migrate across

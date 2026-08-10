@@ -480,8 +480,17 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 		redirect(w, r, "/admin/backup")
 		return
 	}
+	// A restored backup can be a schema version behind this binary, and the
+	// --clean restore left the pool holding stale cached plans. Reconcile in one
+	// shot (reset pool → migrate → backfill) so no container restart is needed.
+	if err := s.store.ReconcileAfterRestore(rctx); err != nil {
+		log.Printf("post-restore reconcile failed: %v", sanitizeLog(err.Error()))
+		s.setFlash(w, r, "error", "Wiederhergestellt, aber das Schema-Upgrade schlug fehl — bitte die App neu starten, um es abzuschließen.")
+		redirect(w, r, "/admin/backup")
+		return
+	}
 	s.audit(r, "backup_restore", "backup", 0, fmt.Sprintf("%d Objekte aus Upload wiederhergestellt", objects))
-	s.setFlash(w, r, "success", "Wiederherstellung abgeschlossen. Bitte prüfen und ggf. neu anmelden.")
+	s.setFlash(w, r, "success", "Wiederherstellung abgeschlossen (Schema aktualisiert, kein Neustart nötig). Bitte neu anmelden.")
 	redirect(w, r, "/admin/backup")
 }
 
