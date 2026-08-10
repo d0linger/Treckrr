@@ -258,10 +258,6 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 	} else if !errors.Is(err, ErrNotFound) {
 		return models.Invoice{}, err
 	}
-	content, err := s.BuildInvoiceContent(ctx, yearID, neighborID)
-	if err != nil {
-		return models.Invoice{}, err
-	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return models.Invoice{}, err
@@ -279,6 +275,16 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 		return iv, tx.Commit()
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return models.Invoice{}, err
+	}
+	// Build the snapshot under the lock and validate the exact content we are about
+	// to persist against § 11 — a store-side backstop, so incomplete content can
+	// never be frozen even if a caller bypasses the handler's checklist gate.
+	content, err := s.BuildInvoiceContent(ctx, yearID, neighborID)
+	if err != nil {
+		return models.Invoice{}, err
+	}
+	if len(content.MissingMandatory()) > 0 {
+		return models.Invoice{}, ErrInvoiceIncomplete
 	}
 	// Next sequence = highest existing invoice suffix + 1 (robust to gaps). Only
 	// numeric suffixes of kind='invoice' are counted, so storno/gutschrift

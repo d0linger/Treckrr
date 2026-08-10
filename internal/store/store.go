@@ -22,6 +22,10 @@ var ErrNotFound = errors.New("not found")
 // remaining (uncredited) gross amount.
 var ErrGutschriftTooLarge = errors.New("gutschrift exceeds invoice")
 
+// ErrInvoiceIncomplete is returned when issuance is attempted on content that does
+// not satisfy the § 11 UStG mandatory fields (a store-side backstop to the UI).
+var ErrInvoiceIncomplete = errors.New("invoice content incomplete (§11)")
+
 // Store wraps the database connection pool.
 type Store struct {
 	db      *sql.DB

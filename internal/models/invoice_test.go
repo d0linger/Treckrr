@@ -3,6 +3,7 @@ package models
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 )
@@ -12,11 +13,13 @@ func dec(s string) decimal.Decimal { return decimal.RequireFromString(s) }
 // complete is a §11-valid Kleinunternehmer content (no VAT) used as the baseline
 // from which each case removes exactly one requirement.
 func complete() InvoiceContent {
+	day := time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC)
 	return InvoiceContent{
 		Net: dec("218.00"), Gross: dec("218.00"), ShowVAT: false, TaxMode: "kleinunternehmer",
-		Issuer:    InvoiceParty{Name: "Hof Bergmann", Address: "Feldweg 3"},
-		Recipient: InvoiceParty{Name: "Florian", Address: "Dorfstraße 1"},
-		Lines:     []InvoiceLine{{Label: "Mähen", Cost: dec("218.00")}},
+		Issuer:      InvoiceParty{Name: "Hof Bergmann", Address: "Feldweg 3"},
+		Recipient:   InvoiceParty{Name: "Florian", Address: "Dorfstraße 1"},
+		ServiceFrom: day, ServiceTo: day,
+		Lines: []InvoiceLine{{Date: day, Label: "Mähen", Cost: dec("218.00")}},
 	}
 }
 
@@ -35,6 +38,7 @@ func TestMissingMandatory(t *testing.T) {
 		{"no recipient name", func(c *InvoiceContent) { c.Recipient.Name = "" }, "Empfänger-Name"},
 		{"no recipient address", func(c *InvoiceContent) { c.Recipient.Address = "" }, "Empfänger-Adresse"},
 		{"no lines", func(c *InvoiceContent) { c.Lines = nil }, "Leistungszeitraum"},
+		{"lines but no period", func(c *InvoiceContent) { c.ServiceFrom = time.Time{}; c.ServiceTo = time.Time{} }, "Leistungszeitraum"},
 		{"regel without rate", func(c *InvoiceContent) { c.TaxMode = "regel"; c.ShowVAT = false }, "USt-Ausweis"},
 		{"pauschal without rate", func(c *InvoiceContent) { c.TaxMode = "pauschal"; c.ShowVAT = false }, "USt-Ausweis"},
 		{"over 10k without UID", func(c *InvoiceContent) { c.Gross = dec("10000.01"); c.Recipient.TaxID = "" }, "Empfänger-UID"},

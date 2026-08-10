@@ -77,6 +77,14 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
+	// Validate the optional Skonto up front (before recording anything): a
+	// percentage in [0, 10]. Out of range rejects the whole submission.
+	skonto := parseGermanDecimal(r.FormValue("skonto"))
+	if skonto.IsNegative() || skonto.GreaterThan(decimal.NewFromInt(10)) {
+		s.setFlash(w, r, "error", "Skonto muss zwischen 0 und 10 % liegen.")
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
 	if err := s.store.AddPayment(r.Context(), yearID, neighborID, amount, parsePaidOn(r.FormValue("paid_on")), note); err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 		redirect(w, r, neighborURL(neighborID, yearID))
@@ -88,7 +96,7 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 	// Optional Skonto (§ 16 UStG): a percentage of the issued invoice's gross,
 	// booked as a credit note (net + USt split) alongside the payment. Skipped when
 	// there is no active invoice.
-	if pct := parseGermanDecimal(r.FormValue("skonto")); pct.IsPositive() {
+	if pct := skonto; pct.IsPositive() {
 		iv, ierr := s.store.GetInvoice(r.Context(), yearID, neighborID)
 		switch {
 		case errors.Is(ierr, store.ErrNotFound):

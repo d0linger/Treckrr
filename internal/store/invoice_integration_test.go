@@ -62,6 +62,11 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("neighbor: %v", err)
 		}
+		// A recipient address is a § 11 mandatory field; set one so issuance passes
+		// the store-side backstop.
+		if _, err := pool.ExecContext(ctx, `UPDATE neighbors SET address='Dorfstraße 1, 4780' WHERE id=$1`, nid); err != nil {
+			t.Fatalf("neighbor address: %v", err)
+		}
 		if err := st.AddNeighborToYear(ctx, yearID, nid); err != nil {
 			t.Fatalf("add neighbor: %v", err)
 		}

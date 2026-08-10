@@ -323,10 +323,11 @@ func (c InvoiceContent) MandatoryChecks() []MandatoryCheck {
 		{"Absender-Adresse", firstLine(c.Issuer.Address), strings.TrimSpace(c.Issuer.Address) != ""},
 		{"Empfänger-Name", firstLine(c.Recipient.Name), strings.TrimSpace(c.Recipient.Name) != ""},
 		{"Empfänger-Adresse", firstLine(c.Recipient.Address), strings.TrimSpace(c.Recipient.Address) != ""},
-		{"Leistungszeitraum", period, len(c.Lines) > 0},
+		{"Leistungszeitraum", period, len(c.Lines) > 0 && period != ""},
 	}
 	if c.TaxMode == "pauschal" || c.TaxMode == "regel" {
-		checks = append(checks, MandatoryCheck{"USt-Ausweis", c.VATRate.StringFixed(0) + " %", c.ShowVAT})
+		// Keep the configured precision (e.g. 13,5 %), don't round to whole percent.
+		checks = append(checks, MandatoryCheck{"USt-Ausweis", c.VATRate.String() + " %", c.ShowVAT})
 	}
 	if c.Gross.GreaterThan(invoiceUIDThreshold) {
 		checks = append(checks, MandatoryCheck{"Empfänger-UID (> 10.000 €)", firstLine(c.Recipient.TaxID), strings.TrimSpace(c.Recipient.TaxID) != ""})
