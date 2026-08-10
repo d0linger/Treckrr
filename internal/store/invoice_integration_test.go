@@ -17,6 +17,15 @@ import (
 func dec(s string) decimal.Decimal { return decimal.RequireFromString(s) }
 func day(y, m, d int) time.Time    { return time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC) }
 
+func hasNeighbor(rows []store.RecalcRow, nid int64) bool {
+	for _, r := range rows {
+		if r.NeighborID == nid {
+			return true
+		}
+	}
+	return false
+}
+
 // TestInvoiceSnapshotIntegration proves the Festschreibung: the frozen snapshot
 // reproduces the live invoice computation exactly (for all three tax modes), and
 // stays immutable when the underlying bookings change afterwards.
@@ -205,6 +214,69 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 		}
 		if n2 != 0 {
 			t.Fatalf("second backfill should be a no-op, got %d", n2)
+		}
+	})
+
+	t.Run("recalc skips a neighbor with an issued invoice", func(t *testing.T) {
+		yearID, aID, _ := setup(t, 2095, "regel", "13")
+		// A second neighbor B in the same year, un-invoiced.
+		bID, err := st.CreateNeighbor(ctx, "Bernd 2095", "")
+		if err != nil {
+			t.Fatalf("neighbor B: %v", err)
+		}
+		if err := st.AddNeighborToYear(ctx, yearID, bID); err != nil {
+			t.Fatalf("add B: %v", err)
+		}
+		if _, err := st.CreateEntry(ctx, &models.Entry{
+			NeighborID: bID, BillingYearID: yearID, Date: day(2095, 6, 1), TaskLabel: "Mähen",
+			Unit: "h", Hours: dec("1"), HourlyRate: dec("40"), Cost: dec("40.00"),
+		}, nil); err != nil {
+			t.Fatalf("entry B: %v", err)
+		}
+
+		// Before issuing: nobody is festgeschrieben; the whole-year preview covers both.
+		if ids, err := st.InvoicedNeighborIDs(ctx, yearID); err != nil {
+			t.Fatalf("invoiced ids: %v", err)
+		} else if len(ids) != 0 {
+			t.Fatalf("expected no invoiced neighbors, got %v", ids)
+		}
+		before, err := st.RecalcPreview(ctx, yearID, nil)
+		if err != nil {
+			t.Fatalf("preview before: %v", err)
+		}
+		if !hasNeighbor(before, aID) || !hasNeighbor(before, bID) {
+			t.Fatalf("preview before should include both A and B")
+		}
+
+		// Issue A's invoice → A is festgeschrieben.
+		if _, err := st.IssueInvoice(ctx, yearID, aID, 2095); err != nil {
+			t.Fatalf("issue A: %v", err)
+		}
+		if ids, err := st.InvoicedNeighborIDs(ctx, yearID); err != nil {
+			t.Fatalf("invoiced ids2: %v", err)
+		} else if !ids[aID] || ids[bID] {
+			t.Fatalf("expected only A invoiced, got %v", ids)
+		}
+
+		// The whole-year recalc now excludes A entirely but still covers B.
+		after, err := st.RecalcPreview(ctx, yearID, nil)
+		if err != nil {
+			t.Fatalf("preview after: %v", err)
+		}
+		if hasNeighbor(after, aID) {
+			t.Fatalf("recalc must skip the invoiced neighbor A")
+		}
+		if !hasNeighbor(after, bID) {
+			t.Fatalf("recalc must still cover the un-invoiced neighbor B")
+		}
+
+		// A per-neighbor recalc of the frozen neighbor has nothing to change.
+		aRows, err := st.RecalcPreview(ctx, yearID, &aID)
+		if err != nil {
+			t.Fatalf("preview A: %v", err)
+		}
+		if len(aRows) != 0 {
+			t.Fatalf("recalc of a frozen neighbor should be empty, got %d rows", len(aRows))
 		}
 	})
 }

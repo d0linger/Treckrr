@@ -83,6 +83,23 @@ func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int
 	if err != nil {
 		return nil, err
 	}
+	// Festschreibung: a neighbor with an issued invoice has frozen bookings — never
+	// re-price them (BAO §131). Drop their entries here so both the preview and the
+	// apply (which iterates the preview rows) leave the invoiced basis untouched,
+	// whether the scope is one neighbor or the whole year.
+	locked, err := s.InvoicedNeighborIDs(ctx, yearID)
+	if err != nil {
+		return nil, err
+	}
+	if len(locked) > 0 {
+		kept := entries[:0]
+		for _, e := range entries {
+			if !locked[e.NeighborID] {
+				kept = append(kept, e)
+			}
+		}
+		entries = kept
+	}
 	emMap, err := s.entryMachineIDs(ctx, yearID)
 	if err != nil {
 		return nil, err

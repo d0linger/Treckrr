@@ -168,6 +168,28 @@ func nullDate(t time.Time) any {
 	return t
 }
 
+// InvoicedNeighborIDs returns the set of neighbor IDs that have an active issued
+// invoice for the given year. Their bookings are festgeschrieben, so a
+// recalculation must skip them (the frozen invoice must never be re-priced).
+func (s *Store) InvoicedNeighborIDs(ctx context.Context, yearID int64) (map[int64]bool, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT neighbor_id FROM invoices
+		  WHERE billing_year_id=$1 AND kind='invoice' AND status='issued'`, yearID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	set := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		set[id] = true
+	}
+	return set, rows.Err()
+}
+
 // BackfillInvoiceSnapshots freezes a content snapshot for every already-issued
 // invoice that predates Festschreibung (net IS NULL). It reproduces each
 // invoice's substance from the current live data and writes it into the snapshot

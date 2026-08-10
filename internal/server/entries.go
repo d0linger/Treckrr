@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 
 	"treckrr/internal/calc"
 	"treckrr/internal/models"
+	"treckrr/internal/store"
 )
 
 func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
@@ -277,6 +279,28 @@ func (s *Server) neighborInYearOrRedirect(w http.ResponseWriter, r *http.Request
 	return true
 }
 
+// invoiceLocked reports whether a festgeschriebene (issued) Rechnung exists for
+// this neighbor+year. While one does, the neighbor's bookings and ledger for that
+// year are locked (BAO §131 Unveränderbarkeit): corrections go through a
+// Storno/Gutschrift, not by editing the frozen basis. Payments and year-close are
+// deliberately NOT gated by this — they stay decoupled from invoicing. On a true
+// lock (or a lookup error, failing closed) it writes the flash + redirect and
+// returns true so the caller just returns.
+func (s *Server) invoiceLocked(w http.ResponseWriter, r *http.Request, yearID, neighborID int64) bool {
+	iv, err := s.store.GetInvoice(r.Context(), yearID, neighborID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false
+	}
+	if err != nil {
+		s.setFlash(w, r, "error", "Rechnungsstatus konnte nicht geprüft werden.")
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return true
+	}
+	s.setFlash(w, r, "error", "Rechnung "+iv.Number+" ist festgeschrieben – Buchungen und Verrechnungen für diesen Nachbarn sind gesperrt. Für Korrekturen bitte die Rechnung stornieren.")
+	redirect(w, r, neighborURL(neighborID, yearID))
+	return true
+}
+
 func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
@@ -296,6 +320,9 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.neighborInYearOrRedirect(w, r, year.ID, neighborID) {
+		return
+	}
+	if s.invoiceLocked(w, r, year.ID, neighborID) {
 		return
 	}
 
@@ -600,6 +627,9 @@ func (s *Server) ledgerYearOpen(w http.ResponseWriter, r *http.Request, yearID, 
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return false
 	}
+	if s.invoiceLocked(w, r, yearID, neighborID) {
+		return false
+	}
 	return true
 }
 
@@ -643,6 +673,9 @@ func (s *Server) entryYearOpen(w http.ResponseWriter, r *http.Request, e *models
 	if year.Completed() {
 		s.setFlash(w, r, "error", blockedMsg)
 		redirect(w, r, neighborURL(e.NeighborID, e.BillingYearID))
+		return false
+	}
+	if s.invoiceLocked(w, r, e.BillingYearID, e.NeighborID) {
 		return false
 	}
 	return true
