@@ -403,10 +403,17 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("docs: %v", err)
 		}
+		found := false
 		for _, d := range docs {
-			if d.ID == g.ID && d.Status != "canceled" {
-				t.Fatalf("gutschrift %s should be canceled after storno, got %s", d.Number, d.Status)
+			if d.ID == g.ID {
+				found = true
+				if d.Status != "canceled" {
+					t.Fatalf("gutschrift %s should be canceled after storno, got %s", d.Number, d.Status)
+				}
 			}
+		}
+		if !found {
+			t.Fatalf("gutschrift %s missing from document history", g.Number)
 		}
 	})
 }

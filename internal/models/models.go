@@ -254,7 +254,8 @@ type Company struct {
 type InvoiceParty struct {
 	Name    string `json:"name"`
 	Address string `json:"address"`
-	TaxID   string `json:"tax_id"` // issuer UID / recipient UID or tax number
+	TaxID   string `json:"tax_id"`         // issuer UID / recipient UID or tax number
+	IBAN    string `json:"iban,omitempty"` // issuer bank account, frozen for payment (recipient: unset)
 }
 
 // InvoiceLine is one frozen line item of an invoice snapshot.

@@ -342,9 +342,10 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	// at issuance, not current company/neighbor data, so editing Betriebsdaten or a
 	// neighbor address later never alters an already-issued document. Legacy invoices
 	// without a snapshot fall back to the live values.
-	invIssuer := models.InvoiceParty{Name: company.Name, Address: company.Address, TaxID: company.TaxID}
+	invIssuer := models.InvoiceParty{Name: company.Name, Address: company.Address, TaxID: company.TaxID, IBAN: company.IBAN}
 	invRecipient := models.InvoiceParty{Name: neighbor.Name, Address: neighbor.Address, TaxID: neighbor.TaxID}
 	invTaxNote := company.TaxNote
+	invIBAN := company.IBAN // live for a draft or a legacy invoice without a snapshot
 	if hasInvoice && invoice.Content != nil {
 		c := invoice.Content
 		invShowVAT = c.ShowVAT
@@ -355,10 +356,12 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		invIssuer = c.Issuer
 		invRecipient = c.Recipient
 		invTaxNote = c.TaxNote
+		invIBAN = c.Issuer.IBAN // frozen at issuance
 	}
 	data["InvIssuer"] = invIssuer
 	data["InvRecipient"] = invRecipient
 	data["InvTaxNote"] = invTaxNote
+	data["InvIBAN"] = invIBAN
 	// USt share contained in the (gross) payments already received, at the
 	// invoice's rate.
 	var invPaidUSt decimal.Decimal
@@ -384,7 +387,7 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	// § 11: the recipient's UID/tax number is required on invoices over €10,000
 	// gross. Soft reminder only — it never blocks issuing.
 	data["InvNeedRecipientVATID"] = invBrutto.GreaterThan(decimal.NewFromInt(10000)) &&
-		strings.TrimSpace(neighbor.TaxID) == ""
+		strings.TrimSpace(invRecipient.TaxID) == ""
 	data["GrundTractors"] = gTractors
 	data["GrundMachines"] = gMachines
 	data["HasGrund"] = len(gTractors) > 0 || len(gMachines) > 0

@@ -129,7 +129,7 @@ func (s *Store) BuildInvoiceContent(ctx context.Context, yearID, neighborID int6
 	c := models.InvoiceContent{
 		Net: net, VATRate: company.VATRate, VATAmount: vat, Gross: net.Add(vat),
 		ShowVAT: showVAT, TaxMode: company.TaxMode, TaxNote: company.TaxNote,
-		Issuer:    models.InvoiceParty{Name: company.Name, Address: company.Address, TaxID: company.TaxID},
+		Issuer:    models.InvoiceParty{Name: company.Name, Address: company.Address, TaxID: company.TaxID, IBAN: company.IBAN},
 		Recipient: models.InvoiceParty{Name: neighbor.Name, Address: neighbor.Address, TaxID: neighbor.TaxID},
 	}
 	for _, e := range entries {

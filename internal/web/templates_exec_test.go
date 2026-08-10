@@ -93,10 +93,12 @@ func TestBelegPageRenders(t *testing.T) {
 		"Invoice": map[string]any{"Number": "2026-014", "IssuedOn": time.Now()},
 		"Company": map[string]any{"Name": "Hof Bergmann", "Address": "Feldweg 3\n4780", "TaxID": "ATU123",
 			"TaxNote": "§ 22 UStG", "TaxMode": "regel", "VATRate": d(13)},
-		// Frozen §11 legal fields (the handler resolves these from the snapshot).
-		"InvIssuer":    map[string]any{"Name": "Hof Bergmann", "Address": "Feldweg 3\n4780", "TaxID": "ATU123"},
-		"InvRecipient": map[string]any{"Name": "Florian", "Address": "Dorf 1", "TaxID": "ATU55555555"},
-		"InvTaxNote":   "§ 22 UStG",
+		// Frozen §11 legal fields — deliberately DISTINCT from the live Company/Neighbor
+		// above so the assertions prove the template renders the snapshot, not live data.
+		"InvIssuer":    map[string]any{"Name": "Absender GmbH (fixiert)", "Address": "Altweg 9", "TaxID": "ATU-FIX-ISS", "IBAN": "AT00 FIXIERTE IBAN"},
+		"InvRecipient": map[string]any{"Name": "Empfänger (fixiert)", "Address": "Rechnungsweg 2", "TaxID": "ATU-FIX-RCP"},
+		"InvTaxNote":   "Fixierter Steuerhinweis § 22",
+		"InvIBAN":      "AT00 FIXIERTE IBAN",
 		"InvShowVAT":   true, "InvRate": d(13), "InvNet": d(647.60), "InvUSt": d(84.19),
 		"InvBrutto": d(731.79), "InvLedger": d(-50), "InvPaidUSt": d(34.51), "InvRest": d(481.79),
 		"InvNeedRecipientVATID": true,
@@ -138,7 +140,12 @@ func TestBelegPageRenders(t *testing.T) {
 	// executes: recipient UID, the over-€10,000 UID reminder, and the booking-note
 	// fallback for a label-less booking.
 	for _, want := range []string{
-		"ATU55555555", // recipient UID in the "An" block
+		"Absender GmbH (fixiert)",                      // frozen issuer, not live Company name
+		"ATU-FIX-ISS",                                  // frozen issuer UID
+		"Empfänger (fixiert)",                          // frozen recipient
+		"ATU-FIX-RCP",                                  // frozen recipient UID in the "An" block
+		"Fixierter Steuerhinweis § 22",                 // frozen tax note
+		"AT00 FIXIERTE IBAN",                           // frozen payment IBAN
 		"UID/Steuernummer des Empfängers erforderlich", // soft § 11 reminder
 		"Freie Sonderleistung",                         // note used instead of "Sonstige"
 	} {

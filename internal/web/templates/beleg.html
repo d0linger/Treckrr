@@ -149,7 +149,7 @@
 			{{with .InvTaxNote}}<div class="beleg__inv-note">{{.}}</div>{{end}}
 			<div class="beleg__payinfo">
 				<span class="beleg__payinfo-k">Zahlung</span>
-				<span class="beleg__payinfo-v">Bitte {{money .InvRest}} unter Angabe der Referenz <strong>{{with .Invoice.PaymentReference}}{{.}}{{else}}{{$.Invoice.Number}}{{end}}</strong> überweisen.{{with .Company.IBAN}} IBAN <strong>{{.}}</strong>.{{end}}</span>
+				<span class="beleg__payinfo-v">Bitte {{money .InvRest}} unter Angabe der Referenz <strong>{{with .Invoice.PaymentReference}}{{.}}{{else}}{{$.Invoice.Number}}{{end}}</strong> überweisen.{{with .InvIBAN}} IBAN <strong>{{.}}</strong>.{{end}}</span>
 			</div>
 		</div>
 		{{end}}
