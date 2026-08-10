@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -300,16 +301,20 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 			t.Fatalf("first number = %s", iv.Number)
 		}
 
-		sv, err := st.StornoInvoice(ctx, yearID, nid)
+		sv, err := st.StornoInvoice(ctx, yearID, nid, "Testgrund")
 		if err != nil {
 			t.Fatalf("storno: %v", err)
 		}
 		if sv.Number != "2086-001-S" || sv.Kind != "storno" || sv.ReferencesInvoiceID == nil || *sv.ReferencesInvoiceID != iv.ID {
 			t.Fatalf("storno doc wrong: %+v", sv)
 		}
-		// The storno fully reverses the original (gross negated to the cent).
+		// The storno fully reverses the original (gross negated to the cent) and
+		// records the reason on the document.
 		if sv.Content == nil || sv.Content.Gross.StringFixed(2) != "-246.34" {
 			t.Fatalf("storno gross = %+v", sv.Content)
+		}
+		if !strings.Contains(sv.Content.TaxNote, "Testgrund") {
+			t.Fatalf("storno reason not recorded in tax note: %q", sv.Content.TaxNote)
 		}
 		// The active invoice is gone → neighbor unlocked, Beleg back to live.
 		if _, err := st.GetInvoice(ctx, yearID, nid); !errors.Is(err, store.ErrNotFound) {
@@ -395,7 +400,7 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("gutschrift: %v", err)
 		}
-		if _, err := st.StornoInvoice(ctx, yearID, nid); err != nil {
+		if _, err := st.StornoInvoice(ctx, yearID, nid, ""); err != nil {
 			t.Fatalf("storno: %v", err)
 		}
 		// The credit note must not survive as 'issued' against a canceled invoice.

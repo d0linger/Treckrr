@@ -1026,6 +1026,13 @@ em { font-style: normal; color: var(--muted); }
 .beleg__gform .btn { white-space: nowrap; }
 @media (max-width: 34rem) { .beleg__gform { grid-template-columns: 1fr; } }
 
+/* "Festgeschrieben" lock chip next to the invoice number + integrity hash line. */
+.beleg__inv-lock { font-size: .6rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; vertical-align: middle;
+	color: var(--primary); background: var(--primary-tint); border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+	border-radius: 999px; padding: .1rem .45rem; margin-left: .35rem; }
+.beleg__inv-hash { font-family: var(--font-mono); font-size: .62rem; color: var(--muted); padding: .15rem .9rem 0; letter-spacing: .02em; }
+.beleg__sform { display: flex; flex-direction: column; gap: .4rem; }
+
 /* Payment instruction on the issued invoice (IBAN + reference), part of the
    printed document. Distinct from .beleg__pay (the live Zahlungen section). */
 .beleg__payinfo { display: flex; flex-direction: column; gap: .12rem; padding: .5rem .9rem .2rem; }

@@ -6,7 +6,7 @@
 		{{if .HasInvoice}}
 		<div class="beleg__invoice">
 			<div class="beleg__inv-top">
-				<span class="beleg__inv-no">RECHNUNG Nr. {{.Invoice.Number}}</span>
+				<span class="beleg__inv-no">RECHNUNG Nr. {{.Invoice.Number}} <span class="beleg__inv-lock no-print">🔒 festgeschrieben</span></span>
 				<span>Datum {{date .Invoice.IssuedOn}}</span>
 			</div>
 			<div class="beleg__inv-pp">
@@ -147,6 +147,7 @@
 			<div class="beleg__lsub"><span></span><span>Restbetrag zu zahlen</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvRest}}</span></div>
 			{{end}}
 			{{with .InvTaxNote}}<div class="beleg__inv-note">{{.}}</div>{{end}}
+			{{with .InvHash}}<div class="beleg__inv-hash">Integrität · sha256 {{.}}</div>{{end}}
 			<div class="beleg__payinfo">
 				<span class="beleg__payinfo-k">Zahlung</span>
 				<span class="beleg__payinfo-v">Bitte {{money .InvRest}} unter Angabe der Referenz <strong>{{with .Invoice.PaymentReference}}{{.}}{{else}}{{$.Invoice.Number}}{{end}}</strong> überweisen.{{with .InvIBAN}} IBAN <strong>{{.}}</strong>.{{end}}</span>
@@ -210,9 +211,10 @@
 				<input class="input" type="text" name="note" maxlength="200" placeholder="Grund (z. B. 3 % Skonto)" aria-label="Grund der Gutschrift">
 				<button type="submit" class="btn btn--primary">Gutschrift erstellen</button>
 			</form>
-			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/storno" data-confirm="Rechnung {{.Invoice.Number}} stornieren? Es wird ein Storno-Beleg erstellt und die Buchungen werden wieder freigegeben.">
+			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/storno" class="beleg__sform" data-confirm="Rechnung {{.Invoice.Number}} stornieren? Es wird ein Storno-Beleg erstellt und die Buchungen werden wieder freigegeben.">
 				<input type="hidden" name="year_id" value="{{.Year.ID}}">
-				<button type="submit" class="btn btn--ghost btn--block">Rechnung stornieren</button>
+				<input class="input" type="text" name="reason" maxlength="200" placeholder="Storno-Grund (optional, protokolliert)" aria-label="Storno-Grund">
+				<button type="submit" class="btn btn--danger btn--block">Rechnung stornieren</button>
 			</form>
 		</div>
 		{{end}}

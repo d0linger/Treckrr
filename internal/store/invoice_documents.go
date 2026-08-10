@@ -36,7 +36,7 @@ func insertInvoiceDoc(ctx context.Context, tx *sql.Tx, yearID, neighborID int64,
 // reverseContent mirrors an invoice's frozen substance into a Storno: the net,
 // VAT, gross and each line cost are negated (a full reversal to zero), parties and
 // period are kept, and a reference note is prepended. A fresh hash is computed.
-func reverseContent(c models.InvoiceContent, origNumber string) models.InvoiceContent {
+func reverseContent(c models.InvoiceContent, origNumber, reason string) models.InvoiceContent {
 	rev := c
 	rev.Net = c.Net.Neg()
 	rev.VATAmount = c.VATAmount.Neg()
@@ -47,7 +47,11 @@ func reverseContent(c models.InvoiceContent, origNumber string) models.InvoiceCo
 		nl.Cost = l.Cost.Neg()
 		rev.Lines[i] = nl
 	}
-	rev.TaxNote = strings.TrimSpace("Storno zu Rechnung " + origNumber + ". " + c.TaxNote)
+	note := "Storno zu Rechnung " + origNumber + "."
+	if reason = strings.TrimSpace(reason); reason != "" {
+		note += " Grund: " + reason + "."
+	}
+	rev.TaxNote = strings.TrimSpace(note + " " + c.TaxNote)
 	rev.Hash = invoiceContentHash(rev)
 	return rev
 }
@@ -57,8 +61,8 @@ func reverseContent(c models.InvoiceContent, origNumber string) models.InvoiceCo
 // marks the original 'canceled'. This frees the active-invoice slot — unlocking
 // the neighbor's basis and returning the Beleg to its live/draft view — so a
 // corrected invoice can be re-issued. Returns ErrNotFound if there is no active
-// invoice to cancel.
-func (s *Store) StornoInvoice(ctx context.Context, yearID, neighborID int64) (models.Invoice, error) {
+// invoice to cancel. The optional reason is recorded on the Storno document.
+func (s *Store) StornoInvoice(ctx context.Context, yearID, neighborID int64, reason string) (models.Invoice, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return models.Invoice{}, err
@@ -81,7 +85,7 @@ func (s *Store) StornoInvoice(ctx context.Context, yearID, neighborID int64) (mo
 	if err != nil {
 		return models.Invoice{}, err
 	}
-	sv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+"-S", "storno", &orig.ID, reverseContent(content, orig.Number))
+	sv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+"-S", "storno", &orig.ID, reverseContent(content, orig.Number, reason))
 	if err != nil {
 		return models.Invoice{}, err
 	}

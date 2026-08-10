@@ -362,6 +362,15 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["InvRecipient"] = invRecipient
 	data["InvTaxNote"] = invTaxNote
 	data["InvIBAN"] = invIBAN
+	// Integrity anchor of the frozen snapshot (shown short); empty for a legacy
+	// invoice without a snapshot.
+	if hasInvoice && invoice.Content != nil && invoice.Content.Hash != "" {
+		h := invoice.Content.Hash
+		if len(h) > 12 {
+			h = h[:8] + "…" + h[len(h)-4:]
+		}
+		data["InvHash"] = h
+	}
 	// USt share contained in the (gross) payments already received, at the
 	// invoice's rate.
 	var invPaidUSt decimal.Decimal
@@ -483,14 +492,23 @@ func (s *Server) handleInvoiceStorno(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
-	sv, err := s.store.StornoInvoice(r.Context(), yearID, neighborID)
+	reason := trimmed(r, "reason")
+	if s.tooLong(w, r, "Grund", reason, maxNoteLen) {
+		redirect(w, r, back)
+		return
+	}
+	sv, err := s.store.StornoInvoice(r.Context(), yearID, neighborID, reason)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		s.setFlash(w, r, "error", "Keine aktive Rechnung zum Stornieren.")
 	case err != nil:
 		s.setFlash(w, r, "error", "Storno fehlgeschlagen.")
 	default:
-		s.audit(r, "invoice_storno", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Storno "+sv.Number)
+		detail := s.neighborName(r, neighborID) + " · Storno " + sv.Number
+		if reason != "" {
+			detail += " · " + reason
+		}
+		s.audit(r, "invoice_storno", "neighbor", neighborID, detail)
 		s.setFlash(w, r, "success", "Rechnung storniert ("+sv.Number+"). Die Buchungen sind wieder bearbeitbar.")
 	}
 	redirect(w, r, back)
