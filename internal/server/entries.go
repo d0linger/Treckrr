@@ -668,8 +668,8 @@ func (s *Server) handleLedgerAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Only members of the year may get postings, otherwise an orphan posting
-	// would count in the year total (YearLedgerSum) but not in the per-neighbor /
-	// payment views (which join billing_year_neighbors), skewing the stats.
+	// would count in the year ledger total but not in the per-neighbor / payment
+	// views (which join billing_year_neighbors), skewing the stats.
 	// A lookup error is NOT "not a member": surface it instead of masking a DB
 	// problem behind a data-sounding message.
 	member, err := s.store.NeighborInYear(r.Context(), yearID, neighborID)

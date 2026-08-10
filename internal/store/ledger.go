@@ -45,16 +45,6 @@ func (s *Store) NeighborLedgerSum(ctx context.Context, yearID, neighborID int64)
 	return sum, err
 }
 
-// YearLedgerSum returns the signed sum of all non-voided ledger postings for a
-// year (used to net the statistics result).
-func (s *Store) YearLedgerSum(ctx context.Context, yearID int64) (decimal.Decimal, error) {
-	var sum decimal.Decimal
-	err := s.db.QueryRowContext(ctx,
-		`SELECT COALESCE(SUM(amount),0) FROM neighbor_ledger
-		  WHERE billing_year_id=$1 AND NOT voided`, yearID).Scan(&sum)
-	return sum, err
-}
-
 // YearNeighborResult is a per-neighbor breakdown for a year: work bookings
 // (Leistungen), the signed ledger sum (Verrechnung) and their net.
 type YearNeighborResult struct {
