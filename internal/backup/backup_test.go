@@ -6,7 +6,6 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,9 +43,17 @@ func TestWriteFileAtomicConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	var v map[string]any
-	if err := json.Unmarshal(got, &v); err != nil {
-		t.Fatalf("final file is not valid JSON (corruption): %q: %v", got, err)
+	// The final file must be exactly one of the complete payloads — never a torn
+	// or interleaved mix of two concurrent writers.
+	matched := false
+	for _, p := range payloads {
+		if bytes.Equal(got, p) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		t.Fatalf("final file is not a complete single payload (corruption): %q", got)
 	}
 	if leftovers, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(leftovers) != 0 {
 		t.Errorf("leftover temp files: %v", leftovers)

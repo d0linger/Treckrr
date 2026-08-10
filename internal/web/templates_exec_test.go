@@ -33,9 +33,10 @@ func execPage(t *testing.T, page string, data map[string]any) string {
 func TestStatsPageRendersWithPreviousYear(t *testing.T) {
 	d := decimal.NewFromFloat
 	rows := []map[string]any{{"Label": "Musterhof", "Hours": d(2.17), "Cost": d(209.88)}}
-	// Open year (nothing paid) that HAS a previous year — the exact case that
-	// used to 500 because the comparison block compared decimals to floats.
-	execPage(t, "stats", map[string]any{
+	// A completed year that HAS a previous year: exercises the comparison block
+	// (the decimal-vs-float case that used to 500) and the completed-year payment
+	// KPIs, including the Guthaben KPI asserted below.
+	html := execPage(t, "stats", map[string]any{
 		"Title":      "Statistik",
 		"Year":       map[string]any{"Year": 2026, "ID": int64(3)},
 		"TotalCost":  d(209.88),
@@ -44,7 +45,7 @@ func TestStatsPageRendersWithPreviousYear(t *testing.T) {
 		"OpenCost":   d(209.88),
 		"CreditCost": d(15), // exercises the Guthaben KPI branch
 		"LedgerSum":  d(-30), "NetResult": d(179.88), "HasLedger": true,
-		"Completed":  false,
+		"Completed":  true,
 		"ByNeighbor": rows, "ByNeighborMax": d(209.88),
 		"ByTask": rows, "ByTaskMax": d(209.88),
 		"ByTractor": rows, "ByTractorMax": d(209.88),
@@ -52,6 +53,10 @@ func TestStatsPageRendersWithPreviousYear(t *testing.T) {
 		"DiffCost": d(59.88), "DiffUp": true, "DiffDown": false,
 		"DiffPct": d(39.92), "DiffPctUp": true,
 	})
+	// A positive CreditCost must render the Guthaben KPI.
+	if !strings.Contains(html, "Guthaben") {
+		t.Errorf("stats page with a positive CreditCost should show the Guthaben KPI")
+	}
 }
 
 func TestStatsAllPageRenders(t *testing.T) {

@@ -146,18 +146,25 @@ func run() error {
 	err = httpServer.Shutdown(shutdownCtx)
 	// Give an in-flight scheduled backup a brief window to finish cleanly (its
 	// runs use context.WithoutCancel) rather than being killed mid-dump on deploy.
-	// Backups here are sub-second, so this rarely waits; the bound caps a large one.
-	waitTimeout(&bkWG, 30*time.Second)
+	// Backups here are sub-second, so this rarely waits; the bound caps a large one
+	// (a full run can take up to 10 min, but we don't hold up a deploy that long —
+	// writeFileAtomic guarantees no partial file if we exit first).
+	if !waitTimeout(&bkWG, 30*time.Second) {
+		log.Println("shutdown: a scheduled backup was still running after 30s; exiting anyway")
+	}
 	return err
 }
 
-// waitTimeout blocks until wg is done or d elapses, whichever comes first.
-func waitTimeout(wg *sync.WaitGroup, d time.Duration) {
+// waitTimeout blocks until wg is done or d elapses; it reports whether wg
+// finished within the deadline.
+func waitTimeout(wg *sync.WaitGroup, d time.Duration) bool {
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
 	select {
 	case <-done:
+		return true
 	case <-time.After(d):
+		return false
 	}
 }
 
