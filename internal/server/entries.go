@@ -107,6 +107,9 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Payments"] = payments
 	data["PaidSum"] = paidSum
 	data["Remaining"] = cost.Add(ledgerSum).Sub(paidSum)
+	// An issued invoice enables the Skonto (§16) option on the payment form.
+	_, invErr := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
+	data["HasInvoice"] = invErr == nil
 	data["Tractors"] = tractors
 	data["Loads"] = loads
 	data["Machines"] = machines
