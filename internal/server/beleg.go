@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -11,6 +12,7 @@ import (
 
 	"treckrr/internal/calc"
 	"treckrr/internal/models"
+	"treckrr/internal/store"
 )
 
 // BelegTractorLoad is one Belastungsstufe a tractor was used at this year: its
@@ -275,6 +277,21 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	company, _ := s.store.GetCompany(r.Context())
 	invoice, invErr := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
 	hasInvoice := invErr == nil
+	// Document history (invoice, its storno, credit notes) and the total credited by
+	// active Gutschriften (their gross is stored negative). Not best-effort: a lookup
+	// failure would understate the credited amount and thus overstate what is still
+	// to pay, so surface it rather than render a wrong total.
+	documents, err := s.store.ListInvoiceDocuments(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		s.serverError(w, "beleg: documents", err)
+		return
+	}
+	var invCredits decimal.Decimal // negative: sum of active credit-note gross
+	for _, d := range documents {
+		if d.Kind == "gutschrift" && d.Status == "issued" && d.Content != nil {
+			invCredits = invCredits.Add(d.Content.Gross)
+		}
+	}
 
 	data := s.newPage(w, r, neighbor.Name+" · Beleg", "dashboard")
 	if err := s.withYearSelector(r, data, year); err != nil {
@@ -308,28 +325,78 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	// reduce the amount still to pay. USt is shown for §22 (pauschal) and regel,
 	// not for Kleinunternehmer.
 	invShowVAT := (company.TaxMode == "pauschal" || company.TaxMode == "regel") && company.VATRate.IsPositive()
+	invRate := company.VATRate
 	invNet := cost
-	var invUSt, invPaidUSt decimal.Decimal
+	var invUSt decimal.Decimal
 	if invShowVAT {
-		rate := company.VATRate.Div(decimal.NewFromInt(100))
+		rate := invRate.Div(decimal.NewFromInt(100))
 		invUSt = invNet.Mul(rate).Round(2)
-		// USt share contained in the (gross) payments already received.
-		invPaidUSt = paidSum.Mul(rate).Div(decimal.NewFromInt(1).Add(rate)).Round(2)
 	}
 	invBrutto := invNet.Add(invUSt)
+	// Festschreibung: once a Rechnung is issued, its substance is frozen. Render the
+	// document (net/USt/brutto/rate) from the immutable snapshot instead of a live
+	// recompute; the settlement side (ledger, payments, remaining) stays live below.
+	// At issuance/backfill the snapshot equals the live values, so this changes no
+	// displayed amount — it only keeps the document stable if bookings change later.
+	// §11 legal fields (parties, tax note): an issued invoice shows them as frozen
+	// at issuance, not current company/neighbor data, so editing Betriebsdaten or a
+	// neighbor address later never alters an already-issued document. Legacy invoices
+	// without a snapshot fall back to the live values.
+	invIssuer := models.InvoiceParty{Name: company.Name, Address: company.Address, TaxID: company.TaxID, IBAN: company.IBAN}
+	invRecipient := models.InvoiceParty{Name: neighbor.Name, Address: neighbor.Address, TaxID: neighbor.TaxID}
+	invTaxNote := company.TaxNote
+	invIBAN := company.IBAN // live for a draft or a legacy invoice without a snapshot
+	if hasInvoice && invoice.Content != nil {
+		c := invoice.Content
+		invShowVAT = c.ShowVAT
+		invRate = c.VATRate
+		invNet = c.Net
+		invUSt = c.VATAmount
+		invBrutto = c.Gross
+		invIssuer = c.Issuer
+		invRecipient = c.Recipient
+		invTaxNote = c.TaxNote
+		invIBAN = c.Issuer.IBAN // frozen at issuance
+	}
+	data["InvIssuer"] = invIssuer
+	data["InvRecipient"] = invRecipient
+	data["InvTaxNote"] = invTaxNote
+	data["InvIBAN"] = invIBAN
+	// Integrity anchor of the frozen snapshot (shown short); empty for a legacy
+	// invoice without a snapshot.
+	if hasInvoice && invoice.Content != nil && invoice.Content.Hash != "" {
+		h := invoice.Content.Hash
+		if len(h) > 12 {
+			h = h[:8] + "…" + h[len(h)-4:]
+		}
+		data["InvHash"] = h
+	}
+	// USt share contained in the (gross) payments already received, at the
+	// invoice's rate.
+	var invPaidUSt decimal.Decimal
+	if invShowVAT && invRate.IsPositive() {
+		rate := invRate.Div(decimal.NewFromInt(100))
+		invPaidUSt = paidSum.Mul(rate).Div(decimal.NewFromInt(1).Add(rate)).Round(2)
+	}
 	data["InvShowVAT"] = invShowVAT
-	data["InvRate"] = company.VATRate
+	data["InvRate"] = invRate
 	data["InvNet"] = invNet
 	data["InvUSt"] = invUSt
 	data["InvBrutto"] = invBrutto
 	data["InvLedger"] = ledgerSum
 	data["InvPaidUSt"] = invPaidUSt
-	// Amount still to pay: gross services, less mutual Verrechnung, less payments.
-	data["InvRest"] = invBrutto.Add(ledgerSum).Sub(paidSum)
+	data["Documents"] = documents
+	data["HasDocuments"] = len(documents) > 1 // more than the invoice itself
+	data["InvCredits"] = invCredits           // negative sum of credit notes
+	data["HasCredits"] = invCredits.IsNegative()
+	// Amount still to pay: gross services, less credit notes, less mutual
+	// Verrechnung, less payments. invCredits is negative, so it reduces the total;
+	// it is zero without any Gutschrift, leaving the previous value unchanged.
+	data["InvRest"] = invBrutto.Add(invCredits).Add(ledgerSum).Sub(paidSum)
 	// § 11: the recipient's UID/tax number is required on invoices over €10,000
 	// gross. Soft reminder only — it never blocks issuing.
 	data["InvNeedRecipientVATID"] = invBrutto.GreaterThan(decimal.NewFromInt(10000)) &&
-		strings.TrimSpace(neighbor.TaxID) == ""
+		strings.TrimSpace(invRecipient.TaxID) == ""
 	data["GrundTractors"] = gTractors
 	data["GrundMachines"] = gMachines
 	data["HasGrund"] = len(gTractors) > 0 || len(gMachines) > 0
@@ -337,6 +404,53 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["ShowGrund"] = r.URL.Query().Get("grundlage") == "1"
 	data["Today"] = time.Now().Format("02.01.2006")
 	s.render(w, r, "beleg", data)
+}
+
+// handleInvoiceConfirm renders the pre-issuance confirmation: the § 11 checklist
+// and, when complete, the frozen-snapshot preview with the festschreiben button.
+func (s *Server) handleInvoiceConfirm(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	yearID := formInt64(r, "year")
+	if yearID == 0 {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	year, err := s.store.GetBillingYear(r.Context(), yearID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
+	// Already issued → nothing to confirm; show the Beleg (storno/gutschrift live there).
+	if _, err := s.store.GetInvoice(r.Context(), yearID, neighborID); err == nil {
+		redirect(w, r, back+"&rechnung=1")
+		return
+	} else if !errors.Is(err, store.ErrNotFound) {
+		s.serverError(w, "invoice confirm: lookup", err)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), neighborID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	content, err := s.store.BuildInvoiceContent(r.Context(), yearID, neighborID)
+	if err != nil {
+		s.serverError(w, "invoice confirm: build", err)
+		return
+	}
+	data := s.newPage(w, r, neighbor.Name+" · Festschreiben", "dashboard")
+	data["Neighbor"] = neighbor
+	data["Year"] = year
+	data["Checks"] = content.MandatoryChecks()
+	data["CanIssue"] = len(content.MissingMandatory()) == 0
+	data["Content"] = content
+	data["BackURL"] = back
+	s.render(w, r, "invoice_confirm", data)
 }
 
 // handleInvoiceIssue assigns and stores a sequential invoice number for a
@@ -378,6 +492,24 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
 		return
 	}
+	// § 11 UStG: only fix a number once every mandatory field is present. Build the
+	// content that will be frozen and block issuance if anything is missing, listing
+	// exactly what to fix. Skipped for an already-issued invoice (idempotent re-issue).
+	if _, err := s.store.GetInvoice(r.Context(), yearID, neighborID); errors.Is(err, store.ErrNotFound) {
+		content, err := s.store.BuildInvoiceContent(r.Context(), yearID, neighborID)
+		if err != nil {
+			s.serverError(w, "invoice: build content", err)
+			return
+		}
+		if missing := content.MissingMandatory(); len(missing) > 0 {
+			s.setFlash(w, r, "error", "Rechnung unvollständig (§ 11 UStG). Bitte ergänzen: "+strings.Join(missing, ", ")+".")
+			redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
+			return
+		}
+	} else if err != nil {
+		s.serverError(w, "invoice: lookup", err)
+		return
+	}
 	iv, err := s.store.IssueInvoice(r.Context(), yearID, neighborID, year.Year)
 	if err != nil {
 		s.setFlash(w, r, "error", "Rechnung konnte nicht ausgestellt werden.")
@@ -387,4 +519,82 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, "invoice_issue", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Rechnung "+iv.Number)
 	s.setFlash(w, r, "success", "Rechnung "+iv.Number+" ausgestellt.")
 	redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID))
+}
+
+// handleInvoiceStorno cancels the active invoice (issues a Storno document and
+// marks the original canceled), which unlocks the neighbor's bookings again.
+func (s *Server) handleInvoiceStorno(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	yearID := s.yearIDFromForm(r)
+	if yearID == 0 {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
+	reason := trimmed(r, "reason")
+	if s.tooLong(w, r, "Grund", reason, maxNoteLen) {
+		redirect(w, r, back)
+		return
+	}
+	sv, err := s.store.StornoInvoice(r.Context(), yearID, neighborID, reason)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.setFlash(w, r, "error", "Keine aktive Rechnung zum Stornieren.")
+	case err != nil:
+		s.setFlash(w, r, "error", "Storno fehlgeschlagen.")
+	default:
+		detail := s.neighborName(r, neighborID) + " · Storno " + sv.Number
+		if reason != "" {
+			detail += " · " + reason
+		}
+		s.audit(r, "invoice_storno", "neighbor", neighborID, detail)
+		s.setFlash(w, r, "success", "Rechnung storniert ("+sv.Number+"). Die Buchungen sind wieder bearbeitbar.")
+	}
+	redirect(w, r, back)
+}
+
+// handleInvoiceGutschrift issues a credit note (§ 16 UStG Entgeltminderung, e.g. a
+// Skonto) reducing the active invoice by a gross amount. The original stays active.
+func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	yearID := s.yearIDFromForm(r)
+	if yearID == 0 {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID)
+	note := trimmed(r, "note")
+	if s.tooLong(w, r, "Grund", note, maxNoteLen) {
+		redirect(w, r, back)
+		return
+	}
+	gv, err := s.store.GutschriftInvoice(r.Context(), yearID, neighborID, formDecimal(r, "amount").Abs(), note)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.setFlash(w, r, "error", "Keine aktive Rechnung für eine Gutschrift.")
+	case errors.Is(err, store.ErrGutschriftTooLarge):
+		s.setFlash(w, r, "error", "Die Gutschrift übersteigt den offenen Rechnungsbetrag.")
+	case err != nil:
+		s.setFlash(w, r, "error", "Gutschrift fehlgeschlagen – bitte einen Betrag größer 0 angeben.")
+	default:
+		s.audit(r, "invoice_gutschrift", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Gutschrift "+gv.Number)
+		s.setFlash(w, r, "success", "Gutschrift "+gv.Number+" erstellt.")
+	}
+	redirect(w, r, back)
 }

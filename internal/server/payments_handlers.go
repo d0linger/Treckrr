@@ -77,13 +77,50 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
+	// Validate the optional Skonto up front (before recording anything): a
+	// percentage in [0, 10]. Out of range rejects the whole submission.
+	skonto := parseGermanDecimal(r.FormValue("skonto"))
+	if skonto.IsNegative() || skonto.GreaterThan(decimal.NewFromInt(10)) {
+		s.setFlash(w, r, "error", "Skonto muss zwischen 0 und 10 % liegen.")
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
 	if err := s.store.AddPayment(r.Context(), yearID, neighborID, amount, parsePaidOn(r.FormValue("paid_on")), note); err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
-	} else {
-		s.audit(r, "payment_add", "neighbor", neighborID,
-			s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID)+" · "+amount.StringFixed(2)+" €")
-		s.setFlash(w, r, "success", "Zahlung erfasst.")
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
 	}
+	s.audit(r, "payment_add", "neighbor", neighborID,
+		s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID)+" · "+amount.StringFixed(2)+" €")
+	msg := "Zahlung erfasst."
+	// Optional Skonto (§ 16 UStG): a percentage of the issued invoice's gross,
+	// booked as a credit note (net + USt split) alongside the payment. Skipped when
+	// there is no active invoice.
+	if pct := skonto; pct.IsPositive() {
+		iv, ierr := s.store.GetInvoice(r.Context(), yearID, neighborID)
+		switch {
+		case errors.Is(ierr, store.ErrNotFound):
+			// no active invoice → a Skonto has nothing to reduce; ignore silently.
+		case ierr != nil:
+			s.setFlash(w, r, "error", "Zahlung erfasst, aber der Rechnungsstatus für das Skonto war nicht prüfbar.")
+			redirect(w, r, neighborURL(neighborID, yearID))
+			return
+		case iv.Content != nil:
+			skGross := iv.Content.Gross.Mul(pct).Div(decimal.NewFromInt(100)).Round(2)
+			if skGross.IsPositive() {
+				g, gerr := s.store.GutschriftInvoice(r.Context(), yearID, neighborID, skGross, "Skonto "+pct.String()+" %")
+				if gerr != nil {
+					s.setFlash(w, r, "error", "Zahlung erfasst, aber die Skonto-Gutschrift ist fehlgeschlagen (übersteigt sie den offenen Rechnungsbetrag?).")
+					redirect(w, r, neighborURL(neighborID, yearID))
+					return
+				}
+				s.audit(r, "invoice_gutschrift", "neighbor", neighborID,
+					s.neighborName(r, neighborID)+" · Skonto "+g.Number+" · "+skGross.StringFixed(2)+" €")
+				msg = "Zahlung + Skonto-Gutschrift " + g.Number + " (" + skGross.StringFixed(2) + " €) erfasst."
+			}
+		}
+	}
+	s.setFlash(w, r, "success", msg)
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
 

@@ -376,7 +376,12 @@
 					<input class="input" type="date" name="paid_on" value="{{.Today}}"></label>
 				<label class="field"><span>Notiz</span>
 					<input class="input" name="note" placeholder="z. B. Überweisung"></label>
+				{{if .HasInvoice}}
+				<label class="field"><span>Skonto % (§ 16, optional)</span>
+					<input class="input" type="number" step="0.1" min="0" max="10" name="skonto" placeholder="z. B. 2"></label>
+				{{end}}
 			</div>
+			{{if .HasInvoice}}<p class="muted small">Ein Skonto erzeugt automatisch eine § 16-Gutschrift auf die Rechnung (Netto und USt werden korrekt gemindert).</p>{{end}}
 			<button class="btn btn--primary btn--sm" type="submit">Zahlung erfassen</button>
 		</form>
 	</details>

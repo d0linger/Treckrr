@@ -6,15 +6,15 @@
 		{{if .HasInvoice}}
 		<div class="beleg__invoice">
 			<div class="beleg__inv-top">
-				<span class="beleg__inv-no">RECHNUNG Nr. {{.Invoice.Number}}</span>
+				<span class="beleg__inv-no">RECHNUNG Nr. {{.Invoice.Number}} <span class="beleg__inv-lock no-print">🔒 festgeschrieben</span></span>
 				<span>Datum {{date .Invoice.IssuedOn}}</span>
 			</div>
 			<div class="beleg__inv-pp">
-				<div><div class="beleg__inv-k">Von</div><span class="beleg__inv-addr">{{.Company.Name}}{{with .Company.Address}}
-{{.}}{{end}}{{with .Company.TaxID}}
+				<div><div class="beleg__inv-k">Von</div><span class="beleg__inv-addr">{{.InvIssuer.Name}}{{with .InvIssuer.Address}}
+{{.}}{{end}}{{with .InvIssuer.TaxID}}
 {{.}}{{end}}</span></div>
-				<div><div class="beleg__inv-k">An</div><span class="beleg__inv-addr">{{.Neighbor.Name}}{{with .Neighbor.Address}}
-{{.}}{{end}}{{with .Neighbor.TaxID}}
+				<div><div class="beleg__inv-k">An</div><span class="beleg__inv-addr">{{.InvRecipient.Name}}{{with .InvRecipient.Address}}
+{{.}}{{end}}{{with .InvRecipient.TaxID}}
 {{.}}{{end}}</span></div>
 			</div>
 			{{if .InvNeedRecipientVATID}}
@@ -137,13 +137,21 @@
 			{{if .Ledger}}
 			<div class="beleg__lsub beleg__lsub--muted"><span></span><span>Verrechnung</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvLedger}}</span></div>
 			{{end}}
+			{{if .HasCredits}}
+			<div class="beleg__lsub beleg__lsub--muted"><span></span><span>abzüglich Gutschrift (§ 16 UStG)</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvCredits}}</span></div>
+			{{end}}
 			{{if .HasPayments}}
 			<div class="beleg__lsub beleg__lsub--muted"><span></span><span>abzüglich bereits bezahlt{{if .InvShowVAT}} (davon USt {{money .InvPaidUSt}}){{end}}</span><span class="beleg__r"></span><span class="beleg__r">−{{money .PaidSum}}</span></div>
 			{{end}}
-			{{if or .Ledger .HasPayments}}
+			{{if or .Ledger .HasPayments .HasCredits}}
 			<div class="beleg__lsub"><span></span><span>Restbetrag zu zahlen</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvRest}}</span></div>
 			{{end}}
-			{{with .Company.TaxNote}}<div class="beleg__inv-note">{{.}}</div>{{end}}
+			{{with .InvTaxNote}}<div class="beleg__inv-note">{{.}}</div>{{end}}
+			{{with .InvHash}}<div class="beleg__inv-hash">Integrität · sha256 {{.}}</div>{{end}}
+			<div class="beleg__payinfo">
+				<span class="beleg__payinfo-k">Zahlung</span>
+				<span class="beleg__payinfo-v">Bitte {{money .InvRest}} unter Angabe der Referenz <strong>{{with .Invoice.PaymentReference}}{{.}}{{else}}{{$.Invoice.Number}}{{end}}</strong> überweisen.{{with .InvIBAN}} IBAN <strong>{{.}}</strong>.{{end}}</span>
+			</div>
 		</div>
 		{{end}}
 
@@ -177,10 +185,37 @@
 			{{end}}
 		</div>
 		{{if not .HasInvoice}}
-		<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice" data-confirm="Rechnung ausstellen? Die Rechnungsnummer wird fest vergeben und bleibt bestehen.">
-			<input type="hidden" name="year_id" value="{{.Year.ID}}">
-			<button type="submit" class="btn btn--ghost btn--block">Als Rechnung ausstellen (Nummer vergeben)</button>
-		</form>
+		<a class="btn btn--primary btn--block" href="/neighbors/{{.Neighbor.ID}}/invoice/confirm?year={{.Year.ID}}">Rechnung ausstellen &amp; festschreiben</a>
+		{{end}}
+		{{if .HasDocuments}}
+		<div class="beleg__doclist">
+			<div class="beleg__doclist-h">Belegverlauf</div>
+			{{range .Documents}}
+			<div class="beleg__docrow">
+				<span class="beleg__docno">{{.Number}}</span>
+				<span class="beleg__dockind">{{if eq .Kind "invoice"}}Rechnung{{if eq .Status "canceled"}} · storniert{{end}}{{else if eq .Kind "storno"}}Storno{{else}}Gutschrift{{if eq .Status "canceled"}} · storniert{{end}}{{end}}</span>
+				{{if .Content}}<span class="beleg__r">{{money .Content.Gross}}</span>{{end}}
+			</div>
+			{{end}}
+		</div>
+		{{end}}
+		{{if .HasInvoice}}
+		<div class="beleg__invacts stack">
+			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/gutschrift" class="beleg__gform">
+				<input type="hidden" name="year_id" value="{{.Year.ID}}">
+				<div class="beleg__gform-h">Gutschrift <span>· § 16 UStG</span></div>
+				<input class="input" type="text" inputmode="decimal" name="amount" placeholder="Betrag brutto (€)" aria-label="Gutschrift-Betrag brutto" required>
+				<input class="input" type="text" name="note" maxlength="200" placeholder="Grund (z. B. Nachlass)" aria-label="Grund der Gutschrift">
+				<button type="submit" class="btn btn--primary">Gutschrift erstellen</button>
+			</form>
+			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/storno"
+				data-confirm="Rechnung {{.Invoice.Number}} stornieren? Es wird ein Storno-Beleg erstellt und die Buchungen werden wieder freigegeben."
+				data-confirm-reason="Storno-Grund (optional, protokolliert)">
+				<input type="hidden" name="year_id" value="{{.Year.ID}}">
+				<input type="hidden" name="reason" value="">
+				<button type="submit" class="btn btn--danger btn--block">Rechnung stornieren</button>
+			</form>
+		</div>
 		{{end}}
 	</div>
 </section>

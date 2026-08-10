@@ -2,6 +2,7 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -246,10 +247,109 @@ type Company struct {
 	TaxNote string
 	TaxMode string
 	VATRate decimal.Decimal
+	IBAN    string // optional issuer bank account for a payable invoice
 }
 
-// Invoice is a Beleg issued as a formal Rechnung: a sequential number per year,
-// fixed at issue time, for one neighbor and year.
+// InvoiceParty is a frozen issuer/recipient block on an invoice snapshot.
+type InvoiceParty struct {
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	TaxID   string `json:"tax_id"`         // issuer UID / recipient UID or tax number
+	IBAN    string `json:"iban,omitempty"` // issuer bank account, frozen for payment (recipient: unset)
+}
+
+// InvoiceLine is one frozen line item of an invoice snapshot.
+type InvoiceLine struct {
+	Date      time.Time       `json:"date"`
+	Label     string          `json:"label"`
+	Unit      string          `json:"unit"`
+	Quantity  decimal.Decimal `json:"qty"`
+	UnitPrice decimal.Decimal `json:"unit_price"`
+	Cost      decimal.Decimal `json:"cost"`
+}
+
+// InvoiceContent is the immutable substance of an invoice, frozen at issuance
+// (Festschreibung) so the document never changes even as bookings/prices do.
+// The settlement side (ledger, payments, remaining) is deliberately NOT part of
+// it — that stays live because it evolves after the invoice is handed over.
+type InvoiceContent struct {
+	Net         decimal.Decimal `json:"net"`
+	VATRate     decimal.Decimal `json:"vat_rate"`
+	VATAmount   decimal.Decimal `json:"vat_amount"`
+	Gross       decimal.Decimal `json:"gross"`
+	ShowVAT     bool            `json:"show_vat"`
+	TaxMode     string          `json:"tax_mode"`
+	TaxNote     string          `json:"tax_note"`
+	ServiceFrom time.Time       `json:"service_from"`
+	ServiceTo   time.Time       `json:"service_to"`
+	Issuer      InvoiceParty    `json:"issuer"`
+	Recipient   InvoiceParty    `json:"recipient"`
+	Lines       []InvoiceLine   `json:"lines"`
+	Hash        string          `json:"-"` // sha256 over the canonical content
+}
+
+// invoiceUIDThreshold is the gross amount (§ 11 Abs. 1 Z 6 UStG) above which the
+// recipient's UID is a mandatory invoice field.
+var invoiceUIDThreshold = decimal.NewFromInt(10000)
+
+// MandatoryCheck is one § 11 UStG line item for the pre-issuance checklist.
+type MandatoryCheck struct {
+	Label  string // what is required
+	Detail string // the current value (or empty when missing)
+	OK     bool   // satisfied
+}
+
+// MandatoryChecks returns the § 11 UStG requirements as a checklist (both passed
+// and failed), the single source the block-on-issue and the confirmation UI share.
+// It is tax-mode aware: the VAT line applies only to pauschal/regel, the UID line
+// only above the €10.000 threshold.
+func (c InvoiceContent) MandatoryChecks() []MandatoryCheck {
+	firstLine := func(s string) string {
+		s = strings.TrimSpace(s)
+		if i := strings.IndexByte(s, '\n'); i >= 0 {
+			return strings.TrimSpace(s[:i])
+		}
+		return s
+	}
+	period := ""
+	if !c.ServiceFrom.IsZero() {
+		period = c.ServiceFrom.Format("02.01.2006")
+		if !c.ServiceTo.IsZero() && !c.ServiceTo.Equal(c.ServiceFrom) {
+			period += "–" + c.ServiceTo.Format("02.01.2006")
+		}
+	}
+	checks := []MandatoryCheck{
+		{"Absender-Name", firstLine(c.Issuer.Name), strings.TrimSpace(c.Issuer.Name) != ""},
+		{"Absender-Adresse", firstLine(c.Issuer.Address), strings.TrimSpace(c.Issuer.Address) != ""},
+		{"Empfänger-Name", firstLine(c.Recipient.Name), strings.TrimSpace(c.Recipient.Name) != ""},
+		{"Empfänger-Adresse", firstLine(c.Recipient.Address), strings.TrimSpace(c.Recipient.Address) != ""},
+		{"Leistungszeitraum", period, len(c.Lines) > 0 && period != ""},
+	}
+	if c.TaxMode == "pauschal" || c.TaxMode == "regel" {
+		// Keep the configured precision (e.g. 13,5 %), don't round to whole percent.
+		checks = append(checks, MandatoryCheck{"USt-Ausweis", c.VATRate.String() + " %", c.ShowVAT})
+	}
+	if c.Gross.GreaterThan(invoiceUIDThreshold) {
+		checks = append(checks, MandatoryCheck{"Empfänger-UID (> 10.000 €)", firstLine(c.Recipient.TaxID), strings.TrimSpace(c.Recipient.TaxID) != ""})
+	}
+	return checks
+}
+
+// MissingMandatory returns the labels of the § 11 requirements not yet satisfied.
+// An empty slice means the content may be issued as a formal Rechnung.
+func (c InvoiceContent) MissingMandatory() []string {
+	var m []string
+	for _, ch := range c.MandatoryChecks() {
+		if !ch.OK {
+			m = append(m, ch.Label)
+		}
+	}
+	return m
+}
+
+// Invoice is a Beleg issued as a formal Rechnung. Since Festschreibung it also
+// carries the frozen content snapshot and the document kind/status so an invoice
+// can be stornoed and a Gutschrift issued (a document history per neighbor+year).
 type Invoice struct {
 	ID            int64
 	BillingYearID int64
@@ -257,6 +357,12 @@ type Invoice struct {
 	Number        string
 	IssuedOn      time.Time
 	Created       time.Time
+
+	Kind                string // invoice | storno | gutschrift
+	Status              string // issued | canceled
+	ReferencesInvoiceID *int64 // storno/gutschrift → the original invoice
+	PaymentReference    string
+	Content             *InvoiceContent // nil for legacy rows not yet backfilled
 }
 
 // AuditEntry is one recorded action in the audit trail.

@@ -125,6 +125,9 @@ func (s *Server) handleNeighborRecalcPreview(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
 		return
 	}
+	if s.invoiceLocked(w, r, yearID, neighborID) {
+		return
+	}
 	back := neighborURL(neighborID, yearID)
 	s.recalcPreview(w, r, yearID, &neighborID, s.neighborName(r, neighborID), back,
 		fmt.Sprintf("/neighbors/%d/recalc", neighborID))
@@ -143,6 +146,9 @@ func (s *Server) handleNeighborRecalcApply(w http.ResponseWriter, r *http.Reques
 	yearID := s.yearIDFromForm(r)
 	if yearID == 0 {
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	if s.invoiceLocked(w, r, yearID, neighborID) {
 		return
 	}
 	s.recalcApply(w, r, yearID, &neighborID, "neighbor", neighborID, neighborURL(neighborID, yearID))

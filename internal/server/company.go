@@ -32,6 +32,7 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 		TaxNote: trimmed(r, "tax_note"),
 		TaxMode: r.FormValue("tax_mode"),
 		VATRate: formDecimal(r, "vat_rate"),
+		IBAN:    trimmed(r, "iban"),
 	}
 	switch c.TaxMode {
 	case "kleinunternehmer", "pauschal", "regel":
@@ -41,6 +42,7 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 	if s.tooLong(w, r, "Name", c.Name, maxNameLen) ||
 		s.tooLong(w, r, "Adresse", c.Address, maxNoteLen) ||
 		s.tooLong(w, r, "UID/Steuernummer", c.TaxID, maxNameLen) ||
+		s.tooLong(w, r, "IBAN", c.IBAN, maxNameLen) ||
 		s.tooLong(w, r, "Steuerhinweis", c.TaxNote, maxNoteLen) {
 		redirect(w, r, "/admin/company")
 		return

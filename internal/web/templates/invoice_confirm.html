@@ -1,0 +1,52 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="{{.BackURL}}" aria-label="Zurück">{{template "ic-back"}}</a>
+		<h1 class="pagehead__t">Rechnung festschreiben</h1>
+	</div>
+	<p class="muted small">{{.Neighbor.Name}} · Abrechnung {{.Year.Year}}</p>
+
+	<div class="card">
+		<div class="cfm-h">§ 11 UStG · Pflichtangaben</div>
+		<ul class="cfm-checks">
+			{{range .Checks}}
+			<li class="cfm-check {{if .OK}}cfm-check--ok{{else}}cfm-check--bad{{end}}">
+				<span class="cfm-mk">{{if .OK}}✓{{else}}!{{end}}</span>
+				<span class="cfm-lbl">{{.Label}}</span>
+				<span class="cfm-det">{{if .Detail}}{{.Detail}}{{else if not .OK}}fehlt{{end}}</span>
+			</li>
+			{{end}}
+		</ul>
+	</div>
+
+	{{if .CanIssue}}
+	<div class="card">
+		<div class="cfm-h">Snapshot-Vorschau</div>
+		<div class="cfm-prev">
+			{{if .Content.ShowVAT}}
+			<div class="cfm-prev-row"><span>Netto</span><span class="num">{{money .Content.Net}}</span></div>
+			<div class="cfm-prev-row cfm-prev-row--mut"><span>zzgl. USt {{num .Content.VATRate}} %</span><span class="num">{{money .Content.VATAmount}}</span></div>
+			<div class="cfm-prev-row cfm-prev-row--tot"><span>Brutto</span><span class="num">{{money .Content.Gross}}</span></div>
+			{{else}}
+			<div class="cfm-prev-row cfm-prev-row--tot"><span>Rechnungsbetrag</span><span class="num">{{money .Content.Gross}}</span></div>
+			{{end}}
+		</div>
+		<p class="muted small">Nach dem Festschreiben ist die Rechnung <strong>unveränderbar</strong> (Snapshot + Integritäts-Hash). Korrekturen nur über Storno oder Gutschrift.</p>
+	</div>
+	<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice" data-confirm="Rechnung jetzt festschreiben? Die Nummer wird fest vergeben und der Inhalt eingefroren.">
+		<input type="hidden" name="year_id" value="{{.Year.ID}}">
+		<div class="btnrow btnrow--split">
+			<a class="btn btn--ghost btn--sm" href="{{.BackURL}}">Abbrechen</a>
+			<button class="btn btn--primary" type="submit">Jetzt festschreiben</button>
+		</div>
+	</form>
+	{{else}}
+	<div class="flash flash--error">Ausstellen nicht möglich – bitte die rot markierten Pflichtangaben nach § 11 UStG ergänzen.</div>
+	<div class="btnrow">
+		<a class="btn btn--ghost btn--sm" href="{{.BackURL}}">Zurück zum Beleg</a>
+		<a class="btn btn--primary btn--sm" href="/admin/company">Betriebsdaten</a>
+		<a class="btn btn--primary btn--sm" href="/neighbors/{{.Neighbor.ID}}">Nachbardaten</a>
+	</div>
+	{{end}}
+</section>
+{{end}}
