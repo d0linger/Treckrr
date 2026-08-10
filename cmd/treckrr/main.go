@@ -90,6 +90,14 @@ func run() error {
 	if err := st.EnsureAdmin(ctx, cfg.AdminUsername, cfg.AdminPassword, cfg.AdminPasswordReset); err != nil {
 		return err
 	}
+	// Festschreibung: freeze a content snapshot for invoices issued before the
+	// snapshot columns existed, so the Beleg renders from the frozen record. This
+	// reproduces the current live values, so no displayed amount changes.
+	if n, err := st.BackfillInvoiceSnapshots(ctx); err != nil {
+		return err
+	} else if n > 0 {
+		log.Printf("backfilled %d invoice snapshot(s)", n)
+	}
 	log.Println("bootstrap complete")
 
 	// Background maintenance: purge expired sessions and stale rate-limit rows on a

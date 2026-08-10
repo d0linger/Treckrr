@@ -2,6 +2,7 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -284,6 +285,41 @@ type InvoiceContent struct {
 	Recipient   InvoiceParty    `json:"recipient"`
 	Lines       []InvoiceLine   `json:"lines"`
 	Hash        string          `json:"-"` // sha256 over the canonical content
+}
+
+// invoiceUIDThreshold is the gross amount (§ 11 Abs. 1 Z 6 UStG) above which the
+// recipient's UID is a mandatory invoice field.
+var invoiceUIDThreshold = decimal.NewFromInt(10000)
+
+// MissingMandatory returns the human-readable list of § 11 UStG invoice
+// requirements this content does not yet satisfy. An empty slice means the
+// content may be issued as a formal Rechnung. It is tax-mode aware: a VAT mode
+// (pauschal/regel) without a positive rate is inconsistent, while a
+// Kleinunternehmer invoice legitimately shows no VAT.
+func (c InvoiceContent) MissingMandatory() []string {
+	var m []string
+	if strings.TrimSpace(c.Issuer.Name) == "" {
+		m = append(m, "Absender-Name (Betriebsdaten)")
+	}
+	if strings.TrimSpace(c.Issuer.Address) == "" {
+		m = append(m, "Absender-Adresse (Betriebsdaten)")
+	}
+	if strings.TrimSpace(c.Recipient.Name) == "" {
+		m = append(m, "Empfänger-Name")
+	}
+	if strings.TrimSpace(c.Recipient.Address) == "" {
+		m = append(m, "Empfänger-Adresse")
+	}
+	if len(c.Lines) == 0 {
+		m = append(m, "keine abrechenbaren Buchungen (Leistungszeitraum)")
+	}
+	if (c.TaxMode == "pauschal" || c.TaxMode == "regel") && !c.ShowVAT {
+		m = append(m, "USt-Satz > 0 (Modus \""+c.TaxMode+"\" ohne Steuersatz)")
+	}
+	if c.Gross.GreaterThan(invoiceUIDThreshold) && strings.TrimSpace(c.Recipient.TaxID) == "" {
+		m = append(m, "Empfänger-UID (Rechnungsbetrag über 10.000 €)")
+	}
+	return m
 }
 
 // Invoice is a Beleg issued as a formal Rechnung. Since Festschreibung it also

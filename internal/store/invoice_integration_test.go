@@ -155,4 +155,56 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 			t.Fatalf("pauschal: showVAT=%v gross=%s", c.ShowVAT, c.Gross.StringFixed(2))
 		}
 	})
+
+	t.Run("backfill re-freezes a legacy invoice at its current live values", func(t *testing.T) {
+		yearID, nid, _ := setup(t, 2094, "regel", "13")
+		iv, err := st.IssueInvoice(ctx, yearID, nid, 2094)
+		if err != nil {
+			t.Fatalf("issue: %v", err)
+		}
+		want := iv.Content.Gross.StringFixed(2) // 246.34, what the invoice showed
+
+		// Simulate a pre-Festschreibung row: strip the snapshot (net IS NULL is the
+		// backfill sentinel). This is exactly the state of invoices issued before
+		// migration 0024.
+		if _, err := pool.ExecContext(ctx, `UPDATE invoices SET
+			net=NULL, vat_rate=NULL, vat_amount=NULL, gross=NULL,
+			show_vat=FALSE, tax_mode='', tax_note='',
+			service_from=NULL, service_to=NULL, issuer=NULL, recipient=NULL, lines=NULL, content_hash=''
+			WHERE id=$1`, iv.ID); err != nil {
+			t.Fatalf("strip snapshot: %v", err)
+		}
+		if legacy, err := st.GetInvoice(ctx, yearID, nid); err != nil {
+			t.Fatalf("get legacy: %v", err)
+		} else if legacy.Content != nil {
+			t.Fatalf("expected nil snapshot after strip, got %+v", legacy.Content)
+		}
+
+		n, err := st.BackfillInvoiceSnapshots(ctx)
+		if err != nil {
+			t.Fatalf("backfill: %v", err)
+		}
+		if n < 1 {
+			t.Fatalf("expected at least one invoice backfilled, got %d", n)
+		}
+
+		// The re-frozen snapshot equals what the invoice displayed before → no
+		// displayed value changes when the Beleg switches to reading the snapshot.
+		filled, err := st.GetInvoice(ctx, yearID, nid)
+		if err != nil {
+			t.Fatalf("get filled: %v", err)
+		}
+		if filled.Content == nil || filled.Content.Gross.StringFixed(2) != want {
+			t.Fatalf("backfill wrong: want gross %s, got %+v", want, filled.Content)
+		}
+
+		// Idempotent: with every invoice now snapshotted, a second pass is a no-op.
+		n2, err := st.BackfillInvoiceSnapshots(ctx)
+		if err != nil {
+			t.Fatalf("backfill2: %v", err)
+		}
+		if n2 != 0 {
+			t.Fatalf("second backfill should be a no-op, got %d", n2)
+		}
+	})
 }

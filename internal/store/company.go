@@ -168,6 +168,60 @@ func nullDate(t time.Time) any {
 	return t
 }
 
+// BackfillInvoiceSnapshots freezes a content snapshot for every already-issued
+// invoice that predates Festschreibung (net IS NULL). It reproduces each
+// invoice's substance from the current live data and writes it into the snapshot
+// columns, so the Beleg can render from the frozen record without changing any
+// displayed value (the live computation is what the Beleg showed until now).
+// Idempotent: rows that already carry a snapshot are skipped. Runs once on boot.
+func (s *Store) BackfillInvoiceSnapshots(ctx context.Context) (int, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, billing_year_id, neighbor_id FROM invoices
+		  WHERE net IS NULL AND kind='invoice' ORDER BY id`)
+	if err != nil {
+		return 0, err
+	}
+	type target struct{ id, yearID, neighborID int64 }
+	var todo []target
+	for rows.Next() {
+		var t target
+		if err := rows.Scan(&t.id, &t.yearID, &t.neighborID); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		todo = append(todo, t)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+
+	n := 0
+	for _, t := range todo {
+		content, err := s.BuildInvoiceContent(ctx, t.yearID, t.neighborID)
+		if err != nil {
+			return n, fmt.Errorf("backfill invoice %d: %w", t.id, err)
+		}
+		issuerJSON, _ := json.Marshal(content.Issuer)
+		recipientJSON, _ := json.Marshal(content.Recipient)
+		linesJSON, _ := json.Marshal(content.Lines)
+		if _, err := s.db.ExecContext(ctx, `
+			UPDATE invoices SET
+			  net=$2, vat_rate=$3, vat_amount=$4, gross=$5, show_vat=$6, tax_mode=$7, tax_note=$8,
+			  service_from=$9, service_to=$10, issuer=$11, recipient=$12, lines=$13, content_hash=$14
+			WHERE id=$1 AND net IS NULL`,
+			t.id,
+			content.Net, content.VATRate, content.VATAmount, content.Gross, content.ShowVAT, content.TaxMode, content.TaxNote,
+			nullDate(content.ServiceFrom), nullDate(content.ServiceTo), issuerJSON, recipientJSON, linesJSON, content.Hash,
+		); err != nil {
+			return n, fmt.Errorf("backfill invoice %d: %w", t.id, err)
+		}
+		n++
+	}
+	return n, nil
+}
+
 // IssueInvoice freezes the current invoice content (Festschreibung) under a
 // sequential per-year number and stores it, or returns the existing active
 // invoice if one is already issued (idempotent). Content and number are fixed

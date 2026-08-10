@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -11,6 +12,7 @@ import (
 
 	"treckrr/internal/calc"
 	"treckrr/internal/models"
+	"treckrr/internal/store"
 )
 
 // BelegTractorLoad is one Belastungsstufe a tractor was used at this year: its
@@ -376,6 +378,24 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 	if company, err := s.store.GetCompany(r.Context()); err != nil || strings.TrimSpace(company.Name) == "" {
 		s.setFlash(w, r, "error", "Bitte zuerst die Betriebsdaten (Absender) ausfüllen.")
 		redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
+		return
+	}
+	// § 11 UStG: only fix a number once every mandatory field is present. Build the
+	// content that will be frozen and block issuance if anything is missing, listing
+	// exactly what to fix. Skipped for an already-issued invoice (idempotent re-issue).
+	if _, err := s.store.GetInvoice(r.Context(), yearID, neighborID); errors.Is(err, store.ErrNotFound) {
+		content, err := s.store.BuildInvoiceContent(r.Context(), yearID, neighborID)
+		if err != nil {
+			s.serverError(w, "invoice: build content", err)
+			return
+		}
+		if missing := content.MissingMandatory(); len(missing) > 0 {
+			s.setFlash(w, r, "error", "Rechnung unvollständig (§ 11 UStG). Bitte ergänzen: "+strings.Join(missing, ", ")+".")
+			redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
+			return
+		}
+	} else if err != nil {
+		s.serverError(w, "invoice: lookup", err)
 		return
 	}
 	iv, err := s.store.IssueInvoice(r.Context(), yearID, neighborID, year.Year)
