@@ -208,7 +208,13 @@
 				<input class="input" type="text" name="note" maxlength="200" placeholder="Grund (z. B. Nachlass)" aria-label="Grund der Gutschrift">
 				<button type="submit" class="btn btn--primary">Gutschrift erstellen</button>
 			</form>
-			<a class="btn btn--danger btn--block" href="/neighbors/{{.Neighbor.ID}}/invoice/storno/confirm?year={{.Year.ID}}">Rechnung stornieren …</a>
+			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/storno"
+				data-confirm="Rechnung {{.Invoice.Number}} stornieren? Es wird ein Storno-Beleg erstellt und die Buchungen werden wieder freigegeben."
+				data-confirm-reason="Storno-Grund (optional, protokolliert)">
+				<input type="hidden" name="year_id" value="{{.Year.ID}}">
+				<input type="hidden" name="reason" value="">
+				<button type="submit" class="btn btn--danger btn--block">Rechnung stornieren</button>
+			</form>
 		</div>
 		{{end}}
 	</div>

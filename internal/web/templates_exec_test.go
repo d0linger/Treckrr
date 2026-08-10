@@ -194,23 +194,6 @@ func TestInvoiceConfirmRenders(t *testing.T) {
 	}
 }
 
-func TestStornoConfirmRenders(t *testing.T) {
-	d := decimal.NewFromFloat
-	html := execPage(t, "storno_confirm", map[string]any{
-		"Title":    "Storno",
-		"Neighbor": map[string]any{"ID": int64(2), "Name": "Florian"},
-		"Year":     map[string]any{"ID": int64(1), "Year": 2026},
-		"BackURL":  "/neighbors/2/beleg?year=1&rechnung=1",
-		"Invoice":  map[string]any{"Number": "2026-002", "Content": map[string]any{"Gross": d(246.34)}},
-	})
-	// The reason input lives on the confirmation page, and the storno amount shows.
-	for _, want := range []string{"2026-002", "246,34", `name="reason"`, "Storno ausstellen"} {
-		if !strings.Contains(html, want) {
-			t.Errorf("storno_confirm missing %q", want)
-		}
-	}
-}
-
 func TestComparePageRendersWithDiffs(t *testing.T) {
 	d := decimal.NewFromFloat
 	rows := []map[string]any{
