@@ -11,6 +11,13 @@ func (s *Store) ReplaceRecoveryCodes(ctx context.Context, userID int64, hashes [
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Serialize concurrent regenerations for the same user: without this, two
+	// transactions could each delete the visible rows and insert their own set
+	// (neither sees the other's uncommitted inserts under READ COMMITTED),
+	// leaving 2x codes instead of a clean replacement.
+	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM users WHERE id=$1 FOR UPDATE`, userID); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM totp_recovery_codes WHERE user_id=$1`, userID); err != nil {
 		return err

@@ -54,3 +54,6 @@ Noppanschoftshilfe.xlsx
 # Exports produced at runtime
 /exports/
 *.csv.tmp
+
+# graphify knowledge graph output
+/graphify-out/

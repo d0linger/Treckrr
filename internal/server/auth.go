@@ -34,7 +34,7 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
-	data := pageData{"Title": "Anmelden", "Theme": themeFromCookie(r), "CSRF": s.csrfToken(r)}
+	data := pageData{"Title": "Anmelden", "Theme": themeFromCookie(r), "CSRF": s.loginCSRFToken(w, r)}
 	// If a valid pending-2FA cookie is present, show the second step instead.
 	if c, err := r.Cookie(pending2FACookie); err == nil {
 		if _, ok := s.verifyPending2FA(c.Value); ok {
@@ -54,6 +54,14 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	// POST /login has no session yet, so the general csrf() middleware can't guard
+	// it; verify the seeded login-CSRF token to block login-CSRF (an attacker
+	// silently signing the victim into the attacker's account).
+	if !s.verifyLoginCSRF(r) {
+		s.setFlash(w, r, "error", "Sicherheits-Token abgelaufen. Bitte erneut anmelden.")
+		redirect(w, r, "/login")
 		return
 	}
 	username := strings.TrimSpace(r.FormValue("username"))
@@ -217,7 +225,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 		return false
 	}
 	s.setCookie(w, r, &http.Cookie{
-		Name:   sessionCookie,
+		Name:   s.sessionCookieName(r),
 		Value:  token,
 		MaxAge: int(sessionTTL.Seconds()),
 	})
@@ -269,10 +277,10 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if u := s.currentUser(r); u != nil {
 		_ = s.store.AddAudit(r.Context(), &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r))
 	}
-	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
+	if c, err := r.Cookie(s.sessionCookieName(r)); err == nil && c.Value != "" {
 		_ = s.store.DeleteSession(r.Context(), c.Value)
 	}
-	s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
+	s.setCookie(w, r, &http.Cookie{Name: s.sessionCookieName(r), Value: "", MaxAge: -1})
 	redirect(w, r, "/login")
 }
 
@@ -285,7 +293,7 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	// Sessions carry the stored token *hash*; hash the current cookie to match.
 	currentHash := ""
-	if c, err := r.Cookie(sessionCookie); err == nil {
+	if c, err := r.Cookie(s.sessionCookieName(r)); err == nil {
 		currentHash = store.HashToken(c.Value)
 	}
 	for i := range sessions {

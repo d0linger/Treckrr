@@ -136,7 +136,7 @@ func TestYearPaymentTotalsIntegration(t *testing.T) {
 		}
 	}
 
-	paid, open, err := st.YearPaymentTotals(ctx, yearID)
+	paid, open, _, err := st.YearPaymentTotals(ctx, yearID)
 	if err != nil {
 		t.Fatalf("YearPaymentTotals: %v", err)
 	}

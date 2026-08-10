@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -106,9 +107,11 @@ func run() error {
 		return err
 	}
 	bk := newBackup(cfg, pool, st)
+	var bkWG sync.WaitGroup
 	if bk.Enabled() {
 		log.Printf("encrypted backups enabled (schedule via GUI, dir %s)", cfg.BackupDir)
-		go bk.Loop(ctx, log.Printf)
+		bkWG.Add(1)
+		go func() { defer bkWG.Done(); bk.Loop(ctx, log.Printf) }()
 	} else {
 		log.Println("backups disabled (set BACKUP_ENCRYPTION_KEY to enable)")
 	}
@@ -140,7 +143,29 @@ func run() error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return httpServer.Shutdown(shutdownCtx)
+	err = httpServer.Shutdown(shutdownCtx)
+	// Give an in-flight scheduled backup a brief window to finish cleanly (its
+	// runs use context.WithoutCancel) rather than being killed mid-dump on deploy.
+	// Backups here are sub-second, so this rarely waits; the bound caps a large one
+	// (a full run can take up to 10 min, but we don't hold up a deploy that long —
+	// writeFileAtomic guarantees no partial file if we exit first).
+	if !waitTimeout(&bkWG, 30*time.Second) {
+		log.Println("shutdown: a scheduled backup was still running after 30s; exiting anyway")
+	}
+	return err
+}
+
+// waitTimeout blocks until wg is done or d elapses; it reports whether wg
+// finished within the deadline.
+func waitTimeout(wg *sync.WaitGroup, d time.Duration) bool {
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+		return true
+	case <-time.After(d):
+		return false
+	}
 }
 
 // purgeLoop periodically removes expired sessions and stale rate-limit rows until

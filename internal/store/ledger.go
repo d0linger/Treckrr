@@ -45,16 +45,6 @@ func (s *Store) NeighborLedgerSum(ctx context.Context, yearID, neighborID int64)
 	return sum, err
 }
 
-// YearLedgerSum returns the signed sum of all non-voided ledger postings for a
-// year (used to net the statistics result).
-func (s *Store) YearLedgerSum(ctx context.Context, yearID int64) (decimal.Decimal, error) {
-	var sum decimal.Decimal
-	err := s.db.QueryRowContext(ctx,
-		`SELECT COALESCE(SUM(amount),0) FROM neighbor_ledger
-		  WHERE billing_year_id=$1 AND NOT voided`, yearID).Scan(&sum)
-	return sum, err
-}
-
 // YearNeighborResult is a per-neighbor breakdown for a year: work bookings
 // (Leistungen), the signed ledger sum (Verrechnung) and their net.
 type YearNeighborResult struct {
@@ -168,8 +158,10 @@ func (s *Store) CountLedgerForNeighborYear(ctx context.Context, yearID, neighbor
 	return n, err
 }
 
-// YearTotal is one year's aggregate, oldest first — feeds the tile sparklines.
+// YearTotal is one year's aggregate, oldest first — feeds the tile sparklines
+// and the all-years stats table.
 type YearTotal struct {
+	YearID int64
 	Year   int
 	Cost   decimal.Decimal
 	Hours  decimal.Decimal
@@ -180,7 +172,7 @@ type YearTotal struct {
 // first) in one query, for the mini trend sparklines.
 func (s *Store) YearlyTotals(ctx context.Context) ([]YearTotal, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT y.year,
+		SELECT y.id, y.year,
 		  COALESCE((SELECT SUM(e.cost)   FROM entries e        WHERE e.billing_year_id = y.id AND NOT e.voided), 0),
 		  COALESCE((SELECT SUM(e.hours)  FROM entries e        WHERE e.billing_year_id = y.id AND NOT e.voided), 0),
 		  COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l WHERE l.billing_year_id = y.id AND NOT l.voided), 0)
@@ -193,7 +185,7 @@ func (s *Store) YearlyTotals(ctx context.Context) ([]YearTotal, error) {
 	var out []YearTotal
 	for rows.Next() {
 		var t YearTotal
-		if err := rows.Scan(&t.Year, &t.Cost, &t.Hours, &t.Ledger); err != nil {
+		if err := rows.Scan(&t.YearID, &t.Year, &t.Cost, &t.Hours, &t.Ledger); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

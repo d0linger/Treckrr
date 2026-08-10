@@ -19,6 +19,7 @@
 		{{if .Completed}}
 		<div class="kpi card kpi--paid"><span class="kpi__label">Bezahlt</span><span class="kpi__value">{{money .PaidCost}}</span></div>
 		<div class="kpi card kpi--open"><span class="kpi__label">Offen</span><span class="kpi__value">{{money .OpenCost}}</span></div>
+		{{if .CreditCost.IsPositive}}<div class="kpi card"><span class="kpi__label">Guthaben</span><span class="kpi__value">{{money .CreditCost}}</span></div>{{end}}
 		{{end}}
 	</div>
 

@@ -37,6 +37,7 @@
 			<p class="muted">Melde dich an, um Buchungen und Abrechnungen zu verwalten.</p>
 		</div>
 		<form method="post" action="/login" class="form">
+			<input type="hidden" name="csrf_token" value="{{.CSRF}}">
 			<label class="field">
 				<span>Benutzername</span>
 				<input class="input" type="text" name="username" autocomplete="username" required autofocus>

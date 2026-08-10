@@ -11,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"treckrr/internal/models"
+	"treckrr/internal/store"
 	"treckrr/internal/web"
 )
 
@@ -43,7 +44,7 @@ func makeSpark(vals []decimal.Decimal, years []int, fmtVal func(decimal.Decimal)
 	for i, v := range vals {
 		f, _ := v.Float64()
 		fs[i] = f
-		lo, hi = math.Min(lo, f), math.Max(hi, f)
+		lo, hi = min(lo, f), max(hi, f)
 	}
 	rng := hi - lo
 	half := 50.0 / float64(n-1)
@@ -64,10 +65,10 @@ func makeSpark(vals []decimal.Decimal, years []int, fmtVal func(decimal.Decimal)
 		if i < len(years) {
 			tip = strconv.Itoa(years[i]) + " · " + fmtVal(vals[i])
 		}
-		hx := math.Max(0, x-half)
+		hx := max(0, x-half)
 		pts[i] = sparkPoint{
 			X: fmt.Sprintf("%.1f", x), Y: fmt.Sprintf("%.1f", y), Tip: tip,
-			HitX: fmt.Sprintf("%.1f", hx), HitW: fmt.Sprintf("%.1f", math.Min(100, x+half)-hx),
+			HitX: fmt.Sprintf("%.1f", hx), HitW: fmt.Sprintf("%.1f", min(100, x+half)-hx),
 		}
 		lastX, lastY = x, y
 	}
@@ -92,13 +93,13 @@ type barPair struct {
 func makeBarPair(prev, cur decimal.Decimal, prevYear, curYear int, fmtVal func(decimal.Decimal) string) *barPair {
 	pf, _ := prev.Float64()
 	cf, _ := cur.Float64()
-	max := math.Max(pf, cf)
-	if max <= 0 {
-		max = 1
+	peak := max(pf, cf)
+	if peak <= 0 {
+		peak = 1
 	}
 	const base, maxH = 32.0, 28.0
-	ph := math.Max(2, pf/max*maxH)
-	ch := math.Max(2, cf/max*maxH)
+	ph := max(2, pf/peak*maxH)
+	ch := max(2, cf/peak*maxH)
 	f := func(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
 	return &barPair{
 		PrevH: f(ph), PrevY: f(base - ph),
@@ -175,6 +176,7 @@ type yearStat struct {
 	Net       decimal.Decimal // Cost + Ledger
 	PaidCost  decimal.Decimal
 	OpenCost  decimal.Decimal
+	Credit    decimal.Decimal // per-neighbor overpayments/credits, netted out of OpenCost
 	Completed bool
 	PaidPct   string // paid share of (paid+open), e.g. "43.0%", for the pay bar
 }
@@ -207,28 +209,23 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 
 	stats := make([]yearStat, 0, len(years))
 	revenue := make([]aggRow, 0, len(years))
-	var grandCost, grandHours, grandLedger, grandPaid, grandOpen decimal.Decimal
+	var grandCost, grandHours, grandLedger, grandPaid, grandOpen, grandCredit decimal.Decimal
 	hasLedger := false // true if any single year has ledger activity
+	// One aggregate query for every year's bookings/hours/ledger, keyed by year
+	// id, instead of loading all entry rows per year (N+1).
+	totals, err := s.store.YearlyTotals(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	totalByID := make(map[int64]store.YearTotal, len(totals))
+	for _, t := range totals {
+		totalByID[t.YearID] = t
+	}
 	for _, y := range years {
-		entries, err := s.store.ListEntriesByYear(r.Context(), y.ID)
-		if err != nil {
-			s.serverError(w, r.URL.Path, err)
-			return
-		}
-		var cost, hours decimal.Decimal
-		for _, e := range entries {
-			if e.Voided {
-				continue
-			}
-			cost = cost.Add(e.Cost)
-			hours = hours.Add(e.Hours)
-		}
-		paid, open, err := s.store.YearPaymentTotals(r.Context(), y.ID)
-		if err != nil {
-			s.serverError(w, r.URL.Path, err)
-			return
-		}
-		led, err := s.store.YearLedgerSum(r.Context(), y.ID)
+		t := totalByID[y.ID]
+		cost, hours, led := t.Cost, t.Hours, t.Ledger
+		paid, open, credit, err := s.store.YearPaymentTotals(r.Context(), y.ID)
 		if err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
@@ -239,7 +236,7 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 		stats = append(stats, yearStat{
 			Year: y.Year, YearID: y.ID, Cost: cost, Hours: hours,
 			Ledger: led, Net: cost.Add(led),
-			PaidCost: paid, OpenCost: open, Completed: y.Completed(),
+			PaidCost: paid, OpenCost: open, Credit: credit, Completed: y.Completed(),
 			PaidPct: payPct(paid, open),
 		})
 		revenue = append(revenue, aggRow{Label: strconv.Itoa(y.Year), Hours: hours, Cost: cost})
@@ -248,6 +245,7 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 		grandLedger = grandLedger.Add(led)
 		grandPaid = grandPaid.Add(paid)
 		grandOpen = grandOpen.Add(open)
+		grandCredit = grandCredit.Add(credit)
 	}
 
 	data := s.newPage(w, r, "Statistik – Alle Jahre", "stats")
@@ -261,6 +259,7 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 	data["HasLedger"] = hasLedger
 	data["GrandPaid"] = grandPaid
 	data["GrandOpen"] = grandOpen
+	data["GrandCredit"] = grandCredit
 	data["GrandPaidPct"] = payPct(grandPaid, grandOpen)
 	s.render(w, r, "stats_all", data)
 }
@@ -303,7 +302,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	byTractor := aggregate(entries, func(e models.Entry) string { return e.TractorLabel })
 
 	// Payment split (paid vs open), computed in a single query.
-	paidCost, openCost, err := s.store.YearPaymentTotals(r.Context(), year.ID)
+	paidCost, openCost, creditCost, err := s.store.YearPaymentTotals(r.Context(), year.ID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -369,6 +368,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["TotalHours"] = totalHours
 	data["PaidCost"] = paidCost
 	data["OpenCost"] = openCost
+	data["CreditCost"] = creditCost
 	data["LedgerSum"] = ledgerSum
 	data["NetResult"] = totalCost.Add(ledgerSum)
 	data["RevSpark"] = revSpark

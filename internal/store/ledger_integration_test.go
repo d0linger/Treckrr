@@ -90,7 +90,7 @@ func TestLedgerNetIntegration(t *testing.T) {
 	if err := st.AddPayment(ctx, yearID, nid, decimal.RequireFromString("80"), time.Now(), "test"); err != nil {
 		t.Fatalf("add payment: %v", err)
 	}
-	paid, open, err := st.YearPaymentTotals(ctx, yearID)
+	paid, open, _, err := st.YearPaymentTotals(ctx, yearID)
 	if err != nil {
 		t.Fatalf("YearPaymentTotals: %v", err)
 	}
