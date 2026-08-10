@@ -238,10 +238,12 @@ func (s *Store) NeighborTotal(ctx context.Context, neighborID, yearID int64) (co
 // a billing year in a single query: paid = the sum of recorded payments, open =
 // the sum of each neighbor's remaining balance (net − payments). Replaces a
 // per-neighbor fan-out of NeighborTotal calls.
-func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open decimal.Decimal, err error) {
+func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open, credit decimal.Decimal, err error) {
 	// Per neighbor: net = work bookings + signed ledger postings; paid = recorded
 	// payments. Aggregate each side in scalar subqueries first so joining can't
-	// multiply rows.
+	// multiply rows. "open" clamps each neighbor's remainder at 0 (GREATEST) so a
+	// credit does not silently cancel another neighbor's genuine debt; the netted
+	// credit is returned separately as "credit".
 	err = s.db.QueryRowContext(ctx, `
 		WITH per_neighbor AS (
 		  SELECT
@@ -259,8 +261,10 @@ func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open
 		  FROM billing_year_neighbors byn
 		  WHERE byn.billing_year_id = $1
 		)
-		SELECT COALESCE(SUM(paid), 0), COALESCE(SUM(net - paid), 0)
-		FROM per_neighbor`, yearID).Scan(&paid, &open)
+		SELECT COALESCE(SUM(paid), 0),
+		       COALESCE(SUM(GREATEST(net - paid, 0)), 0),
+		       COALESCE(SUM(GREATEST(paid - net, 0)), 0)
+		FROM per_neighbor`, yearID).Scan(&paid, &open, &credit)
 	return
 }
 

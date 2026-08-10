@@ -11,6 +11,7 @@
 		{{end}}
 		<div class="kpi card kpi--paid"><span class="kpi__label">Bezahlt gesamt</span><span class="kpi__value">{{money .GrandPaid}}</span></div>
 		<div class="kpi card kpi--open"><span class="kpi__label">Offen gesamt</span><span class="kpi__value">{{money .GrandOpen}}</span></div>
+		{{if .GrandCredit.IsPositive}}<div class="kpi card"><span class="kpi__label">Guthaben gesamt</span><span class="kpi__value">{{money .GrandCredit}}</span></div>{{end}}
 	</div>
 
 	<div class="card">

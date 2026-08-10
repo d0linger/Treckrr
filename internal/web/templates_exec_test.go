@@ -42,6 +42,7 @@ func TestStatsPageRendersWithPreviousYear(t *testing.T) {
 		"TotalHours": d(2.17),
 		"PaidCost":   d(0),
 		"OpenCost":   d(209.88),
+		"CreditCost": d(15), // exercises the Guthaben KPI branch
 		"LedgerSum":  d(-30), "NetResult": d(179.88), "HasLedger": true,
 		"Completed":  false,
 		"ByNeighbor": rows, "ByNeighborMax": d(209.88),
@@ -63,7 +64,7 @@ func TestStatsAllPageRenders(t *testing.T) {
 		},
 		"Revenue":    []map[string]any{{"Label": "2026", "Hours": d(2.17), "Cost": d(209.88)}, {"Label": "2025", "Hours": d(1.5), "Cost": d(150)}},
 		"RevenueMax": d(209.88),
-		"GrandCost":  d(359.88), "GrandHours": d(3.67), "GrandPaid": d(150), "GrandOpen": d(209.88),
+		"GrandCost":  d(359.88), "GrandHours": d(3.67), "GrandPaid": d(150), "GrandOpen": d(209.88), "GrandCredit": d(15),
 		"GrandLedger": d(-30), "GrandNet": d(329.88), "HasLedger": true,
 	})
 }
