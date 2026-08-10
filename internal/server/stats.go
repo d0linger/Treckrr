@@ -11,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"treckrr/internal/models"
+	"treckrr/internal/store"
 	"treckrr/internal/web"
 )
 
@@ -210,26 +211,21 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 	revenue := make([]aggRow, 0, len(years))
 	var grandCost, grandHours, grandLedger, grandPaid, grandOpen, grandCredit decimal.Decimal
 	hasLedger := false // true if any single year has ledger activity
+	// One aggregate query for every year's bookings/hours/ledger, keyed by year
+	// id, instead of loading all entry rows per year (N+1).
+	totals, err := s.store.YearlyTotals(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	totalByID := make(map[int64]store.YearTotal, len(totals))
+	for _, t := range totals {
+		totalByID[t.YearID] = t
+	}
 	for _, y := range years {
-		entries, err := s.store.ListEntriesByYear(r.Context(), y.ID)
-		if err != nil {
-			s.serverError(w, r.URL.Path, err)
-			return
-		}
-		var cost, hours decimal.Decimal
-		for _, e := range entries {
-			if e.Voided {
-				continue
-			}
-			cost = cost.Add(e.Cost)
-			hours = hours.Add(e.Hours)
-		}
+		t := totalByID[y.ID]
+		cost, hours, led := t.Cost, t.Hours, t.Ledger
 		paid, open, credit, err := s.store.YearPaymentTotals(r.Context(), y.ID)
-		if err != nil {
-			s.serverError(w, r.URL.Path, err)
-			return
-		}
-		led, err := s.store.YearLedgerSum(r.Context(), y.ID)
 		if err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
