@@ -278,9 +278,14 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	invoice, invErr := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
 	hasInvoice := invErr == nil
 	// Document history (invoice, its storno, credit notes) and the total credited by
-	// active Gutschriften (their gross is stored negative). Best-effort: on error the
-	// history stays empty and no credit is applied.
-	documents, _ := s.store.ListInvoiceDocuments(r.Context(), year.ID, neighbor.ID)
+	// active Gutschriften (their gross is stored negative). Not best-effort: a lookup
+	// failure would understate the credited amount and thus overstate what is still
+	// to pay, so surface it rather than render a wrong total.
+	documents, err := s.store.ListInvoiceDocuments(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		s.serverError(w, "beleg: documents", err)
+		return
+	}
 	var invCredits decimal.Decimal // negative: sum of active credit-note gross
 	for _, d := range documents {
 		if d.Kind == "gutschrift" && d.Status == "issued" && d.Content != nil {
@@ -333,6 +338,13 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	// recompute; the settlement side (ledger, payments, remaining) stays live below.
 	// At issuance/backfill the snapshot equals the live values, so this changes no
 	// displayed amount — it only keeps the document stable if bookings change later.
+	// §11 legal fields (parties, tax note): an issued invoice shows them as frozen
+	// at issuance, not current company/neighbor data, so editing Betriebsdaten or a
+	// neighbor address later never alters an already-issued document. Legacy invoices
+	// without a snapshot fall back to the live values.
+	invIssuer := models.InvoiceParty{Name: company.Name, Address: company.Address, TaxID: company.TaxID}
+	invRecipient := models.InvoiceParty{Name: neighbor.Name, Address: neighbor.Address, TaxID: neighbor.TaxID}
+	invTaxNote := company.TaxNote
 	if hasInvoice && invoice.Content != nil {
 		c := invoice.Content
 		invShowVAT = c.ShowVAT
@@ -340,7 +352,13 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		invNet = c.Net
 		invUSt = c.VATAmount
 		invBrutto = c.Gross
+		invIssuer = c.Issuer
+		invRecipient = c.Recipient
+		invTaxNote = c.TaxNote
 	}
+	data["InvIssuer"] = invIssuer
+	data["InvRecipient"] = invRecipient
+	data["InvTaxNote"] = invTaxNote
 	// USt share contained in the (gross) payments already received, at the
 	// invoice's rate.
 	var invPaidUSt decimal.Decimal

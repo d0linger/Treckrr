@@ -77,12 +77,23 @@ func (s *Store) StornoInvoice(ctx context.Context, yearID, neighborID int64) (mo
 	if err != nil {
 		return models.Invoice{}, err
 	}
-	content := s.contentOrBuild(ctx, orig, yearID, neighborID)
+	content, err := s.contentOrBuild(ctx, orig, yearID, neighborID)
+	if err != nil {
+		return models.Invoice{}, err
+	}
 	sv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+"-S", "storno", &orig.ID, reverseContent(content, orig.Number))
 	if err != nil {
 		return models.Invoice{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE invoices SET status='canceled' WHERE id=$1`, orig.ID); err != nil {
+		return models.Invoice{}, err
+	}
+	// A full Storno reverses the whole invoice, so its issued credit notes go with
+	// it — never leave active Gutschriften pointing at a canceled original.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE invoices SET status='canceled'
+		  WHERE references_invoice_id=$1 AND kind='gutschrift' AND status='issued'`,
+		orig.ID); err != nil {
 		return models.Invoice{}, err
 	}
 	return sv, tx.Commit()
@@ -117,7 +128,10 @@ func (s *Store) GutschriftInvoice(ctx context.Context, yearID, neighborID int64,
 	if err != nil {
 		return models.Invoice{}, err
 	}
-	base := s.contentOrBuild(ctx, orig, yearID, neighborID)
+	base, err := s.contentOrBuild(ctx, orig, yearID, neighborID)
+	if err != nil {
+		return models.Invoice{}, err
+	}
 
 	// A Gutschrift may not exceed the invoice's remaining (uncredited) gross.
 	var creditedGross decimal.Decimal
@@ -173,17 +187,14 @@ func (s *Store) GutschriftInvoice(ctx context.Context, yearID, neighborID int64,
 }
 
 // contentOrBuild returns the invoice's frozen content, or — for a legacy row whose
-// snapshot was never backfilled — reconstructs it from current live data as a best
-// effort so a correction can still be issued.
-func (s *Store) contentOrBuild(ctx context.Context, iv models.Invoice, yearID, neighborID int64) models.InvoiceContent {
+// snapshot was never backfilled — reconstructs it from current live data so a
+// correction can still be issued. A build failure is propagated rather than
+// swallowed, so a Storno/Gutschrift never freezes an empty (zero-amount) document.
+func (s *Store) contentOrBuild(ctx context.Context, iv models.Invoice, yearID, neighborID int64) (models.InvoiceContent, error) {
 	if iv.Content != nil {
-		return *iv.Content
+		return *iv.Content, nil
 	}
-	c, err := s.BuildInvoiceContent(ctx, yearID, neighborID)
-	if err != nil {
-		return models.InvoiceContent{}
-	}
-	return c
+	return s.BuildInvoiceContent(ctx, yearID, neighborID)
 }
 
 // ListInvoiceDocuments returns every invoice-family document (invoice, its storno,

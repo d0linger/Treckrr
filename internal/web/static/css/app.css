@@ -1023,10 +1023,10 @@ em { font-style: normal; color: var(--muted); }
 @media (max-width: 30rem) { .beleg__gform { grid-template-columns: 1fr; } }
 
 /* Payment instruction on the issued invoice (IBAN + reference), part of the
-   printed document. */
-.beleg__pay { display: flex; flex-direction: column; gap: .12rem; padding: .5rem .9rem .2rem; }
-.beleg__pay-k { font-family: var(--font-mono); font-size: .6rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
-.beleg__pay-v { font-size: .82rem; }
+   printed document. Distinct from .beleg__pay (the live Zahlungen section). */
+.beleg__payinfo { display: flex; flex-direction: column; gap: .12rem; padding: .5rem .9rem .2rem; }
+.beleg__payinfo-k { font-family: var(--font-mono); font-size: .6rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.beleg__payinfo-v { font-size: .82rem; }
 [data-beleg-grund][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 [data-beleg-grund][aria-pressed="true"] .ic { color: var(--on-primary); }
 [data-beleg-rechnung][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }

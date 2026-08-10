@@ -72,9 +72,15 @@ func scanInvoice(sc scanner) (models.Invoice, error) {
 		if sTo.Valid {
 			c.ServiceTo = sTo.Time
 		}
-		_ = json.Unmarshal(issuer, &c.Issuer)
-		_ = json.Unmarshal(recipient, &c.Recipient)
-		_ = json.Unmarshal(lines, &c.Lines)
+		if err := json.Unmarshal(issuer, &c.Issuer); err != nil {
+			return iv, fmt.Errorf("scan invoice %d: issuer: %w", iv.ID, err)
+		}
+		if err := json.Unmarshal(recipient, &c.Recipient); err != nil {
+			return iv, fmt.Errorf("scan invoice %d: recipient: %w", iv.ID, err)
+		}
+		if err := json.Unmarshal(lines, &c.Lines); err != nil {
+			return iv, fmt.Errorf("scan invoice %d: lines: %w", iv.ID, err)
+		}
 		iv.Content = c
 	}
 	return iv, nil
@@ -203,21 +209,19 @@ func (s *Store) BackfillInvoiceSnapshots(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	defer rows.Close()
 	type target struct{ id, yearID, neighborID int64 }
 	var todo []target
 	for rows.Next() {
 		var t target
 		if err := rows.Scan(&t.id, &t.yearID, &t.neighborID); err != nil {
-			rows.Close()
 			return 0, err
 		}
 		todo = append(todo, t)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
 		return 0, err
 	}
-	rows.Close()
 
 	n := 0
 	for _, t := range todo {

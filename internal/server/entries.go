@@ -964,6 +964,9 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	if !s.neighborInYearOrRedirect(w, r, year.ID, neighborID) {
 		return
 	}
+	if s.invoiceLocked(w, r, year.ID, neighborID) {
+		return
+	}
 
 	dates := r.Form["q_date"]
 	gespanne := r.Form["q_gespann"]

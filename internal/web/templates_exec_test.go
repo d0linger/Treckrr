@@ -93,7 +93,11 @@ func TestBelegPageRenders(t *testing.T) {
 		"Invoice": map[string]any{"Number": "2026-014", "IssuedOn": time.Now()},
 		"Company": map[string]any{"Name": "Hof Bergmann", "Address": "Feldweg 3\n4780", "TaxID": "ATU123",
 			"TaxNote": "§ 22 UStG", "TaxMode": "regel", "VATRate": d(13)},
-		"InvShowVAT": true, "InvRate": d(13), "InvNet": d(647.60), "InvUSt": d(84.19),
+		// Frozen §11 legal fields (the handler resolves these from the snapshot).
+		"InvIssuer":    map[string]any{"Name": "Hof Bergmann", "Address": "Feldweg 3\n4780", "TaxID": "ATU123"},
+		"InvRecipient": map[string]any{"Name": "Florian", "Address": "Dorf 1", "TaxID": "ATU55555555"},
+		"InvTaxNote":   "§ 22 UStG",
+		"InvShowVAT":   true, "InvRate": d(13), "InvNet": d(647.60), "InvUSt": d(84.19),
 		"InvBrutto": d(731.79), "InvLedger": d(-50), "InvPaidUSt": d(34.51), "InvRest": d(481.79),
 		"InvNeedRecipientVATID": true,
 		"Days": []map[string]any{

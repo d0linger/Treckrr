@@ -10,11 +10,11 @@
 				<span>Datum {{date .Invoice.IssuedOn}}</span>
 			</div>
 			<div class="beleg__inv-pp">
-				<div><div class="beleg__inv-k">Von</div><span class="beleg__inv-addr">{{.Company.Name}}{{with .Company.Address}}
-{{.}}{{end}}{{with .Company.TaxID}}
+				<div><div class="beleg__inv-k">Von</div><span class="beleg__inv-addr">{{.InvIssuer.Name}}{{with .InvIssuer.Address}}
+{{.}}{{end}}{{with .InvIssuer.TaxID}}
 {{.}}{{end}}</span></div>
-				<div><div class="beleg__inv-k">An</div><span class="beleg__inv-addr">{{.Neighbor.Name}}{{with .Neighbor.Address}}
-{{.}}{{end}}{{with .Neighbor.TaxID}}
+				<div><div class="beleg__inv-k">An</div><span class="beleg__inv-addr">{{.InvRecipient.Name}}{{with .InvRecipient.Address}}
+{{.}}{{end}}{{with .InvRecipient.TaxID}}
 {{.}}{{end}}</span></div>
 			</div>
 			{{if .InvNeedRecipientVATID}}
@@ -146,10 +146,10 @@
 			{{if or .Ledger .HasPayments .HasCredits}}
 			<div class="beleg__lsub"><span></span><span>Restbetrag zu zahlen</span><span class="beleg__r"></span><span class="beleg__r">{{money .InvRest}}</span></div>
 			{{end}}
-			{{with .Company.TaxNote}}<div class="beleg__inv-note">{{.}}</div>{{end}}
-			<div class="beleg__pay">
-				<span class="beleg__pay-k">Zahlung</span>
-				<span class="beleg__pay-v">Bitte {{money .InvRest}} unter Angabe der Referenz <strong>{{with .Invoice.PaymentReference}}{{.}}{{else}}{{$.Invoice.Number}}{{end}}</strong> überweisen.{{with .Company.IBAN}} IBAN <strong>{{.}}</strong>.{{end}}</span>
+			{{with .InvTaxNote}}<div class="beleg__inv-note">{{.}}</div>{{end}}
+			<div class="beleg__payinfo">
+				<span class="beleg__payinfo-k">Zahlung</span>
+				<span class="beleg__payinfo-v">Bitte {{money .InvRest}} unter Angabe der Referenz <strong>{{with .Invoice.PaymentReference}}{{.}}{{else}}{{$.Invoice.Number}}{{end}}</strong> überweisen.{{with .Company.IBAN}} IBAN <strong>{{.}}</strong>.{{end}}</span>
 			</div>
 		</div>
 		{{end}}
@@ -189,20 +189,20 @@
 			<button type="submit" class="btn btn--ghost btn--block">Als Rechnung ausstellen (Nummer vergeben)</button>
 		</form>
 		{{end}}
-		{{if .HasInvoice}}
-		<div class="beleg__invacts stack">
-			{{if .HasDocuments}}
-			<div class="beleg__doclist">
-				<div class="beleg__doclist-h">Belegverlauf</div>
-				{{range .Documents}}
-				<div class="beleg__docrow">
-					<span class="beleg__docno">{{.Number}}</span>
-					<span class="beleg__dockind">{{if eq .Kind "invoice"}}Rechnung{{if eq .Status "canceled"}} · storniert{{end}}{{else if eq .Kind "storno"}}Storno{{else}}Gutschrift{{end}}</span>
-					{{if .Content}}<span class="beleg__r">{{money .Content.Gross}}</span>{{end}}
-				</div>
-				{{end}}
+		{{if .HasDocuments}}
+		<div class="beleg__doclist">
+			<div class="beleg__doclist-h">Belegverlauf</div>
+			{{range .Documents}}
+			<div class="beleg__docrow">
+				<span class="beleg__docno">{{.Number}}</span>
+				<span class="beleg__dockind">{{if eq .Kind "invoice"}}Rechnung{{if eq .Status "canceled"}} · storniert{{end}}{{else if eq .Kind "storno"}}Storno{{else}}Gutschrift{{if eq .Status "canceled"}} · storniert{{end}}{{end}}</span>
+				{{if .Content}}<span class="beleg__r">{{money .Content.Gross}}</span>{{end}}
 			</div>
 			{{end}}
+		</div>
+		{{end}}
+		{{if .HasInvoice}}
+		<div class="beleg__invacts stack">
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/gutschrift" class="beleg__gform">
 				<input type="hidden" name="year_id" value="{{.Year.ID}}">
 				<input type="text" inputmode="decimal" name="amount" placeholder="Betrag brutto (€)" aria-label="Gutschrift-Betrag brutto" required>

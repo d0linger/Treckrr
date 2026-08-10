@@ -125,7 +125,10 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 			t.Fatalf("late entry: %v", err)
 		}
 		// The live computation now differs …
-		c2, _ := st.BuildInvoiceContent(ctx, yearID, nid)
+		c2, err := st.BuildInvoiceContent(ctx, yearID, nid)
+		if err != nil {
+			t.Fatalf("build after change: %v", err)
+		}
 		if c2.Net.StringFixed(2) != "318.00" {
 			t.Fatalf("live after change should be 318.00, got %s", c2.Net.StringFixed(2))
 		}
@@ -134,13 +137,19 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("get: %v", err)
 		}
+		if frozen.Content == nil {
+			t.Fatalf("frozen invoice has no snapshot")
+		}
 		if frozen.Content.Net.StringFixed(2) != "218.00" || frozen.Content.Gross.StringFixed(2) != "246.34" {
 			t.Fatalf("snapshot changed! net=%s gross=%s", frozen.Content.Net.StringFixed(2), frozen.Content.Gross.StringFixed(2))
 		}
 		// Idempotent re-issue returns the same frozen document.
-		again, _ := st.IssueInvoice(ctx, yearID, nid, 2091)
-		if again.Number != "2091-001" || again.Content.Net.StringFixed(2) != "218.00" {
-			t.Fatalf("re-issue changed the document: %s / %s", again.Number, again.Content.Net.StringFixed(2))
+		again, err := st.IssueInvoice(ctx, yearID, nid, 2091)
+		if err != nil {
+			t.Fatalf("re-issue: %v", err)
+		}
+		if again.Content == nil || again.Number != "2091-001" || again.Content.Net.StringFixed(2) != "218.00" {
+			t.Fatalf("re-issue changed the document: %s / %+v", again.Number, again.Content)
 		}
 	})
 
@@ -374,6 +383,30 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 		}
 		if g.Content.Net.StringFixed(2) != "-20.00" || !g.Content.VATAmount.IsZero() || g.Content.Gross.StringFixed(2) != "-20.00" {
 			t.Fatalf("kleinunternehmer gutschrift: net=%s ust=%s gross=%s", g.Content.Net, g.Content.VATAmount, g.Content.Gross)
+		}
+	})
+
+	t.Run("storno also cancels the invoice's issued gutschriften", func(t *testing.T) {
+		yearID, nid, _ := setup(t, 2085, "regel", "13")
+		if _, err := st.IssueInvoice(ctx, yearID, nid, 2085); err != nil {
+			t.Fatalf("issue: %v", err)
+		}
+		g, err := st.GutschriftInvoice(ctx, yearID, nid, dec("24.63"), "Skonto")
+		if err != nil {
+			t.Fatalf("gutschrift: %v", err)
+		}
+		if _, err := st.StornoInvoice(ctx, yearID, nid); err != nil {
+			t.Fatalf("storno: %v", err)
+		}
+		// The credit note must not survive as 'issued' against a canceled invoice.
+		docs, err := st.ListInvoiceDocuments(ctx, yearID, nid)
+		if err != nil {
+			t.Fatalf("docs: %v", err)
+		}
+		for _, d := range docs {
+			if d.ID == g.ID && d.Status != "canceled" {
+				t.Fatalf("gutschrift %s should be canceled after storno, got %s", d.Number, d.Status)
+			}
 		}
 	})
 }

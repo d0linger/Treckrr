@@ -485,6 +485,7 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 	// shot (reset pool → migrate → backfill) so no container restart is needed.
 	if err := s.store.ReconcileAfterRestore(rctx); err != nil {
 		log.Printf("post-restore reconcile failed: %v", sanitizeLog(err.Error()))
+		s.audit(r, "backup_restore_partial", "backup", 0, "Wiederhergestellt, aber Schema-Reconcile fehlgeschlagen")
 		s.setFlash(w, r, "error", "Wiederhergestellt, aber das Schema-Upgrade schlug fehl — bitte die App neu starten, um es abzuschließen.")
 		redirect(w, r, "/admin/backup")
 		return

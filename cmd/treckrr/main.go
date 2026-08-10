@@ -93,8 +93,11 @@ func run() error {
 	// Festschreibung: freeze a content snapshot for invoices issued before the
 	// snapshot columns existed, so the Beleg renders from the frozen record. This
 	// reproduces the current live values, so no displayed amount changes.
+	// Non-fatal: the backfill is idempotent and only fills missing snapshots, so a
+	// failure here degrades gracefully (those invoices render live) and is retried
+	// on the next boot — don't block startup on it.
 	if n, err := st.BackfillInvoiceSnapshots(ctx); err != nil {
-		return err
+		log.Printf("invoice snapshot backfill failed (continuing, retried next boot): %v", err)
 	} else if n > 0 {
 		log.Printf("backfilled %d invoice snapshot(s)", n)
 	}
