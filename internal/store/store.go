@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"crypto/hkdf"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -19,14 +20,28 @@ var ErrNotFound = errors.New("not found")
 
 // Store wraps the database connection pool.
 type Store struct {
-	db  *sql.DB
-	key []byte
+	db      *sql.DB
+	key     []byte // legacy TOTP-at-rest key = sha256(encryptionKey), reads v1: secrets
+	totpKey []byte // TOTP-at-rest key = HKDF(encryptionKey), key-separated, writes v2:
 }
 
 // New returns a Store backed by the given pool.
 func New(db *sql.DB, encryptionKey string) *Store {
 	h := sha256.Sum256([]byte(encryptionKey))
-	return &Store{db: db, key: h[:]}
+	return &Store{db: db, key: h[:], totpKey: deriveTotpKey(encryptionKey)}
+}
+
+// deriveTotpKey derives a purpose-separated 32-byte key for encrypting TOTP
+// secrets at rest via HKDF-SHA256, so the at-rest cipher key is distinct from
+// the raw secret used elsewhere for HMAC (CSRF / pending-2FA / session tokens)
+// rather than a bare sha256 of the same secret.
+func deriveTotpKey(encryptionKey string) []byte {
+	key, err := hkdf.Key(sha256.New, []byte(encryptionKey), nil, "treckrr-totp-at-rest-v2", 32)
+	if err != nil { // never happens for a 32-byte output; fall back defensively
+		h := sha256.Sum256([]byte(encryptionKey + ":totp"))
+		return h[:]
+	}
+	return key
 }
 
 // Ping verifies the database is reachable — a cheap, side-effect-free probe for
@@ -166,7 +181,33 @@ func (s *Store) AuthenticateUser(ctx context.Context, username, password string)
 	return &u, nil
 }
 
-const totpPrefix = "v1:"
+const (
+	totpPrefix   = "v1:" // legacy at-rest key = sha256(encryptionKey)
+	totpPrefixV2 = "v2:" // current at-rest key = HKDF(encryptionKey)
+)
+
+// decryptTotp reverses the stored at-rest encryption, choosing the key from the
+// version prefix (v2: HKDF, v1: legacy sha256). An unprefixed value is a very old
+// plaintext secret and is returned as-is.
+func (s *Store) decryptTotp(stored string) (string, error) {
+	switch {
+	case strings.HasPrefix(stored, totpPrefixV2):
+		return auth.Decrypt(strings.TrimPrefix(stored, totpPrefixV2), s.totpKey)
+	case strings.HasPrefix(stored, totpPrefix):
+		return auth.Decrypt(strings.TrimPrefix(stored, totpPrefix), s.key)
+	default:
+		return stored, nil
+	}
+}
+
+// encryptTotp encrypts a secret for storage in the current (v2) format.
+func (s *Store) encryptTotp(secret string) (string, error) {
+	enc, err := auth.Encrypt(secret, s.totpKey)
+	if err != nil {
+		return "", err
+	}
+	return totpPrefixV2 + enc, nil
+}
 
 // GetTotpSecret returns the stored TOTP secret for a user (may be empty).
 func (s *Store) GetTotpSecret(ctx context.Context, userID int64) (string, error) {
@@ -179,20 +220,17 @@ func (s *Store) GetTotpSecret(ctx context.Context, userID int64) (string, error)
 	if err != nil {
 		return "", err
 	}
-	if strings.HasPrefix(secret, totpPrefix) {
-		return auth.Decrypt(strings.TrimPrefix(secret, totpPrefix), s.key)
-	}
-	return secret, nil
+	return s.decryptTotp(secret)
 }
 
-// SetTotp enables/disables TOTP and stores the secret.
+// SetTotp enables/disables TOTP and stores the secret (encrypted, current format).
 func (s *Store) SetTotp(ctx context.Context, userID int64, enabled bool, secret string) error {
 	if secret != "" {
-		enc, err := auth.Encrypt(secret, s.key)
+		enc, err := s.encryptTotp(secret)
 		if err != nil {
 			return err
 		}
-		secret = totpPrefix + enc
+		secret = enc
 	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE users SET totp_enabled=$1, totp_secret=$2 WHERE id=$3`, enabled, secret, userID)
