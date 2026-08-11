@@ -47,7 +47,12 @@ func HashRecoveryCode(code string) string {
 
 // LooksLikeRecoveryCode reports whether the input resembles a recovery code
 // rather than a 6-digit TOTP (used to route login verification).
+// Input is limited to a maximum length of 100 characters to prevent CPU/memory
+// exhaustion during normalization.
 func LooksLikeRecoveryCode(s string) bool {
+	if len(s) > 100 {
+		return false
+	}
 	return len(NormalizeRecoveryCode(s)) >= 12
 }
 
