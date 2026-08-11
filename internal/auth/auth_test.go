@@ -2,8 +2,31 @@ package auth
 
 import (
 	"crypto/sha256"
+	"strings"
 	"testing"
 )
+
+func TestLooksLikeRecoveryCode(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"formatted recovery code", "ABCD-EFGH-IJKL-MNOP", true},
+		{"unformatted recovery code", "abcdefghijklmnop", true},
+		{"short totp code", "123456", false},
+		{"empty", "", false},
+		{"exactly the max length", strings.Repeat("A", maxRecoveryCodeInput), true},
+		{"over the max length is rejected up front", strings.Repeat("A", maxRecoveryCodeInput+1), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := LooksLikeRecoveryCode(tc.input); got != tc.want {
+				t.Errorf("LooksLikeRecoveryCode(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestEncryption(t *testing.T) {
 	key := sha256.Sum256([]byte("test-secret-key"))
