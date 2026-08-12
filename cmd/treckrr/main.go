@@ -71,6 +71,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// Non-fatal production-readiness note (T-01): without Secure cookies and without
+	// a trusted proxy that terminates TLS, auth cookies travel in the clear. Fine for
+	// a local HTTP test box; in production put a TLS proxy in front and set
+	// TRUST_PROXY=true (or COOKIE_SECURE=true).
+	if !cfg.CookieSecure && !cfg.TrustProxy {
+		log.Println("warning: auth cookies are not Secure and no trusted proxy is set — use HTTPS behind a TLS proxy (TRUST_PROXY=true) or COOKIE_SECURE=true in production")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
