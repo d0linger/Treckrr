@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/sha256"
+	"strings"
 	"testing"
 )
 
@@ -57,5 +58,53 @@ func TestEncryptionWrongKey(t *testing.T) {
 	_, err := Decrypt(encrypted, key2[:])
 	if err == nil {
 		t.Fatal("Decrypt should fail with wrong key")
+	}
+}
+
+func TestLooksLikeRecoveryCode(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{
+			name:  "standard recovery code format",
+			input: "ABCD-EFGH-IJKL-MNOP",
+			want:  true,
+		},
+		{
+			name:  "unformatted valid recovery code",
+			input: "abcdefghijklmnop",
+			want:  true,
+		},
+		{
+			name:  "totp code is too short",
+			input: "123456",
+			want:  false,
+		},
+		{
+			name:  "empty input",
+			input: "",
+			want:  false,
+		},
+		{
+			name:  "input is exactly 100 characters",
+			input: strings.Repeat("A", 100),
+			want:  true,
+		},
+		{
+			name:  "overly long input should be rejected immediately",
+			input: strings.Repeat("A", 101),
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := LooksLikeRecoveryCode(tt.input)
+			if got != tt.want {
+				t.Errorf("LooksLikeRecoveryCode(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
 	}
 }
