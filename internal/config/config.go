@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -20,8 +21,13 @@ type Config struct {
 	EncryptionSecret string
 	CookieSecure     bool
 	TrustProxy       bool
-	AdminUsername    string
-	AdminPassword    string
+	// TrustedProxies, when set via TRUSTED_PROXIES (comma-separated CIDRs),
+	// restricts TRUST_PROXY so forwarded headers are only honored when the direct
+	// peer (RemoteAddr) is inside one of these networks (SH-05). Empty keeps the
+	// legacy behavior: TRUST_PROXY alone trusts the forwarded header.
+	TrustedProxies []*net.IPNet
+	AdminUsername  string
+	AdminPassword  string
 	// AdminPasswordReset is a deliberate break-glass: when true, the bootstrap
 	// resets the existing admin's password to AdminPassword (and revokes sessions).
 	// Off by default so a normal restart never reverts a UI-changed password.
@@ -82,6 +88,21 @@ func Load() (*Config, error) {
 	// the *previous* SessionSecret before lengthening SESSION_SECRET to migrate
 	// safely.
 	c.EncryptionSecret = getenv("ENCRYPTION_SECRET", c.SessionSecret)
+
+	// Optional allowlist of trusted reverse-proxy networks (SH-05). Invalid CIDRs
+	// fail fast rather than silently disabling the tightening.
+	if raw := strings.TrimSpace(os.Getenv("TRUSTED_PROXIES")); raw != "" {
+		for _, part := range strings.Split(raw, ",") {
+			if part = strings.TrimSpace(part); part == "" {
+				continue
+			}
+			_, ipnet, err := net.ParseCIDR(part)
+			if err != nil {
+				return nil, fmt.Errorf("TRUSTED_PROXIES: invalid CIDR %q: %w", part, err)
+			}
+			c.TrustedProxies = append(c.TrustedProxies, ipnet)
+		}
+	}
 
 	if c.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")

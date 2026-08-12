@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +19,12 @@ import (
 // concurrent writers to the same path must never leave a partial/interleaved
 // file, and no temp files may leak (each writer uses a unique temp + rename).
 func TestWriteFileAtomicConcurrent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Windows cannot reliably rename-replace a target that another goroutine is
+		// renaming over at the same instant (ERROR_ACCESS_DENIED/SHARING_VIOLATION);
+		// os.Rename is atomic on the Linux production target, where this holds.
+		t.Skip("concurrent os.Rename to the same target is unreliable on Windows; production target is Linux")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "status.json")
 	const n = 40
