@@ -221,13 +221,27 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 		if r.Body != nil && r.Body != http.NoBody {
 			limit := int64(maxRequestBody)
 			// Restore uploads a full encrypted dump — exempt those exact routes.
-			if r.URL.Path == "/admin/backup/restore" || r.URL.Path == "/admin/backup/validate" {
+			if isBackupUploadPath(r.URL.Path) {
+				// The 512 MiB allowance is for authenticated admins only. Resolve the
+				// session here — outermost, before the large body is read and before
+				// CSRF's FormValue would parse it — and reject anyone else, so an
+				// unauthenticated client can't drive a memory-exhaustion parse (T-02).
+				if u := s.currentUser(r); u == nil || !u.IsAdmin {
+					http.Error(w, "Zugriff verweigert", http.StatusForbidden)
+					return
+				}
 				limit = maxBackupUpload
 			}
 			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isBackupUploadPath reports the two routes that accept a full encrypted dump and
+// therefore get the large body allowance (guarded by an admin check in limitBody).
+func isBackupUploadPath(p string) bool {
+	return p == "/admin/backup/restore" || p == "/admin/backup/validate"
 }
 
 // auth wraps a handler requiring an authenticated user. It also enforces the

@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -293,6 +294,52 @@ func (s *Store) encryptTotp(secret string) (string, error) {
 		return "", err
 	}
 	return totpPrefixV2 + enc, nil
+}
+
+// MigrateTotpSecretsToV2 re-encrypts every stored TOTP secret that is not already
+// in v2 format (legacy v1 or very old unprefixed plaintext) into v2, so plaintext
+// seeds no longer linger in the database or its backups (T-06). Idempotent — a row
+// is only rewritten if it still holds the value we read — and safe to run on boot.
+func (s *Store) MigrateTotpSecretsToV2(ctx context.Context) (int, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, totp_secret FROM users WHERE totp_secret <> '' AND totp_secret NOT LIKE 'v2:%'`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	type row struct {
+		id     int64
+		stored string
+	}
+	var todo []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.stored); err != nil {
+			return 0, err
+		}
+		todo = append(todo, r)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	n := 0
+	for _, r := range todo {
+		plain, err := s.decryptTotp(r.stored)
+		if err != nil {
+			return n, fmt.Errorf("totp migrate user %d: %w", r.id, err)
+		}
+		enc, err := s.encryptTotp(plain)
+		if err != nil {
+			return n, fmt.Errorf("totp migrate user %d: %w", r.id, err)
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`UPDATE users SET totp_secret=$2 WHERE id=$1 AND totp_secret=$3`, r.id, enc, r.stored); err != nil {
+			return n, fmt.Errorf("totp migrate user %d: %w", r.id, err)
+		}
+		n++
+	}
+	return n, nil
 }
 
 // GetTotpSecret returns the stored TOTP secret for a user (may be empty).

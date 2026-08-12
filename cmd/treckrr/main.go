@@ -101,6 +101,13 @@ func run() error {
 	} else if n > 0 {
 		log.Printf("backfilled %d invoice snapshot(s)", n)
 	}
+	// Re-encrypt any legacy plaintext/v1 TOTP seeds to v2 (T-06). Non-fatal: the
+	// dual-read still works if this fails, and it retries on the next boot.
+	if n, err := st.MigrateTotpSecretsToV2(ctx); err != nil {
+		log.Printf("TOTP seed migration failed (continuing, retried next boot): %v", err)
+	} else if n > 0 {
+		log.Printf("migrated %d TOTP seed(s) to v2 encryption", n)
+	}
 	log.Println("bootstrap complete")
 
 	// Background maintenance: purge expired sessions and stale rate-limit rows on a

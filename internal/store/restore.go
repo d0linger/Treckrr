@@ -25,6 +25,11 @@ func (s *Store) ReconcileAfterRestore(ctx context.Context) error {
 	if err := db.Migrate(ctx, s.db); err != nil {
 		return err
 	}
-	_, err := s.BackfillInvoiceSnapshots(ctx)
+	if _, err := s.BackfillInvoiceSnapshots(ctx); err != nil {
+		return err
+	}
+	// A restored older dump can reintroduce legacy plaintext/v1 TOTP seeds — re-run
+	// the v2 migration so they don't linger (T-06).
+	_, err := s.MigrateTotpSecretsToV2(ctx)
 	return err
 }
