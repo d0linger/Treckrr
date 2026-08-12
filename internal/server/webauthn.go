@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -112,35 +114,56 @@ func fromWACred(c *webauthn.Credential, name string) models.WebauthnCredential {
 
 // ---- signed challenge cookie --------------------------------------------
 
-func (s *Server) saveWASession(w http.ResponseWriter, r *http.Request, sd *webauthn.SessionData) {
-	b, _ := json.Marshal(sd)
+// waCeremonyTTL bounds how long a begin→finish ceremony stays valid server-side.
+const waCeremonyTTL = 5 * time.Minute
+
+// saveWASession stores the ceremony session server-side under a random id (SH-03)
+// and puts only that id — HMAC-signed against tampering — in the short-lived
+// cookie. The server-side row carries the expiry and is single-use on finish.
+func (s *Server) saveWASession(w http.ResponseWriter, r *http.Request, sd *webauthn.SessionData) error {
+	b, err := json.Marshal(sd)
+	if err != nil {
+		return err
+	}
+	idBytes := make([]byte, 32)
+	if _, err := rand.Read(idBytes); err != nil {
+		return err
+	}
+	id := base64.RawURLEncoding.EncodeToString(idBytes)
+	if err := s.store.CreateWebauthnCeremony(r.Context(), id, b, time.Now().Add(waCeremonyTTL)); err != nil {
+		return err
+	}
 	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
-	mac.Write(b)
-	val := base64.RawURLEncoding.EncodeToString(b) + "." + hex.EncodeToString(mac.Sum(nil))
+	mac.Write([]byte("wa:" + id))
+	val := id + "." + hex.EncodeToString(mac.Sum(nil))
 	s.setCookie(w, r, &http.Cookie{
 		Name:     waCookie,
 		Value:    val,
-		MaxAge:   300,
-		SameSite: http.SameSiteStrictMode, // Hardened to Strict for short-lived login flow
+		MaxAge:   int(waCeremonyTTL.Seconds()),
+		SameSite: http.SameSiteStrictMode, // short-lived login flow
 	})
+	return nil
 }
 
+// loadWASession verifies the cookie's signed id and atomically consumes the
+// server-side ceremony (single-use, server-expiring). A replayed or expired
+// ceremony returns false.
 func (s *Server) loadWASession(r *http.Request) (*webauthn.SessionData, bool) {
 	c, err := r.Cookie(waCookie)
 	if err != nil {
 		return nil, false
 	}
-	parts := strings.SplitN(c.Value, ".", 2)
-	if len(parts) != 2 {
-		return nil, false
-	}
-	b, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
+	id, sig, ok := strings.Cut(c.Value, ".")
+	if !ok {
 		return nil, false
 	}
 	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
-	mac.Write(b)
-	if !hmac.Equal([]byte(hex.EncodeToString(mac.Sum(nil))), []byte(parts[1])) {
+	mac.Write([]byte("wa:" + id))
+	if !hmac.Equal([]byte(hex.EncodeToString(mac.Sum(nil))), []byte(sig)) {
+		return nil, false
+	}
+	b, err := s.store.ConsumeWebauthnCeremony(r.Context(), id)
+	if err != nil {
 		return nil, false
 	}
 	var sd webauthn.SessionData
@@ -187,6 +210,18 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	user := userFromCtx(r)
+	// Step-up: adding a durable passkey requires re-entering the password, so a
+	// hijacked session can't silently enroll one (SH-02). The body is bounded by
+	// limitBody.
+	var body struct {
+		Password string `json:"password"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if _, err := s.store.AuthenticateUser(r.Context(), user.Username, body.Password); err != nil {
+		s.audit(r, "passkey_add_denied", "user", user.ID, "Passwort falsch")
+		http.Error(w, "Passwort falsch.", http.StatusForbidden)
+		return
+	}
 	wu, err := s.webauthnUserFor(r, user)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
@@ -205,7 +240,10 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
-	s.saveWASession(w, r, sd)
+	if err := s.saveWASession(w, r, sd); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	writeJSON(w, creation)
 }
 
@@ -252,7 +290,11 @@ func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
-	s.saveWASession(w, r, sd)
+	if err := s.saveWASession(w, r, sd); err != nil {
+		log.Printf("passkey login begin: save ceremony failed ip=%s: %v", sanitizeLog(s.clientIP(r)), sanitizeLog(err.Error()))
+		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, assertion)
 }
 

@@ -198,6 +198,9 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 		if err := st.PurgeStaleRateLimits(bg); err != nil {
 			log.Printf("purge rate limits: %v", err)
 		}
+		if err := st.PurgeExpiredWebauthnCeremonies(bg); err != nil {
+			log.Printf("purge webauthn ceremonies: %v", err)
+		}
 	}
 	purge()
 	ticker := time.NewTicker(15 * time.Minute)
