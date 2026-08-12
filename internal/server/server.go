@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
 	"treckrr/internal/backup"
@@ -46,6 +47,13 @@ func New(cfg *config.Config, st *store.Store, bk *backup.Service) (*Server, erro
 		RPID:          cfg.RPID,
 		RPDisplayName: "Treckrr",
 		RPOrigins:     []string{cfg.RPOrigin},
+		// Require user verification (PIN/biometric), not just user presence, for
+		// both registration and assertion — presence-only authenticators are
+		// rejected (T-03). The per-ceremony options below set the same explicitly.
+		AuthenticatorSelection: protocol.AuthenticatorSelection{
+			ResidentKey:      protocol.ResidentKeyRequirementRequired,
+			UserVerification: protocol.VerificationRequired,
+		},
 	})
 	if err != nil {
 		return nil, err

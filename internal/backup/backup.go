@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/url"
 	"os"
 	"os/exec"
@@ -220,6 +221,7 @@ type Service struct {
 	secret []byte // raw backup-key secret; the AES key is derived per file, nil when disabled
 
 	mu         sync.Mutex // serializes status.json read-modify-write
+	opMu       sync.Mutex // serializes DB dump/restore so they never overlap (T-05)
 	volRetryAt time.Time  // earliest next volume attempt after a failure (tick goroutine only)
 	s3RetryAt  time.Time  // earliest next S3 attempt after a failure (tick goroutine only)
 }
@@ -347,6 +349,10 @@ func dbURLEnv(rawURL string) (cleanURL string, env []string) {
 // dump runs pg_dump in PostgreSQL's custom format (compressed, restorable with
 // pg_restore) against the configured database and returns the raw archive bytes.
 func (s *Service) dump(ctx context.Context) ([]byte, error) {
+	// Serialize against any restore (and other dumps): a dump taken while a restore
+	// is mid-flight would capture an inconsistent, partially-restored schema (T-05).
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
 	// DATABASE_URL is trusted deployment config, not user input; the password is
 	// passed via PGPASSWORD (see dbURLEnv), not on the command line.
 	dbURL, env := dbURLEnv(s.opt.DatabaseURL)
@@ -446,14 +452,22 @@ func (s *Service) runVolume(ctx context.Context, keep int) error {
 		s.updateStatus(func(st *Status) { st.OK = false })
 		return err
 	}
-	if err := writeFileAtomic(filepath.Join(s.opt.Dir, name), enc); err != nil {
+	path := filepath.Join(s.opt.Dir, name)
+	if err := writeFileAtomic(path, enc); err != nil {
 		s.updateStatus(func(st *Status) { st.OK = false })
 		return err
 	}
+	// Verify the new dump BEFORE pruning — a backup you have never restored is not
+	// a backup. On failure, delete the bad new artifact, keep every prior backup
+	// (do NOT prune), record OK=false and return the error (T-04, fail closed): a
+	// corrupt new dump must never replace the last good recovery point.
+	if err := s.verifyRestorable(ctx, enc); err != nil {
+		_ = os.Remove(path)
+		s.updateStatus(func(st *Status) { st.OK = false })
+		return fmt.Errorf("backup verification failed, prior backups kept: %w", err)
+	}
+	// Verified good — only now is it safe to prune older backups to `keep`.
 	s.prune(keep)
-	// A backup you have never restored is not a backup: confirm it decrypts and
-	// is a well-formed archive before recording success.
-	restoreTested := s.verifyRestorable(ctx, enc) == nil
 	schema := s.SchemaVersion(ctx)
 	now := time.Now()
 	s.updateStatus(func(st *Status) {
@@ -462,9 +476,7 @@ func (s *Service) runVolume(ctx context.Context, keep int) error {
 		st.LastBackup = now
 		st.OK = true
 		st.SizeBytes = int64(len(enc))
-		if restoreTested {
-			st.RestoreTested = now
-		}
+		st.RestoreTested = now
 	})
 	return nil
 }
@@ -558,6 +570,14 @@ func (s *Service) ValidateArchive(ctx context.Context, raw []byte) (int, error) 
 // RestoreRaw restores decrypted dump bytes into targetURL, dropping and
 // recreating objects (--clean). Destructive — callers must confirm.
 func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) error {
+	// Serialize every dump/restore so a restore never overlaps a scheduled backup
+	// or another restore (T-05).
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	// TODO: [T-05] full atomicity also wants a server-level maintenance mode that
+	// pauses HTTP + scheduling and drains active DB users before the restore; today
+	// the pool is only reset AFTER via ReconcileAfterRestore. Add a maintenance flag
+	// + middleware so in-flight requests can't observe the mid-restore schema.
 	tmp, cleanup, err := writeTemp(raw)
 	if err != nil {
 		return err
@@ -566,8 +586,11 @@ func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) 
 	// targetURL is trusted deployment config; its password is passed via
 	// PGPASSWORD (see dbURLEnv), not on the command line.
 	dbURL, env := dbURLEnv(targetURL)
+	// --single-transaction wraps the whole clean+recreate+load in one transaction
+	// (implies --exit-on-error): on any failure it rolls back, so a timeout or tool
+	// error can no longer leave a partially restored database (T-05).
 	cmd := exec.CommandContext(ctx, "pg_restore", // #nosec G204
-		"--clean", "--if-exists", "--no-owner", "--dbname="+dbURL, tmp)
+		"--clean", "--if-exists", "--no-owner", "--single-transaction", "--dbname="+dbURL, tmp)
 	cmd.Env = env
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
@@ -844,6 +867,14 @@ func (s *Service) S3Test(ctx context.Context) error {
 	return nil
 }
 
+// Bounds so a bucket writer or a compromised S3 endpoint can't exhaust app memory
+// (SH-06): a cap on how many objects a listing accumulates, and a byte ceiling on
+// a single downloaded object (well above any realistic encrypted dump).
+const (
+	maxS3Listing     = 10_000
+	maxS3ObjectBytes = 1 << 30 // 1 GiB
+)
+
 // S3List returns the encrypted dumps stored in the bucket (the bucket explorer).
 func (s *Service) S3List(ctx context.Context) ([]BackupFile, error) {
 	if !s.S3Enabled() {
@@ -853,8 +884,11 @@ func (s *Service) S3List(ctx context.Context) ([]BackupFile, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Bound the listing; canceling the context stops the lister when the cap hits.
+	lctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	var out []BackupFile
-	for obj := range cl.ListObjects(ctx, s.opt.S3.Bucket,
+	for obj := range cl.ListObjects(lctx, s.opt.S3.Bucket,
 		minio.ListObjectsOptions{Prefix: s.opt.S3.Prefix, Recursive: true}) {
 		if obj.Err != nil {
 			return nil, obj.Err
@@ -864,6 +898,9 @@ func (s *Service) S3List(ctx context.Context) ([]BackupFile, error) {
 			continue
 		}
 		out = append(out, BackupFile{Name: name, Size: obj.Size, ModTime: obj.LastModified})
+		if len(out) >= maxS3Listing {
+			break
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name > out[j].Name })
 	return out, nil
@@ -881,12 +918,28 @@ func (s *Service) S3Get(ctx context.Context, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	obj, err := cl.GetObject(ctx, s.opt.S3.Bucket, s.opt.S3.Prefix+name, minio.GetObjectOptions{})
+	key := s.opt.S3.Prefix + name
+	// Reject an oversized object up front (SH-06) so a compromised endpoint can't
+	// exhaust memory before the read.
+	if info, err := cl.StatObject(ctx, s.opt.S3.Bucket, key, minio.StatObjectOptions{}); err != nil {
+		return nil, err
+	} else if info.Size > maxS3ObjectBytes {
+		return nil, fmt.Errorf("backup object too large: %d bytes", info.Size)
+	}
+	obj, err := cl.GetObject(ctx, s.opt.S3.Bucket, key, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, err
 	}
 	defer obj.Close()
-	return io.ReadAll(obj)
+	// Belt-and-suspenders: cap the read even if the reported size lied.
+	data, err := io.ReadAll(io.LimitReader(obj, maxS3ObjectBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxS3ObjectBytes {
+		return nil, fmt.Errorf("backup object exceeds %d bytes", int64(maxS3ObjectBytes))
+	}
+	return data, nil
 }
 
 func (s *Service) writeStatus(st Status) {
@@ -895,9 +948,14 @@ func (s *Service) writeStatus(st Status) {
 	}
 	b, err := json.Marshal(st)
 	if err != nil {
+		log.Printf("backup: marshal status failed: %v", err)
 		return
 	}
-	_ = writeFileAtomic(s.opt.StatusFile, b)
+	if err := writeFileAtomic(s.opt.StatusFile, b); err != nil {
+		// Surface a status-write failure (T-04) instead of silently dropping it —
+		// a stale status.json otherwise misreports backup health to operators.
+		log.Printf("backup: status write failed: %v", err)
+	}
 }
 
 // writeFileAtomic writes via a per-call unique temp file + rename so readers

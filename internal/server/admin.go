@@ -1,12 +1,14 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"net/mail"
 	"strings"
 	"unicode/utf8"
 
 	"treckrr/internal/models"
+	"treckrr/internal/store"
 )
 
 // Input-length ceilings on the admin user endpoints (defense against oversized-
@@ -154,19 +156,16 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/users")
 		return
 	}
-	// Prevent demoting the last remaining admin.
-	if role != models.RoleAdmin {
-		if target, err := s.store.GetUser(r.Context(), id); err == nil && target.IsAdmin {
-			if n, err := s.store.CountAdmins(r.Context()); err == nil && n <= 1 {
-				s.setFlash(w, r, "error", "Der letzte Administrator kann nicht herabgestuft werden.")
-				redirect(w, r, "/admin/users")
-				return
-			}
-		}
-	}
-	if err := s.store.SetRole(r.Context(), id, role); err != nil {
+	// Change the role and protect the last admin atomically (SH-04): the check and
+	// the update run in one transaction, failing closed on any error.
+	switch err := s.store.SetRoleSafe(r.Context(), id, role); {
+	case errors.Is(err, store.ErrLastAdmin):
+		s.setFlash(w, r, "error", "Der letzte Administrator kann nicht herabgestuft werden.")
+	case errors.Is(err, store.ErrNotFound):
+		s.setFlash(w, r, "error", "Benutzer nicht gefunden.")
+	case err != nil:
 		s.setFlash(w, r, "error", "Änderung fehlgeschlagen.")
-	} else {
+	default:
 		// Rotate privileges: end the user's sessions so the new role takes
 		// effect on their next (re-authenticated) session.
 		_ = s.store.DeleteUserSessionsExcept(r.Context(), id, "")
@@ -281,17 +280,16 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/users")
 		return
 	}
-	target, err := s.store.GetUser(r.Context(), id)
-	if err == nil && target.IsAdmin {
-		if n, err := s.store.CountAdmins(r.Context()); err == nil && n <= 1 {
-			s.setFlash(w, r, "error", "Der letzte Administrator kann nicht gelöscht werden.")
-			redirect(w, r, "/admin/users")
-			return
-		}
-	}
-	if err := s.store.DeleteUser(r.Context(), id); err != nil {
+	target, _ := s.store.GetUser(r.Context(), id) // best-effort, for the audit label
+	// Delete and protect the last admin atomically (SH-04), failing closed.
+	switch err := s.store.DeleteUserSafe(r.Context(), id); {
+	case errors.Is(err, store.ErrLastAdmin):
+		s.setFlash(w, r, "error", "Der letzte Administrator kann nicht gelöscht werden.")
+	case errors.Is(err, store.ErrNotFound):
+		s.setFlash(w, r, "error", "Benutzer nicht gefunden.")
+	case err != nil:
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
-	} else {
+	default:
 		detail := ""
 		if target != nil {
 			detail = target.Username

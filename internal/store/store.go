@@ -26,6 +26,9 @@ var ErrGutschriftTooLarge = errors.New("gutschrift exceeds invoice")
 // not satisfy the § 11 UStG mandatory fields (a store-side backstop to the UI).
 var ErrInvoiceIncomplete = errors.New("invoice content incomplete (§11)")
 
+// ErrLastAdmin is returned when a role/delete change would leave no admin user.
+var ErrLastAdmin = errors.New("cannot remove the last admin")
+
 // Store wraps the database connection pool.
 type Store struct {
 	db      *sql.DB
@@ -140,6 +143,81 @@ func (s *Store) CountAdmins(ctx context.Context) (int, error) {
 	err := s.db.QueryRowContext(ctx,
 		`SELECT count(*) FROM users WHERE is_admin`).Scan(&n)
 	return n, err
+}
+
+// adminLockKey serializes admin-count decisions (SetRoleSafe/DeleteUserSafe) via a
+// transaction-level advisory lock, so two concurrent changes can't race the last
+// admin down to zero.
+const adminLockKey = 4712
+
+// SetRoleSafe changes a user's role but refuses to demote the last admin. The
+// admin check and the update run in one transaction under an advisory lock and it
+// fails closed on any error (SH-04). Returns ErrLastAdmin if the change would
+// leave no admin, ErrNotFound if the user is gone.
+func (s *Store) SetRoleSafe(ctx context.Context, userID int64, role string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, adminLockKey); err != nil {
+		return err
+	}
+	var wasAdmin bool
+	if err := tx.QueryRowContext(ctx, `SELECT is_admin FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(&wasAdmin); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if wasAdmin && role != models.RoleAdmin {
+		var admins int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM users WHERE is_admin`).Scan(&admins); err != nil {
+			return err
+		}
+		if admins <= 1 {
+			return ErrLastAdmin
+		}
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE users SET role=$1, is_admin=$2 WHERE id=$3`, role, role == models.RoleAdmin, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// DeleteUserSafe removes a user but refuses to delete the last admin — the admin
+// check and the delete are atomic under the same advisory lock, failing closed
+// (SH-04). Returns ErrLastAdmin / ErrNotFound as SetRoleSafe does.
+func (s *Store) DeleteUserSafe(ctx context.Context, userID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, adminLockKey); err != nil {
+		return err
+	}
+	var isAdmin bool
+	if err := tx.QueryRowContext(ctx, `SELECT is_admin FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(&isAdmin); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if isAdmin {
+		var admins int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM users WHERE is_admin`).Scan(&admins); err != nil {
+			return err
+		}
+		if admins <= 1 {
+			return ErrLastAdmin
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id=$1`, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // AuthenticateUser validates credentials and returns the user on success.

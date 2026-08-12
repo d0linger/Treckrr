@@ -193,7 +193,10 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	creation, sd, err := s.wa.BeginRegistration(wu,
-		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
+		webauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
+			ResidentKey:      protocol.ResidentKeyRequirementRequired,
+			UserVerification: protocol.VerificationRequired, // T-03: PIN/biometric, not presence-only
+		}),
 		webauthn.WithExclusions(webauthn.Credentials(wu.creds).CredentialDescriptors()),
 	)
 	if err != nil {
@@ -240,7 +243,9 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 // ---- login ceremony (discoverable / usernameless, public) ---------------
 
 func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {
-	assertion, sd, err := s.wa.BeginDiscoverableLogin()
+	assertion, sd, err := s.wa.BeginDiscoverableLogin(
+		webauthn.WithUserVerification(protocol.VerificationRequired), // T-03
+	)
 	if err != nil {
 		log.Printf("passkey login begin failed: ip=%s reason=%s",
 			sanitizeLog(s.clientIP(r)), sanitizeLog(webauthnErrReason(err)))
