@@ -14,7 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
@@ -737,11 +737,11 @@ func (s *Service) Open(name string) ([]byte, error) {
 // Loop polls once a minute and runs the volume and S3 backups independently when
 // each is due (overdue on boot). Reading the schedule from the DB each tick means
 // GUI edits apply without a restart, and a mere restart no longer forces a backup.
-func (s *Service) Loop(ctx context.Context, logf func(string, ...any)) {
+func (s *Service) Loop(ctx context.Context, logger *slog.Logger) {
 	if !s.Enabled() {
 		return
 	}
-	s.tick(ctx, logf)
+	s.tick(ctx, logger)
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
@@ -749,12 +749,12 @@ func (s *Service) Loop(ctx context.Context, logf func(string, ...any)) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			s.tick(ctx, logf)
+			s.tick(ctx, logger)
 		}
 	}
 }
 
-func (s *Service) tick(ctx context.Context, logf func(string, ...any)) {
+func (s *Service) tick(ctx context.Context, logger *slog.Logger) {
 	set := s.currentSettings(ctx)
 	st := s.readStatus()
 	now := time.Now()
@@ -765,10 +765,10 @@ func (s *Service) tick(ctx context.Context, logf func(string, ...any)) {
 		c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
 		if err := s.runVolume(c, set.VolumeKeep); err != nil {
 			s.volRetryAt = now.Add(statusRetryBackoff)
-			logf("volume backup failed: %v", err)
+			logger.Error("volume backup failed", "err", err)
 		} else {
 			s.volRetryAt = time.Time{}
-			logf("volume backup written to %s", s.opt.Dir)
+			logger.Info("volume backup written", "dir", s.opt.Dir)
 		}
 		cancel()
 	}
@@ -778,10 +778,10 @@ func (s *Service) tick(ctx context.Context, logf func(string, ...any)) {
 			c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
 			if err := s.runS3Mirror(c, set.S3Keep); err != nil {
 				s.s3RetryAt = now.Add(statusRetryBackoff)
-				logf("s3 mirror failed: %v", err)
+				logger.Error("s3 mirror failed", "err", err)
 			} else {
 				s.s3RetryAt = time.Time{}
-				logf("s3 mirror updated")
+				logger.Info("s3 mirror updated")
 			}
 			cancel()
 		}
@@ -979,13 +979,13 @@ func (s *Service) writeStatus(st Status) {
 	}
 	b, err := json.Marshal(st)
 	if err != nil {
-		log.Printf("backup: marshal status failed: %v", err)
+		slog.Error("backup: marshal status failed", "err", err)
 		return
 	}
 	if err := writeFileAtomic(s.opt.StatusFile, b); err != nil {
 		// Surface a status-write failure (T-04) instead of silently dropping it —
 		// a stale status.json otherwise misreports backup health to operators.
-		log.Printf("backup: status write failed: %v", err)
+		slog.Error("backup: status write failed", "err", err)
 	}
 }
 

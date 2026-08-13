@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -130,7 +130,7 @@ func (s *Server) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
 		if files, err := s.backup.List(); err == nil {
 			data["Files"], data["FilesMore"] = headTail(toFileViews(files), backupListLimit)
 		} else {
-			log.Printf("backup panel: list volume backups: %v", sanitizeLog(err.Error()))
+			slog.Error("backup panel: list volume backups", "err", sanitizeLog(err.Error()))
 		}
 	}
 	if s3on {
@@ -149,7 +149,7 @@ func (s *Server) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
 			data["VolumeCronDesc"] = backup.DescribeCron(bs.VolumeCron)
 			data["S3CronDesc"] = backup.DescribeCron(bs.S3Cron)
 		} else {
-			log.Printf("backup panel: load backup settings: %v", sanitizeLog(err.Error()))
+			slog.Error("backup panel: load backup settings", "err", sanitizeLog(err.Error()))
 		}
 		nv, ns := s.backup.NextRuns(r.Context())
 		data["NextVolume"] = fmtNext(nv)
@@ -168,7 +168,7 @@ func (s *Server) handleBackupRunScheduled(w http.ResponseWriter, r *http.Request
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 	if err := s.backup.ManualVolume(ctx); err != nil {
-		log.Printf("manual backup failed: %v", sanitizeLog(err.Error()))
+		slog.Error("manual backup failed", "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Backup fehlgeschlagen.")
 	} else {
 		s.audit(r, "backup_run", "backup", 0, "Volume-Backup manuell erstellt")
@@ -198,7 +198,7 @@ func (s *Server) handleBackupS3Run(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	name, err := s.backup.ManualS3(ctx)
 	if err != nil {
-		log.Printf("manual S3 backup failed: %v", sanitizeLog(err.Error()))
+		slog.Error("manual S3 backup failed", "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "S3-Sicherung fehlgeschlagen.")
 	} else {
 		s.audit(r, "backup_s3_run", "backup", 0, "Backup manuell nach S3 gesichert · "+name)
@@ -495,7 +495,7 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 	rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
 	defer rcancel()
 	if err := s.backup.RestoreRaw(rctx, raw, s.cfg.DatabaseURL); err != nil {
-		log.Printf("restore failed: %v", sanitizeLog(err.Error()))
+		slog.Error("restore failed", "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Wiederherstellung fehlgeschlagen.")
 		redirect(w, r, "/admin/backup")
 		return
@@ -504,7 +504,7 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 	// --clean restore left the pool holding stale cached plans. Reconcile in one
 	// shot (reset pool → migrate → backfill) so no container restart is needed.
 	if err := s.store.ReconcileAfterRestore(rctx); err != nil {
-		log.Printf("post-restore reconcile failed: %v", sanitizeLog(err.Error()))
+		slog.Error("post-restore reconcile failed", "err", sanitizeLog(err.Error()))
 		s.audit(r, "backup_restore_partial", "backup", 0, "Wiederhergestellt, aber Schema-Reconcile fehlgeschlagen")
 		s.setFlash(w, r, "error", "Wiederhergestellt, aber das Schema-Upgrade schlug fehl — bitte die App neu starten, um es abzuschließen.")
 		redirect(w, r, "/admin/backup")
@@ -528,7 +528,7 @@ func (s *Server) handleBackupRun(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	data, filename, err := s.backup.CreateEncrypted(ctx)
 	if err != nil {
-		log.Printf("on-demand backup failed: %v", sanitizeLog(err.Error()))
+		slog.Error("on-demand backup failed", "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Backup fehlgeschlagen.")
 		redirect(w, r, "/admin/backup")
 		return

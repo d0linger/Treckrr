@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -36,7 +36,7 @@ func newLoginLimiter(st *store.Store) *loginLimiter { return &loginLimiter{store
 func (l *loginLimiter) blocked(ctx context.Context, key string) bool {
 	b, err := l.store.RateLimitBlocked(ctx, key, loginMaxFails, loginWindow)
 	if err != nil {
-		log.Printf("WARN ratelimit degraded (%s): %v", sanitizeLog(key), sanitizeLog(err.Error()))
+		slog.Warn("ratelimit degraded", "key", sanitizeLog(key), "err", sanitizeLog(err.Error()))
 		return false // fail open, but visibly
 	}
 	return b
@@ -46,7 +46,7 @@ func (l *loginLimiter) blocked(ctx context.Context, key string) bool {
 func (l *loginLimiter) fail(ctx context.Context, key string) int {
 	n, err := l.store.RateLimitFail(ctx, key, loginWindow)
 	if err != nil {
-		log.Printf("WARN ratelimit fail-record failed (%s): %v", sanitizeLog(key), sanitizeLog(err.Error()))
+		slog.Warn("ratelimit fail-record failed", "key", sanitizeLog(key), "err", sanitizeLog(err.Error()))
 	}
 	return n
 }
@@ -54,7 +54,7 @@ func (l *loginLimiter) fail(ctx context.Context, key string) int {
 // reset clears the key after a successful attempt.
 func (l *loginLimiter) reset(ctx context.Context, key string) {
 	if err := l.store.RateLimitReset(ctx, key); err != nil {
-		log.Printf("WARN ratelimit reset failed (%s): %v", sanitizeLog(key), sanitizeLog(err.Error()))
+		slog.Warn("ratelimit reset failed", "key", sanitizeLog(key), "err", sanitizeLog(err.Error()))
 	}
 }
 
@@ -69,7 +69,7 @@ func accountKey(username string) string {
 func (l *loginLimiter) accountBlocked(ctx context.Context, username string) bool {
 	b, err := l.store.RateLimitBlocked(ctx, accountKey(username), accountMaxFails, accountWindow)
 	if err != nil {
-		log.Printf("WARN ratelimit degraded (account): %v", sanitizeLog(err.Error()))
+		slog.Warn("ratelimit degraded (account)", "err", sanitizeLog(err.Error()))
 		return false // fail open, but visibly
 	}
 	return b
@@ -78,7 +78,7 @@ func (l *loginLimiter) accountBlocked(ctx context.Context, username string) bool
 // accountFail records a failed login attempt against the target account.
 func (l *loginLimiter) accountFail(ctx context.Context, username string) {
 	if _, err := l.store.RateLimitFail(ctx, accountKey(username), accountWindow); err != nil {
-		log.Printf("WARN ratelimit fail-record failed (account): %v", sanitizeLog(err.Error()))
+		slog.Warn("ratelimit fail-record failed (account)", "err", sanitizeLog(err.Error()))
 	}
 }
 
@@ -87,6 +87,6 @@ func (l *loginLimiter) accountFail(ctx context.Context, username string) {
 // it rather than dropping it silently.
 func (l *loginLimiter) accountReset(ctx context.Context, username string) {
 	if err := l.store.RateLimitReset(ctx, accountKey(username)); err != nil {
-		log.Printf("WARN ratelimit account reset failed: %v", sanitizeLog(err.Error()))
+		slog.Warn("ratelimit account reset failed", "err", sanitizeLog(err.Error()))
 	}
 }

@@ -1,7 +1,7 @@
 package server
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 
 	"treckrr/internal/models"
@@ -48,7 +48,7 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.UpdateCompany(r.Context(), c); err != nil {
-		log.Printf("company update failed: %v", sanitizeLog(err.Error()))
+		slog.Error("company update failed", "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	} else {
 		s.audit(r, "update", "company", 1, "Betriebsdaten aktualisiert")

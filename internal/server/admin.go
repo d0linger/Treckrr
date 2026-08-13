@@ -2,7 +2,7 @@ package server
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -165,7 +165,7 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrNotFound):
 		s.setFlash(w, r, "error", "Benutzer nicht gefunden.")
 	case err != nil:
-		log.Printf("set role user %d failed: %v", id, sanitizeLog(err.Error()))
+		slog.Error("set role failed", "user", id, "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Änderung fehlgeschlagen.")
 	default:
 		// Rotate privileges: end the user's sessions so the new role takes
@@ -290,7 +290,7 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrNotFound):
 		s.setFlash(w, r, "error", "Benutzer nicht gefunden.")
 	case err != nil:
-		log.Printf("delete user %d failed: %v", id, sanitizeLog(err.Error()))
+		slog.Error("delete user failed", "user", id, "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	default:
 		detail := ""

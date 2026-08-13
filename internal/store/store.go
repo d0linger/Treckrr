@@ -9,7 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -314,7 +314,7 @@ func (s *Store) MigrateTotpSecretsToV2(ctx context.Context) (int, error) {
 		if err != nil {
 			// A single undecryptable seed (corrupt/wrong key) must not block the rest —
 			// log it and skip; encryption/DB errors below stay fatal.
-			log.Printf("totp migrate: skipping user %d (decrypt failed): %v", r.id, err)
+			slog.Warn("totp migrate: skipping user (decrypt failed)", "user", r.id, "err", err)
 			continue
 		}
 		enc, err := s.encryptTotp(plain)

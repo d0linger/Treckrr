@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -235,8 +235,8 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 		webauthn.WithExclusions(webauthn.Credentials(wu.creds).CredentialDescriptors()),
 	)
 	if err != nil {
-		log.Printf("passkey register begin failed: user=%s reason=%s",
-			sanitizeLog(user.Username), sanitizeLog(webauthnErrReason(err)))
+		slog.Warn("passkey register begin failed",
+			"user", sanitizeLog(user.Username), "reason", sanitizeLog(webauthnErrReason(err)))
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
@@ -263,8 +263,8 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 	cred, err := s.wa.FinishRegistration(wu, *sd, r)
 	if err != nil {
 		reason := webauthnErrReason(err)
-		log.Printf("passkey register finish failed: user=%s ua=%q reason=%s",
-			sanitizeLog(user.Username), sanitizeLog(r.UserAgent()), sanitizeLog(reason))
+		slog.Warn("passkey register finish failed",
+			"user", sanitizeLog(user.Username), "ua", sanitizeLog(r.UserAgent()), "reason", sanitizeLog(reason))
 		s.audit(r, "passkey_add_failed", "user", user.ID, reason)
 		http.Error(w, "Passkey-Registrierung fehlgeschlagen.", http.StatusBadRequest)
 		return
@@ -292,13 +292,13 @@ func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request)
 		webauthn.WithUserVerification(protocol.VerificationRequired), // T-03
 	)
 	if err != nil {
-		log.Printf("passkey login begin failed: ip=%s reason=%s",
-			sanitizeLog(s.clientIP(r)), sanitizeLog(webauthnErrReason(err)))
+		slog.Warn("passkey login begin failed",
+			"ip", sanitizeLog(s.clientIP(r)), "reason", sanitizeLog(webauthnErrReason(err)))
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
 	if err := s.saveWASession(w, r, sd); err != nil {
-		log.Printf("passkey login begin: save ceremony failed ip=%s: %v", sanitizeLog(s.clientIP(r)), sanitizeLog(err.Error()))
+		slog.Error("passkey login begin: save ceremony failed", "ip", sanitizeLog(s.clientIP(r)), "err", sanitizeLog(err.Error()))
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
@@ -311,7 +311,7 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		// The begin→finish challenge cookie is missing or failed HMAC/decoding.
 		// Common behind a misconfigured proxy (cookie dropped, or Secure/SameSite
 		// mismatch), so record it instead of returning silently.
-		log.Printf("passkey login: challenge cookie missing/invalid ip=%s", sanitizeLog(s.clientIP(r)))
+		slog.Warn("passkey login: challenge cookie missing/invalid", "ip", sanitizeLog(s.clientIP(r)))
 		s.auditLogin(r, "", "login_passkey_failed", "Challenge fehlt oder abgelaufen (Cookie nicht empfangen)")
 		http.Error(w, "Challenge abgelaufen. Bitte erneut versuchen.", http.StatusBadRequest)
 		return
@@ -351,8 +351,8 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		if reason == "" {
 			reason = "kein passender Passkey gefunden"
 		}
-		log.Printf("passkey login failed: ip=%s ua=%q reason=%s",
-			sanitizeLog(s.clientIP(r)), sanitizeLog(r.UserAgent()), sanitizeLog(reason))
+		slog.Warn("passkey login failed",
+			"ip", sanitizeLog(s.clientIP(r)), "ua", sanitizeLog(r.UserAgent()), "reason", sanitizeLog(reason))
 		s.auditLogin(r, "", "login_passkey_failed", reason)
 		http.Error(w, "Anmeldung mit Passkey fehlgeschlagen.", http.StatusUnauthorized)
 		return
@@ -362,15 +362,15 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 	// for counter-less synced authenticators, which stay at 0). Surface it —
 	// login still proceeds, but an admin can see the signal in the trail.
 	if cred.Authenticator.CloneWarning {
-		log.Printf("passkey login: possible clone (signature counter regressed) user=%s ip=%s",
-			sanitizeLog(loggedIn.Username), sanitizeLog(s.clientIP(r)))
+		slog.Warn("passkey login: possible clone (signature counter regressed)",
+			"user", sanitizeLog(loggedIn.Username), "ip", sanitizeLog(s.clientIP(r)))
 		s.auditLogin(r, loggedIn.Username, "login_passkey_clone_warning", "Signaturzähler rückläufig – möglicher Klon")
 	}
 	// Persist the updated counter/backup-state; a failure here would leave stale
 	// state for the next assertion, so log it rather than swallowing it.
 	if err := s.store.TouchWebauthnCredential(r.Context(), cred.ID, cred.Authenticator.SignCount, cred.Flags.BackupState); err != nil {
-		log.Printf("passkey login: credential state update failed user=%s: %v",
-			sanitizeLog(loggedIn.Username), sanitizeLog(err.Error()))
+		slog.Error("passkey login: credential state update failed",
+			"user", sanitizeLog(loggedIn.Username), "err", sanitizeLog(err.Error()))
 	}
 	s.auditLogin(r, loggedIn.Username, "login_passkey", "")
 	if !s.startSession(w, r, loggedIn) {
