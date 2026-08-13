@@ -1,13 +1,17 @@
 version: 2
 updates:
-  # Go module dependencies
-  - package-ecosystem: gomod
+  # Go modules
+  - package-ecosystem: "gomod"
     directory: "/"
     schedule:
-      interval: daily
+      interval: "weekly"
+      day: "monday"
       time: "06:00"
       timezone: "Europe/Vienna"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "go"
     commit-message:
       prefix: "gomod"
     # Batch routine minor/patch bumps into one PR; majors stay individual.
@@ -19,14 +23,18 @@ updates:
           - "minor"
           - "patch"
 
-  # GitHub Actions used in workflows (SHA-pinned; Dependabot updates the pin + tag comment)
-  - package-ecosystem: github-actions
+  # GitHub Actions (workflows). SHA-pinned `uses:` refs are updated in place,
+  # keeping the `# vX` comment in sync.
+  - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: daily
+      interval: "weekly"
+      day: "monday"
       time: "06:00"
       timezone: "Europe/Vienna"
-    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
     commit-message:
       prefix: "ci"
     groups:
@@ -37,13 +45,16 @@ updates:
           - "minor"
           - "patch"
 
-  # Docker base image (single image — grouping brings no benefit)
-  - package-ecosystem: docker
+  # Docker base image (Dockerfile)
+  - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: daily
+      interval: "weekly"
+      day: "monday"
       time: "06:00"
       timezone: "Europe/Vienna"
-    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
     commit-message:
       prefix: "docker"
