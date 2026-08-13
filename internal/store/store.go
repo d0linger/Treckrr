@@ -44,6 +44,9 @@ func New(db *sql.DB, encryptionKey string) *Store {
 	return &Store{db: db, key: h[:], totpKey: deriveTotpKey(encryptionKey)}
 }
 
+// DBStats exposes the connection-pool statistics for the /metrics endpoint.
+func (s *Store) DBStats() sql.DBStats { return s.db.Stats() }
+
 // deriveTotpKey derives a purpose-separated 32-byte key for encrypting TOTP
 // secrets at rest via HKDF-SHA256, so the at-rest cipher key is distinct from
 // the raw secret used elsewhere for HMAC (CSRF / pending-2FA / session tokens)

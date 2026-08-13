@@ -35,6 +35,7 @@ type Server struct {
 	templates map[string]*template.Template
 	logins    *loginLimiter
 	wa        *webauthn.WebAuthn
+	started   time.Time
 }
 
 // New constructs a Server and parses templates.
@@ -58,7 +59,7 @@ func New(cfg *config.Config, st *store.Store, bk *backup.Service) (*Server, erro
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, store: st, backup: bk, templates: tpl, logins: newLoginLimiter(st), wa: wa}, nil
+	return &Server{cfg: cfg, store: st, backup: bk, templates: tpl, logins: newLoginLimiter(st), wa: wa, started: time.Now()}, nil
 }
 
 type ctxKey string
@@ -71,6 +72,11 @@ func (s *Server) Handler() http.Handler {
 
 	// Health & PWA plumbing (public).
 	mux.HandleFunc("GET /healthz", s.handleHealth)
+	// Prometheus metrics — only registered when METRICS_TOKEN is set; the handler
+	// itself enforces the bearer token so an unauthenticated scrape gets 401.
+	if s.cfg.MetricsToken != "" {
+		mux.HandleFunc("GET /metrics", s.handleMetrics)
+	}
 	mux.Handle("GET /static/", http.StripPrefix("/static/", staticServer()))
 	mux.HandleFunc("GET /theme", s.handleTheme)
 	mux.HandleFunc("GET /manifest.webmanifest", s.handleManifest)
