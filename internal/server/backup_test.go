@@ -72,7 +72,7 @@ func createMultipartRequest(urlStr, key string) (*http.Request, error) {
 
 func TestOversizedBackupInputs(t *testing.T) {
 	s := testServer()
-	s.backup = backup.New(backup.Options{EncKey: "test-encryption-key-at-least-16-chars"}, nil)
+	s.backup = backup.New(backup.Options{EncKey: strings.Repeat("K", 32)}, nil)
 
 	t.Run("handleBackupValidate with JSON accepts oversized key", func(t *testing.T) {
 		oversizedKey := strings.Repeat("A", 101)
