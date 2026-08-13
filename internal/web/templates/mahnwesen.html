@@ -1,0 +1,33 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/?year={{.Year.ID}}" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
+		<h1 class="pagehead__t">Mahnwesen · {{.Year.Year}}</h1>
+	</div>
+	<p class="muted small">Überfällige, festgeschriebene Rechnungen (Zahlungsziel {{.Term}} Tage). Bereits bezahlte oder noch nicht fällige Rechnungen erscheinen nicht.</p>
+
+	{{if .Rows}}
+	<div class="stack stack--tight">
+		{{range .Rows}}
+		<div class="list__row card">
+			<div class="list__main">
+				<span class="list__title">{{.Name}}</span>
+				<span class="list__sub">Rechnung {{.InvoiceNo}} · fällig {{date .DueOn}} · <strong>{{.DaysOverdue}} Tag{{if ne .DaysOverdue 1}}e{{end}} überfällig</strong></span>
+				<span class="btnrow">
+					<a class="btn btn--ghost btn--sm" href="/neighbors/{{.NeighborID}}/mahnung?year={{$.Year.ID}}&stufe=0">Erinnerung</a>
+					<a class="btn btn--ghost btn--sm" href="/neighbors/{{.NeighborID}}/mahnung?year={{$.Year.ID}}&stufe=1">1. Mahnung</a>
+					<a class="btn btn--ghost btn--sm" href="/neighbors/{{.NeighborID}}/mahnung?year={{$.Year.ID}}&stufe=2">2. Mahnung</a>
+				</span>
+			</div>
+			<div class="list__value"><span class="tag tag--open">Offen {{money .Open}}</span></div>
+		</div>
+		{{end}}
+	</div>
+	{{else}}
+	<div class="card empty empty--slim">
+		<span class="empty__title">Keine überfälligen Rechnungen 🎉</span>
+		<span class="empty__sub">Alle festgeschriebenen Rechnungen in {{.Year.Year}} sind bezahlt oder noch nicht fällig.</span>
+	</div>
+	{{end}}
+</section>
+{{end}}

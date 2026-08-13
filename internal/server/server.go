@@ -181,6 +181,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /export/neighbor/{id}", s.auth(s.handleExportNeighbor))
 	mux.Handle("GET /neighbors/{id}/dsgvo-export.json", s.auth(s.handleNeighborDataExport))
 
+	// Mahnwesen (dunning): overdue list + printable reminder + its EPC-QR.
+	mux.Handle("GET /mahnwesen", s.auth(s.handleMahnwesen))
+	mux.Handle("GET /neighbors/{id}/mahnung", s.auth(s.handleNeighborMahnung))
+	mux.Handle("GET /neighbors/{id}/mahnung/epc-qr.png", s.auth(s.handleMahnungEpcQR))
+
 	// Admin only.
 	mux.Handle("GET /admin/audit", s.admin(s.handleAudit))
 	mux.Handle("GET /admin/audit/export", s.admin(s.handleAuditExport))

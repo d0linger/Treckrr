@@ -252,6 +252,9 @@ type Company struct {
 	TaxMode string
 	VATRate decimal.Decimal
 	IBAN    string // optional issuer bank account for a payable invoice
+	// PaymentTermDays is the Zahlungsziel: an invoice is due this many days after
+	// its issue date. Used only to flag overdue invoices in the dunning list.
+	PaymentTermDays int
 }
 
 // InvoiceParty is a frozen issuer/recipient block on an invoice snapshot.

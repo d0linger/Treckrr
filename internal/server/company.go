@@ -3,6 +3,8 @@ package server
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"treckrr/internal/models"
 )
@@ -38,6 +40,11 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 	case "kleinunternehmer", "pauschal", "regel":
 	default:
 		c.TaxMode = "pauschal"
+	}
+	// Zahlungsziel: clamp to a sane 0–365 days; blank/invalid falls back to 14.
+	c.PaymentTermDays = 14
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("payment_term_days"))); err == nil && v >= 0 && v <= 365 {
+		c.PaymentTermDays = v
 	}
 	if s.tooLong(w, r, "Name", c.Name, maxNameLen) ||
 		s.tooLong(w, r, "Adresse", c.Address, maxNoteLen) ||
