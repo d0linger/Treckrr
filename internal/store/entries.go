@@ -16,7 +16,7 @@ import (
 // ListNeighbors returns all neighbors (active first, then archived).
 func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, note, address, tax_id, archived, created_at FROM neighbors ORDER BY archived, name`)
+		`SELECT id, name, note, address, tax_id, archived, anonymized, created_at FROM neighbors ORDER BY archived, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +24,7 @@ func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 	var out []models.Neighbor
 	for rows.Next() {
 		var n models.Neighbor
-		if err := rows.Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Archived, &n.Created); err != nil {
+		if err := rows.Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Archived, &n.Anonymized, &n.Created); err != nil {
 			return nil, err
 		}
 		out = append(out, n)
@@ -36,12 +36,41 @@ func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 func (s *Store) GetNeighbor(ctx context.Context, id int64) (*models.Neighbor, error) {
 	var n models.Neighbor
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, note, address, tax_id, archived, created_at FROM neighbors WHERE id=$1`, id).
-		Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Archived, &n.Created)
+		`SELECT id, name, note, address, tax_id, archived, anonymized, created_at FROM neighbors WHERE id=$1`, id).
+		Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Archived, &n.Anonymized, &n.Created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	return &n, err
+}
+
+// AnonymizeNeighbor erases the live personal data of a neighbor (DSGVO Art. 17)
+// while keeping the row and its bookings/invoices for the legal retention period.
+// The name is replaced with a stable non-identifying placeholder (kept unique for
+// the UNIQUE(name) constraint), and the neighbor is archived. Frozen invoice
+// snapshots are deliberately untouched. No-op if already anonymized.
+func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE neighbors
+		    SET name = 'anonymisiert #' || id,
+		        note = '', address = '', tax_id = '',
+		        archived = TRUE, anonymized = TRUE
+		  WHERE id = $1 AND NOT anonymized`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// Either the neighbor is gone or was already anonymized; distinguish so the
+		// handler can 404 vs. treat it as a no-op.
+		var exists bool
+		if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM neighbors WHERE id=$1)`, id).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return ErrNotFound
+		}
+	}
+	return nil
 }
 
 // SetNeighborArchived archives or reactivates a neighbor.

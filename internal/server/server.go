@@ -108,6 +108,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /neighbors/{id}/update", s.auth(s.handleNeighborUpdate))
 	mux.Handle("POST /neighbors/{id}/archive", s.auth(s.handleNeighborArchive))
 	mux.Handle("POST /neighbors/{id}/delete", s.auth(s.handleNeighborDelete))
+	mux.Handle("POST /neighbors/{id}/anonymize", s.auth(s.handleNeighborAnonymize))
 	mux.Handle("POST /years/add-neighbor", s.auth(s.handleYearAddNeighbor))
 	mux.Handle("POST /years/remove-neighbor", s.auth(s.handleYearRemoveNeighbor))
 	mux.Handle("POST /years/carry-over", s.auth(s.handleCarryOverNeighbors))

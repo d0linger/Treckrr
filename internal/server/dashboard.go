@@ -1,11 +1,13 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/shopspring/decimal"
 
 	"treckrr/internal/models"
+	"treckrr/internal/store"
 )
 
 // neighborSummary is a neighbor with its totals for the selected billing year.
@@ -282,4 +284,33 @@ func (s *Server) handleNeighborDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	redirect(w, r, dashboardURL(s.yearIDFromForm(r)))
+}
+
+// handleNeighborAnonymize erases a neighbor's live personal data (DSGVO Art. 17)
+// while keeping their bookings and the frozen invoice snapshots, which are under
+// a legal retention obligation. Irreversible; audited.
+func (s *Server) handleNeighborAnonymize(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	before, _ := s.store.GetNeighbor(r.Context(), id)
+	if before != nil && before.Anonymized {
+		s.setFlash(w, r, "error", "Nachbar ist bereits anonymisiert.")
+	} else if err := s.store.AnonymizeNeighbor(r.Context(), id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		s.setFlash(w, r, "error", "Anonymisieren fehlgeschlagen.")
+	} else {
+		detail := ""
+		if before != nil {
+			detail = before.Name + " → anonymisiert"
+		}
+		s.audit(r, "anonymize", "neighbor", id, detail)
+		s.setFlash(w, r, "success", "Nachbar anonymisiert. Rechnungen bleiben aufbewahrungspflichtig erhalten.")
+	}
+	redirect(w, r, "/neighbors")
 }
