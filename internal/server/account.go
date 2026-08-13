@@ -173,6 +173,14 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 		redirect(w, r, "/account/2fa")
 		return
 	}
+	// Step-up: enabling a second factor requires re-entering the password, so a
+	// hijacked session can't silently enroll one (SH-02).
+	if _, err := s.store.AuthenticateUser(r.Context(), user.Username, r.FormValue("password")); err != nil {
+		s.sensitiveFail(r, user.ID)
+		s.setFlash(w, r, "error", "Passwort falsch – Zwei‑Faktor nicht aktiviert.")
+		redirect(w, r, "/account/2fa")
+		return
+	}
 	if !totp.Validate(secret, r.FormValue("code")) {
 		s.sensitiveFail(r, user.ID)
 		s.setFlash(w, r, "error", "Code ungültig. Bitte erneut versuchen.")

@@ -207,6 +207,12 @@ func (s *Server) handleBackupS3Run(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/admin/backup")
 }
 
+// maxBackupInputLen bounds the free-text backup-panel inputs (re-entered key, cron
+// expressions) before the expensive work they feed — Argon2id key derivation and
+// the cron parser — so an oversized value can't drive CPU/memory exhaustion. A real
+// key or cron string is far shorter (PR #104 / defense-in-depth).
+const maxBackupInputLen = 100
+
 // handleBackupSettings persists the GUI-edited backup schedule.
 func (s *Server) handleBackupSettings(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
@@ -218,6 +224,11 @@ func (s *Server) handleBackupSettings(w http.ResponseWriter, r *http.Request) {
 		VolumeKeep: clampAtoi(r.FormValue("volume_keep"), 7),
 		S3Cron:     strings.TrimSpace(r.FormValue("s3_cron")),
 		S3Keep:     clampAtoi(r.FormValue("s3_keep"), 0),
+	}
+	if len(bs.VolumeCron) > maxBackupInputLen || len(bs.S3Cron) > maxBackupInputLen {
+		s.setFlash(w, r, "error", "Cron-Ausdruck darf höchstens 100 Zeichen lang sein.")
+		redirect(w, r, "/admin/backup")
+		return
 	}
 	if !backup.ValidCron(bs.VolumeCron) || !backup.ValidCron(bs.S3Cron) {
 		s.setFlash(w, r, "error", "Ungültiger Cron-Ausdruck (Format: Minute Stunde Tag Monat Wochentag).")
@@ -370,6 +381,10 @@ func (s *Server) handleBackupValidate(w http.ResponseWriter, r *http.Request) {
 		reply(false, "Bitte den Backup-Schlüssel eingeben.")
 		return
 	}
+	if len(key) > maxBackupInputLen {
+		reply(false, "Backup-Schlüssel darf höchstens 100 Zeichen lang sein.")
+		return
+	}
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		reply(false, "Bitte eine Backup-Datei (.dump.enc) wählen.")
@@ -420,6 +435,11 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 	key := strings.TrimSpace(r.FormValue("key"))
 	if key == "" {
 		s.setFlash(w, r, "error", "Bitte den Backup-Schlüssel eingeben.")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	if len(key) > maxBackupInputLen {
+		s.setFlash(w, r, "error", "Backup-Schlüssel darf höchstens 100 Zeichen lang sein.")
 		redirect(w, r, "/admin/backup")
 		return
 	}

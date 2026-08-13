@@ -170,7 +170,8 @@ func (s *Server) auditLogin(r *http.Request, username, action, detail string) {
 // entry N positions from the right. When not behind a trusted proxy the direct
 // connection address is used so a forged header is ignored entirely.
 func (s *Server) clientIP(r *http.Request) string {
-	if s.cfg.TrustProxy {
+	host := hostOf(r.RemoteAddr)
+	if s.cfg.TrustProxy && s.proxyTrusted(host) {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			if i := strings.LastIndexByte(xff, ','); i >= 0 {
 				return strings.TrimSpace(xff[i+1:])
@@ -178,11 +179,35 @@ func (s *Server) clientIP(r *http.Request) string {
 			return strings.TrimSpace(xff)
 		}
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
 	return host
+}
+
+// hostOf strips the port from a RemoteAddr, tolerating an address without one.
+func hostOf(remoteAddr string) string {
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		return host
+	}
+	return remoteAddr
+}
+
+// proxyTrusted reports whether the direct peer may be trusted to have set the
+// forwarded headers. With TRUSTED_PROXIES configured, only peers inside those
+// CIDRs qualify (SH-05); without it, the TRUST_PROXY boolean alone decides
+// (legacy behavior, so existing single-proxy deployments keep working).
+func (s *Server) proxyTrusted(host string) bool {
+	if len(s.cfg.TrustedProxies) == 0 {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, n := range s.cfg.TrustedProxies {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // cookieSecure decides whether auth cookies get the Secure flag: either forced
@@ -192,7 +217,8 @@ func (s *Server) cookieSecure(r *http.Request) bool {
 	if s.cfg.CookieSecure {
 		return true
 	}
-	return s.cfg.TrustProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	return s.cfg.TrustProxy && s.proxyTrusted(hostOf(r.RemoteAddr)) &&
+		strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // statusRecorder captures the response status code for access logging.

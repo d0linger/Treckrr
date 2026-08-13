@@ -8,6 +8,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -25,6 +27,9 @@ var ErrGutschriftTooLarge = errors.New("gutschrift exceeds invoice")
 // ErrInvoiceIncomplete is returned when issuance is attempted on content that does
 // not satisfy the § 11 UStG mandatory fields (a store-side backstop to the UI).
 var ErrInvoiceIncomplete = errors.New("invoice content incomplete (§11)")
+
+// ErrLastAdmin is returned when a role/delete change would leave no admin user.
+var ErrLastAdmin = errors.New("cannot remove the last admin")
 
 // Store wraps the database connection pool.
 type Store struct {
@@ -86,13 +91,6 @@ func (s *Store) CreateUser(ctx context.Context, username, password, role string)
 	return id, err
 }
 
-// SetRole updates a user's role (and keeps is_admin in sync).
-func (s *Store) SetRole(ctx context.Context, userID int64, role string) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE users SET role=$1, is_admin=$2 WHERE id=$3`, role, role == models.RoleAdmin, userID)
-	return err
-}
-
 // UpdateUserAccount updates a user's username and e-mail. Returns an error if
 // the username is already taken (the users.username UNIQUE constraint).
 func (s *Store) UpdateUserAccount(ctx context.Context, userID int64, username, email string) error {
@@ -119,27 +117,90 @@ func (s *Store) UpdatePassword(ctx context.Context, userID int64, password strin
 	return err
 }
 
-// SetAdmin toggles admin by mapping to the role model (kept for compatibility).
+// SetAdmin toggles admin by mapping to the role model. It routes through the
+// guarded SetRoleSafe so it can never demote the last admin (bootstrap only
+// promotes, but the guard keeps any future caller safe).
 func (s *Store) SetAdmin(ctx context.Context, userID int64, isAdmin bool) error {
 	role := models.RoleEditor
 	if isAdmin {
 		role = models.RoleAdmin
 	}
-	return s.SetRole(ctx, userID, role)
+	return s.SetRoleSafe(ctx, userID, role)
 }
 
-// DeleteUser removes a user and their sessions.
-func (s *Store) DeleteUser(ctx context.Context, userID int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id=$1`, userID)
-	return err
+// adminLockKey serializes admin-count decisions (SetRoleSafe/DeleteUserSafe) via a
+// transaction-level advisory lock, so two concurrent changes can't race the last
+// admin down to zero.
+const adminLockKey = 4712
+
+// SetRoleSafe changes a user's role but refuses to demote the last admin. The
+// admin check and the update run in one transaction under an advisory lock and it
+// fails closed on any error (SH-04). Returns ErrLastAdmin if the change would
+// leave no admin, ErrNotFound if the user is gone.
+func (s *Store) SetRoleSafe(ctx context.Context, userID int64, role string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, adminLockKey); err != nil {
+		return err
+	}
+	var wasAdmin bool
+	if err := tx.QueryRowContext(ctx, `SELECT is_admin FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(&wasAdmin); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if wasAdmin && role != models.RoleAdmin {
+		var admins int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM users WHERE is_admin`).Scan(&admins); err != nil {
+			return err
+		}
+		if admins <= 1 {
+			return ErrLastAdmin
+		}
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE users SET role=$1, is_admin=$2 WHERE id=$3`, role, role == models.RoleAdmin, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
-// CountAdmins returns the number of admin users.
-func (s *Store) CountAdmins(ctx context.Context) (int, error) {
-	var n int
-	err := s.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM users WHERE is_admin`).Scan(&n)
-	return n, err
+// DeleteUserSafe removes a user but refuses to delete the last admin — the admin
+// check and the delete are atomic under the same advisory lock, failing closed
+// (SH-04). Returns ErrLastAdmin / ErrNotFound as SetRoleSafe does.
+func (s *Store) DeleteUserSafe(ctx context.Context, userID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, adminLockKey); err != nil {
+		return err
+	}
+	var isAdmin bool
+	if err := tx.QueryRowContext(ctx, `SELECT is_admin FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(&isAdmin); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if isAdmin {
+		var admins int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM users WHERE is_admin`).Scan(&admins); err != nil {
+			return err
+		}
+		if admins <= 1 {
+			return ErrLastAdmin
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id=$1`, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // AuthenticateUser validates credentials and returns the user on success.
@@ -215,6 +276,55 @@ func (s *Store) encryptTotp(secret string) (string, error) {
 		return "", err
 	}
 	return totpPrefixV2 + enc, nil
+}
+
+// MigrateTotpSecretsToV2 re-encrypts every stored TOTP secret that is not already
+// in v2 format (legacy v1 or very old unprefixed plaintext) into v2, so plaintext
+// seeds no longer linger in the database or its backups (T-06). Idempotent — a row
+// is only rewritten if it still holds the value we read — and safe to run on boot.
+func (s *Store) MigrateTotpSecretsToV2(ctx context.Context) (int, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, totp_secret FROM users WHERE totp_secret <> '' AND totp_secret NOT LIKE 'v2:%'`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	type row struct {
+		id     int64
+		stored string
+	}
+	var todo []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.stored); err != nil {
+			return 0, err
+		}
+		todo = append(todo, r)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	n := 0
+	for _, r := range todo {
+		plain, err := s.decryptTotp(r.stored)
+		if err != nil {
+			// A single undecryptable seed (corrupt/wrong key) must not block the rest —
+			// log it and skip; encryption/DB errors below stay fatal.
+			log.Printf("totp migrate: skipping user %d (decrypt failed): %v", r.id, err)
+			continue
+		}
+		enc, err := s.encryptTotp(plain)
+		if err != nil {
+			return n, fmt.Errorf("totp migrate user %d: %w", r.id, err)
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`UPDATE users SET totp_secret=$2 WHERE id=$1 AND totp_secret=$3`, r.id, enc, r.stored); err != nil {
+			return n, fmt.Errorf("totp migrate user %d: %w", r.id, err)
+		}
+		n++
+	}
+	return n, nil
 }
 
 // GetTotpSecret returns the stored TOTP secret for a user (may be empty).

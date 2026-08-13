@@ -71,6 +71,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// Non-fatal production-readiness note (T-01): without Secure cookies and without
+	// a trusted proxy that terminates TLS, auth cookies travel in the clear. Fine for
+	// a local HTTP test box; in production put a TLS proxy in front and set
+	// TRUST_PROXY=true (or COOKIE_SECURE=true).
+	if !cfg.CookieSecure && !cfg.TrustProxy {
+		log.Println("warning: auth cookies are not Secure and no trusted proxy is set — use HTTPS behind a TLS proxy (TRUST_PROXY=true) or COOKIE_SECURE=true in production")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -100,6 +107,13 @@ func run() error {
 		log.Printf("invoice snapshot backfill failed (continuing, retried next boot): %v", err)
 	} else if n > 0 {
 		log.Printf("backfilled %d invoice snapshot(s)", n)
+	}
+	// Re-encrypt any legacy plaintext/v1 TOTP seeds to v2 (T-06). Non-fatal: the
+	// dual-read still works if this fails, and it retries on the next boot.
+	if n, err := st.MigrateTotpSecretsToV2(ctx); err != nil {
+		log.Printf("TOTP seed migration failed (continuing, retried next boot): %v", err)
+	} else if n > 0 {
+		log.Printf("migrated %d TOTP seed(s) to v2 encryption", n)
 	}
 	log.Println("bootstrap complete")
 
@@ -190,6 +204,9 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 		}
 		if err := st.PurgeStaleRateLimits(bg); err != nil {
 			log.Printf("purge rate limits: %v", err)
+		}
+		if err := st.PurgeExpiredWebauthnCeremonies(bg); err != nil {
+			log.Printf("purge webauthn ceremonies: %v", err)
 		}
 	}
 	purge()

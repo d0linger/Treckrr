@@ -45,9 +45,18 @@ func HashRecoveryCode(code string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// maxRecoveryCodeInput bounds the raw input before normalization so an oversized
+// payload can't drive expensive string allocations on the 2FA login path (DoS
+// hardening). A real recovery code is ~19 chars; 100 is a generous ceiling.
+const maxRecoveryCodeInput = 100
+
 // LooksLikeRecoveryCode reports whether the input resembles a recovery code
-// rather than a 6-digit TOTP (used to route login verification).
+// rather than a 6-digit TOTP (used to route login verification). Oversized input
+// is rejected up front before any normalization work.
 func LooksLikeRecoveryCode(s string) bool {
+	if len(s) > maxRecoveryCodeInput {
+		return false
+	}
 	return len(NormalizeRecoveryCode(s)) >= 12
 }
 

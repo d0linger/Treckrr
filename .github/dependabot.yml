@@ -1,43 +1,60 @@
 version: 2
 updates:
-  # Go module dependencies
-  - package-ecosystem: gomod
+  # Go modules
+  - package-ecosystem: "gomod"
     directory: "/"
     schedule:
-      interval: weekly
-      day: monday
+      interval: "weekly"
+      day: "monday"
       time: "06:00"
-    open-pull-requests-limit: 5
+      timezone: "Europe/Vienna"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "go"
     commit-message:
       prefix: "gomod"
-    labels:
-      - dependencies
-      - go
+    # Batch routine minor/patch bumps into one PR; majors stay individual.
+    groups:
+      go-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
-  # GitHub Actions used in workflows
-  - package-ecosystem: github-actions
+  # GitHub Actions (workflows). SHA-pinned `uses:` refs are updated in place,
+  # keeping the `# vX` comment in sync.
+  - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: weekly
-      day: monday
+      interval: "weekly"
+      day: "monday"
       time: "06:00"
-    open-pull-requests-limit: 5
+      timezone: "Europe/Vienna"
+    labels:
+      - "dependencies"
+      - "github-actions"
     commit-message:
       prefix: "ci"
-    labels:
-      - dependencies
-      - github-actions
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
-  # Docker base images
-  - package-ecosystem: docker
+  # Docker base image (Dockerfile)
+  - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: weekly
-      day: monday
+      interval: "weekly"
+      day: "monday"
       time: "06:00"
-    open-pull-requests-limit: 5
+      timezone: "Europe/Vienna"
+    labels:
+      - "dependencies"
+      - "docker"
     commit-message:
       prefix: "docker"
-    labels:
-      - dependencies
-      - docker
