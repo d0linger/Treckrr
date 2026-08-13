@@ -383,6 +383,9 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["InvNet"] = invNet
 	data["InvUSt"] = invUSt
 	data["InvBrutto"] = invBrutto
+	// Scan-to-pay: show the EPC/GiroCode QR only for an issued invoice with an
+	// issuer IBAN and a positive gross (the /epc-qr.png endpoint enforces the same).
+	data["HasEpcQR"] = hasInvoice && strings.TrimSpace(invIBAN) != "" && invBrutto.IsPositive()
 	data["InvLedger"] = ledgerSum
 	data["InvPaidUSt"] = invPaidUSt
 	data["Documents"] = documents
@@ -597,4 +600,47 @@ func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request)
 		s.setFlash(w, r, "success", "Gutschrift "+gv.Number+" erstellt.")
 	}
 	redirect(w, r, back)
+}
+
+// handleInvoiceEpcQR serves the EPC069-12 ("GiroCode") QR as a PNG so the printed
+// invoice can carry a scan-to-pay code. Only when an active invoice exists, an
+// issuer IBAN is set (frozen, else live) and the gross is positive.
+func (s *Server) handleInvoiceEpcQR(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	yearID := formInt64(r, "year")
+	if yearID == 0 {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	iv, err := s.store.GetInvoice(r.Context(), yearID, neighborID)
+	if err != nil || iv.Content == nil || !iv.Content.Gross.IsPositive() {
+		http.NotFound(w, r)
+		return
+	}
+	iban := iv.Content.Issuer.IBAN // frozen at issuance
+	if strings.TrimSpace(iban) == "" {
+		if c, cerr := s.store.GetCompany(r.Context()); cerr == nil {
+			iban = c.IBAN // legacy invoice without a frozen IBAN → live
+		}
+	}
+	if strings.TrimSpace(iban) == "" {
+		http.NotFound(w, r)
+		return
+	}
+	ref := iv.PaymentReference
+	if ref == "" {
+		ref = iv.Number
+	}
+	png, err := qrPNG(epcPayload(iv.Content.Issuer.Name, iban, iv.Content.Gross, ref))
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(png)
 }

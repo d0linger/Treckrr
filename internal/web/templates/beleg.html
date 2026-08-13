@@ -149,8 +149,13 @@
 			{{with .InvTaxNote}}<div class="beleg__inv-note">{{.}}</div>{{end}}
 			{{with .InvHash}}<div class="beleg__inv-hash">Integrität · sha256 {{.}}</div>{{end}}
 			<div class="beleg__payinfo">
-				<span class="beleg__payinfo-k">Zahlung</span>
-				<span class="beleg__payinfo-v">Bitte {{money .InvRest}} unter Angabe der Referenz <strong>{{with .Invoice.PaymentReference}}{{.}}{{else}}{{$.Invoice.Number}}{{end}}</strong> überweisen.{{with .InvIBAN}} IBAN <strong>{{.}}</strong>.{{end}}</span>
+				<div class="beleg__payinfo-txt">
+					<span class="beleg__payinfo-k">Zahlung</span>
+					<span class="beleg__payinfo-v">Bitte {{money .InvRest}} unter Angabe der Referenz <strong>{{with .Invoice.PaymentReference}}{{.}}{{else}}{{$.Invoice.Number}}{{end}}</strong> überweisen.{{with .InvIBAN}} IBAN <strong>{{.}}</strong>.{{end}}</span>
+				</div>
+				{{if .HasEpcQR}}
+				<img class="beleg__epcqr" src="/neighbors/{{.Neighbor.ID}}/invoice/epc-qr.png?year={{.Year.ID}}" width="118" height="118" alt="EPC-QR-Code zum Bezahlen (GiroCode)" loading="lazy">
+				{{end}}
 			</div>
 		</div>
 		{{end}}

@@ -96,6 +96,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /neighbors/{id}/invoice", s.auth(s.handleInvoiceIssue))
 	mux.Handle("POST /neighbors/{id}/invoice/storno", s.auth(s.handleInvoiceStorno))
 	mux.Handle("POST /neighbors/{id}/invoice/gutschrift", s.auth(s.handleInvoiceGutschrift))
+	mux.Handle("GET /neighbors/{id}/invoice/epc-qr.png", s.auth(s.handleInvoiceEpcQR))
 	mux.Handle("GET /neighbors", s.auth(s.handleNeighborsManage))
 	mux.Handle("POST /neighbors/create", s.auth(s.handleNeighborManageCreate))
 	mux.Handle("POST /neighbors/{id}/update", s.auth(s.handleNeighborUpdate))

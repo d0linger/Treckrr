@@ -1054,9 +1054,12 @@ em { font-style: normal; color: var(--muted); }
 
 /* Payment instruction on the issued invoice (IBAN + reference), part of the
    printed document. Distinct from .beleg__pay (the live Zahlungen section). */
-.beleg__payinfo { display: flex; flex-direction: column; gap: .12rem; padding: .5rem .9rem .2rem; }
+.beleg__payinfo { display: flex; align-items: flex-start; gap: .8rem; padding: .5rem .9rem .2rem; }
+.beleg__payinfo-txt { display: flex; flex-direction: column; gap: .12rem; flex: 1; min-width: 0; }
 .beleg__payinfo-k { font-family: var(--font-mono); font-size: .6rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 .beleg__payinfo-v { font-size: .82rem; }
+.beleg__epcqr { flex: 0 0 auto; width: 118px; height: 118px; image-rendering: pixelated;
+	border: 1px solid var(--card-hairline); border-radius: 8px; background: #fff; padding: 4px; }
 [data-beleg-grund][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 [data-beleg-grund][aria-pressed="true"] .ic { color: var(--on-primary); }
 [data-beleg-rechnung][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
