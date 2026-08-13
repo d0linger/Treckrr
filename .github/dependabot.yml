@@ -10,6 +10,14 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "gomod"
+    # Batch routine minor/patch bumps into one PR; majors stay individual.
+    groups:
+      go-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   # GitHub Actions used in workflows (SHA-pinned; Dependabot updates the pin + tag comment)
   - package-ecosystem: github-actions
@@ -21,8 +29,15 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
-  # Docker base images
+  # Docker base image (single image — grouping brings no benefit)
   - package-ecosystem: docker
     directory: "/"
     schedule:
