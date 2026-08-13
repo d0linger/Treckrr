@@ -1,3 +1,4 @@
-# False positive: the generic-api-key rule matches `key := s.opt.S3.Prefix + name`
-# in S3Get — an S3 object-key path built from config + a filename, not a secret.
+# Allowlisted false positive: the generic-api-key rule fires on an S3 object-path
+# assignment in internal/backup/backup.go (a path built from the configured prefix
+# and a filename, not a secret). Fingerprint of that exact match:
 7310c3233082713dfb55861a7fb96f3c8829c1a0:internal/backup/backup.go:generic-api-key:921
