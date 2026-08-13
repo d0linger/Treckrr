@@ -371,7 +371,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // locally, so a strict policy is possible). The secure variant additionally
 // upgrades plain-HTTP subresource requests — advertised alongside HSTS only.
 const (
-	cspBase   = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
+	// img-src keeps data: for the chevron/favicon/beleg-PNG SVG-as-image; the
+	// beleg export fetches its woff2 fonts same-origin (connect-src 'self') and
+	// embeds them as data: inside that SVG image, so font-src stays strict. The
+	// connect/manifest/worker/frame-src directives make the same-origin-only
+	// posture explicit rather than relying on the default-src fallback.
+	cspBase   = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-src 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
 	cspSecure = cspBase + "; upgrade-insecure-requests"
 )
 
