@@ -220,10 +220,10 @@ type Service struct {
 	db     *sql.DB
 	secret []byte // raw backup-key secret; the AES key is derived per file, nil when disabled
 
-	mu         sync.Mutex // serializes status.json read-modify-write
-	opMu       sync.Mutex // serializes DB dump/restore so they never overlap (T-05)
-	volRetryAt time.Time  // earliest next volume attempt after a failure (tick goroutine only)
-	s3RetryAt  time.Time  // earliest next S3 attempt after a failure (tick goroutine only)
+	mu         sync.Mutex    // serializes status.json read-modify-write
+	opSem      chan struct{} // size-1 semaphore serializing DB dump/restore, ctx-aware (T-05)
+	volRetryAt time.Time     // earliest next volume attempt after a failure (tick goroutine only)
+	s3RetryAt  time.Time     // earliest next S3 attempt after a failure (tick goroutine only)
 }
 
 // statusRetryBackoff is how long the scheduler waits before retrying a failed
@@ -245,12 +245,25 @@ func (s *Service) updateStatus(mutate func(*Status)) {
 // New builds a Service. When opt.EncKey is empty the service is disabled and all
 // operations return ErrDisabled.
 func New(opt Options, db *sql.DB) *Service {
-	s := &Service{opt: opt, db: db}
+	s := &Service{opt: opt, db: db, opSem: make(chan struct{}, 1)}
 	if opt.EncKey != "" {
 		s.secret = []byte(opt.EncKey)
 	}
 	return s
 }
+
+// acquireOp serializes DB dump/restore operations, honoring ctx cancellation and
+// deadlines (T-05). Pair a nil-error return with a deferred releaseOp.
+func (s *Service) acquireOp(ctx context.Context) error {
+	select {
+	case s.opSem <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *Service) releaseOp() { <-s.opSem }
 
 // Enabled reports whether a backup key is configured.
 func (s *Service) Enabled() bool { return s.secret != nil }
@@ -351,8 +364,10 @@ func dbURLEnv(rawURL string) (cleanURL string, env []string) {
 func (s *Service) dump(ctx context.Context) ([]byte, error) {
 	// Serialize against any restore (and other dumps): a dump taken while a restore
 	// is mid-flight would capture an inconsistent, partially-restored schema (T-05).
-	s.opMu.Lock()
-	defer s.opMu.Unlock()
+	if err := s.acquireOp(ctx); err != nil {
+		return nil, err
+	}
+	defer s.releaseOp()
 	// DATABASE_URL is trusted deployment config, not user input; the password is
 	// passed via PGPASSWORD (see dbURLEnv), not on the command line.
 	dbURL, env := dbURLEnv(s.opt.DatabaseURL)
@@ -452,21 +467,31 @@ func (s *Service) runVolume(ctx context.Context, keep int) error {
 		s.updateStatus(func(st *Status) { st.OK = false })
 		return err
 	}
-	path := filepath.Join(s.opt.Dir, name)
-	if err := writeFileAtomic(path, enc); err != nil {
+	// Write to a staging name first. List() only returns *.dump.enc, so the staging
+	// file (…​.dump.enc.staging) is never listed or S3-mirrored until it has been
+	// verified and renamed into place — an unverified dump is never visible.
+	finalPath := filepath.Join(s.opt.Dir, name)
+	stagingPath := finalPath + ".staging"
+	if err := writeFileAtomic(stagingPath, enc); err != nil {
 		s.updateStatus(func(st *Status) { st.OK = false })
 		return err
 	}
-	// Verify the new dump BEFORE pruning — a backup you have never restored is not
-	// a backup. On failure, delete the bad new artifact, keep every prior backup
-	// (do NOT prune), record OK=false and return the error (T-04, fail closed): a
-	// corrupt new dump must never replace the last good recovery point.
+	// Verify BEFORE the dump becomes visible and before pruning — a backup you have
+	// never restored is not a backup. On failure delete the staging artifact, keep
+	// every prior backup (do NOT prune), record OK=false and return the error (T-04,
+	// fail closed): a corrupt new dump must never replace the last good recovery point.
 	if err := s.verifyRestorable(ctx, enc); err != nil {
-		_ = os.Remove(path)
+		_ = os.Remove(stagingPath)
 		s.updateStatus(func(st *Status) { st.OK = false })
 		return fmt.Errorf("backup verification failed, prior backups kept: %w", err)
 	}
-	// Verified good — only now is it safe to prune older backups to `keep`.
+	// Verified — atomically promote it to the listable/mirrorable final name.
+	if err := os.Rename(stagingPath, finalPath); err != nil {
+		_ = os.Remove(stagingPath)
+		s.updateStatus(func(st *Status) { st.OK = false })
+		return err
+	}
+	// Now it is safe to prune older backups to `keep`.
 	s.prune(keep)
 	schema := s.SchemaVersion(ctx)
 	now := time.Now()
@@ -572,8 +597,10 @@ func (s *Service) ValidateArchive(ctx context.Context, raw []byte) (int, error) 
 func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) error {
 	// Serialize every dump/restore so a restore never overlaps a scheduled backup
 	// or another restore (T-05).
-	s.opMu.Lock()
-	defer s.opMu.Unlock()
+	if err := s.acquireOp(ctx); err != nil {
+		return err
+	}
+	defer s.releaseOp()
 	// TODO: [T-05] full atomicity also wants a server-level maintenance mode that
 	// pauses HTTP + scheduling and drains active DB users before the restore; today
 	// the pool is only reset AFTER via ReconcileAfterRestore. Add a maintenance flag
@@ -884,23 +911,27 @@ func (s *Service) S3List(ctx context.Context) ([]BackupFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Bound the listing; canceling the context stops the lister when the cap hits.
+	// Bound the listing by TOTAL objects seen (not just matches), so a bucket full
+	// of non-matching keys can't drive unbounded iteration. Over the cap we refuse
+	// with an error rather than return a partial list; canceling the context stops
+	// the lister.
 	lctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var out []BackupFile
+	seen := 0
 	for obj := range cl.ListObjects(lctx, s.opt.S3.Bucket,
 		minio.ListObjectsOptions{Prefix: s.opt.S3.Prefix, Recursive: true}) {
 		if obj.Err != nil {
 			return nil, obj.Err
+		}
+		if seen++; seen > maxS3Listing {
+			return nil, fmt.Errorf("S3 listing exceeds %d objects; refusing to enumerate unbounded", maxS3Listing)
 		}
 		name := strings.TrimPrefix(obj.Key, s.opt.S3.Prefix)
 		if !strings.HasSuffix(name, ".dump.enc") {
 			continue
 		}
 		out = append(out, BackupFile{Name: name, Size: obj.Size, ModTime: obj.LastModified})
-		if len(out) >= maxS3Listing {
-			break
-		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name > out[j].Name })
 	return out, nil

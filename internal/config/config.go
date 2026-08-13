@@ -126,6 +126,9 @@ func Load() (*Config, error) {
 	if len(c.EncryptionSecret) < 16 {
 		return nil, fmt.Errorf("ENCRYPTION_SECRET must be at least 16 characters")
 	}
+	if c.EncryptionSecret == placeholderSessionSecret {
+		return nil, fmt.Errorf("ENCRYPTION_SECRET is still the documented placeholder — set a real secret")
+	}
 	if c.AdminPassword == "" {
 		return nil, fmt.Errorf("ADMIN_PASSWORD is required to bootstrap the admin user")
 	}

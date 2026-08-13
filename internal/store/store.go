@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -90,13 +91,6 @@ func (s *Store) CreateUser(ctx context.Context, username, password, role string)
 	return id, err
 }
 
-// SetRole updates a user's role (and keeps is_admin in sync).
-func (s *Store) SetRole(ctx context.Context, userID int64, role string) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE users SET role=$1, is_admin=$2 WHERE id=$3`, role, role == models.RoleAdmin, userID)
-	return err
-}
-
 // UpdateUserAccount updates a user's username and e-mail. Returns an error if
 // the username is already taken (the users.username UNIQUE constraint).
 func (s *Store) UpdateUserAccount(ctx context.Context, userID int64, username, email string) error {
@@ -123,27 +117,15 @@ func (s *Store) UpdatePassword(ctx context.Context, userID int64, password strin
 	return err
 }
 
-// SetAdmin toggles admin by mapping to the role model (kept for compatibility).
+// SetAdmin toggles admin by mapping to the role model. It routes through the
+// guarded SetRoleSafe so it can never demote the last admin (bootstrap only
+// promotes, but the guard keeps any future caller safe).
 func (s *Store) SetAdmin(ctx context.Context, userID int64, isAdmin bool) error {
 	role := models.RoleEditor
 	if isAdmin {
 		role = models.RoleAdmin
 	}
-	return s.SetRole(ctx, userID, role)
-}
-
-// DeleteUser removes a user and their sessions.
-func (s *Store) DeleteUser(ctx context.Context, userID int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id=$1`, userID)
-	return err
-}
-
-// CountAdmins returns the number of admin users.
-func (s *Store) CountAdmins(ctx context.Context) (int, error) {
-	var n int
-	err := s.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM users WHERE is_admin`).Scan(&n)
-	return n, err
+	return s.SetRoleSafe(ctx, userID, role)
 }
 
 // adminLockKey serializes admin-count decisions (SetRoleSafe/DeleteUserSafe) via a
@@ -327,7 +309,10 @@ func (s *Store) MigrateTotpSecretsToV2(ctx context.Context) (int, error) {
 	for _, r := range todo {
 		plain, err := s.decryptTotp(r.stored)
 		if err != nil {
-			return n, fmt.Errorf("totp migrate user %d: %w", r.id, err)
+			// A single undecryptable seed (corrupt/wrong key) must not block the rest —
+			// log it and skip; encryption/DB errors below stay fatal.
+			log.Printf("totp migrate: skipping user %d (decrypt failed): %v", r.id, err)
+			continue
 		}
 		enc, err := s.encryptTotp(plain)
 		if err != nil {

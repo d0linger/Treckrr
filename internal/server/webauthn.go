@@ -281,6 +281,13 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 // ---- login ceremony (discoverable / usernameless, public) ---------------
 
 func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {
+	// Rate-limit begin too: it now persists a server-side ceremony row (SH-03), so a
+	// blocked IP must not be able to spam ceremony creation.
+	if s.logins.blocked(r.Context(), s.clientIP(r)) {
+		s.auditLogin(r, "", "login_passkey_failed", "Rate-Limit: zu viele Fehlversuche")
+		http.Error(w, "Zu viele Fehlversuche. Bitte später erneut versuchen.", http.StatusTooManyRequests)
+		return
+	}
 	assertion, sd, err := s.wa.BeginDiscoverableLogin(
 		webauthn.WithUserVerification(protocol.VerificationRequired), // T-03
 	)

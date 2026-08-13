@@ -38,6 +38,14 @@ func TestLoadRejectsPlaceholders(t *testing.T) {
 		}
 	})
 
+	t.Run("placeholder ENCRYPTION_SECRET is rejected", func(t *testing.T) {
+		setValid(t)
+		t.Setenv("ENCRYPTION_SECRET", placeholderSessionSecret)
+		if _, err := Load(); err == nil {
+			t.Fatal("expected an error for the placeholder ENCRYPTION_SECRET")
+		}
+	})
+
 	t.Run("invalid TRUSTED_PROXIES CIDR is rejected", func(t *testing.T) {
 		setValid(t)
 		t.Setenv("TRUSTED_PROXIES", "not-a-cidr")

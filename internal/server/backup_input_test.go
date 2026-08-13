@@ -75,7 +75,9 @@ func TestOversizedBackupKeyRejected(t *testing.T) {
 		rr := httptest.NewRecorder()
 		s.handleBackupValidate(rr, req)
 		var resp map[string]any
-		_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("json: %v", err)
+		}
 		if msg, _ := resp["message"].(string); strings.Contains(msg, "höchstens 100 Zeichen") {
 			t.Errorf("normal key must not trip the length guard, got %q", msg)
 		}
