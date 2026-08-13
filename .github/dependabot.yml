@@ -10,11 +10,8 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "gomod"
-    labels:
-      - dependencies
-      - go
 
-  # GitHub Actions used in workflows
+  # GitHub Actions used in workflows (SHA-pinned; Dependabot updates the pin + tag comment)
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
@@ -24,9 +21,6 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "ci"
-    labels:
-      - dependencies
-      - github-actions
 
   # Docker base images
   - package-ecosystem: docker
@@ -38,6 +32,3 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "docker"
-    labels:
-      - dependencies
-      - docker
