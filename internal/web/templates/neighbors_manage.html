@@ -43,6 +43,8 @@
 						<button class="btn btn--ghost btn--sm" type="submit">Deaktivieren</button>
 					</form>
 					{{end}}
+					<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}/dsgvo-export.json"
+						title="DSGVO Art. 15 Datenauskunft als JSON">Datenauskunft</a>
 					{{if eq .Entries 0}}
 					<form method="post" action="/neighbors/{{.Neighbor.ID}}/delete"
 						data-confirm="{{.Neighbor.Name}} löschen?">

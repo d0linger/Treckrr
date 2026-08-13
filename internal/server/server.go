@@ -178,6 +178,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /export/year/{id}", s.auth(s.handleExportYear))
 	mux.Handle("GET /export/neighbor/{id}", s.auth(s.handleExportNeighbor))
+	mux.Handle("GET /neighbors/{id}/dsgvo-export.json", s.auth(s.handleNeighborDataExport))
 
 	// Admin only.
 	mux.Handle("GET /admin/audit", s.admin(s.handleAudit))
