@@ -152,6 +152,13 @@ func (s *Server) handleMahnungEpcQR(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// Require a formally issued invoice: the QR carries its number as the payment
+	// reference, and there is nothing to dun without one. Mirrors handleNeighborMahnung.
+	iv, err := s.store.GetInvoice(r.Context(), yearID, neighborID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
 	open, err := s.store.InvoiceRemaining(r.Context(), yearID, neighborID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
@@ -161,11 +168,7 @@ func (s *Server) handleMahnungEpcQR(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	ref := ""
-	if iv, err := s.store.GetInvoice(r.Context(), yearID, neighborID); err == nil {
-		ref = iv.Number
-	}
-	png, err := qrPNG(epcPayload(company.Name, company.IBAN, open, ref))
+	png, err := qrPNG(epcPayload(company.Name, company.IBAN, open, iv.Number))
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
