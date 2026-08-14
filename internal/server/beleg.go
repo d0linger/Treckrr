@@ -383,19 +383,20 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["InvNet"] = invNet
 	data["InvUSt"] = invUSt
 	data["InvBrutto"] = invBrutto
+	// Amount still to pay: gross services, less credit notes (invCredits is
+	// negative), less mutual Verrechnung, less payments.
+	invRest := invBrutto.Add(invCredits).Add(ledgerSum).Sub(paidSum)
 	// Scan-to-pay: show the EPC/GiroCode QR only for an issued invoice with an
-	// issuer IBAN and a positive gross (the /epc-qr.png endpoint enforces the same).
-	data["HasEpcQR"] = hasInvoice && strings.TrimSpace(invIBAN) != "" && invBrutto.IsPositive()
+	// issuer IBAN and a positive REMAINING amount (the /epc-qr.png endpoint encodes
+	// that same remaining, so a partial payment/credit is reflected in the QR).
+	data["HasEpcQR"] = hasInvoice && strings.TrimSpace(invIBAN) != "" && invRest.IsPositive()
 	data["InvLedger"] = ledgerSum
 	data["InvPaidUSt"] = invPaidUSt
 	data["Documents"] = documents
 	data["HasDocuments"] = len(documents) > 1 // more than the invoice itself
 	data["InvCredits"] = invCredits           // negative sum of credit notes
 	data["HasCredits"] = invCredits.IsNegative()
-	// Amount still to pay: gross services, less credit notes, less mutual
-	// Verrechnung, less payments. invCredits is negative, so it reduces the total;
-	// it is zero without any Gutschrift, leaving the previous value unchanged.
-	data["InvRest"] = invBrutto.Add(invCredits).Add(ledgerSum).Sub(paidSum)
+	data["InvRest"] = invRest
 	// § 11: the recipient's UID/tax number is required on invoices over €10,000
 	// gross. Soft reminder only — it never blocks issuing.
 	data["InvNeedRecipientVATID"] = invBrutto.GreaterThan(decimal.NewFromInt(10000)) &&
@@ -617,7 +618,18 @@ func (s *Server) handleInvoiceEpcQR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	iv, err := s.store.GetInvoice(r.Context(), yearID, neighborID)
-	if err != nil || iv.Content == nil || !iv.Content.Gross.IsPositive() {
+	if err != nil || iv.Content == nil {
+		http.NotFound(w, r)
+		return
+	}
+	// Encode the amount STILL PAYABLE (gross less credits/ledger/payments), not the
+	// full gross — so scanning a partly-paid or credited invoice pays the right sum.
+	rest, err := s.store.InvoiceRemaining(r.Context(), yearID, neighborID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	if !rest.IsPositive() {
 		http.NotFound(w, r)
 		return
 	}
@@ -635,7 +647,7 @@ func (s *Server) handleInvoiceEpcQR(w http.ResponseWriter, r *http.Request) {
 	if ref == "" {
 		ref = iv.Number
 	}
-	png, err := qrPNG(epcPayload(iv.Content.Issuer.Name, iban, iv.Content.Gross, ref))
+	png, err := qrPNG(epcPayload(iv.Content.Issuer.Name, iban, rest, ref))
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return

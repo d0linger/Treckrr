@@ -425,6 +425,9 @@
 				if (first) first.focus();
 			} else if (lastFocus && typeof lastFocus.focus === "function") {
 				lastFocus.focus();
+				// Clear it so a later stray Escape (drawer already closed) can't yank
+				// focus back to the opener from wherever the user has since moved.
+				lastFocus = null;
 			}
 		}
 		openers.forEach(function (b) { b.addEventListener("click", function () { setOpen(true); }); });

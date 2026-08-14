@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -72,10 +73,14 @@ func (s *Server) Handler() http.Handler {
 
 	// Health & PWA plumbing (public).
 	mux.HandleFunc("GET /healthz", s.handleHealth)
-	// Prometheus metrics — only registered when METRICS_TOKEN is set; the handler
-	// itself enforces the bearer token so an unauthenticated scrape gets 401.
-	if s.cfg.MetricsToken != "" {
+	// Prometheus metrics — only registered when METRICS_TOKEN is set AND long enough
+	// to resist brute force; the handler itself enforces the bearer token so an
+	// unauthenticated scrape gets 401. A set-but-too-short token stays disabled with
+	// a warning rather than exposing a guessable endpoint.
+	if len(s.cfg.MetricsToken) >= metricsTokenMinLen {
 		mux.HandleFunc("GET /metrics", s.handleMetrics)
+	} else if s.cfg.MetricsToken != "" {
+		slog.Warn("METRICS_TOKEN is too short; /metrics stays disabled", "min_len", metricsTokenMinLen)
 	}
 	mux.Handle("GET /static/", http.StripPrefix("/static/", staticServer()))
 	mux.HandleFunc("GET /theme", s.handleTheme)

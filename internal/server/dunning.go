@@ -32,8 +32,10 @@ func (s *Server) handleMahnwesen(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	// A configured term of 0 (due immediately) is valid; only a negative value —
+	// which the settings form never stores — falls back to the default.
 	term := company.PaymentTermDays
-	if term <= 0 {
+	if term < 0 {
 		term = 14
 	}
 	rows, err := s.store.DunningRows(r.Context(), year.ID, term, time.Now())
@@ -92,7 +94,7 @@ func (s *Server) handleNeighborMahnung(w http.ResponseWriter, r *http.Request) {
 	title, intro := dunningStage(stage)
 
 	term := company.PaymentTermDays
-	if term <= 0 {
+	if term < 0 {
 		term = 14
 	}
 	var issued time.Time

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" sql driver
 
@@ -43,7 +44,7 @@ func TestHandleMetrics(t *testing.T) {
 		t.Fatalf("sql.Open: %v", err)
 	}
 	defer db.Close()
-	s := &Server{cfg: &config.Config{MetricsToken: "tok"}, store: store.New(db, "k")}
+	s := &Server{cfg: &config.Config{MetricsToken: "tok"}, store: store.New(db, "k"), started: time.Now()}
 
 	// Unauthorized → 401.
 	w := httptest.NewRecorder()

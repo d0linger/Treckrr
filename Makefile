@@ -36,7 +36,7 @@ lint: ## golangci-lint
 	docker run --rm -v "$(CURDIR):/src" -v treckrr-gomod:/go/pkg/mod -w /src -e GOTOOLCHAIN=go1.26.6 $(LINT) golangci-lint run ./...
 
 deadcode: ## unreachable-function analysis (matches CI)
-	$(GO) "go install golang.org/x/tools/cmd/deadcode@v0.48.0 && \$$(go env GOPATH)/bin/deadcode -test ./..."
+	$(GO) "go install golang.org/x/tools/cmd/deadcode@v0.48.0 && out=\$$(\$$(go env GOPATH)/bin/deadcode -test ./...); echo \"\$$out\"; [ -z \"\$$out\" ] || exit 1"
 
 test: ## go test (set TEST_DATABASE_URL for the integration suite, else it skips)
 	$(GOTEST) "go test ./..."

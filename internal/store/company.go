@@ -99,6 +99,28 @@ func (s *Store) GetInvoice(ctx context.Context, yearID, neighborID int64) (model
 	return iv, err
 }
 
+// InvoiceRemaining returns the amount still payable on a neighbor's issued invoice
+// in a billing year: frozen invoice gross, less active credit notes (their gross
+// is stored negative), plus mutual ledger postings, less payments received. This
+// mirrors the Beleg page's InvRest exactly so the scan-to-pay QR encodes what is
+// actually outstanding, not the full gross. Zero when no invoice is issued.
+func (s *Store) InvoiceRemaining(ctx context.Context, yearID, neighborID int64) (decimal.Decimal, error) {
+	var rest decimal.Decimal
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+		  COALESCE((SELECT gross FROM invoices
+		             WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='invoice' AND status='issued'
+		             LIMIT 1), 0)
+		  + COALESCE((SELECT SUM(gross) FROM invoices
+		               WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='gutschrift' AND status='issued'), 0)
+		  + COALESCE((SELECT SUM(amount) FROM neighbor_ledger
+		               WHERE billing_year_id=$1 AND neighbor_id=$2 AND NOT voided), 0)
+		  - COALESCE((SELECT SUM(amount) FROM payments
+		               WHERE billing_year_id=$1 AND neighbor_id=$2), 0)`,
+		yearID, neighborID).Scan(&rest)
+	return rest, err
+}
+
 // BuildInvoiceContent computes the invoice substance from the current live data,
 // reproducing exactly what the Beleg shows: USt is charged on the Leistungsentgelt
 // (non-voided bookings), shown only for pauschal/regel with a positive rate. This

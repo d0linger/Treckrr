@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+// metricsTokenMinLen is the minimum METRICS_TOKEN length required to enable the
+// /metrics endpoint — short tokens are brute-forceable, so a shorter one leaves
+// the endpoint disabled.
+const metricsTokenMinLen = 16
+
 // handleMetrics serves a minimal Prometheus text-format exposition (no external
 // dependency): process/runtime gauges plus the SQL connection-pool stats. It is
 // only wired up when METRICS_TOKEN is set, and requires that token as a bearer

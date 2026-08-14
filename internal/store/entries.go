@@ -89,8 +89,12 @@ func (s *Store) CreateNeighbor(ctx context.Context, name, note string) (int64, e
 
 // UpdateNeighbor updates a neighbor.
 func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note, address, taxID string) error {
+	// Never re-populate personal fields on an anonymized neighbor (DSGVO Art. 17):
+	// the UI hides the edit form, and this WHERE clause is the server-side backstop
+	// against a crafted POST reviving erased data.
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE neighbors SET name=$1, note=$2, address=$3, tax_id=$4 WHERE id=$5`, name, note, address, taxID, id)
+		`UPDATE neighbors SET name=$1, note=$2, address=$3, tax_id=$4 WHERE id=$5 AND NOT anonymized`,
+		name, note, address, taxID, id)
 	return err
 }
 
