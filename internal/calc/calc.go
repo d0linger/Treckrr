@@ -12,7 +12,7 @@ package calc
 import (
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // TractorRate returns the hourly rate for a tractor at a given load level.

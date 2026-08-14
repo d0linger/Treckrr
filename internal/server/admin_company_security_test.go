@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"treckrr/internal/config"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/config"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 var currentTestRole = "viewer"

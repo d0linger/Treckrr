@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"treckrr/internal/models"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // resolveYear returns the billing year (Abrechnungsjahr) selected via the

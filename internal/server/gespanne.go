@@ -7,8 +7,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/calc"
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/calc"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // --- audit label resolvers (human names for audit detail) ----------------

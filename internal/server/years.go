@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 func (s *Server) handleYears(w http.ResponseWriter, r *http.Request) {

@@ -5,8 +5,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/calc"
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/calc"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // tractorView pairs a tractor with its computed rates per load level.

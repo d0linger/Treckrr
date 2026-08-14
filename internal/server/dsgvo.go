@@ -7,7 +7,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // The DSGVO/GDPR Art. 15 (right of access) & Art. 20 (portability) export: a

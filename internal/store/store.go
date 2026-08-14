@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"treckrr/internal/auth"
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/auth"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // ErrNotFound is returned when a requested row does not exist.

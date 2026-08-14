@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // AddAudit records one action in the audit trail.

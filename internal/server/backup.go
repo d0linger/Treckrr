@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"treckrr/internal/backup"
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/backup"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // backupMaxAge is how old the last successful backup may be before the panel

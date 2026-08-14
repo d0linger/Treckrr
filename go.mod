@@ -1,4 +1,4 @@
-module treckrr
+module github.com/d0linger/treckrr
 
 go 1.26.5
 

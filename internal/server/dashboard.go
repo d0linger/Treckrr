@@ -6,8 +6,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/models"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // neighborSummary is a neighbor with its totals for the selected billing year.

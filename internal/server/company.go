@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // handleCompany renders the Betriebsdaten (sender/invoice settings) form.

@@ -12,7 +12,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // GetCompany returns the single-row company (Absender) settings.

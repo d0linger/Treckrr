@@ -12,10 +12,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"treckrr/internal/auth"
-	"treckrr/internal/models"
-	"treckrr/internal/store"
-	"treckrr/internal/totp"
+	"github.com/d0linger/treckrr/internal/auth"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/totp"
 )
 
 const (

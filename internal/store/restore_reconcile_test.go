@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"treckrr/internal/db"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // TestResetPoolKeepsPoolUsable proves the *sql.DB equivalent of pgxpool.Reset():

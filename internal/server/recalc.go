@@ -7,7 +7,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // recalcPreview renders the before/after table for re-pricing a year's bookings

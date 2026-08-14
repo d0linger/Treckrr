@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"treckrr/internal/db"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // TestWebauthnCeremonyIntegration proves SH-03: a ceremony is single-use

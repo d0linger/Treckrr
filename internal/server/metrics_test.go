@@ -9,8 +9,8 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" sql driver
 
-	"treckrr/internal/config"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/config"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 func TestMetricsAuthorized(t *testing.T) {

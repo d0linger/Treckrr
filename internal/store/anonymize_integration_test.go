@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"treckrr/internal/db"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // TestAnonymizeNeighborIntegration proves DSGVO Art. 17 anonymization: the live

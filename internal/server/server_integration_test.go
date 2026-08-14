@@ -18,11 +18,11 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/backup"
-	"treckrr/internal/config"
-	"treckrr/internal/db"
-	"treckrr/internal/models"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/backup"
+	"github.com/d0linger/treckrr/internal/config"
+	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // withSearchPath appends a Postgres search_path runtime parameter to a DSN so

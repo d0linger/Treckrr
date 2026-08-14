@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 const (

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"treckrr/internal/models"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // Input-length ceilings on the admin user endpoints (defense against oversized-

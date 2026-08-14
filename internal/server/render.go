@@ -10,7 +10,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/web"
+	"github.com/d0linger/treckrr/internal/web"
 )
 
 // pageData is the map passed to templates. Handlers add page-specific keys.

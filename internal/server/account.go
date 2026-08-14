@@ -3,8 +3,8 @@ package server
 import (
 	"net/http"
 
-	"treckrr/internal/auth"
-	"treckrr/internal/totp"
+	"github.com/d0linger/treckrr/internal/auth"
+	"github.com/d0linger/treckrr/internal/totp"
 )
 
 // recoveryCodeCount is how many one-time recovery codes are issued.

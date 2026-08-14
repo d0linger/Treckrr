@@ -60,7 +60,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - treckrr
+        - github.com/d0linger/treckrr
   exclusions:
     generated: lax
     paths:

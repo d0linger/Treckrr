@@ -11,11 +11,11 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
-	"treckrr/internal/backup"
-	"treckrr/internal/config"
-	"treckrr/internal/models"
-	"treckrr/internal/store"
-	"treckrr/internal/web"
+	"github.com/d0linger/treckrr/internal/backup"
+	"github.com/d0linger/treckrr/internal/config"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/web"
 )
 
 const (

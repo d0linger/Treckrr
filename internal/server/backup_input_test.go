@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"treckrr/internal/backup"
+	"github.com/d0linger/treckrr/internal/backup"
 )
 
 // multipartKeyRequest builds a multipart POST carrying only the "key" field.

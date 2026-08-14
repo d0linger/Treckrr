@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // EnsureAdmin creates the bootstrap admin from env config if it does not exist,

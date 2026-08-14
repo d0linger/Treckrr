@@ -9,7 +9,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // ---- Load levels ---------------------------------------------------------

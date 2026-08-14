@@ -9,8 +9,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/models"
-	"treckrr/internal/web"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/web"
 )
 
 // sanitizeFilename reduces a user-supplied name to characters safe inside a

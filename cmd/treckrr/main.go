@@ -15,12 +15,12 @@ import (
 	"syscall"
 	"time"
 
-	"treckrr/internal/backup"
-	"treckrr/internal/config"
-	"treckrr/internal/db"
-	"treckrr/internal/models"
-	"treckrr/internal/server"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/backup"
+	"github.com/d0linger/treckrr/internal/config"
+	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/server"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 func main() {
