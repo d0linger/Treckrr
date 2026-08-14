@@ -539,6 +539,12 @@ func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
 		if data, name, err = s.CreateEncrypted(ctx); err != nil {
 			return err
 		}
+		// Verify it restores before it becomes the ONLY off-box copy — an unverified
+		// backup is not a backup. runVolume verifies before promoting a local dump;
+		// this fresh S3-only dump gets the same drill. On failure, don't upload.
+		if err := s.verifyRestorable(ctx, data); err != nil {
+			return err
+		}
 	}
 	uerr := s.uploadS3(ctx, name, data)
 	ok := uerr == nil

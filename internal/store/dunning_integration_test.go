@@ -57,16 +57,18 @@ func TestDunningRowsIntegration(t *testing.T) {
 	}, nil); err != nil {
 		t.Fatalf("entry: %v", err)
 	}
-	// Issue an invoice dated 30 days ago (kind/status default to invoice/issued).
+	// Issue an invoice dated 30 days ago with a frozen GROSS of 113 (net 100 + 13%
+	// VAT), while the booking net is 100. DunningRows must dun the gross (113), not
+	// the net (100) — the net/gross bug this test guards against.
 	if _, err := pool.ExecContext(ctx,
-		`INSERT INTO invoices (billing_year_id, neighbor_id, number, issued_on)
-		 VALUES ($1,$2,$3, CURRENT_DATE - 30)`, yearID, nid, fmt.Sprintf("%d-999", yr)); err != nil {
+		`INSERT INTO invoices (billing_year_id, neighbor_id, number, issued_on, gross)
+		 VALUES ($1,$2,$3, CURRENT_DATE - 30, 113)`, yearID, nid, fmt.Sprintf("%d-999", yr)); err != nil {
 		t.Fatalf("insert invoice: %v", err)
 	}
 
 	now := time.Now()
 
-	// With a 14-day term and a 30-day-old invoice, the 100.00 is overdue.
+	// With a 14-day term and a 30-day-old invoice, the gross 113.00 is overdue.
 	rows, err := st.DunningRows(ctx, yearID, 14, now)
 	if err != nil {
 		t.Fatalf("dunning: %v", err)
@@ -75,8 +77,8 @@ func TestDunningRowsIntegration(t *testing.T) {
 	for _, r := range rows {
 		if r.NeighborID == nid {
 			found = true
-			if !r.Open.Equal(decimal.RequireFromString("100.00")) {
-				t.Errorf("open = %s, want 100.00", r.Open)
+			if !r.Open.Equal(decimal.RequireFromString("113.00")) {
+				t.Errorf("open = %s, want 113.00 (invoice gross, not net 100)", r.Open)
 			}
 			if r.DaysOverdue < 15 { // 30 days old − 14 day term ≈ 16
 				t.Errorf("days overdue = %d, want >= 15", r.DaysOverdue)
@@ -98,8 +100,8 @@ func TestDunningRowsIntegration(t *testing.T) {
 		}
 	}
 
-	// Record a payment covering the full amount → no longer open → not listed.
-	if err := st.AddPayment(ctx, yearID, nid, decimal.RequireFromString("100.00"), time.Now(), ""); err != nil {
+	// Record a payment covering the full gross (113) → no longer open → not listed.
+	if err := st.AddPayment(ctx, yearID, nid, decimal.RequireFromString("113.00"), time.Now(), ""); err != nil {
 		t.Fatalf("add payment: %v", err)
 	}
 	rows, err = st.DunningRows(ctx, yearID, 14, now)
