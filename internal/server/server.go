@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -11,11 +12,11 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
-	"treckrr/internal/backup"
-	"treckrr/internal/config"
-	"treckrr/internal/models"
-	"treckrr/internal/store"
-	"treckrr/internal/web"
+	"github.com/d0linger/treckrr/internal/backup"
+	"github.com/d0linger/treckrr/internal/config"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/web"
 )
 
 const (
@@ -35,6 +36,7 @@ type Server struct {
 	templates map[string]*template.Template
 	logins    *loginLimiter
 	wa        *webauthn.WebAuthn
+	started   time.Time
 }
 
 // New constructs a Server and parses templates.
@@ -58,7 +60,7 @@ func New(cfg *config.Config, st *store.Store, bk *backup.Service) (*Server, erro
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, store: st, backup: bk, templates: tpl, logins: newLoginLimiter(st), wa: wa}, nil
+	return &Server{cfg: cfg, store: st, backup: bk, templates: tpl, logins: newLoginLimiter(st), wa: wa, started: time.Now()}, nil
 }
 
 type ctxKey string
@@ -71,6 +73,15 @@ func (s *Server) Handler() http.Handler {
 
 	// Health & PWA plumbing (public).
 	mux.HandleFunc("GET /healthz", s.handleHealth)
+	// Prometheus metrics — only registered when METRICS_TOKEN is set AND long enough
+	// to resist brute force; the handler itself enforces the bearer token so an
+	// unauthenticated scrape gets 401. A set-but-too-short token stays disabled with
+	// a warning rather than exposing a guessable endpoint.
+	if len(s.cfg.MetricsToken) >= metricsTokenMinLen {
+		mux.HandleFunc("GET /metrics", s.handleMetrics)
+	} else if s.cfg.MetricsToken != "" {
+		slog.Warn("METRICS_TOKEN is too short; /metrics stays disabled", "min_len", metricsTokenMinLen)
+	}
 	mux.Handle("GET /static/", http.StripPrefix("/static/", staticServer()))
 	mux.HandleFunc("GET /theme", s.handleTheme)
 	mux.HandleFunc("GET /manifest.webmanifest", s.handleManifest)
@@ -96,11 +107,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /neighbors/{id}/invoice", s.auth(s.handleInvoiceIssue))
 	mux.Handle("POST /neighbors/{id}/invoice/storno", s.auth(s.handleInvoiceStorno))
 	mux.Handle("POST /neighbors/{id}/invoice/gutschrift", s.auth(s.handleInvoiceGutschrift))
+	mux.Handle("GET /neighbors/{id}/invoice/epc-qr.png", s.auth(s.handleInvoiceEpcQR))
 	mux.Handle("GET /neighbors", s.auth(s.handleNeighborsManage))
 	mux.Handle("POST /neighbors/create", s.auth(s.handleNeighborManageCreate))
 	mux.Handle("POST /neighbors/{id}/update", s.auth(s.handleNeighborUpdate))
 	mux.Handle("POST /neighbors/{id}/archive", s.auth(s.handleNeighborArchive))
 	mux.Handle("POST /neighbors/{id}/delete", s.auth(s.handleNeighborDelete))
+	mux.Handle("POST /neighbors/{id}/anonymize", s.auth(s.handleNeighborAnonymize))
 	mux.Handle("POST /years/add-neighbor", s.auth(s.handleYearAddNeighbor))
 	mux.Handle("POST /years/remove-neighbor", s.auth(s.handleYearRemoveNeighbor))
 	mux.Handle("POST /years/carry-over", s.auth(s.handleCarryOverNeighbors))
@@ -171,6 +184,12 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /export/year/{id}", s.auth(s.handleExportYear))
 	mux.Handle("GET /export/neighbor/{id}", s.auth(s.handleExportNeighbor))
+	mux.Handle("GET /neighbors/{id}/dsgvo-export.json", s.auth(s.handleNeighborDataExport))
+
+	// Mahnwesen (dunning): overdue list + printable reminder + its EPC-QR.
+	mux.Handle("GET /mahnwesen", s.auth(s.handleMahnwesen))
+	mux.Handle("GET /neighbors/{id}/mahnung", s.auth(s.handleNeighborMahnung))
+	mux.Handle("GET /neighbors/{id}/mahnung/epc-qr.png", s.auth(s.handleMahnungEpcQR))
 
 	// Admin only.
 	mux.Handle("GET /admin/audit", s.admin(s.handleAudit))
@@ -363,7 +382,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // locally, so a strict policy is possible). The secure variant additionally
 // upgrades plain-HTTP subresource requests — advertised alongside HSTS only.
 const (
-	cspBase   = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
+	// img-src keeps data: for the chevron/favicon/beleg-PNG SVG-as-image; the
+	// beleg export fetches its woff2 fonts same-origin (connect-src 'self') and
+	// embeds them as data: inside that SVG image, so font-src stays strict. The
+	// connect/manifest/worker/frame-src directives make the same-origin-only
+	// posture explicit rather than relying on the default-src fallback.
+	cspBase   = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-src 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
 	cspSecure = cspBase + "; upgrade-insecure-requests"
 )
 

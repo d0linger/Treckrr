@@ -11,7 +11,7 @@
 		<div class="card stack stack--tight {{if .Neighbor.Archived}}is-inactive{{end}}" data-nb-item>
 			<div class="list__row list__row--plain">
 				<div class="list__main">
-					<span class="list__title">{{.Neighbor.Name}}{{if .Neighbor.Archived}}<span class="pill-off">inaktiv</span>{{end}}</span>
+					<span class="list__title">{{.Neighbor.Name}}{{if .Neighbor.Anonymized}}<span class="pill-off">anonymisiert</span>{{else if .Neighbor.Archived}}<span class="pill-off">inaktiv</span>{{end}}</span>
 					<span class="list__sub">
 						in {{.Years}} {{if eq .Years 1}}Jahr{{else}}Jahren{{end}} · {{.Entries}} Buchungen{{if .Neighbor.Note}} · {{.Neighbor.Note}}{{end}}
 					</span>
@@ -19,6 +19,9 @@
 			</div>
 			<details class="disclosure disclosure--plain">
 				<summary>Bearbeiten</summary>
+				{{if .Neighbor.Anonymized}}
+				<p class="muted small">Personenbezogene Daten wurden anonymisiert (DSGVO Art. 17). Buchungen und festgeschriebene Rechnungen bleiben aufbewahrungspflichtig erhalten.</p>
+				{{else}}
 				<form method="post" action="/neighbors/{{.Neighbor.ID}}/update" class="form">
 					<input type="hidden" name="origin" value="manage">
 					<label class="field"><span>Name</span>
@@ -43,16 +46,24 @@
 						<button class="btn btn--ghost btn--sm" type="submit">Deaktivieren</button>
 					</form>
 					{{end}}
+					<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}/dsgvo-export.json"
+						title="DSGVO Art. 15 Datenauskunft als JSON">Datenauskunft</a>
 					{{if eq .Entries 0}}
 					<form method="post" action="/neighbors/{{.Neighbor.ID}}/delete"
 						data-confirm="{{.Neighbor.Name}} löschen?">
 						<input type="hidden" name="origin" value="manage">
 						<button class="btn btn--danger btn--sm" type="submit">Löschen</button>
 					</form>
+					{{else}}
+					<form method="post" action="/neighbors/{{.Neighbor.ID}}/anonymize"
+						data-confirm="{{.Neighbor.Name}} anonymisieren? Personenbezogene Daten werden unwiderruflich gelöscht. Buchungen und Rechnungen bleiben erhalten.">
+						<button class="btn btn--danger btn--sm" type="submit">Anonymisieren</button>
+					</form>
 					{{end}}
 				</div>
 				{{if gt .Entries 0}}
-				<p class="muted small">Nachbar hat Buchungen und kann nicht gelöscht werden – zum Ausblenden bitte deaktivieren.</p>
+				<p class="muted small">Nachbar hat Buchungen und kann nicht gelöscht werden – zum Ausblenden bitte deaktivieren, oder für DSGVO-Löschung (Art. 17) anonymisieren.</p>
+				{{end}}
 				{{end}}
 			</details>
 		</div>

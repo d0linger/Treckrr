@@ -2,7 +2,7 @@ package server
 
 import (
 	"encoding/csv"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -117,7 +117,7 @@ func (s *Server) audit(r *http.Request, action, entity string, entityID int64, d
 		idStr = strconv.FormatInt(entityID, 10)
 	}
 	if err := s.store.AddAudit(r.Context(), uid, uname, action, entity, idStr, detail, s.clientIP(r)); err != nil {
-		log.Printf("audit write failed (%s %s): %v", action, entity, err)
+		slog.Error("audit write failed", "action", action, "entity", entity, "err", err)
 	}
 }
 
@@ -157,7 +157,7 @@ func (s *Server) yearLabel(r *http.Request, id int64) string {
 // auditLogin records a login attempt where no ctx user is set yet.
 func (s *Server) auditLogin(r *http.Request, username, action, detail string) {
 	if err := s.store.AddAudit(r.Context(), nil, username, action, "auth", "", detail, s.clientIP(r)); err != nil {
-		log.Printf("audit write failed (%s): %v", action, err)
+		slog.Error("audit write failed", "action", action, "err", err)
 	}
 }
 
@@ -257,8 +257,12 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 		if u := s.currentUser(r); u != nil {
 			user = u.Username
 		}
-		log.Printf("%s %s %d %s user=%s ip=%s",
-			sanitizeLog(r.Method), sanitizeLog(r.URL.Path), rec.status,
-			time.Since(start).Round(time.Millisecond), sanitizeLog(user), sanitizeLog(s.clientIP(r)))
+		slog.Info("request",
+			"method", sanitizeLog(r.Method),
+			"path", sanitizeLog(r.URL.Path),
+			"status", rec.status,
+			"dur", time.Since(start).Round(time.Millisecond).String(),
+			"user", sanitizeLog(user),
+			"ip", sanitizeLog(s.clientIP(r)))
 	})
 }

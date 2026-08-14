@@ -2,7 +2,7 @@ package server
 
 import (
 	"bytes"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/web"
+	"github.com/d0linger/treckrr/internal/web"
 )
 
 // pageData is the map passed to templates. Handlers add page-specific keys.
@@ -42,7 +42,7 @@ func (s *Server) serverError(w http.ResponseWriter, what string, err error) {
 	if err != nil {
 		errMsg = err.Error()
 	}
-	log.Printf("internal error (%s): %v", sanitizeLog(what), sanitizeLog(errMsg))
+	slog.Error("internal error", "what", sanitizeLog(what), "err", sanitizeLog(errMsg))
 	http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 }
 
@@ -50,7 +50,7 @@ func (s *Server) serverError(w http.ResponseWriter, what string, err error) {
 func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, data pageData) {
 	tpl, ok := s.templates[page]
 	if !ok {
-		log.Printf("unknown template: %s", page)
+		slog.Error("unknown template", "page", sanitizeLog(page))
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
@@ -60,7 +60,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 	// Render to a buffer first so a template error does not emit a half page.
 	var buf bytes.Buffer
 	if err := tpl.ExecuteTemplate(&buf, "layout", data); err != nil {
-		log.Printf("render %s: %v", sanitizeLog(page), sanitizeLog(err.Error()))
+		slog.Error("render failed", "page", sanitizeLog(page), "err", sanitizeLog(err.Error()))
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}

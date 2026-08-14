@@ -10,9 +10,9 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/calc"
-	"treckrr/internal/models"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/calc"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // BelegTractorLoad is one Belastungsstufe a tractor was used at this year: its
@@ -383,16 +383,20 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["InvNet"] = invNet
 	data["InvUSt"] = invUSt
 	data["InvBrutto"] = invBrutto
+	// Amount still to pay: gross services, less credit notes (invCredits is
+	// negative), less mutual Verrechnung, less payments.
+	invRest := invBrutto.Add(invCredits).Add(ledgerSum).Sub(paidSum)
+	// Scan-to-pay: show the EPC/GiroCode QR only for an issued invoice with an
+	// issuer IBAN and a positive REMAINING amount (the /epc-qr.png endpoint encodes
+	// that same remaining, so a partial payment/credit is reflected in the QR).
+	data["HasEpcQR"] = hasInvoice && strings.TrimSpace(invIBAN) != "" && invRest.IsPositive()
 	data["InvLedger"] = ledgerSum
 	data["InvPaidUSt"] = invPaidUSt
 	data["Documents"] = documents
 	data["HasDocuments"] = len(documents) > 1 // more than the invoice itself
 	data["InvCredits"] = invCredits           // negative sum of credit notes
 	data["HasCredits"] = invCredits.IsNegative()
-	// Amount still to pay: gross services, less credit notes, less mutual
-	// Verrechnung, less payments. invCredits is negative, so it reduces the total;
-	// it is zero without any Gutschrift, leaving the previous value unchanged.
-	data["InvRest"] = invBrutto.Add(invCredits).Add(ledgerSum).Sub(paidSum)
+	data["InvRest"] = invRest
 	// § 11: the recipient's UID/tax number is required on invoices over €10,000
 	// gross. Soft reminder only — it never blocks issuing.
 	data["InvNeedRecipientVATID"] = invBrutto.GreaterThan(decimal.NewFromInt(10000)) &&
@@ -597,4 +601,58 @@ func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request)
 		s.setFlash(w, r, "success", "Gutschrift "+gv.Number+" erstellt.")
 	}
 	redirect(w, r, back)
+}
+
+// handleInvoiceEpcQR serves the EPC069-12 ("GiroCode") QR as a PNG so the printed
+// invoice can carry a scan-to-pay code. Only when an active invoice exists, an
+// issuer IBAN is set (frozen, else live) and the gross is positive.
+func (s *Server) handleInvoiceEpcQR(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	yearID := formInt64(r, "year")
+	if yearID == 0 {
+		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		return
+	}
+	iv, err := s.store.GetInvoice(r.Context(), yearID, neighborID)
+	if err != nil || iv.Content == nil {
+		http.NotFound(w, r)
+		return
+	}
+	// Encode the amount STILL PAYABLE (gross less credits/ledger/payments), not the
+	// full gross — so scanning a partly-paid or credited invoice pays the right sum.
+	rest, err := s.store.InvoiceRemaining(r.Context(), yearID, neighborID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	if !rest.IsPositive() {
+		http.NotFound(w, r)
+		return
+	}
+	iban := iv.Content.Issuer.IBAN // frozen at issuance
+	if strings.TrimSpace(iban) == "" {
+		if c, cerr := s.store.GetCompany(r.Context()); cerr == nil {
+			iban = c.IBAN // legacy invoice without a frozen IBAN → live
+		}
+	}
+	if strings.TrimSpace(iban) == "" {
+		http.NotFound(w, r)
+		return
+	}
+	ref := iv.PaymentReference
+	if ref == "" {
+		ref = iv.Number
+	}
+	png, err := qrPNG(epcPayload(iv.Content.Issuer.Name, iban, rest, ref))
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(png)
 }

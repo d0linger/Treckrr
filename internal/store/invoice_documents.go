@@ -10,7 +10,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // insertInvoiceDoc inserts one invoice-family document (invoice / storno /

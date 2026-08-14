@@ -12,6 +12,8 @@
 			<input class="input" name="tax_id" value="{{.TaxID}}" placeholder="z. B. ATU12345678"></label>
 		<label class="field"><span>IBAN (für Zahlungshinweis auf der Rechnung)</span>
 			<input class="input" name="iban" value="{{.IBAN}}" placeholder="z. B. AT61 1904 3002 3457 3201 – leer lassen: kein IBAN-Ausweis"></label>
+		<label class="field"><span>Zahlungsziel (Tage) – für das Mahnwesen</span>
+			<input class="input" type="number" min="0" max="365" step="1" name="payment_term_days" value="{{.PaymentTermDays}}" placeholder="14"></label>
 		<label class="field"><span>Besteuerung</span>
 			<select class="select" name="tax_mode">
 				<option value="kleinunternehmer" {{if eq .TaxMode "kleinunternehmer"}}selected{{end}}>Kleinunternehmer – kein USt-Ausweis</option>

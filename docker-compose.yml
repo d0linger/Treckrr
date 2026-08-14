@@ -65,6 +65,12 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
       S3_PREFIX: ${S3_PREFIX:-}
       S3_USE_SSL: ${S3_USE_SSL:-true}
+      # Structured logging: LOG_FORMAT text|json, LOG_LEVEL debug|info|warn|error.
+      LOG_FORMAT: ${LOG_FORMAT:-text}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Prometheus /metrics (opt-in). Set a long random token to enable; scrapers
+      # send "Authorization: Bearer <token>". Empty = endpoint disabled.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
     # The app writes encrypted dumps here (scheduled) and reads status.json.
     # A NAMED volume is used so it inherits the image's /backups ownership
     # (uid 10001) — the app runs non-root and a root-owned bind mount would

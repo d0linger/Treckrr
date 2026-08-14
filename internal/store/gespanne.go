@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // ListGespanne returns the gespanne of a base with their machine ids.

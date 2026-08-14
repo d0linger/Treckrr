@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"treckrr/internal/auth"
-	"treckrr/internal/config"
-	"treckrr/internal/models"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/auth"
+	"github.com/d0linger/treckrr/internal/config"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 type mockAccountDriver struct{}

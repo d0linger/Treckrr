@@ -6,8 +6,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/calc"
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/calc"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 func itoa64(n int64) string { return strconv.FormatInt(n, 10) }

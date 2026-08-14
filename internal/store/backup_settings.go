@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // EnsureBackupSettings inserts the single settings row from the given defaults if

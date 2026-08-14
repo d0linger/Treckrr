@@ -1,0 +1,48 @@
+{{define "content"}}
+<section class="stack beleg-page">
+	<a class="backlink no-print" href="/mahnwesen?year={{.Year.ID}}">‹ Mahnwesen · {{.Year.Year}}</a>
+
+	<div class="beleg" id="beleg">
+		<div class="beleg__invoice">
+			<div class="beleg__inv-top">
+				<span class="beleg__inv-no">{{.Title}}{{if .InvoiceNo}} · Rechnung Nr. {{.InvoiceNo}}{{end}}</span>
+				<span>Datum {{date .Today}}</span>
+			</div>
+			<div class="beleg__inv-pp">
+				<div><div class="beleg__inv-k">Von</div><span class="beleg__inv-addr">{{.Company.Name}}{{with .Company.Address}}
+{{.}}{{end}}{{with .Company.TaxID}}
+{{.}}{{end}}</span></div>
+				<div><div class="beleg__inv-k">An</div><span class="beleg__inv-addr">{{.Neighbor.Name}}{{with .Neighbor.Address}}
+{{.}}{{end}}</span></div>
+			</div>
+		</div>
+
+		<div class="beleg__hero">
+			<div class="beleg__hero-top">
+				<span class="beleg__who">{{.Neighbor.Name}}</span>
+				<span class="beleg__yr">Abrechnung {{.Year.Year}}</span>
+			</div>
+			<div class="beleg__hl beleg__sum-invoice">Offener Betrag</div>
+			<div class="beleg__hv beleg__sum-invoice">{{money .Open}}</div>
+			<div class="beleg__hb">
+				{{if not .IssuedOn.IsZero}}<span>Rechnung vom {{date .IssuedOn}}</span>{{end}}
+				{{if .DueOn}}<span>fällig war {{date .DueOn}}</span>{{end}}
+				{{if .Paid.IsPositive}}<span>bereits bezahlt {{money .Paid}}</span>{{end}}
+			</div>
+		</div>
+
+		<div class="beleg__sec">{{.Title}}</div>
+		<p class="muted">{{.Intro}}</p>
+
+		<div class="beleg__payinfo">
+			<div class="beleg__payinfo-txt">
+				<span class="beleg__payinfo-k">Zahlung</span>
+				<span class="beleg__payinfo-v">Bitte überweisen Sie <strong>{{money .Open}}</strong>{{if .InvoiceNo}} unter Angabe der Referenz <strong>{{.InvoiceNo}}</strong>{{end}}.{{with .Company.IBAN}} IBAN <strong>{{.}}</strong>.{{end}}</span>
+			</div>
+			{{if .HasEpcQR}}<img class="beleg__epcqr" src="/neighbors/{{.Neighbor.ID}}/mahnung/epc-qr.png?year={{.Year.ID}}" width="118" height="118" alt="EPC-QR-Code zum Bezahlen des offenen Betrags (GiroCode)" loading="lazy">{{end}}
+		</div>
+
+		<p class="no-print muted small">Zum Drucken/Speichern: Browser-Menü → Drucken → „Als PDF speichern".</p>
+	</div>
+</section>
+{{end}}

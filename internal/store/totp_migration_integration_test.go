@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"treckrr/internal/db"
-	"treckrr/internal/models"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // TestTotpMigrationIntegration proves T-06: a legacy unprefixed (plaintext) TOTP

@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"treckrr/internal/config"
+	"github.com/d0linger/treckrr/internal/config"
 )
 
 // TestClientIPProxyAllowlist proves SH-05: a forwarded header is only honored

@@ -408,7 +408,9 @@
 		if (!drawer) return;
 		var scrim = document.querySelector(".drawer__scrim");
 		var openers = document.querySelectorAll("[data-drawer-open]");
+		var lastFocus = null;
 		function setOpen(on) {
+			if (on) lastFocus = document.activeElement;
 			drawer.classList.toggle("is-open", on);
 			drawer.setAttribute("aria-hidden", on ? "false" : "true");
 			// inert keeps the closed (off-screen) drawer out of the tab order and
@@ -416,6 +418,17 @@
 			if (on) { drawer.removeAttribute("inert"); } else { drawer.setAttribute("inert", ""); }
 			if (scrim) scrim.hidden = !on;
 			openers.forEach(function (b) { b.setAttribute("aria-expanded", on ? "true" : "false"); });
+			// Move focus into the drawer on open, and restore it to the opener on
+			// close, so keyboard/screen-reader users aren't stranded (a11y).
+			if (on) {
+				var first = drawer.querySelector("a, button, [tabindex]:not([tabindex='-1'])");
+				if (first) first.focus();
+			} else if (lastFocus && typeof lastFocus.focus === "function") {
+				lastFocus.focus();
+				// Clear it so a later stray Escape (drawer already closed) can't yank
+				// focus back to the opener from wherever the user has since moved.
+				lastFocus = null;
+			}
 		}
 		openers.forEach(function (b) { b.addEventListener("click", function () { setOpen(true); }); });
 		document.querySelectorAll("[data-drawer-close]").forEach(function (b) {

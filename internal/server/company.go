@@ -1,10 +1,12 @@
 package server
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // handleCompany renders the Betriebsdaten (sender/invoice settings) form.
@@ -39,6 +41,11 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 	default:
 		c.TaxMode = "pauschal"
 	}
+	// Zahlungsziel: clamp to a sane 0–365 days; blank/invalid falls back to 14.
+	c.PaymentTermDays = 14
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("payment_term_days"))); err == nil && v >= 0 && v <= 365 {
+		c.PaymentTermDays = v
+	}
 	if s.tooLong(w, r, "Name", c.Name, maxNameLen) ||
 		s.tooLong(w, r, "Adresse", c.Address, maxNoteLen) ||
 		s.tooLong(w, r, "UID/Steuernummer", c.TaxID, maxNameLen) ||
@@ -48,7 +55,7 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.UpdateCompany(r.Context(), c); err != nil {
-		log.Printf("company update failed: %v", sanitizeLog(err.Error()))
+		slog.Error("company update failed", "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	} else {
 		s.audit(r, "update", "company", 1, "Betriebsdaten aktualisiert")

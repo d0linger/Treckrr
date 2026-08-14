@@ -3,7 +3,7 @@ package calc
 import (
 	"testing"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // Exact-value coverage for the individual rate functions, pinning the 2-decimal

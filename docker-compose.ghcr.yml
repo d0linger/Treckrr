@@ -39,6 +39,9 @@ services:
       # Passkeys (WebAuthn): set to your public host / origin behind a proxy.
       RP_ID: ${RP_ID:-localhost}
       RP_ORIGIN: ${RP_ORIGIN:-http://localhost:8080}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
     ports:
       - "${HOST_PORT:-8080}:${APP_PORT:-8080}"
 

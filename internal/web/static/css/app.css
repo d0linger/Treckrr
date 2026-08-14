@@ -915,7 +915,10 @@ em { font-style: normal; color: var(--muted); }
 
 /* ---- Beleg: shareable statement (Saldo first + compact table) --------- */
 .beleg { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-	overflow: hidden; box-shadow: var(--card-shadow); }
+	overflow: hidden; box-shadow: var(--card-shadow);
+	/* Document-like width so it stays readable in landscape / on wide screens
+	   instead of stretching across the viewport. */
+	max-width: 40rem; margin-inline: auto; }
 
 .beleg__hero { padding: .85rem .9rem; color: var(--on-primary);
 	background: linear-gradient(135deg, var(--primary), var(--primary-strong)); }
@@ -1051,9 +1054,12 @@ em { font-style: normal; color: var(--muted); }
 
 /* Payment instruction on the issued invoice (IBAN + reference), part of the
    printed document. Distinct from .beleg__pay (the live Zahlungen section). */
-.beleg__payinfo { display: flex; flex-direction: column; gap: .12rem; padding: .5rem .9rem .2rem; }
+.beleg__payinfo { display: flex; align-items: flex-start; gap: .8rem; padding: .5rem .9rem .2rem; }
+.beleg__payinfo-txt { display: flex; flex-direction: column; gap: .12rem; flex: 1; min-width: 0; }
 .beleg__payinfo-k { font-family: var(--font-mono); font-size: .6rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 .beleg__payinfo-v { font-size: .82rem; }
+.beleg__epcqr { flex: 0 0 auto; width: 118px; height: 118px; image-rendering: pixelated;
+	border: 1px solid var(--card-hairline); border-radius: 8px; background: #fff; padding: 4px; }
 [data-beleg-grund][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 [data-beleg-grund][aria-pressed="true"] .ic { color: var(--on-primary); }
 [data-beleg-rechnung][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
@@ -1091,8 +1097,14 @@ em { font-style: normal; color: var(--muted); }
 	box-shadow: var(--card-shadow); opacity: 0; transition: opacity .2s, transform .2s; z-index: 60; pointer-events: none; max-width: 90vw; text-align: center; }
 .beleg-toast.is-on { opacity: 1; transform: translate(-50%, 0); }
 
+@page { size: A4; margin: 14mm; }
 @media print {
 	.beleg-page .backlink, .beleg__actions { display: none !important; }
+	/* A4 document: full width, no rounded frame, and keep logical blocks/rows from
+	   splitting across a page break. */
+	.beleg { max-width: none; margin: 0; border-radius: 0; }
+	.beleg__hero, .beleg__invoice, .beleg__invtax, .beleg__payinfo { break-inside: avoid; }
+	.beleg__lsub, .beleg__li, .beleg__docrow, .beleg__gm, .beleg__gt { break-inside: avoid; }
 	/* print backgrounds (hero, header/subtotal bands) — off by default in print */
 	/* A printed/PDF Beleg is a document to hand over, so pin the theme tokens to
 	   their light values: on screen the Beleg stays theme-aware (dark in dark

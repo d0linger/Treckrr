@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // WebauthnHandle returns the user's stable random WebAuthn handle, generating

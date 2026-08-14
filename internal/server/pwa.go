@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"treckrr/internal/web"
+	"github.com/d0linger/treckrr/internal/web"
 )
 
 // handleManifest serves the PWA manifest from the embedded static assets.

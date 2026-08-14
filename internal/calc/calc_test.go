@@ -5,7 +5,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 func dec(s string) decimal.Decimal { return decimal.RequireFromString(s) }

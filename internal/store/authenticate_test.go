@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // AuthenticateUser must reject oversized credentials before touching the DB or

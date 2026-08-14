@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"treckrr/internal/config"
+	"github.com/d0linger/treckrr/internal/config"
 )
 
 func testServer() *Server {

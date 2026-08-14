@@ -1,0 +1,58 @@
+name: Supply chain (SBOM + vuln scan)
+
+# Independent of the release pipeline: this never gates docker-publish. It scans
+# the Go dependency tree for known vulnerabilities and emits a CycloneDX SBOM as
+# a build artifact for supply-chain transparency.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  schedule:
+    # Weekly, so newly-disclosed CVEs in pinned deps surface even without a push.
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Trivy vuln scan + SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Fail the build only on HIGH/CRITICAL vulnerabilities that actually have a
+      # fix available (ignore-unfixed), so the failure is always actionable — it
+      # tells us to bump a dependency, which Dependabot then does. Scanners is
+      # limited to `vuln`; secret scanning is covered by the gitleaks workflow.
+      - name: Trivy vulnerability scan (Go deps)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # Always emit the SBOM (independent of the scan result) for release records.
+      - name: Generate CycloneDX SBOM
+        if: always()
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: cyclonedx
+          output: sbom.cdx.json
+          exit-code: "0"
+
+      - name: Upload SBOM artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          if-no-files-found: warn

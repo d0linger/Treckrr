@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/db"
 )
 
 // ReconcileAfterRestore brings the database back in step with THIS binary right

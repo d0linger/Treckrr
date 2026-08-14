@@ -9,12 +9,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
-	"treckrr/internal/auth"
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/auth"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // ErrNotFound is returned when a requested row does not exist.
@@ -43,6 +43,9 @@ func New(db *sql.DB, encryptionKey string) *Store {
 	h := sha256.Sum256([]byte(encryptionKey))
 	return &Store{db: db, key: h[:], totpKey: deriveTotpKey(encryptionKey)}
 }
+
+// DBStats exposes the connection-pool statistics for the /metrics endpoint.
+func (s *Store) DBStats() sql.DBStats { return s.db.Stats() }
 
 // deriveTotpKey derives a purpose-separated 32-byte key for encrypting TOTP
 // secrets at rest via HKDF-SHA256, so the at-rest cipher key is distinct from
@@ -311,7 +314,7 @@ func (s *Store) MigrateTotpSecretsToV2(ctx context.Context) (int, error) {
 		if err != nil {
 			// A single undecryptable seed (corrupt/wrong key) must not block the rest —
 			// log it and skip; encryption/DB errors below stay fatal.
-			log.Printf("totp migrate: skipping user %d (decrypt failed): %v", r.id, err)
+			slog.Warn("totp migrate: skipping user (decrypt failed)", "user", r.id, "err", err)
 			continue
 		}
 		enc, err := s.encryptTotp(plain)

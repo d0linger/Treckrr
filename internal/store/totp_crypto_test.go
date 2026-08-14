@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"treckrr/internal/auth"
+	"github.com/d0linger/treckrr/internal/auth"
 )
 
 // TestTotpAtRestDualRead locks the TOTP-at-rest KDF migration: new secrets use

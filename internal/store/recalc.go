@@ -8,8 +8,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/calc"
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/calc"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // Recalc apply outcomes that the caller distinguishes from a generic failure.

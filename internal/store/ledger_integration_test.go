@@ -8,9 +8,9 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/db"
-	"treckrr/internal/models"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // TestLedgerNetIntegration verifies that manual ledger postings net against the

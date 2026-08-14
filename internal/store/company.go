@@ -12,23 +12,23 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // GetCompany returns the single-row company (Absender) settings.
 func (s *Store) GetCompany(ctx context.Context) (models.Company, error) {
 	var c models.Company
 	err := s.db.QueryRowContext(ctx,
-		`SELECT name, address, tax_id, tax_note, tax_mode, vat_rate, iban FROM company WHERE id=1`).
-		Scan(&c.Name, &c.Address, &c.TaxID, &c.TaxNote, &c.TaxMode, &c.VATRate, &c.IBAN)
+		`SELECT name, address, tax_id, tax_note, tax_mode, vat_rate, iban, payment_term_days FROM company WHERE id=1`).
+		Scan(&c.Name, &c.Address, &c.TaxID, &c.TaxNote, &c.TaxMode, &c.VATRate, &c.IBAN, &c.PaymentTermDays)
 	return c, err
 }
 
 // UpdateCompany saves the company (Absender) settings.
 func (s *Store) UpdateCompany(ctx context.Context, c models.Company) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE company SET name=$1, address=$2, tax_id=$3, tax_note=$4, tax_mode=$5, vat_rate=$6, iban=$7 WHERE id=1`,
-		c.Name, c.Address, c.TaxID, c.TaxNote, c.TaxMode, c.VATRate, c.IBAN)
+		`UPDATE company SET name=$1, address=$2, tax_id=$3, tax_note=$4, tax_mode=$5, vat_rate=$6, iban=$7, payment_term_days=$8 WHERE id=1`,
+		c.Name, c.Address, c.TaxID, c.TaxNote, c.TaxMode, c.VATRate, c.IBAN, c.PaymentTermDays)
 	return err
 }
 
@@ -97,6 +97,28 @@ func (s *Store) GetInvoice(ctx context.Context, yearID, neighborID int64) (model
 		return iv, ErrNotFound
 	}
 	return iv, err
+}
+
+// InvoiceRemaining returns the amount still payable on a neighbor's issued invoice
+// in a billing year: frozen invoice gross, less active credit notes (their gross
+// is stored negative), plus mutual ledger postings, less payments received. This
+// mirrors the Beleg page's InvRest exactly so the scan-to-pay QR encodes what is
+// actually outstanding, not the full gross. Zero when no invoice is issued.
+func (s *Store) InvoiceRemaining(ctx context.Context, yearID, neighborID int64) (decimal.Decimal, error) {
+	var rest decimal.Decimal
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+		  COALESCE((SELECT gross FROM invoices
+		             WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='invoice' AND status='issued'
+		             LIMIT 1), 0)
+		  + COALESCE((SELECT SUM(gross) FROM invoices
+		               WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='gutschrift' AND status='issued'), 0)
+		  + COALESCE((SELECT SUM(amount) FROM neighbor_ledger
+		               WHERE billing_year_id=$1 AND neighbor_id=$2 AND NOT voided), 0)
+		  - COALESCE((SELECT SUM(amount) FROM payments
+		               WHERE billing_year_id=$1 AND neighbor_id=$2), 0)`,
+		yearID, neighborID).Scan(&rest)
+	return rest, err
 }
 
 // BuildInvoiceContent computes the invoice substance from the current live data,

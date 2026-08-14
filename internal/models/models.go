@@ -150,7 +150,11 @@ type Neighbor struct {
 	Address  string // optional, for the invoice recipient block
 	TaxID    string // optional recipient UID/tax number (§ 11 on invoices > 10k)
 	Archived bool
-	Created  time.Time
+	// Anonymized marks a neighbor whose live personal data was erased (DSGVO
+	// Art. 17) while retained invoice snapshots stay intact. Such rows are also
+	// archived and cannot be edited or re-anonymized.
+	Anonymized bool
+	Created    time.Time
 }
 
 // Entry is a booked unit of work with snapshotted pricing for stable exports.
@@ -248,6 +252,9 @@ type Company struct {
 	TaxMode string
 	VATRate decimal.Decimal
 	IBAN    string // optional issuer bank account for a payable invoice
+	// PaymentTermDays is the Zahlungsziel: an invoice is due this many days after
+	// its issue date. Used only to flag overdue invoices in the dunning list.
+	PaymentTermDays int
 }
 
 // InvoiceParty is a frozen issuer/recipient block on an invoice snapshot.

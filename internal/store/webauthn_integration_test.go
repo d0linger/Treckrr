@@ -7,9 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"treckrr/internal/db"
-	"treckrr/internal/models"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // TestWebauthnBackupFlagsRoundTrip proves the BE/BS flags survive the DB

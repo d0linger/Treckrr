@@ -64,6 +64,10 @@ type Config struct {
 	// RPOrigin is the full origin the browser sees. Both must match the site.
 	RPID     string
 	RPOrigin string
+	// MetricsToken, when set via METRICS_TOKEN, enables GET /metrics (Prometheus
+	// text format) guarded by an "Authorization: Bearer <token>" header. Empty
+	// (the default) leaves the endpoint unregistered, so metrics are opt-in.
+	MetricsToken string
 }
 
 // Load reads configuration from the environment and validates required values.
@@ -89,6 +93,7 @@ func Load() (*Config, error) {
 		S3UseSSL:            strings.EqualFold(getenv("S3_USE_SSL", "true"), "true"),
 		RPID:                getenv("RP_ID", "localhost"),
 		RPOrigin:            getenv("RP_ORIGIN", "http://localhost:8080"),
+		MetricsToken:        os.Getenv("METRICS_TOKEN"),
 	}
 
 	// Data-at-rest encryption key. Defaults to SessionSecret so existing

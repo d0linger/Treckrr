@@ -8,8 +8,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"treckrr/internal/db"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // TestCarryForwardCascadeIntegration verifies the carry-forward integrity fix:

@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,28 +15,53 @@ import (
 	"syscall"
 	"time"
 
-	"treckrr/internal/backup"
-	"treckrr/internal/config"
-	"treckrr/internal/db"
-	"treckrr/internal/models"
-	"treckrr/internal/server"
-	"treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/backup"
+	"github.com/d0linger/treckrr/internal/config"
+	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/server"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
-	log.SetPrefix("[treckrr] ")
+	setupLogging()
 
 	// Subcommands (e.g. `treckrr restore <file>`); no args runs the web server.
 	if len(os.Args) > 1 {
 		if err := runCommand(os.Args[1], os.Args[2:]); err != nil {
-			log.Fatalf("fatal: %v", err)
+			slog.Error("fatal", "err", err)
+			os.Exit(1)
 		}
 		return
 	}
 	if err := run(); err != nil {
-		log.Fatalf("fatal: %v", err)
+		slog.Error("fatal", "err", err)
+		os.Exit(1)
 	}
+}
+
+// setupLogging installs the process-wide structured logger. Output goes to stdout
+// (captured by `docker logs`) as human-readable text by default, or JSON when
+// LOG_FORMAT=json for log aggregation. LOG_LEVEL (debug|info|warn|error) sets the
+// threshold; info is the default.
+func setupLogging() {
+	level := slog.LevelInfo
+	switch strings.ToLower(os.Getenv("LOG_LEVEL")) {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	}
+	opts := &slog.HandlerOptions{Level: level}
+	var h slog.Handler
+	if strings.EqualFold(os.Getenv("LOG_FORMAT"), "json") {
+		h = slog.NewJSONHandler(os.Stdout, opts)
+	} else {
+		h = slog.NewTextHandler(os.Stdout, opts)
+	}
+	slog.SetDefault(slog.New(h))
 }
 
 // newBackup builds the backup service. The schedule is read live from the DB
@@ -76,7 +101,7 @@ func run() error {
 	// a local HTTP test box; in production put a TLS proxy in front and set
 	// TRUST_PROXY=true (or COOKIE_SECURE=true).
 	if !cfg.CookieSecure && !cfg.TrustProxy {
-		log.Println("warning: auth cookies are not Secure and no trusted proxy is set — use HTTPS behind a TLS proxy (TRUST_PROXY=true) or COOKIE_SECURE=true in production")
+		slog.Warn("auth cookies are not Secure and no trusted proxy is set — use HTTPS behind a TLS proxy (TRUST_PROXY=true) or COOKIE_SECURE=true in production")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -91,7 +116,7 @@ func run() error {
 	if err := db.Migrate(ctx, pool); err != nil {
 		return err
 	}
-	log.Println("migrations applied")
+	slog.Info("migrations applied")
 
 	st := store.New(pool, cfg.EncryptionSecret)
 	if err := st.EnsureAdmin(ctx, cfg.AdminUsername, cfg.AdminPassword, cfg.AdminPasswordReset); err != nil {
@@ -104,18 +129,18 @@ func run() error {
 	// failure here degrades gracefully (those invoices render live) and is retried
 	// on the next boot — don't block startup on it.
 	if n, err := st.BackfillInvoiceSnapshots(ctx); err != nil {
-		log.Printf("invoice snapshot backfill failed (continuing, retried next boot): %v", err)
+		slog.Error("invoice snapshot backfill failed (continuing, retried next boot)", "err", err)
 	} else if n > 0 {
-		log.Printf("backfilled %d invoice snapshot(s)", n)
+		slog.Info("backfilled invoice snapshots", "count", n)
 	}
 	// Re-encrypt any legacy plaintext/v1 TOTP seeds to v2 (T-06). Non-fatal: the
 	// dual-read still works if this fails, and it retries on the next boot.
 	if n, err := st.MigrateTotpSecretsToV2(ctx); err != nil {
-		log.Printf("TOTP seed migration failed (continuing, retried next boot): %v", err)
+		slog.Error("TOTP seed migration failed (continuing, retried next boot)", "err", err)
 	} else if n > 0 {
-		log.Printf("migrated %d TOTP seed(s) to v2 encryption", n)
+		slog.Info("migrated TOTP seeds to v2 encryption", "count", n)
 	}
-	log.Println("bootstrap complete")
+	slog.Info("bootstrap complete")
 
 	// Background maintenance: purge expired sessions and stale rate-limit rows on a
 	// timer, so cleanup no longer depends on /healthz being hit — and /healthz can
@@ -134,11 +159,11 @@ func run() error {
 	bk := newBackup(cfg, pool, st)
 	var bkWG sync.WaitGroup
 	if bk.Enabled() {
-		log.Printf("encrypted backups enabled (schedule via GUI, dir %s)", cfg.BackupDir)
+		slog.Info("encrypted backups enabled (schedule via GUI)", "dir", cfg.BackupDir)
 		bkWG.Add(1)
-		go func() { defer bkWG.Done(); bk.Loop(ctx, log.Printf) }()
+		go func() { defer bkWG.Done(); bk.Loop(ctx, slog.Default()) }()
 	} else {
-		log.Println("backups disabled (set BACKUP_ENCRYPTION_KEY to enable)")
+		slog.Info("backups disabled (set BACKUP_ENCRYPTION_KEY to enable)")
 	}
 
 	srv, err := server.New(cfg, st, bk)
@@ -156,15 +181,15 @@ func run() error {
 	}
 
 	go func() {
-		log.Printf("listening on :%s", cfg.Port)
+		slog.Info("listening", "addr", ":"+cfg.Port)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("server error: %v", err)
+			slog.Error("server error", "err", err)
 			stop()
 		}
 	}()
 
 	<-ctx.Done()
-	log.Println("shutting down")
+	slog.Info("shutting down")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -175,7 +200,7 @@ func run() error {
 	// (a full run can take up to 10 min, but we don't hold up a deploy that long —
 	// writeFileAtomic guarantees no partial file if we exit first).
 	if !waitTimeout(&bkWG, 30*time.Second) {
-		log.Println("shutdown: a scheduled backup was still running after 30s; exiting anyway")
+		slog.Warn("shutdown: a scheduled backup was still running after 30s; exiting anyway")
 	}
 	return err
 }
@@ -200,13 +225,13 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 		bg, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		if err := st.PurgeExpiredSessions(bg); err != nil {
-			log.Printf("purge sessions: %v", err)
+			slog.Error("purge sessions", "err", err)
 		}
 		if err := st.PurgeStaleRateLimits(bg); err != nil {
-			log.Printf("purge rate limits: %v", err)
+			slog.Error("purge rate limits", "err", err)
 		}
 		if err := st.PurgeExpiredWebauthnCeremonies(bg); err != nil {
-			log.Printf("purge webauthn ceremonies: %v", err)
+			slog.Error("purge webauthn ceremonies", "err", err)
 		}
 	}
 	purge()
@@ -283,7 +308,7 @@ func runRestore(args []string) error {
 		if err != nil {
 			return err
 		}
-		log.Printf("test-restore OK: %d archive objects, schema %s", rep.Objects, rep.SchemaVersion)
+		slog.Info("test-restore OK", "objects", rep.Objects, "schema", rep.SchemaVersion)
 		return nil
 	}
 
@@ -298,7 +323,7 @@ func runRestore(args []string) error {
 	if err := bk.Restore(ctx, file, cfg.DatabaseURL); err != nil {
 		return err
 	}
-	log.Printf("restore complete from %s", file)
+	slog.Info("restore complete", "file", file)
 	return nil
 }
 
@@ -316,6 +341,6 @@ func runBackupCLI(args []string) error {
 	if err := bk.RunScheduled(context.Background()); err != nil {
 		return err
 	}
-	log.Println("encrypted backup written")
+	slog.Info("encrypted backup written")
 	return nil
 }
