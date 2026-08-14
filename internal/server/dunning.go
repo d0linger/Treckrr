@@ -85,7 +85,10 @@ func (s *Server) handleNeighborMahnung(w http.ResponseWriter, r *http.Request) {
 	}
 	open := net.Sub(paid)
 
-	stage := int(formInt64(r, "stufe"))
+	// formInt parses to a platform int via strconv.Atoi (no lossy int64->int
+	// narrowing), which also satisfies CodeQL's integer-conversion check. Unknown
+	// values fall through dunningStage's default (Zahlungserinnerung).
+	stage := formInt(r, "stufe")
 	title, intro := dunningStage(stage)
 
 	term := company.PaymentTermDays
