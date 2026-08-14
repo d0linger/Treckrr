@@ -35,7 +35,7 @@ jobs:
                    internal/web/static/js/passkey.js \
                    internal/web/static/js/recovery.js \
                    internal/web/static/sw.js; do
-            npx --yes esbuild@0.24.2 "$f" --minify --allow-overwrite --outfile="$f"
+            npx --yes esbuild@0.28.2 "$f" --minify --allow-overwrite --outfile="$f"
             node --check "$f"
           done
 
