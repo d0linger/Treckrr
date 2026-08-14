@@ -84,4 +84,23 @@ func TestInvoiceRemainingIntegration(t *testing.T) {
 	if !rest.Equal(decimal.RequireFromString("120")) {
 		t.Errorf("remaining (after 30 payment) = %s, want 120", rest)
 	}
+
+	// A non-voided ledger posting of +40 raises the remaining to 160.
+	if _, err := st.AddNeighborLedger(ctx, yearID, nid, decimal.RequireFromString("40"), "Verrechnung", time.Now()); err != nil {
+		t.Fatalf("add ledger: %v", err)
+	}
+	// A VOIDED ledger posting of +1000 must be excluded by the `NOT voided` filter,
+	// so the remaining stays 160.
+	if _, err := pool.ExecContext(ctx,
+		`INSERT INTO neighbor_ledger (billing_year_id, neighbor_id, amount, voided)
+		 VALUES ($1,$2,1000,true)`, yearID, nid); err != nil {
+		t.Fatalf("insert voided ledger: %v", err)
+	}
+	rest, err = st.InvoiceRemaining(ctx, yearID, nid)
+	if err != nil {
+		t.Fatalf("remaining after ledger: %v", err)
+	}
+	if !rest.Equal(decimal.RequireFromString("160")) {
+		t.Errorf("remaining (after +40 non-voided, +1000 voided ledger) = %s, want 160", rest)
+	}
 }
