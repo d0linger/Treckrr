@@ -80,12 +80,28 @@ func (s *Server) handleNeighborMahnung(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	net, paid, err := s.store.NeighborNetPaid(r.Context(), yearID, neighborID)
+	// A reminder only makes sense for a formally issued invoice; without one there
+	// is nothing to dun (the /mahnwesen list only links invoiced neighbors, but a
+	// crafted URL could reach here otherwise).
+	iv, err := s.store.GetInvoice(r.Context(), yearID, neighborID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	// Open = the amount STILL PAYABLE on the frozen invoice (gross less credits,
+	// ledger and payments) — the same figure the Beleg and its EPC-QR use, so a
+	// VAT-charging (pauschal/regel) company's reminder isn't understated. `paid` is
+	// only the payments total, shown as an informational "already paid" line.
+	open, err := s.store.InvoiceRemaining(r.Context(), yearID, neighborID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	open := net.Sub(paid)
+	_, paid, err := s.store.NeighborNetPaid(r.Context(), yearID, neighborID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 
 	// formInt parses to a platform int via strconv.Atoi (no lossy int64->int
 	// narrowing), which also satisfies CodeQL's integer-conversion check. Unknown
@@ -96,12 +112,6 @@ func (s *Server) handleNeighborMahnung(w http.ResponseWriter, r *http.Request) {
 	term := company.PaymentTermDays
 	if term < 0 {
 		term = 14
-	}
-	var issued time.Time
-	invNo := ""
-	if iv, err := s.store.GetInvoice(r.Context(), yearID, neighborID); err == nil {
-		invNo = iv.Number
-		issued = iv.IssuedOn
 	}
 
 	data := s.newPage(w, r, title, "")
@@ -114,19 +124,18 @@ func (s *Server) handleNeighborMahnung(w http.ResponseWriter, r *http.Request) {
 	data["Stage"] = stage
 	data["Open"] = open
 	data["Paid"] = paid
-	data["Net"] = net
-	data["InvoiceNo"] = invNo
-	data["IssuedOn"] = issued
-	if !issued.IsZero() {
-		data["DueOn"] = issued.AddDate(0, 0, term)
+	data["InvoiceNo"] = iv.Number
+	data["IssuedOn"] = iv.IssuedOn
+	if !iv.IssuedOn.IsZero() {
+		data["DueOn"] = iv.IssuedOn.AddDate(0, 0, term)
 	}
 	data["HasEpcQR"] = strings.TrimSpace(company.IBAN) != "" && open.IsPositive()
 	s.render(w, r, "mahnung", data)
 }
 
 // handleMahnungEpcQR serves the EPC/GiroCode QR for a reminder, encoding the
-// currently OPEN amount (not the full invoice gross) so a scan pays exactly what
-// is outstanding.
+// remaining payable on the issued invoice (gross less credits/ledger/payments) —
+// the same amount the invoice's own EPC-QR uses, so both codes agree.
 func (s *Server) handleMahnungEpcQR(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
@@ -143,12 +152,11 @@ func (s *Server) handleMahnungEpcQR(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	net, paid, err := s.store.NeighborNetPaid(r.Context(), yearID, neighborID)
+	open, err := s.store.InvoiceRemaining(r.Context(), yearID, neighborID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	open := net.Sub(paid)
 	if !open.IsPositive() {
 		http.NotFound(w, r)
 		return
