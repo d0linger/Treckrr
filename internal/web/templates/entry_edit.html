@@ -67,6 +67,32 @@
 
 		<button class="btn btn--primary btn--block" type="submit">{{if .Copy}}Buchung anlegen{{else}}Änderungen speichern{{end}}</button>
 	</form>
+
+	{{if not .Copy}}
+	<div class="card stack stack--tight">
+		<div class="section-title">Fotos (Wiegeschein, Lieferschein …)</div>
+		{{with .Photos}}
+		<div class="photogrid">
+			{{range .}}
+			<figure class="photogrid__item">
+				<a href="/entries/{{$.Entry.ID}}/photos/{{.ID}}" target="_blank" rel="noopener">
+					<img src="/entries/{{$.Entry.ID}}/photos/{{.ID}}" alt="Foto zur Buchung" loading="lazy">
+				</a>
+				<form method="post" action="/entries/{{$.Entry.ID}}/photos/{{.ID}}/delete" data-confirm="Foto entfernen?">
+					<button class="photogrid__del" type="submit" aria-label="Foto entfernen">{{template "ic-trash"}}</button>
+				</form>
+			</figure>
+			{{end}}
+		</div>
+		{{else}}
+		<p class="muted small">Noch kein Foto angehängt.</p>
+		{{end}}
+		<form method="post" action="/entries/{{.Entry.ID}}/photos" enctype="multipart/form-data" class="form">
+			<input class="input" type="file" name="photo" accept="image/*" capture="environment" required>
+			<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit">Foto anhängen</button></div>
+		</form>
+	</div>
+	{{end}}
 </section>
 {{end}}
 

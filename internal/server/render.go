@@ -160,6 +160,11 @@ func pathID(r *http.Request) (int64, error) {
 	return strconv.ParseInt(r.PathValue("id"), 10, 64)
 }
 
+// formInt64FromPath parses a named path value (e.g. a second {pid}) as int64.
+func formInt64FromPath(r *http.Request, name string) (int64, error) {
+	return strconv.ParseInt(r.PathValue(name), 10, 64)
+}
+
 // formInt64 parses a form field as int64 (0 on empty/invalid).
 func formInt64(r *http.Request, name string) int64 {
 	v, _ := strconv.ParseInt(strings.TrimSpace(r.FormValue(name)), 10, 64)

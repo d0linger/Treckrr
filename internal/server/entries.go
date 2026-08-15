@@ -941,6 +941,7 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	gespanne, _ := s.store.ListGespanne(r.Context(), base.ID)
 	selMachines, _ := s.store.EntryMachineIDs(r.Context(), id)
 
+	photos, _ := s.store.ListEntryPhotos(r.Context(), id)
 	data := s.newPage(w, r, "Buchung bearbeiten", "dashboard")
 	data["Entry"] = entry
 	data["Neighbor"] = neighbor
@@ -951,6 +952,7 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	data["Machines"] = machines
 	data["Gespanne"] = gespanne
 	data["SelectedMachineIDs"] = selMachines
+	data["Photos"] = photos
 	s.render(w, r, "entry_edit", data)
 }
 

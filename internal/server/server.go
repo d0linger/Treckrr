@@ -128,6 +128,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /entries/quick", s.auth(s.handleQuickEntries))
 	mux.Handle("GET /entries/{id}/edit", s.auth(s.handleEntryEditForm))
 	mux.Handle("GET /entries/{id}/copy", s.auth(s.handleEntryCopy))
+	mux.Handle("POST /entries/{id}/photos", s.auth(s.handleEntryPhotoUpload))
+	mux.Handle("GET /entries/{id}/photos/{pid}", s.auth(s.handleEntryPhotoServe))
+	mux.Handle("POST /entries/{id}/photos/{pid}/delete", s.auth(s.handleEntryPhotoDelete))
 	mux.Handle("POST /entries/{id}/update", s.auth(s.handleEntryUpdate))
 	mux.Handle("POST /entries/{id}/void", s.auth(s.handleEntryVoid))
 	mux.Handle("POST /entries/{id}/delete", s.auth(s.handleEntryDelete))
@@ -262,6 +265,14 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 					return
 				}
 				limit = maxBackupUpload
+			} else if isPhotoUploadPath(r.URL.Path) {
+				// A phone photo exceeds 1 MiB; allow more, but only for an
+				// authenticated user (no pre-auth large-body parse).
+				if u := s.currentUser(r); u == nil {
+					http.Error(w, "Zugriff verweigert", http.StatusForbidden)
+					return
+				}
+				limit = maxPhotoUpload
 			}
 			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
@@ -273,6 +284,12 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 // therefore get the large body allowance (guarded by an admin check in limitBody).
 func isBackupUploadPath(p string) bool {
 	return p == "/admin/backup/restore" || p == "/admin/backup/validate"
+}
+
+// isPhotoUploadPath reports the booking-photo upload route (POST
+// /entries/{id}/photos), which gets the larger photo body allowance.
+func isPhotoUploadPath(p string) bool {
+	return strings.HasPrefix(p, "/entries/") && strings.HasSuffix(p, "/photos")
 }
 
 // auth wraps a handler requiring an authenticated user. It also enforces the

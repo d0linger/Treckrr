@@ -1646,3 +1646,13 @@ em { font-style: normal; color: var(--muted); }
 /* Offline pending-count badge in the appbar. */
 .appbar__offline { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px;
 	background: var(--owe, #c05635); color: #fff; white-space: nowrap; }
+
+/* Photo receipts attached to a booking (edit page). */
+.photogrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: .5rem; }
+.photogrid__item { position: relative; margin: 0; }
+.photogrid__item img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--radius-sm);
+	border: 1px solid var(--border); background: var(--surface-2); }
+.photogrid__del { position: absolute; top: .25rem; right: .25rem; display: grid; place-items: center;
+	width: 1.7rem; height: 1.7rem; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .55);
+	color: #fff; cursor: pointer; }
+.photogrid__del svg { width: .95rem; height: .95rem; }
