@@ -945,6 +945,58 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "entry_edit", data)
 }
 
+// handleEntryCopy renders the entry form pre-filled from an existing booking as a
+// NEW booking (dated today), so a recurring task can be re-entered in one click.
+// It reuses the entry_edit template with Copy=true, which points the form at the
+// create route and adds the neighbor/year hidden fields.
+func (s *Server) handleEntryCopy(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	entry, err := s.store.GetEntry(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), entry.NeighborID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	year, err := s.store.GetBillingYear(r.Context(), entry.BillingYearID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if year.Completed() {
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
+		redirect(w, r, neighborURL(neighbor.ID, year.ID))
+		return
+	}
+	entry.Date = time.Now() // a copy is a fresh booking for today
+	base := year.Base
+	tractors, _ := s.store.ListTractors(r.Context(), base.ID)
+	loads, _ := s.store.ListLoadLevels(r.Context(), base.ID)
+	machines, _ := s.store.ListMachines(r.Context(), base.ID)
+	gespanne, _ := s.store.ListGespanne(r.Context(), base.ID)
+	selMachines, _ := s.store.EntryMachineIDs(r.Context(), id)
+
+	data := s.newPage(w, r, "Buchung kopieren", "dashboard")
+	data["Entry"] = entry
+	data["Neighbor"] = neighbor
+	data["Year"] = year
+	data["Base"] = base
+	data["Tractors"] = tractors
+	data["Loads"] = loads
+	data["Machines"] = machines
+	data["Gespanne"] = gespanne
+	data["SelectedMachineIDs"] = selMachines
+	data["Copy"] = true
+	s.render(w, r, "entry_edit", data)
+}
+
 // handleQuickEntries creates several bookings at once from the quick-entry rows
 // (date, fixed gespann, hours).
 func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {

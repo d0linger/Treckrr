@@ -122,6 +122,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /entries", s.auth(s.handleEntryCreate))
 	mux.Handle("POST /entries/quick", s.auth(s.handleQuickEntries))
 	mux.Handle("GET /entries/{id}/edit", s.auth(s.handleEntryEditForm))
+	mux.Handle("GET /entries/{id}/copy", s.auth(s.handleEntryCopy))
 	mux.Handle("POST /entries/{id}/update", s.auth(s.handleEntryUpdate))
 	mux.Handle("POST /entries/{id}/void", s.auth(s.handleEntryVoid))
 	mux.Handle("POST /entries/{id}/delete", s.auth(s.handleEntryDelete))

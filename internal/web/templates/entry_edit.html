@@ -1,10 +1,12 @@
 {{define "content"}}
 <section class="stack" data-base-id="{{.Base.ID}}">
 	<a class="backlink" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ Zurück zu {{.Neighbor.Name}}</a>
-	<h2 class="section-title">Buchung bearbeiten · {{date .Entry.Date}}</h2>
+	<h2 class="section-title">{{if .Copy}}Buchung kopieren{{else}}Buchung bearbeiten · {{date .Entry.Date}}{{end}}</h2>
 
-	<form method="post" action="/entries/{{.Entry.ID}}/update" class="card form" data-entry-form
+	<form method="post" action="{{if .Copy}}/entries{{else}}/entries/{{.Entry.ID}}/update{{end}}" class="card form" data-entry-form
 		data-pricing-url="/api/base/{{.Base.ID}}/pricing" data-validate>
+		{{if .Copy}}<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
+		<input type="hidden" name="year_id" value="{{.Year.ID}}">{{end}}
 
 		<div class="segmented" role="tablist">
 			<label class="segmented__item">
@@ -63,7 +65,7 @@
 		<label class="field"><span>Notiz (optional)</span>
 			<input class="input" type="text" name="note" value="{{.Entry.Note}}"></label>
 
-		<button class="btn btn--primary btn--block" type="submit">Änderungen speichern</button>
+		<button class="btn btn--primary btn--block" type="submit">{{if .Copy}}Buchung anlegen{{else}}Änderungen speichern{{end}}</button>
 	</form>
 </section>
 {{end}}
