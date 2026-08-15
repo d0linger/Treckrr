@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -43,7 +44,44 @@ func (s *Server) serverError(w http.ResponseWriter, what string, err error) {
 		errMsg = err.Error()
 	}
 	slog.Error("internal error", "what", sanitizeLog(what), "err", sanitizeLog(errMsg))
-	http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+	writeErrorPage(w, http.StatusInternalServerError, "Interner Fehler",
+		"Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es erneut.")
+}
+
+// handleNotFound is the mux fallback for any path that no route matches; it
+// renders the branded 404 instead of net/http's plain-text default.
+func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
+	writeErrorPage(w, http.StatusNotFound, "Seite nicht gefunden",
+		"Diese Seite existiert nicht oder wurde verschoben.")
+}
+
+// errorPageTmpl is a self-contained, brand-consistent error document: it links
+// the app stylesheet (so fonts/colors match) and follows the system light/dark
+// preference via prefers-color-scheme. Standalone so it needs neither a session
+// nor the full page layout, and works for authenticated and anonymous requests.
+var errorPageTmpl = template.Must(template.New("errpage").Parse(
+	`<!doctype html><html lang="de"><head><meta charset="utf-8">` +
+		`<meta name="viewport" content="width=device-width, initial-scale=1">` +
+		`<title>{{.Title}} · Treckrr</title>` +
+		`<link rel="stylesheet" href="/static/css/app.css?v={{.Version}}"></head>` +
+		`<body class="errpage-body"><main class="errpage"><div class="errpage__card">` +
+		`<div class="errpage__code">{{.Status}}</div>` +
+		`<h1 class="errpage__title">{{.Title}}</h1>` +
+		`<p class="errpage__msg">{{.Msg}}</p>` +
+		`<a class="btn btn--primary" href="/">Zur Übersicht</a>` +
+		`</div></main></body></html>`))
+
+func writeErrorPage(w http.ResponseWriter, status int, title, msg string) {
+	var buf bytes.Buffer
+	if err := errorPageTmpl.Execute(&buf, map[string]any{
+		"Status": status, "Title": title, "Msg": msg, "Version": web.AssetVersion(),
+	}); err != nil { // never happens for this fixed template
+		http.Error(w, title, status)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write(buf.Bytes())
 }
 
 // render executes the named page template's "layout" into the response.

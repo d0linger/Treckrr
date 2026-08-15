@@ -1598,3 +1598,12 @@ em { font-style: normal; color: var(--muted); }
 	.stack--statement .yearcard, .stack--statement .summary-card { break-inside: avoid; box-shadow: none; }
 	.stack--statement .yearcard { background: #fff !important; border-color: #dfe4dd !important; }
 }
+
+/* Standalone error page (404/500). Token-based; follows system theme. */
+.errpage-body { min-height: 100dvh; display: grid; place-items: center; padding: 1.5rem; background: var(--bg); }
+.errpage { width: 100%; max-width: 26rem; }
+.errpage__card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+	box-shadow: var(--card-shadow); padding: 2rem 1.6rem; text-align: center; }
+.errpage__code { font-family: var(--font-mono); font-size: 2.6rem; font-weight: 800; color: var(--muted); line-height: 1; }
+.errpage__title { margin: .6rem 0 .3rem; font-size: 1.15rem; }
+.errpage__msg { color: var(--muted); font-size: .9rem; margin: 0 0 1.2rem; }

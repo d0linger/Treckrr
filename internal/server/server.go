@@ -71,6 +71,11 @@ const userCtxKey ctxKey = "user"
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
+	// Fallback for any path no route matches → branded 404. In Go 1.22+ ServeMux
+	// a more specific pattern always wins, so this only catches truly unknown paths
+	// (the exact-root "GET /{$}" and every registered route take precedence).
+	mux.HandleFunc("/", s.handleNotFound)
+
 	// Health & PWA plumbing (public).
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	// Prometheus metrics — only registered when METRICS_TOKEN is set AND long enough
