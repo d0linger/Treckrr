@@ -1562,3 +1562,18 @@ em { font-style: normal; color: var(--muted); }
 .auth__or { display: flex; align-items: center; gap: 12px; margin: .2rem 0 -.2rem; color: var(--muted);
 	font-family: var(--font-mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; }
 .auth__or::before, .auth__or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+/* Keyboard-shortcut cheatsheet overlay (toggled by "?"). Token-based → theme-aware. */
+.kbd-help { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+	background: rgba(0, 0, 0, .45); padding: 1rem; }
+.kbd-help__card { background: var(--surface); color: var(--text); border: 1px solid var(--border);
+	border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.1rem 1.2rem; min-width: 15rem;
+	max-width: 22rem; width: 100%; }
+.kbd-help__h { margin: 0 0 .7rem; font-size: 1rem; }
+.kbd-help__row { display: flex; align-items: center; gap: .8rem; padding: .28rem 0; }
+.kbd-help__row span { color: var(--muted); font-size: .92rem; }
+.kbd-help kbd { min-width: 2.6rem; text-align: center; font-family: var(--font-mono); font-size: .8rem;
+	padding: .15rem .45rem; border: 1px solid var(--border); border-bottom-width: 2px;
+	border-radius: 7px; background: var(--surface-2); color: var(--text); }
+@media (prefers-reduced-motion: no-preference) { .kbd-help { animation: kbd-fade .12s ease-out; } }
+@keyframes kbd-fade { from { opacity: 0; } to { opacity: 1; } }

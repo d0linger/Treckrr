@@ -920,4 +920,55 @@
 				.then(function () { btn.disabled = false; });
 		});
 	})();
+
+	// Keyboard shortcuts: "/" focuses search, "g" then d/n/s/m/y/p navigates, "?"
+	// toggles a cheatsheet. Ignored while typing in a field so normal input works.
+	(function () {
+		var nav = { d: "/", n: "/neighbors", s: "/stats", m: "/mahnwesen", y: "/years", p: "/prices" };
+		var gPending = false, gTimer = null;
+		function typing(el) {
+			if (!el) return false;
+			var t = (el.tagName || "").toLowerCase();
+			return t === "input" || t === "textarea" || t === "select" || el.isContentEditable;
+		}
+		function help() {
+			var ex = document.getElementById("kbd-help");
+			if (ex) { ex.remove(); return; }
+			var rows = [
+				["/", "Suche fokussieren"], ["g d", "Übersicht"], ["g n", "Nachbarn"],
+				["g s", "Statistik"], ["g m", "Mahnwesen"], ["g y", "Jahre"],
+				["g p", "Preise"], ["?", "Diese Hilfe"], ["Esc", "Schließen"]
+			];
+			var ov = document.createElement("div");
+			ov.id = "kbd-help"; ov.className = "kbd-help"; ov.setAttribute("role", "dialog");
+			ov.setAttribute("aria-label", "Tastaturkürzel");
+			var card = document.createElement("div"); card.className = "kbd-help__card";
+			var h = document.createElement("h2"); h.className = "kbd-help__h"; h.textContent = "Tastaturkürzel";
+			card.appendChild(h);
+			rows.forEach(function (r) {
+				var row = document.createElement("div"); row.className = "kbd-help__row";
+				var k = document.createElement("kbd"); k.textContent = r[0];
+				var d = document.createElement("span"); d.textContent = r[1];
+				row.appendChild(k); row.appendChild(d); card.appendChild(row);
+			});
+			ov.appendChild(card);
+			ov.addEventListener("click", function (e) { if (e.target === ov) ov.remove(); });
+			document.body.appendChild(ov);
+		}
+		document.addEventListener("keydown", function (e) {
+			if (e.key === "Escape") { var h = document.getElementById("kbd-help"); if (h) h.remove(); }
+			if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
+			if (gPending) {
+				gPending = false; clearTimeout(gTimer);
+				var url = nav[e.key];
+				if (url) { e.preventDefault(); window.location.href = url; }
+				return;
+			}
+			if (e.key === "g") { gPending = true; gTimer = setTimeout(function () { gPending = false; }, 1200); return; }
+			if (e.key === "/") {
+				var box = document.querySelector('input[type="search"]:not([hidden])');
+				if (box) { e.preventDefault(); box.focus(); }
+			} else if (e.key === "?") { e.preventDefault(); help(); }
+		});
+	})();
 })();
