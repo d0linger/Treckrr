@@ -28,7 +28,7 @@ func (s *Store) AddPayment(ctx context.Context, yearID, neighborID int64, amount
 func (s *Store) ListPayments(ctx context.Context, yearID, neighborID int64) ([]models.Payment, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, billing_year_id, neighbor_id, amount, paid_on, note, created_at
-		   FROM payments WHERE billing_year_id=$1 AND neighbor_id=$2
+		   FROM payments WHERE billing_year_id=$1 AND neighbor_id=$2 AND deleted_at IS NULL
 		  ORDER BY paid_on, id`, yearID, neighborID)
 	if err != nil {
 		return nil, err
@@ -65,14 +65,31 @@ func (s *Store) GetPayment(ctx context.Context, id int64) (models.Payment, error
 func (s *Store) CountPaymentsForNeighborYear(ctx context.Context, yearID, neighborID int64) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM payments WHERE billing_year_id=$1 AND neighbor_id=$2`,
+		`SELECT count(*) FROM payments WHERE billing_year_id=$1 AND neighbor_id=$2 AND deleted_at IS NULL`,
 		yearID, neighborID).Scan(&n)
 	return n, err
 }
 
-// DeletePayment removes a payment.
+// DeletePayment soft-deletes a payment (sets deleted_at), so an accidental delete
+// can be undone. It drops out of every sum/list immediately; a background purge
+// removes it for good after the grace window.
 func (s *Store) DeletePayment(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM payments WHERE id=$1`, id)
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE payments SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL`, id)
+	return err
+}
+
+// RestorePayment reverses a soft-delete (undo). No-op if already active or gone.
+func (s *Store) RestorePayment(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE payments SET deleted_at=NULL WHERE id=$1 AND deleted_at IS NOT NULL`, id)
+	return err
+}
+
+// PurgeDeletedPayments hard-deletes payments soft-deleted before the cutoff.
+func (s *Store) PurgeDeletedPayments(ctx context.Context, before time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM payments WHERE deleted_at IS NOT NULL AND deleted_at < $1`, before)
 	return err
 }
 
@@ -81,7 +98,7 @@ func (s *Store) NeighborPaymentSum(ctx context.Context, yearID, neighborID int64
 	var sum decimal.Decimal
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COALESCE(SUM(amount),0) FROM payments
-		  WHERE billing_year_id=$1 AND neighbor_id=$2`, yearID, neighborID).Scan(&sum)
+		  WHERE billing_year_id=$1 AND neighbor_id=$2 AND deleted_at IS NULL`, yearID, neighborID).Scan(&sum)
 	return sum, err
 }
 

@@ -308,7 +308,7 @@ func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open
 		                   AND NOT l.voided), 0) AS net,
 		    COALESCE((SELECT SUM(p.amount) FROM payments p
 		               WHERE p.neighbor_id = byn.neighbor_id
-		                 AND p.billing_year_id = byn.billing_year_id), 0) AS paid
+		                 AND p.billing_year_id = byn.billing_year_id AND p.deleted_at IS NULL), 0) AS paid
 		  FROM billing_year_neighbors byn
 		  WHERE byn.billing_year_id = $1
 		)
@@ -353,7 +353,7 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 		  (SELECT count(*) FROM entries e
 		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id) AS entries,
 		  COALESCE((SELECT SUM(p.amount) FROM payments p
-		             WHERE p.neighbor_id = n.id AND p.billing_year_id = byn.billing_year_id), 0) AS paid
+		             WHERE p.neighbor_id = n.id AND p.billing_year_id = byn.billing_year_id AND p.deleted_at IS NULL), 0) AS paid
 		FROM billing_year_neighbors byn
 		JOIN neighbors n ON n.id = byn.neighbor_id
 		WHERE byn.billing_year_id = $1

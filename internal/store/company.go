@@ -116,7 +116,7 @@ func (s *Store) InvoiceRemaining(ctx context.Context, yearID, neighborID int64) 
 		  + COALESCE((SELECT SUM(amount) FROM neighbor_ledger
 		               WHERE billing_year_id=$1 AND neighbor_id=$2 AND NOT voided), 0)
 		  - COALESCE((SELECT SUM(amount) FROM payments
-		               WHERE billing_year_id=$1 AND neighbor_id=$2), 0)`,
+		               WHERE billing_year_id=$1 AND neighbor_id=$2 AND deleted_at IS NULL), 0)`,
 		yearID, neighborID).Scan(&rest)
 	return rest, err
 }

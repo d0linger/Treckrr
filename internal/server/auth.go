@@ -41,7 +41,7 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 			data["ShowTotp"] = true
 		}
 	}
-	if msg, kind := s.readFlash(w, r); msg != "" {
+	if msg, kind, _ := s.readFlash(w, r); msg != "" {
 		data["FlashMessage"] = msg
 		data["FlashKind"] = kind
 	}

@@ -23,6 +23,10 @@ import (
 	"github.com/d0linger/treckrr/internal/store"
 )
 
+// paymentUndoGrace is how long a soft-deleted payment stays restorable before the
+// maintenance loop purges it for good.
+const paymentUndoGrace = 7 * 24 * time.Hour
+
 func main() {
 	setupLogging()
 
@@ -232,6 +236,10 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 		}
 		if err := st.PurgeExpiredWebauthnCeremonies(bg); err != nil {
 			slog.Error("purge webauthn ceremonies", "err", err)
+		}
+		// Hard-delete payments soft-deleted more than the undo grace window ago.
+		if err := st.PurgeDeletedPayments(bg, time.Now().Add(-paymentUndoGrace)); err != nil {
+			slog.Error("purge deleted payments", "err", err)
 		}
 	}
 	purge()

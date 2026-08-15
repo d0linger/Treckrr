@@ -83,6 +83,7 @@
 	{{if .FlashMessage}}
 		<div class="toast toast--{{.FlashKind}}" role="{{if eq .FlashKind "error"}}alert{{else}}status{{end}}">
 			<span class="toast__msg">{{.FlashMessage}}</span>
+			{{with .FlashUndo}}<form method="post" action="{{.}}" class="toast__undo"><button class="toast__undobtn" type="submit">Rückgängig</button></form>{{end}}
 			<button class="toast__close" type="button" data-toast-dismiss aria-label="Meldung schließen">{{template "ic-x"}}</button>
 		</div>
 	{{end}}

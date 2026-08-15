@@ -1636,3 +1636,9 @@ em { font-style: normal; color: var(--muted); }
 .cmdk__tx { display: flex; flex-direction: column; min-width: 0; }
 .cmdk__lb { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cmdk__sub { color: var(--muted); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Undo action inside a flash toast. */
+.toast__undo { margin: 0 .2rem 0 .6rem; }
+.toast__undobtn { background: transparent; border: 1px solid currentColor; color: inherit;
+	border-radius: 8px; padding: .2rem .6rem; font-size: .82rem; font-weight: 600; cursor: pointer; }
+.toast__undobtn:hover { background: rgba(255, 255, 255, .18); }

@@ -27,9 +27,12 @@ func (s *Server) newPage(w http.ResponseWriter, r *http.Request, title, active s
 		"Theme":    themeFromCookie(r),
 		"CSRF":     s.csrfToken(r),
 	}
-	if msg, kind := s.readFlash(w, r); msg != "" {
+	if msg, kind, undoURL := s.readFlash(w, r); msg != "" {
 		p["FlashMessage"] = msg
 		p["FlashKind"] = kind
+		if undoURL != "" {
+			p["FlashUndo"] = undoURL
+		}
 	}
 	return p
 }
@@ -112,29 +115,42 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 // ---- Flash messages (cookie based) --------------------------------------
 
 func (s *Server) setFlash(w http.ResponseWriter, r *http.Request, kind, msg string) {
-	s.setCookie(w, r, &http.Cookie{
-		Name:   flashCookie,
-		Value:  kind + "|" + url.QueryEscape(msg),
-		MaxAge: 30,
-	})
+	s.setFlashUndo(w, r, kind, msg, "")
 }
 
-// readFlash returns the flash message and kind, clearing the cookie.
-func (s *Server) readFlash(w http.ResponseWriter, r *http.Request) (msg, kind string) {
+// setFlashUndo is setFlash with an optional undo action: the toast renders a
+// "Rückgängig" POST button targeting undoURL (only same-origin absolute paths).
+func (s *Server) setFlashUndo(w http.ResponseWriter, r *http.Request, kind, msg, undoURL string) {
+	val := kind + "|" + url.QueryEscape(msg)
+	if undoURL != "" {
+		val += "|" + url.QueryEscape(undoURL)
+	}
+	s.setCookie(w, r, &http.Cookie{Name: flashCookie, Value: val, MaxAge: 30})
+}
+
+// readFlash returns the flash message, kind and optional undo URL, clearing the
+// cookie. The undo URL is only honored when it is a same-origin absolute path.
+func (s *Server) readFlash(w http.ResponseWriter, r *http.Request) (msg, kind, undoURL string) {
 	c, err := r.Cookie(flashCookie)
 	if err != nil || c.Value == "" {
-		return "", ""
+		return "", "", ""
 	}
 	s.setCookie(w, r, &http.Cookie{Name: flashCookie, Value: "", MaxAge: -1})
-	parts := strings.SplitN(c.Value, "|", 2)
-	if len(parts) != 2 {
-		return "", ""
+	parts := strings.SplitN(c.Value, "|", 3)
+	if len(parts) < 2 {
+		return "", "", ""
 	}
 	decoded, err := url.QueryUnescape(parts[1])
 	if err != nil {
-		return "", ""
+		return "", "", ""
 	}
-	return decoded, parts[0]
+	if len(parts) == 3 {
+		if u, err := url.QueryUnescape(parts[2]); err == nil &&
+			strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") {
+			undoURL = u
+		}
+	}
+	return decoded, parts[0], undoURL
 }
 
 // ---- Form helpers -------------------------------------------------------

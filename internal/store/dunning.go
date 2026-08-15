@@ -39,7 +39,7 @@ func (s *Store) DunningRows(ctx context.Context, yearID int64, termDays int, asO
 		                 WHERE l.billing_year_id = $1 AND l.neighbor_id = iv.neighbor_id
 		                   AND NOT l.voided), 0)
 		    - COALESCE((SELECT SUM(p.amount) FROM payments p
-		                 WHERE p.billing_year_id = $1 AND p.neighbor_id = iv.neighbor_id), 0) AS open_amt
+		                 WHERE p.billing_year_id = $1 AND p.neighbor_id = iv.neighbor_id AND p.deleted_at IS NULL), 0) AS open_amt
 		  FROM invoices iv
 		  JOIN neighbors n ON n.id = iv.neighbor_id
 		  WHERE iv.billing_year_id = $1 AND iv.kind = 'invoice' AND iv.status = 'issued'
@@ -78,7 +78,7 @@ func (s *Store) NeighborNetPaid(ctx context.Context, yearID, neighborID int64) (
 		  + COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
 		               WHERE l.neighbor_id=$2 AND l.billing_year_id=$1 AND NOT l.voided), 0),
 		  COALESCE((SELECT SUM(p.amount) FROM payments p
-		             WHERE p.neighbor_id=$2 AND p.billing_year_id=$1), 0)`,
+		             WHERE p.neighbor_id=$2 AND p.billing_year_id=$1 AND p.deleted_at IS NULL), 0)`,
 		yearID, neighborID).Scan(&net, &paid)
 	return
 }

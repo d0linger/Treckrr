@@ -135,6 +135,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /neighbors/{id}/payments", s.auth(s.handlePaymentAdd))
 	mux.Handle("POST /neighbors/{id}/carry-forward", s.auth(s.handleNeighborCarryForward))
 	mux.Handle("POST /payments/{id}/delete", s.auth(s.handlePaymentDelete))
+	mux.Handle("POST /payments/{id}/restore", s.auth(s.handlePaymentRestore))
 	mux.Handle("GET /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcPreview))
 	mux.Handle("POST /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcApply))
 	mux.Handle("GET /years/{id}/recalc", s.auth(s.handleYearRecalcPreview))
