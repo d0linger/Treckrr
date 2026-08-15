@@ -24,6 +24,7 @@
 				<a class="btn btn--ghost btn--sm" href="/stats?year={{.Year.ID}}">Statistik</a>
 				<a class="btn btn--ghost btn--sm" href="/stats/all">Alle Jahre</a>
 				<a class="btn btn--ghost btn--sm" href="/export/year/{{.Year.ID}}">CSV Export</a>
+				{{if not .Completed}}<a class="btn btn--ghost btn--sm" href="/entries/import?year={{.Year.ID}}">Import</a>{{end}}
 			</span>
 		</div>
 	</div>
