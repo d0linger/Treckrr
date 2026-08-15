@@ -1,5 +1,18 @@
 {{define "content"}}
 <section class="stack">
+	{{with .Onboarding}}
+	<div class="card onboard">
+		<div class="onboard__h">Erste Schritte</div>
+		<ol class="onboard__list">
+			{{range .}}
+			<li class="onboard__item {{if .Done}}is-done{{end}}">
+				<span class="onboard__mark" aria-hidden="true">{{if .Done}}{{template "ic-check"}}{{end}}</span>
+				{{if .Done}}<span>{{.Text}}</span>{{else}}<a href="{{.Href}}">{{.Text}}</a>{{end}}
+			</li>
+			{{end}}
+		</ol>
+	</div>
+	{{end}}
 	<div class="summary-card card">
 		<div>
 			<span class="summary-card__label">Gesamtkosten {{.Year.Year}}</span>
