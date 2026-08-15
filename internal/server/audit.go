@@ -14,12 +14,25 @@ import (
 // becoming one endless scroll while staying searchable/filterable).
 const auditPageSize = 50
 
+// sanitizeQueryParam caps query parameters to maxNameLen to guard against
+// oversized query payload DoS attacks.
+func sanitizeQueryParam(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) > maxNameLen {
+		runes := []rune(v)
+		if len(runes) > maxNameLen {
+			return string(runes[:maxNameLen])
+		}
+	}
+	return v
+}
+
 // handleAudit renders the admin audit-trail view with search, action filter and
 // pagination. Filtering, counting and paging all run in SQL so they cover the
 // full audit history, not just a fixed recent batch.
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query().Get("q")
-	action := r.URL.Query().Get("action")
+	q := sanitizeQueryParam(r.URL.Query().Get("q"))
+	action := sanitizeQueryParam(r.URL.Query().Get("action"))
 
 	total, err := s.store.CountAudit(r.Context(), q, action)
 	if err != nil {
@@ -73,8 +86,9 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 
 // handleAuditExport streams the (optionally filtered) audit trail as CSV.
 func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
-	filtered, err := s.store.ListAuditFiltered(r.Context(),
-		r.URL.Query().Get("q"), r.URL.Query().Get("action"), 0, 0)
+	q := sanitizeQueryParam(r.URL.Query().Get("q"))
+	action := sanitizeQueryParam(r.URL.Query().Get("action"))
+	filtered, err := s.store.ListAuditFiltered(r.Context(), q, action, 0, 0)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return

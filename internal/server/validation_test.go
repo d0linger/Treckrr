@@ -33,3 +33,26 @@ func TestLenError(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizeQueryParam(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"short query", "login", "login"},
+		{"exact limit", strings.Repeat("a", 100), strings.Repeat("a", 100)},
+		{"over limit truncated", strings.Repeat("a", 150), strings.Repeat("a", 100)},
+		{"multibyte over limit", strings.Repeat("ä", 120), strings.Repeat("ä", 100)},
+		{"whitespace trimmed", "   test   ", "test"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := sanitizeQueryParam(c.input)
+			if got != c.want {
+				t.Errorf("sanitizeQueryParam(%q) = %q (runes %d), want %q (runes %d)",
+					c.input, got, utf8.RuneCountInString(got), c.want, utf8.RuneCountInString(c.want))
+			}
+		})
+	}
+}
