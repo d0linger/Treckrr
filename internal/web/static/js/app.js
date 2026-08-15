@@ -695,6 +695,27 @@
 				toast("Bild-Export hier nicht möglich – nutze Drucken/PDF");
 			}).then(function () { imgBtn.disabled = false; });
 		});
+
+		// Share the Beleg as a PNG via the native share sheet (WhatsApp/Signal/…),
+		// falling back to a download where file-sharing isn't supported.
+		var shareBtn = scope.querySelector("[data-beleg-share]");
+		if (shareBtn) shareBtn.addEventListener("click", function () {
+			if (shareBtn.disabled) return;
+			shareBtn.disabled = true;
+			var name = (beleg.getAttribute("data-beleg-name") || "beleg") + ".png";
+			belegPng().then(function (blob) {
+				var file = new File([blob], name, { type: "image/png" });
+				if (navigator.canShare && navigator.canShare({ files: [file] })) {
+					return navigator.share({ files: [file], title: "Beleg" }).catch(function (e) {
+						if (e && e.name === "AbortError") return; // user cancelled
+						download(blob, name); toast("Beleg gespeichert");
+					});
+				}
+				download(blob, name); toast("Teilen hier nicht möglich – Beleg gespeichert");
+			}).catch(function () {
+				toast("Bild-Export hier nicht möglich – nutze Drucken/PDF");
+			}).then(function () { shareBtn.disabled = false; });
+		});
 	})();
 
 	// Register the service worker for offline/PWA support.
