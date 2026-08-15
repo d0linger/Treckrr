@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -77,6 +78,23 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 func (s *Store) SetNeighborArchived(ctx context.Context, id int64, archived bool) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE neighbors SET archived=$1 WHERE id=$2`, archived, id)
 	return err
+}
+
+// SimilarEntryExists reports whether a non-voided booking with the same named
+// task already exists for this neighbor+year on the given date — a strong
+// duplicate signal used to warn (not block) before a second identical entry. An
+// empty task never matches (too weak a signal to warn on).
+func (s *Store) SimilarEntryExists(ctx context.Context, neighborID, yearID int64, date time.Time, task string) (bool, error) {
+	if strings.TrimSpace(task) == "" {
+		return false, nil
+	}
+	var exists bool
+	err := s.db.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM entries
+		   WHERE neighbor_id=$1 AND billing_year_id=$2 AND NOT voided
+		     AND entry_date=$3 AND task_label=$4)`,
+		neighborID, yearID, date, task).Scan(&exists)
+	return exists, err
 }
 
 // CreateNeighbor inserts a neighbor.

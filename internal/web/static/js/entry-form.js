@@ -146,6 +146,27 @@
 		})
 		.catch(function () { /* preview stays inert; server still calculates */ });
 
+	// Pre-save guard: warn (never block) on implausible hours or a same-day
+	// duplicate of the same task. Keeps the form intact — a cancelled confirm just
+	// stays on the page. requestSubmit() re-fires this handler with the flag set.
+	form.addEventListener("submit", function (e) {
+		if (form.dataset.checked === "1") return;
+		var q = form.querySelector('[name="year_id"]'), n = form.querySelector('[name="neighbor_id"]');
+		if (!n || !q) return; // edit form (no ids) → no duplicate check
+		e.preventDefault();
+		var params = new URLSearchParams({
+			neighbor_id: n.value, year_id: q.value,
+			entry_date: (form.querySelector('[name="entry_date"]') || {}).value || "",
+			task_label: (form.querySelector('[name="task_label"]') || {}).value || "",
+			hours: (hoursEl && hoursEl.value) || "0"
+		});
+		function go() { form.dataset.checked = "1"; form.requestSubmit(); }
+		fetch("/api/entries/precheck?" + params.toString(), { credentials: "same-origin" })
+			.then(function (r) { return r.ok ? r.json() : {}; })
+			.then(function (d) { if (!d.warn || window.confirm(d.warn)) go(); })
+			.catch(function () { go(); }); // fail-open: never block saving on a network hiccup
+	});
+
 	applyMode();
 	applyUnit();
 })();
