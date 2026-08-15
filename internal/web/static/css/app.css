@@ -1642,3 +1642,7 @@ em { font-style: normal; color: var(--muted); }
 .toast__undobtn { background: transparent; border: 1px solid currentColor; color: inherit;
 	border-radius: 8px; padding: .2rem .6rem; font-size: .82rem; font-weight: 600; cursor: pointer; }
 .toast__undobtn:hover { background: rgba(255, 255, 255, .18); }
+
+/* Offline pending-count badge in the appbar. */
+.appbar__offline { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px;
+	background: var(--owe, #c05635); color: #fff; white-space: nowrap; }

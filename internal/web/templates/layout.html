@@ -48,6 +48,7 @@
 				<span>Treckrr</span>
 			</a>
 			<h1 class="appbar__title">{{.Title}}</h1>
+			<span class="appbar__offline" data-offline-badge role="status" aria-live="polite" hidden title="Offline erfasste Buchungen, werden bei Verbindung gesendet"></span>
 			<button class="appbar__icon" type="button" data-theme-toggle title="Design wechseln" aria-label="Hell/Dunkel umschalten">
 				<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
 					<circle cx="12" cy="12" r="9"/><path d="M12 3v18" fill="currentColor" stroke="none"/>
@@ -160,6 +161,7 @@
 
 	<script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
 	<script src="/static/js/passkey.js?v={{.AssetVersion}}" defer></script>
+	<script src="/static/js/offline.js?v={{.AssetVersion}}" defer></script>
 	{{block "scripts" .}}{{end}}
 </body>
 </html>{{end}}

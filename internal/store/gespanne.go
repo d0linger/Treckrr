@@ -154,3 +154,12 @@ func nullInt(p *int64) sql.NullInt64 {
 	}
 	return sql.NullInt64{Int64: *p, Valid: true}
 }
+
+// nullStr maps an empty string to SQL NULL, so a blank value doesn't collide in
+// a partial "WHERE col IS NOT NULL" unique index.
+func nullStr(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: s, Valid: true}
+}

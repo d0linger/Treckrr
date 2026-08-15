@@ -172,11 +172,18 @@ func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 		`INSERT INTO entries
 		   (neighbor_id, billing_year_id, entry_date, task_label, gespann_id, tractor_id, load_level_id,
 		    tractor_label, load_label, machine_labels, hours, hourly_rate, cost, note,
-		    unit, quantity, unit_price)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
+		    unit, quantity, unit_price, idempotency_key)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+		 ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+		 RETURNING id`,
 		e.NeighborID, e.BillingYearID, e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID),
 		nullInt(e.LoadLevelID), e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours,
-		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice).Scan(&id)
+		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey)).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		// A replayed offline booking whose key already exists: a safe no-op. Commit
+		// the empty tx and return 0 to signal "already recorded".
+		return 0, tx.Commit()
+	}
 	if err != nil {
 		return 0, err
 	}

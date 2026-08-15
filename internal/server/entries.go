@@ -340,10 +340,16 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	entry.NeighborID = neighborID
 	entry.BillingYearID = year.ID
+	entry.IdempotencyKey = trimmed(r, "idempotency_key") // set only for offline replays
 
 	newID, err := s.store.CreateEntry(r.Context(), entry, machineIDs)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	if newID == 0 { // duplicate replay of an offline booking — already recorded
+		s.setFlash(w, r, "success", "Buchung war bereits erfasst.")
+		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
 	var detail string
