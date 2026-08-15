@@ -157,11 +157,14 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 		totalCost = totalCost.Add(h.Net)
 		totalHours = totalHours.Add(h.Hours)
 	}
+	company, _ := s.store.GetCompany(r.Context())
 	data := s.newPage(w, r, neighbor.Name+" · Verlauf", "dashboard")
 	data["Neighbor"] = neighbor
 	data["Rows"] = rows
 	data["TotalCost"] = totalCost
 	data["TotalHours"] = totalHours
+	data["Company"] = company
+	data["Today"] = time.Now()
 	s.render(w, r, "neighbor_overview", data)
 }
 

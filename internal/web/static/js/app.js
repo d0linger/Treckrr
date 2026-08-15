@@ -921,6 +921,11 @@
 		});
 	})();
 
+	// Generic print buttons (CSP-safe, no inline onclick).
+	document.querySelectorAll("[data-print]").forEach(function (b) {
+		b.addEventListener("click", function () { window.print(); });
+	});
+
 	// Keyboard shortcuts: "/" focuses search, "g" then d/n/s/m/y/p navigates, "?"
 	// toggles a cheatsheet. Ignored while typing in a field so normal input works.
 	(function () {
