@@ -144,6 +144,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /ledger/{id}/void", s.auth(s.handleLedgerVoid))
 	mux.Handle("POST /ledger/{id}/delete", s.auth(s.handleLedgerDelete))
 	mux.Handle("GET /api/base/{id}/pricing", s.auth(s.handlePricingAPI))
+	mux.Handle("GET /api/search", s.auth(s.handleSearchAPI))
 
 	mux.Handle("GET /prices", s.auth(s.handlePrices))
 	mux.Handle("GET /prices/compare", s.auth(s.handlePriceCompare))

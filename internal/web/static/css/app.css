@@ -1619,3 +1619,20 @@ em { font-style: normal; color: var(--muted); }
 	border: 1.5px solid var(--border); border-radius: 50%; }
 .onboard__item.is-done .onboard__mark { border-color: var(--good, #3f8f5f); color: var(--good, #3f8f5f); }
 .onboard__mark svg { width: .8rem; height: .8rem; }
+
+/* Command palette (Ctrl/Cmd+K). Token-based → theme-aware. */
+.cmdk { position: fixed; inset: 0; z-index: 70; display: flex; justify-content: center;
+	align-items: flex-start; padding: 12vh 1rem 1rem; background: rgba(0, 0, 0, .45); }
+.cmdk__box { width: 100%; max-width: 34rem; background: var(--surface); border: 1px solid var(--border);
+	border-radius: var(--radius); box-shadow: var(--card-shadow); overflow: hidden; }
+.cmdk__input { border: 0; border-bottom: 1px solid var(--border); border-radius: 0;
+	font-size: 1rem; padding: .85rem 1rem; }
+.cmdk__input:focus { outline: none; box-shadow: none; }
+.cmdk__list { list-style: none; margin: 0; padding: .3rem; max-height: 55vh; overflow-y: auto; }
+.cmdk__item { display: flex; align-items: center; gap: .7rem; padding: .5rem .6rem; border-radius: var(--radius-sm);
+	cursor: pointer; }
+.cmdk__item.is-sel { background: var(--surface-2); }
+.cmdk__ic { flex: 0 0 auto; font-size: 1.05rem; }
+.cmdk__tx { display: flex; flex-direction: column; min-width: 0; }
+.cmdk__lb { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmdk__sub { color: var(--muted); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

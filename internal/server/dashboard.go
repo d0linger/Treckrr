@@ -126,7 +126,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	companyOK := strings.TrimSpace(company.Name) != ""
-	if !(companyOK && hasNeighbor && hasBooking) {
+	if !companyOK || !hasNeighbor || !hasBooking {
 		data["Onboarding"] = []map[string]any{
 			{"Done": companyOK, "Text": "Betriebsdaten hinterlegen", "Href": "/admin/company"},
 			{"Done": hasNeighbor, "Text": "Ersten Nachbarn anlegen", "Href": "/neighbors"},
