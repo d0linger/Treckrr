@@ -79,11 +79,17 @@ func (s *Store) DeletePayment(ctx context.Context, id int64) error {
 	return err
 }
 
-// RestorePayment reverses a soft-delete (undo). No-op if already active or gone.
-func (s *Store) RestorePayment(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx,
+// RestorePayment reverses a soft-delete (undo). Returns true only when a
+// soft-deleted row was actually reactivated; false (no error) if it was already
+// active or gone, so the caller can skip a misleading success flash + audit event.
+func (s *Store) RestorePayment(ctx context.Context, id int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE payments SET deleted_at=NULL WHERE id=$1 AND deleted_at IS NOT NULL`, id)
-	return err
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // PurgeDeletedPayments hard-deletes payments soft-deleted before the cutoff.

@@ -158,12 +158,16 @@ func (s *Server) handlePaymentRestore(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.RestorePayment(r.Context(), id); err != nil {
+	restored, err := s.store.RestorePayment(r.Context(), id)
+	switch {
+	case err != nil:
 		s.setFlash(w, r, "error", "Wiederherstellen fehlgeschlagen.")
-	} else {
+	case restored:
 		s.audit(r, "payment_restore", "neighbor", p.NeighborID,
 			s.neighborName(r, p.NeighborID)+" · "+p.Amount.StringFixed(2)+" €")
 		s.setFlash(w, r, "success", "Zahlung wiederhergestellt.")
+	default: // already active (e.g. a double-submit): no state change, no audit
+		s.setFlash(w, r, "info", "Zahlung war bereits aktiv.")
 	}
 	redirect(w, r, neighborURL(p.NeighborID, p.BillingYearID))
 }

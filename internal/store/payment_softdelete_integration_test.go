@@ -75,12 +75,18 @@ func TestPaymentSoftDeleteIntegration(t *testing.T) {
 		t.Errorf("count after soft-delete = %d, want 0", n)
 	}
 
-	// Restore → back in the sum.
-	if err := st.RestorePayment(ctx, id); err != nil {
+	// Restore → back in the sum, and it reports the state change.
+	if restored, err := st.RestorePayment(ctx, id); err != nil {
 		t.Fatalf("restore: %v", err)
+	} else if !restored {
+		t.Fatalf("restore reported no change, want restored=true")
 	}
 	if got := sum(); got != "100" {
 		t.Errorf("sum after restore = %s, want 100", got)
+	}
+	// Restoring an already-active row is a no-op → restored=false, no error.
+	if restored, err := st.RestorePayment(ctx, id); err != nil || restored {
+		t.Errorf("second restore: restored=%v err=%v, want false/nil", restored, err)
 	}
 
 	// Delete again, then purge with a future cutoff → gone for good.
@@ -90,8 +96,8 @@ func TestPaymentSoftDeleteIntegration(t *testing.T) {
 	if err := st.PurgeDeletedPayments(ctx, time.Now().Add(time.Hour)); err != nil {
 		t.Fatalf("purge: %v", err)
 	}
-	if err := st.RestorePayment(ctx, id); err != nil {
-		t.Fatalf("restore after purge should be a no-op: %v", err)
+	if restored, err := st.RestorePayment(ctx, id); err != nil || restored {
+		t.Fatalf("restore after purge should be a no-op: restored=%v err=%v", restored, err)
 	}
 	if got := sum(); got != "0" {
 		t.Errorf("sum after purge = %s, want 0 (row hard-deleted)", got)
