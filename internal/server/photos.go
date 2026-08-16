@@ -64,6 +64,12 @@ func (s *Server) handleEntryPhotoUpload(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
+	// Receipt photos are evidence for the booking: once its year is closed or the
+	// invoice is festgeschrieben, the booking is frozen and its attachments can't
+	// change either (same guard the edit/void handlers use).
+	if !s.entryYearOpen(w, r, entry, "Das Abrechnungsjahr ist abgeschlossen – Belege können nicht mehr geändert werden.") {
+		return
+	}
 	if err := r.ParseMultipartForm(maxPhotoUpload); err != nil {
 		s.setFlash(w, r, "error", "Upload zu groß oder ungültig.")
 		redirect(w, r, "/entries/"+itoa64(entryID)+"/edit")
@@ -132,6 +138,15 @@ func (s *Server) handleEntryPhotoDelete(w http.ResponseWriter, r *http.Request) 
 	photoID, err := formInt64FromPath(r, "pid")
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	entry, err := s.store.GetEntry(r.Context(), entryID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	// Same immutability guard as upload: no removing evidence from a frozen booking.
+	if !s.entryYearOpen(w, r, entry, "Das Abrechnungsjahr ist abgeschlossen – Belege können nicht mehr geändert werden.") {
 		return
 	}
 	if err := s.store.DeleteEntryPhoto(r.Context(), entryID, photoID); err != nil {
