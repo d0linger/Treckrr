@@ -165,7 +165,9 @@
 			neighbor_id: n.value, year_id: q.value,
 			entry_date: (form.querySelector('[name="entry_date"]') || {}).value || "",
 			task_label: (form.querySelector('[name="task_label"]') || {}).value || "",
-			hours: (hoursEl && hoursEl.value) || "0"
+			// On the quantity path the hidden hours field may still hold a stale value;
+			// send "0" so the >24h plausibility check doesn't fire on a unit booking.
+			hours: (isHours() && hoursEl && hoursEl.value) || "0"
 		});
 		function go() {
 			form.dataset.checked = "1";
