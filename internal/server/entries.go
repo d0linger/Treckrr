@@ -938,6 +938,13 @@ func (s *Server) handleLedgerDelete(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
 
+// knownUnits are the booking form's named unit options. Anything else that isn't
+// empty is a custom (free-text) unit — the form must select "Andere Einheit" and
+// prefill the free-text field, or the select would silently fall back to "h".
+var knownUnits = map[string]bool{"h": true, "ha": true, "Ballen": true, "m³": true, "Fuhre": true, "t": true}
+
+func unitIsCustom(u string) bool { return u != "" && !knownUnits[u] }
+
 // handleEntryEditForm renders a prefilled booking form for editing.
 func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
@@ -984,6 +991,8 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	data["Gespanne"] = gespanne
 	data["SelectedMachineIDs"] = selMachines
 	data["Photos"] = photos
+	data["UnitIsCustom"] = unitIsCustom(entry.Unit)
+	data["IsQtyEntry"] = entry.Unit != "" && entry.Unit != "h"
 	s.render(w, r, "entry_edit", data)
 }
 
@@ -1035,6 +1044,8 @@ func (s *Server) handleEntryCopy(w http.ResponseWriter, r *http.Request) {
 	data["Machines"] = machines
 	data["Gespanne"] = gespanne
 	data["SelectedMachineIDs"] = selMachines
+	data["UnitIsCustom"] = unitIsCustom(entry.Unit)
+	data["IsQtyEntry"] = entry.Unit != "" && entry.Unit != "h"
 	data["Copy"] = true
 	s.render(w, r, "entry_edit", data)
 }

@@ -95,7 +95,18 @@ func funcMap() template.FuncMap {
 	return template.FuncMap{
 		"money": Money,
 		"num":   Num,
-		"date":  Date,
+		// numInput formats a decimal for an <input type="number"> value: a plain
+		// period-decimal with trailing zeros trimmed. Num() emits the German comma,
+		// which HTML number inputs reject (the field would render empty), so form
+		// prefills must use this instead.
+		"numInput": func(d decimal.Decimal) string {
+			s := d.StringFixed(3)
+			if strings.Contains(s, ".") {
+				s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
+			}
+			return s
+		},
+		"date": Date,
 		// pdate formats an optional time (nil -> ""), e.g. a passkey's LastUsed.
 		"pdate": func(t *time.Time) string {
 			if t == nil {
