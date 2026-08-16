@@ -40,6 +40,9 @@ func (s *Server) tooLong(w http.ResponseWriter, r *http.Request, field, value st
 // sanitizeQueryParam trims leading/trailing whitespace and caps length at maxRunes
 // code points to prevent CPU/memory exhaustion DoS attacks on search queries.
 func sanitizeQueryParam(v string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return "" // guard: runes[:negative] would panic
+	}
 	v = strings.TrimSpace(v)
 	if utf8.RuneCountInString(v) <= maxRunes {
 		return v

@@ -146,7 +146,8 @@ func (s *Server) readFlash(w http.ResponseWriter, r *http.Request) (msg, kind, u
 	}
 	if len(parts) == 3 {
 		if u, err := url.QueryUnescape(parts[2]); err == nil &&
-			strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") {
+			strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") &&
+			!strings.Contains(u, "\\") { // "/\\evil.com" is read as "//evil.com" by browsers
 			undoURL = u
 		}
 	}

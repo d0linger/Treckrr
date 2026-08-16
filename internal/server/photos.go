@@ -124,7 +124,9 @@ func (s *Server) handleEntryPhotoServe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", ct)
-	w.Header().Set("Cache-Control", "private, max-age=86400")
+	// Keep s.auth's Cache-Control: no-store — a receipt is sensitive, per-user
+	// content and must not linger in the browser cache (recoverable via the back
+	// button after logout, or on a shared machine). Don't override it here.
 	_, _ = w.Write(img)
 }
 
