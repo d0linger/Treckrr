@@ -195,6 +195,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /account/sessions/revoke-others", s.auth(s.handleSessionRevokeOthers))
 
 	mux.Handle("GET /entries/import", s.auth(s.handleImportForm))
+	mux.Handle("GET /entries/import/sample.csv", s.auth(s.handleImportSample))
 	mux.Handle("POST /entries/import/preview", s.auth(s.handleImportPreview))
 	mux.Handle("POST /entries/import", s.auth(s.handleImportCommit))
 	mux.Handle("GET /export/year/{id}", s.auth(s.handleExportYear))
