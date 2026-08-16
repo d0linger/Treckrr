@@ -150,22 +150,41 @@
 	// duplicate of the same task. Keeps the form intact — a cancelled confirm just
 	// stays on the page. requestSubmit() re-fires this handler with the flag set.
 	form.addEventListener("submit", function (e) {
-		if (form.dataset.checked === "1") return;
+		if (form.dataset.checked === "1") return;              // re-submit after the precheck → let it through
+		if (form.dataset.checking === "1") { e.preventDefault(); return; } // a precheck is already in flight
 		var q = form.querySelector('[name="year_id"]'), n = form.querySelector('[name="neighbor_id"]');
 		if (!n || !q) return; // edit form (no ids) → no duplicate check
 		e.preventDefault();
+		form.dataset.checking = "1";
 		var params = new URLSearchParams({
 			neighbor_id: n.value, year_id: q.value,
 			entry_date: (form.querySelector('[name="entry_date"]') || {}).value || "",
 			task_label: (form.querySelector('[name="task_label"]') || {}).value || "",
 			hours: (hoursEl && hoursEl.value) || "0"
 		});
-		function go() { form.dataset.checked = "1"; form.requestSubmit(); }
+		function go() {
+			form.dataset.checked = "1";
+			// The first (prevented) submit already tripped app.js's double-submit
+			// guard (dataset.submitting="1"); clear it so this programmatic re-submit
+			// isn't mistaken for a duplicate click and blocked — which would leave the
+			// button spinning forever and never POST the booking.
+			form.dataset.submitting = "";
+			form.requestSubmit();
+		}
 		fetch("/api/entries/precheck?" + params.toString(), { credentials: "same-origin" })
 			.then(function (r) { return r.ok ? r.json() : {}; })
-			.then(function (d) { if (!d.warn || window.confirm(d.warn)) go(); })
+			.then(function (d) { if (!d.warn || window.confirm(d.warn)) go(); else releaseButton(); })
 			.catch(function () { go(); }); // fail-open: never block saving on a network hiccup
 	});
+
+	// When the user cancels the plausibility confirm, the booking is NOT submitted,
+	// so undo app.js's spinner/disabled state and let them edit and retry.
+	function releaseButton() {
+		form.dataset.checking = "";
+		form.dataset.submitting = "";
+		var b = form.querySelector("button.btn--primary[type='submit'], button[type='submit'].btn--primary");
+		if (b) { b.classList.remove("is-submitting"); b.removeAttribute("aria-busy"); b.disabled = false; }
+	}
 
 	applyMode();
 	applyUnit();
