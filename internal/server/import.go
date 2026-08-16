@@ -2,10 +2,13 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/csv"
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +17,19 @@ import (
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
 )
+
+// importToken returns a random id tying a preview to its commit. Each imported
+// row is keyed <token>:<line>, so a re-submitted commit (same token) dedupes every
+// row to a no-op via CreateEntry's ON CONFLICT, while two genuinely identical CSV
+// rows (different lines) still both import. Falls back to "" (no dedup) if the RNG
+// fails — worst case reverts to the prior non-idempotent behaviour.
+func importToken() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
+}
 
 // importRow is one parsed CSV line for the booking import, with a per-row error
 // (empty = importable). Columns mirror the CSV export layout; the rig columns
@@ -248,6 +264,7 @@ func (s *Server) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 	data["OKCount"] = okCount
 	data["Total"] = len(rows)
 	data["CSV"] = string(raw)
+	data["ImportToken"] = importToken() // one-shot: a re-submitted commit becomes a no-op
 	s.render(w, r, "import", data)
 }
 
@@ -283,6 +300,10 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 	// festgeschrieben between preview and commit. Locked rows get an error and are
 	// skipped by the !row.OK() guard below.
 	s.markLockedRows(r.Context(), yearID, rows)
+	// One-shot import: keying each row <token>:<line> makes a re-submitted commit
+	// (double-click, browser retry) a no-op via CreateEntry's ON CONFLICT, without
+	// deduping two genuinely identical rows in the same file (distinct lines).
+	token := trimmed(r, "import_token")
 	created := 0
 	for _, row := range rows {
 		if !row.OK() {
@@ -293,15 +314,21 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 			TaskLabel: row.Task, Note: row.Note, Unit: row.Unit,
 			Quantity: row.Qty, UnitPrice: row.Price, Cost: row.Cost,
 		}
+		if token != "" {
+			e.IdempotencyKey = token + ":" + strconv.Itoa(row.Line)
+		}
 		if row.Unit == "h" { // keep the hour-booking convention so it counts as hours
 			e.Hours = row.Qty
 			e.HourlyRate = row.Price
 		}
-		if _, err := s.store.CreateEntry(r.Context(), e, nil); err != nil {
+		newID, err := s.store.CreateEntry(r.Context(), e, nil)
+		if err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
-		created++
+		if newID != 0 { // 0 = an already-imported row on a re-submit; don't double-count
+			created++
+		}
 	}
 	s.audit(r, "import", "year", yearID, itoa(created)+" Buchungen importiert")
 	s.setFlash(w, r, "success", itoa(created)+" Buchung(en) importiert.")

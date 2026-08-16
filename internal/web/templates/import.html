@@ -37,6 +37,7 @@
 		<form method="post" action="/entries/import">
 			<input type="hidden" name="year_id" value="{{.Year.ID}}">
 			<input type="hidden" name="csv" value="{{.CSV}}">
+			<input type="hidden" name="import_token" value="{{.ImportToken}}">
 			<button class="btn btn--primary btn--sm" type="submit" data-confirm="{{.OKCount}} Buchung(en) importieren?">{{.OKCount}} importieren</button>
 		</form>
 		{{end}}
