@@ -93,8 +93,10 @@ func parseImportCSV(text string, members map[string]int64) ([]importRow, error) 
 			return nil, err
 		}
 		line++
-		// Skip the header row and blank lines.
-		if line == 1 && strings.EqualFold(col(rec, 0), "Nachbar") {
+		// Skip the header row (identified by its "Nachbar" first column, wherever
+		// it lands — e.g. after a leading blank line, so a real export with a stray
+		// empty first record still parses) and any whitespace-only record.
+		if strings.EqualFold(col(rec, 0), "Nachbar") {
 			continue
 		}
 		if strings.TrimSpace(strings.Join(rec, "")) == "" {

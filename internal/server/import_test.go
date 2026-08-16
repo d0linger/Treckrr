@@ -57,6 +57,25 @@ func TestParseImportCSV_SampleRoundTrips(t *testing.T) {
 	}
 }
 
+// TestParseImportCSV_HeaderAfterBlankLine: a leading blank record must not push
+// the header onto line 2 where a line==1-only check would miss it and parse the
+// header as a (rejected) data row.
+func TestParseImportCSV_HeaderAfterBlankLine(t *testing.T) {
+	csv := "\n" + // stray empty first record
+		"Nachbar;Datum;Tätigkeit;Traktor;Belastung;Maschinen;Einheit;Menge;Satz;Kosten;Notiz\n" +
+		"Max Mustermann;2026-03-14;Mähen;;;;h;2;10,00;20,00;\n"
+	rows, err := parseImportCSV(csv, testMembers())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1 (blank line + header both skipped)", len(rows))
+	}
+	if !rows[0].OK() || rows[0].Task != "Mähen" {
+		t.Errorf("row not the data line: ok=%v task=%q err=%q", rows[0].OK(), rows[0].Task, rows[0].Err)
+	}
+}
+
 // TestParseImportCSV_EmptyUnitDefaultsToHours: an empty Einheit means hours.
 func TestParseImportCSV_EmptyUnitDefaultsToHours(t *testing.T) {
 	csv := "Max Mustermann;2026-01-02;Pflügen;;;;;5;20,00;100,00;\n"
