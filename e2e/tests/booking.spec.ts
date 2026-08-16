@@ -21,7 +21,9 @@ test("login, create a unit booking, and see it on the Beleg", async ({ page }) =
   await page.goto("/neighbors/1?year=1");
   await page.locator('select[name="unit"]').selectOption("Ballen");
   await page.locator('input[name="quantity"]').fill("10");
-  await page.locator('input[name="unit_price"]').fill("3,20");
+  // <input type="number"> only accepts a period decimal; the server's
+  // parseGermanDecimal maps both "." and "," so 3.20 stores as 3,20 either way.
+  await page.locator('input[name="unit_price"]').fill("3.20");
   await page.locator('input[name="task_label"]').fill("E2E Ballenpressen");
   await page.getByRole("button", { name: "Buchung speichern" }).click();
 
