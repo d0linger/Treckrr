@@ -145,6 +145,14 @@ func (s *Store) CountEntriesForNeighbor(ctx context.Context, neighborID int64) (
 	return n, err
 }
 
+// AnyEntries reports whether any booking exists at all (across every year), so
+// the first-run onboarding checklist doesn't reappear in a fresh, empty year.
+func (s *Store) AnyEntries(ctx context.Context) (bool, error) {
+	var exists bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM entries)`).Scan(&exists)
+	return exists, err
+}
+
 // ---- Entries -------------------------------------------------------------
 
 // CreateEntry inserts a booked work entry and links its machines.

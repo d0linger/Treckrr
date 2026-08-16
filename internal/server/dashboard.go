@@ -125,6 +125,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	if !hasBooking { // a fresh year has no summaries; check globally like hasNeighbor
+		hasBooking, _ = s.store.AnyEntries(r.Context())
+	}
 	companyOK := strings.TrimSpace(company.Name) != ""
 	if !companyOK || !hasNeighbor || !hasBooking {
 		data["Onboarding"] = []map[string]any{
