@@ -352,7 +352,9 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		reject(http.StatusUnprocessableEntity, "Rechnung "+iv.Number+" ist festgeschrieben – Buchungen und Verrechnungen für diesen Nachbarn sind gesperrt. Für Korrekturen bitte die Rechnung stornieren.", neighborURL(neighborID, yearID))
 		return
 	} else if !errors.Is(err, store.ErrNotFound) {
-		reject(http.StatusUnprocessableEntity, "Rechnungsstatus konnte nicht geprüft werden.", neighborURL(neighborID, yearID))
+		// A real store failure (not "no invoice") is transient — return 500 so an
+		// offline replay retries rather than dropping the booking as a permanent 422.
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 
