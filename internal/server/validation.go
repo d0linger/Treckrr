@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -34,4 +35,18 @@ func (s *Server) tooLong(w http.ResponseWriter, r *http.Request, field, value st
 		return true
 	}
 	return false
+}
+
+// sanitizeQueryParam trims leading/trailing whitespace and caps length at maxRunes
+// code points to prevent CPU/memory exhaustion DoS attacks on search queries.
+func sanitizeQueryParam(v string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return "" // guard: runes[:negative] would panic
+	}
+	v = strings.TrimSpace(v)
+	if utf8.RuneCountInString(v) <= maxRunes {
+		return v
+	}
+	runes := []rune(v)
+	return string(runes[:maxRunes])
 }

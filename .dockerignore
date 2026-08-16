@@ -16,3 +16,8 @@
 .vscode/
 Dockerfile
 docker-compose.yml
+
+# Node/Playwright E2E suite: CI-only, never part of the Go image build context.
+# node_modules also carries symlinks (e.g. .bin/*) that break the context transfer.
+node_modules/
+/e2e/

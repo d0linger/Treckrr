@@ -157,11 +157,14 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 		totalCost = totalCost.Add(h.Net)
 		totalHours = totalHours.Add(h.Hours)
 	}
+	company, _ := s.store.GetCompany(r.Context())
 	data := s.newPage(w, r, neighbor.Name+" · Verlauf", "dashboard")
 	data["Neighbor"] = neighbor
 	data["Rows"] = rows
 	data["TotalCost"] = totalCost
 	data["TotalHours"] = totalHours
+	data["Company"] = company
+	data["Today"] = time.Now()
 	s.render(w, r, "neighbor_overview", data)
 }
 
@@ -311,6 +314,20 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	neighborID := formInt64(r, "neighbor_id")
 	yearID := formInt64(r, "year_id")
+	// An offline replay (offline.js) sets this header and wants a machine-readable
+	// status, not a redirect: 2xx = stored, 422 = permanent business rejection so
+	// the client drops it from the queue (and 401 from auth = retry after login).
+	// This lets the queue distinguish "won't self-heal" from "retry later" instead
+	// of treating every redirect as success and silently discarding the booking.
+	replay := r.Header.Get("X-Offline-Replay") == "1"
+	reject := func(status int, msg, redirectTo string) {
+		if replay {
+			http.Error(w, msg, status)
+			return
+		}
+		s.setFlash(w, r, "error", msg)
+		redirect(w, r, redirectTo)
+	}
 
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
@@ -318,29 +335,50 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if year.Completed() {
-		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen – es können keine Buchungen mehr erfasst werden.")
-		redirect(w, r, neighborURL(neighborID, yearID))
+		reject(http.StatusUnprocessableEntity, "Das Abrechnungsjahr ist abgeschlossen – es können keine Buchungen mehr erfasst werden.", neighborURL(neighborID, yearID))
 		return
 	}
-	if !s.neighborInYearOrRedirect(w, r, year.ID, neighborID) {
+	// Inline the neighbor-in-year and invoice-lock checks (rather than the
+	// w,r-writing helpers) so the same gates can answer a replay with a status
+	// code; the interactive messages/redirect targets are unchanged.
+	if in, err := s.store.NeighborInYear(r.Context(), year.ID, neighborID); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	} else if !in {
+		reject(http.StatusUnprocessableEntity, "Nachbar ist diesem Abrechnungsjahr nicht zugeordnet.", dashboardURL(yearID))
 		return
 	}
-	if s.invoiceLocked(w, r, year.ID, neighborID) {
+	if iv, err := s.store.GetInvoice(r.Context(), year.ID, neighborID); err == nil {
+		reject(http.StatusUnprocessableEntity, "Rechnung "+iv.Number+" ist festgeschrieben – Buchungen und Verrechnungen für diesen Nachbarn sind gesperrt. Für Korrekturen bitte die Rechnung stornieren.", neighborURL(neighborID, yearID))
+		return
+	} else if !errors.Is(err, store.ErrNotFound) {
+		// A real store failure (not "no invoice") is transient — return 500 so an
+		// offline replay retries rather than dropping the booking as a permanent 422.
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 
 	entry, machineIDs, msg := s.resolveEntryFromForm(r)
 	if msg != "" {
-		s.setFlash(w, r, "error", msg)
-		redirect(w, r, neighborURL(neighborID, yearID))
+		reject(http.StatusUnprocessableEntity, msg, neighborURL(neighborID, yearID))
 		return
 	}
 	entry.NeighborID = neighborID
 	entry.BillingYearID = year.ID
+	entry.IdempotencyKey = trimmed(r, "idempotency_key") // set only for offline replays
 
 	newID, err := s.store.CreateEntry(r.Context(), entry, machineIDs)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	if newID == 0 { // duplicate replay of an offline booking — already recorded
+		if replay {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		s.setFlash(w, r, "success", "Buchung war bereits erfasst.")
+		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
 	var detail string
@@ -354,6 +392,10 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 			entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2))
 	}
 	s.audit(r, "create", "entry", newID, detail)
+	if replay {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	s.setFlash(w, r, "success", "Buchung gespeichert.")
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
@@ -898,6 +940,13 @@ func (s *Server) handleLedgerDelete(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
 
+// knownUnits are the booking form's named unit options. Anything else that isn't
+// empty is a custom (free-text) unit — the form must select "Andere Einheit" and
+// prefill the free-text field, or the select would silently fall back to "h".
+var knownUnits = map[string]bool{"h": true, "ha": true, "Ballen": true, "m³": true, "Fuhre": true, "t": true}
+
+func unitIsCustom(u string) bool { return u != "" && !knownUnits[u] }
+
 // handleEntryEditForm renders a prefilled booking form for editing.
 func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
@@ -932,6 +981,7 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	gespanne, _ := s.store.ListGespanne(r.Context(), base.ID)
 	selMachines, _ := s.store.EntryMachineIDs(r.Context(), id)
 
+	photos, _ := s.store.ListEntryPhotos(r.Context(), id)
 	data := s.newPage(w, r, "Buchung bearbeiten", "dashboard")
 	data["Entry"] = entry
 	data["Neighbor"] = neighbor
@@ -942,6 +992,63 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	data["Machines"] = machines
 	data["Gespanne"] = gespanne
 	data["SelectedMachineIDs"] = selMachines
+	data["Photos"] = photos
+	data["UnitIsCustom"] = unitIsCustom(entry.Unit)
+	data["IsQtyEntry"] = entry.Unit != "" && entry.Unit != "h"
+	s.render(w, r, "entry_edit", data)
+}
+
+// handleEntryCopy renders the entry form pre-filled from an existing booking as a
+// NEW booking (dated today), so a recurring task can be re-entered in one click.
+// It reuses the entry_edit template with Copy=true, which points the form at the
+// create route and adds the neighbor/year hidden fields.
+func (s *Server) handleEntryCopy(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	entry, err := s.store.GetEntry(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), entry.NeighborID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	year, err := s.store.GetBillingYear(r.Context(), entry.BillingYearID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if year.Completed() {
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
+		redirect(w, r, neighborURL(neighbor.ID, year.ID))
+		return
+	}
+	entry.Date = time.Now() // a copy is a fresh booking for today
+	base := year.Base
+	tractors, _ := s.store.ListTractors(r.Context(), base.ID)
+	loads, _ := s.store.ListLoadLevels(r.Context(), base.ID)
+	machines, _ := s.store.ListMachines(r.Context(), base.ID)
+	gespanne, _ := s.store.ListGespanne(r.Context(), base.ID)
+	selMachines, _ := s.store.EntryMachineIDs(r.Context(), id)
+
+	data := s.newPage(w, r, "Buchung kopieren", "dashboard")
+	data["Entry"] = entry
+	data["Neighbor"] = neighbor
+	data["Year"] = year
+	data["Base"] = base
+	data["Tractors"] = tractors
+	data["Loads"] = loads
+	data["Machines"] = machines
+	data["Gespanne"] = gespanne
+	data["SelectedMachineIDs"] = selMachines
+	data["UnitIsCustom"] = unitIsCustom(entry.Unit)
+	data["IsQtyEntry"] = entry.Unit != "" && entry.Unit != "h"
+	data["Copy"] = true
 	s.render(w, r, "entry_edit", data)
 }
 

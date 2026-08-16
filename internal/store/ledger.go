@@ -124,7 +124,7 @@ func (s *Store) NeighborYearHistory(ctx context.Context, neighborID int64) ([]Ne
 		               AND NOT l.voided), 0) AS ledger,
 		  COALESCE((SELECT SUM(p.amount) FROM payments p
 		             WHERE p.neighbor_id = byn.neighbor_id
-		               AND p.billing_year_id = byn.billing_year_id), 0) AS paid
+		               AND p.billing_year_id = byn.billing_year_id AND p.deleted_at IS NULL), 0) AS paid
 		FROM billing_year_neighbors byn
 		JOIN billing_years y ON y.id = byn.billing_year_id
 		WHERE byn.neighbor_id = $1

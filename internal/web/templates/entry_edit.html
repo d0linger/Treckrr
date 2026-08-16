@@ -1,11 +1,32 @@
 {{define "content"}}
 <section class="stack" data-base-id="{{.Base.ID}}">
 	<a class="backlink" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ Zurück zu {{.Neighbor.Name}}</a>
-	<h2 class="section-title">Buchung bearbeiten · {{date .Entry.Date}}</h2>
+	<h2 class="section-title">{{if .Copy}}Buchung kopieren{{else}}Buchung bearbeiten · {{date .Entry.Date}}{{end}}</h2>
 
-	<form method="post" action="/entries/{{.Entry.ID}}/update" class="card form" data-entry-form
+	<form method="post" action="{{if .Copy}}/entries{{else}}/entries/{{.Entry.ID}}/update{{end}}" class="card form" data-entry-form
 		data-pricing-url="/api/base/{{.Base.ID}}/pricing" data-validate>
+		{{if .Copy}}<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
+		<input type="hidden" name="year_id" value="{{.Year.ID}}">{{end}}
 
+		<div class="form__grid">
+			<label class="field"><span>Einheit</span>
+				<select class="select" name="unit" data-unit>
+					<option value="h" {{if and (not .UnitIsCustom) (eq .Entry.Unit "h")}}selected{{end}}>Stunden (h)</option>
+					<option value="ha" {{if and (not .UnitIsCustom) (eq .Entry.Unit "ha")}}selected{{end}}>Hektar (ha)</option>
+					<option value="Ballen" {{if and (not .UnitIsCustom) (eq .Entry.Unit "Ballen")}}selected{{end}}>Ballen</option>
+					<option value="m³" {{if and (not .UnitIsCustom) (eq .Entry.Unit "m³")}}selected{{end}}>Kubikmeter (m³)</option>
+					<option value="Fuhre" {{if and (not .UnitIsCustom) (eq .Entry.Unit "Fuhre")}}selected{{end}}>Fuhre</option>
+					<option value="t" {{if and (not .UnitIsCustom) (eq .Entry.Unit "t")}}selected{{end}}>Tonnen (t)</option>
+					<option value="__custom" {{if .UnitIsCustom}}selected{{end}}>Andere Einheit …</option>
+				</select>
+			</label>
+			<label class="field"><span>Datum</span>
+				<input class="input" type="date" name="entry_date" value="{{dateInput .Entry.Date}}" required></label>
+		</div>
+		<label class="field" data-unit-custom {{if not .UnitIsCustom}}hidden{{end}}><span>Eigene Einheit</span>
+			<input class="input" type="text" name="unit_custom" placeholder="z. B. Stk, Fuder" maxlength="16" value="{{if .UnitIsCustom}}{{.Entry.Unit}}{{end}}" data-unit-custom-input></label>
+
+		<div data-h-only {{if .IsQtyEntry}}hidden{{end}}>
 		<div class="segmented" role="tablist">
 			<label class="segmented__item">
 				<input type="radio" name="mode" value="gespann" data-mode-toggle>
@@ -46,25 +67,66 @@
 			</fieldset>
 		</div>
 
+		<label class="field"><span>Stunden</span>
+			<input class="input" type="number" step="0.001" min="0" name="hours"
+				inputmode="decimal" value="{{numInput .Entry.Hours}}" data-hours required></label>
+
 		<div class="rate-preview" data-rate-preview>
 			<span>Stundensatz: <strong data-rate>–</strong></span>
 			<span>Kosten: <strong data-cost>–</strong></span>
 		</div>
+		</div><!-- /data-h-only -->
 
-		<div class="form__grid">
-			<label class="field"><span>Datum</span>
-				<input class="input" type="date" name="entry_date" value="{{dateInput .Entry.Date}}" required></label>
-			<label class="field"><span>Stunden</span>
-				<input class="input" type="number" step="0.001" min="0" name="hours"
-					inputmode="decimal" value="{{num .Entry.Hours}}" data-hours required></label>
-		</div>
-		<label class="field"><span>Tätigkeit (optional)</span>
+		<div data-qty-only {{if not .IsQtyEntry}}hidden{{end}}>
+			<div class="form__grid">
+				<label class="field"><span>Menge</span>
+					<input class="input" type="number" step="0.001" min="0" name="quantity"
+						inputmode="decimal" value="{{numInput .Entry.Quantity}}" data-qty></label>
+				<label class="field"><span>€ / <span data-unit-label>Einheit</span></span>
+					<input class="input" type="number" step="0.01" min="0" name="unit_price"
+						inputmode="decimal" value="{{numInput .Entry.UnitPrice}}" data-unit-price></label>
+			</div>
+			<div class="rate-preview" aria-live="polite" aria-atomic="true">
+				<span class="rate-preview__main">
+					<span class="rate-preview__lbl">Kosten</span>
+					<strong class="rate-preview__cost" data-qty-cost>–</strong>
+				</span>
+			</div>
+		</div><!-- /data-qty-only -->
+
+		<label class="field"><span>Tätigkeit{{if not .Copy}} (optional){{end}}</span>
 			<input class="input" type="text" name="task_label" value="{{.Entry.TaskLabel}}"></label>
 		<label class="field"><span>Notiz (optional)</span>
 			<input class="input" type="text" name="note" value="{{.Entry.Note}}"></label>
 
-		<button class="btn btn--primary btn--block" type="submit">Änderungen speichern</button>
+		<button class="btn btn--primary btn--block" type="submit">{{if .Copy}}Buchung anlegen{{else}}Änderungen speichern{{end}}</button>
 	</form>
+
+	{{if not .Copy}}
+	<div class="card stack stack--tight">
+		<div class="section-title">Fotos (Wiegeschein, Lieferschein …)</div>
+		{{with .Photos}}
+		<div class="photogrid">
+			{{range .}}
+			<figure class="photogrid__item">
+				<a href="/entries/{{$.Entry.ID}}/photos/{{.ID}}" target="_blank" rel="noopener">
+					<img src="/entries/{{$.Entry.ID}}/photos/{{.ID}}" alt="Foto zur Buchung" loading="lazy">
+				</a>
+				<form method="post" action="/entries/{{$.Entry.ID}}/photos/{{.ID}}/delete" data-confirm="Foto entfernen?">
+					<button class="photogrid__del" type="submit" aria-label="Foto entfernen">{{template "ic-trash"}}</button>
+				</form>
+			</figure>
+			{{end}}
+		</div>
+		{{else}}
+		<p class="muted small">Noch kein Foto angehängt.</p>
+		{{end}}
+		<form method="post" action="/entries/{{.Entry.ID}}/photos" enctype="multipart/form-data" class="form">
+			<input class="input" type="file" name="photo" accept="image/*" capture="environment" required>
+			<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit">Foto anhängen</button></div>
+		</form>
+	</div>
+	{{end}}
 </section>
 {{end}}
 

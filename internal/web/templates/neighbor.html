@@ -223,6 +223,7 @@
 					</form>
 					{{else}}
 					<a class="iconact" href="/entries/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">{{template "ic-edit"}}</a>
+					<a class="iconact" href="/entries/{{.ID}}/copy" title="Als neue Buchung kopieren" aria-label="Kopieren">{{template "ic-copy"}}</a>
 					<form method="post" action="/entries/{{.ID}}/void"
 						data-confirm="Buchung stornieren? (bleibt sichtbar, zählt nicht mehr)"
 						data-confirm-reason="Grund der Stornierung (optional)">

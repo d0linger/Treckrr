@@ -111,7 +111,7 @@ func (s *Store) ResetYearPayments(ctx context.Context, yearID int64) error {
 // warning silently never fire.
 func (s *Store) YearPayments(ctx context.Context, yearID int64) (map[int64]bool, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT neighbor_id FROM payments WHERE billing_year_id=$1`, yearID)
+		`SELECT DISTINCT neighbor_id FROM payments WHERE billing_year_id=$1 AND deleted_at IS NULL`, yearID)
 	if err != nil {
 		return nil, err
 	}

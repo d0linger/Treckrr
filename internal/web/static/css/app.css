@@ -916,9 +916,10 @@ em { font-style: normal; color: var(--muted); }
 /* ---- Beleg: shareable statement (Saldo first + compact table) --------- */
 .beleg { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
 	overflow: hidden; box-shadow: var(--card-shadow);
-	/* Document-like width so it stays readable in landscape / on wide screens
-	   instead of stretching across the viewport. */
-	max-width: 40rem; margin-inline: auto; }
+	/* Match the app's content column (--maxw) rather than a narrower document cap,
+	   so it fills the page like every other view instead of looking like a thin
+	   strip on wide screens. The @media print rule below overrides to full A4. */
+	max-width: var(--maxw); margin-inline: auto; }
 
 .beleg__hero { padding: .85rem .9rem; color: var(--on-primary);
 	background: linear-gradient(135deg, var(--primary), var(--primary-strong)); }
@@ -1562,3 +1563,97 @@ em { font-style: normal; color: var(--muted); }
 .auth__or { display: flex; align-items: center; gap: 12px; margin: .2rem 0 -.2rem; color: var(--muted);
 	font-family: var(--font-mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; }
 .auth__or::before, .auth__or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+/* Keyboard-shortcut cheatsheet overlay (toggled by "?"). Token-based → theme-aware. */
+.kbd-help { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+	background: rgba(0, 0, 0, .45); padding: 1rem; }
+.kbd-help__card { background: var(--surface); color: var(--text); border: 1px solid var(--border);
+	border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.1rem 1.2rem; min-width: 15rem;
+	max-width: 22rem; width: 100%; }
+.kbd-help__h { margin: 0 0 .7rem; font-size: 1rem; }
+.kbd-help__row { display: flex; align-items: center; gap: .8rem; padding: .28rem 0; }
+.kbd-help__row span { color: var(--muted); font-size: .92rem; }
+.kbd-help kbd { min-width: 2.6rem; text-align: center; font-family: var(--font-mono); font-size: .8rem;
+	padding: .15rem .45rem; border: 1px solid var(--border); border-bottom-width: 2px;
+	border-radius: 7px; background: var(--surface-2); color: var(--text); }
+@media (prefers-reduced-motion: no-preference) { .kbd-help { animation: kbd-fade .12s ease-out; } }
+@keyframes kbd-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Print helpers: hide app chrome so ANY page prints as a clean document, and a
+   print-only header for the per-neighbor multi-year account statement. */
+.print-only { display: none; }
+.statement-head { margin-bottom: .3rem; }
+.statement-head__meta { color: var(--muted); font-size: .82rem; }
+@media print {
+	.appbar, .tabbar, .drawer, .drawer__scrim, .no-print { display: none !important; }
+	.print-only { display: block; }
+	body { background: #fff; }
+	/* Pin light tokens for the statement so it never prints dark-on-dark (mirrors
+	   the Beleg print treatment). */
+	.stack--statement {
+		--surface: #fff; --surface-2: #f4f6f2; --text: #191c1a; --muted: #5b655d; --border: #dfe4dd;
+		-webkit-print-color-adjust: exact; print-color-adjust: exact;
+	}
+	.stack--statement, .stack--statement * { color: #111 !important; }
+	.stack--statement .statement-head__meta, .stack--statement .muted { color: #666 !important; }
+	.stack--statement .yearcard, .stack--statement .summary-card { break-inside: avoid; box-shadow: none; }
+	.stack--statement .yearcard { background: #fff !important; border-color: #dfe4dd !important; }
+}
+
+/* Standalone error page (404/500). Token-based; follows system theme. */
+.errpage-body { min-height: 100dvh; display: grid; place-items: center; padding: 1.5rem; background: var(--bg); }
+.errpage { width: 100%; max-width: 26rem; }
+.errpage__card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+	box-shadow: var(--card-shadow); padding: 2rem 1.6rem; text-align: center; }
+.errpage__code { font-family: var(--font-mono); font-size: 2.6rem; font-weight: 800; color: var(--muted); line-height: 1; }
+.errpage__title { margin: .6rem 0 .3rem; font-size: 1.15rem; }
+.errpage__msg { color: var(--muted); font-size: .9rem; margin: 0 0 1.2rem; }
+
+/* First-run onboarding checklist (dashboard). Auto-hides when all steps done. */
+.onboard { padding: .9rem 1rem; }
+.onboard__h { font-weight: 700; font-size: .9rem; margin-bottom: .5rem; }
+.onboard__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
+.onboard__item { display: flex; align-items: center; gap: .55rem; font-size: .92rem; min-height: var(--tap); }
+.onboard__item a { color: var(--accent, var(--text)); }
+.onboard__item.is-done { color: var(--muted); }
+.onboard__mark { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; flex: 0 0 auto;
+	border: 1.5px solid var(--border); border-radius: 50%; }
+.onboard__item.is-done .onboard__mark { border-color: var(--good, #3f8f5f); color: var(--good, #3f8f5f); }
+.onboard__mark svg { width: .8rem; height: .8rem; }
+
+/* Command palette (Ctrl/Cmd+K). Token-based → theme-aware. */
+.cmdk { position: fixed; inset: 0; z-index: 70; display: flex; justify-content: center;
+	align-items: flex-start; padding: 12vh 1rem 1rem; background: rgba(0, 0, 0, .45); }
+.cmdk__box { width: 100%; max-width: 34rem; background: var(--surface); border: 1px solid var(--border);
+	border-radius: var(--radius); box-shadow: var(--card-shadow); overflow: hidden; }
+.cmdk__input { border: 0; border-bottom: 1px solid var(--border); border-radius: 0;
+	font-size: 1rem; padding: .85rem 1rem; }
+.cmdk__input:focus { outline: none; box-shadow: none; }
+.cmdk__list { list-style: none; margin: 0; padding: .3rem; max-height: 55vh; overflow-y: auto; }
+.cmdk__item { display: flex; align-items: center; gap: .7rem; padding: .5rem .6rem; border-radius: var(--radius-sm);
+	cursor: pointer; }
+.cmdk__item.is-sel { background: var(--surface-2); }
+.cmdk__ic { flex: 0 0 auto; font-size: 1.05rem; }
+.cmdk__tx { display: flex; flex-direction: column; min-width: 0; }
+.cmdk__lb { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmdk__sub { color: var(--muted); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Undo action inside a flash toast. */
+.toast__undo { margin: 0 .2rem 0 .6rem; }
+.toast__undobtn { background: transparent; border: 1px solid currentColor; color: inherit;
+	border-radius: 8px; padding: .2rem .6rem; font-size: .82rem; font-weight: 600; cursor: pointer; }
+.toast__undobtn:hover { background: rgba(255, 255, 255, .18); }
+
+/* Offline pending-count badge in the appbar. */
+.appbar__offline { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px;
+	background: var(--owe, #c05635); color: #fff; white-space: nowrap; }
+
+/* Photo receipts attached to a booking (edit page). */
+.photogrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: .5rem; }
+.photogrid__item { position: relative; margin: 0; }
+.photogrid__item img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--radius-sm);
+	border: 1px solid var(--border); background: var(--surface-2); }
+.photogrid__del { position: absolute; top: .25rem; right: .25rem; display: grid; place-items: center;
+	width: 1.7rem; height: 1.7rem; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .55);
+	color: #fff; cursor: pointer; }
+.photogrid__del svg { width: .95rem; height: .95rem; }

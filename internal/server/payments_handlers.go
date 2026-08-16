@@ -136,12 +136,42 @@ func (s *Server) handlePaymentDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.DeletePayment(r.Context(), id); err != nil {
+	deleted, err := s.store.DeletePayment(r.Context(), id)
+	switch {
+	case err != nil:
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
-	} else {
+	case deleted:
 		s.audit(r, "payment_delete", "neighbor", p.NeighborID,
 			s.neighborName(r, p.NeighborID)+" · "+p.Amount.StringFixed(2)+" €")
-		s.setFlash(w, r, "success", "Zahlung gelöscht.")
+		s.setFlashUndo(w, r, "success", "Zahlung gelöscht.", "/payments/"+itoa64(id)+"/restore")
+	default: // already deleted (e.g. a double-submit): no state change, no audit
+		s.setFlash(w, r, "info", "Zahlung war bereits gelöscht.")
+	}
+	redirect(w, r, neighborURL(p.NeighborID, p.BillingYearID))
+}
+
+// handlePaymentRestore reverses a soft-deleted payment (the Undo action).
+func (s *Server) handlePaymentRestore(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	p, err := s.store.GetPayment(r.Context(), id) // by-id, sees soft-deleted rows
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	restored, err := s.store.RestorePayment(r.Context(), id)
+	switch {
+	case err != nil:
+		s.setFlash(w, r, "error", "Wiederherstellen fehlgeschlagen.")
+	case restored:
+		s.audit(r, "payment_restore", "neighbor", p.NeighborID,
+			s.neighborName(r, p.NeighborID)+" · "+p.Amount.StringFixed(2)+" €")
+		s.setFlash(w, r, "success", "Zahlung wiederhergestellt.")
+	default: // already active (e.g. a double-submit): no state change, no audit
+		s.setFlash(w, r, "info", "Zahlung war bereits aktiv.")
 	}
 	redirect(w, r, neighborURL(p.NeighborID, p.BillingYearID))
 }

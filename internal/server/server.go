@@ -71,6 +71,11 @@ const userCtxKey ctxKey = "user"
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
+	// Fallback for any path no route matches → branded 404. In Go 1.22+ ServeMux
+	// a more specific pattern always wins, so this only catches truly unknown paths
+	// (the exact-root "GET /{$}" and every registered route take precedence).
+	mux.HandleFunc("/", s.handleNotFound)
+
 	// Health & PWA plumbing (public).
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	// Prometheus metrics — only registered when METRICS_TOKEN is set AND long enough
@@ -122,6 +127,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /entries", s.auth(s.handleEntryCreate))
 	mux.Handle("POST /entries/quick", s.auth(s.handleQuickEntries))
 	mux.Handle("GET /entries/{id}/edit", s.auth(s.handleEntryEditForm))
+	mux.Handle("GET /entries/{id}/copy", s.auth(s.handleEntryCopy))
+	mux.Handle("POST /entries/{id}/photos", s.auth(s.handleEntryPhotoUpload))
+	mux.Handle("GET /entries/{id}/photos/{pid}", s.auth(s.handleEntryPhotoServe))
+	mux.Handle("POST /entries/{id}/photos/{pid}/delete", s.auth(s.handleEntryPhotoDelete))
 	mux.Handle("POST /entries/{id}/update", s.auth(s.handleEntryUpdate))
 	mux.Handle("POST /entries/{id}/void", s.auth(s.handleEntryVoid))
 	mux.Handle("POST /entries/{id}/delete", s.auth(s.handleEntryDelete))
@@ -129,6 +138,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /neighbors/{id}/payments", s.auth(s.handlePaymentAdd))
 	mux.Handle("POST /neighbors/{id}/carry-forward", s.auth(s.handleNeighborCarryForward))
 	mux.Handle("POST /payments/{id}/delete", s.auth(s.handlePaymentDelete))
+	mux.Handle("POST /payments/{id}/restore", s.auth(s.handlePaymentRestore))
 	mux.Handle("GET /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcPreview))
 	mux.Handle("POST /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcApply))
 	mux.Handle("GET /years/{id}/recalc", s.auth(s.handleYearRecalcPreview))
@@ -138,6 +148,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /ledger/{id}/void", s.auth(s.handleLedgerVoid))
 	mux.Handle("POST /ledger/{id}/delete", s.auth(s.handleLedgerDelete))
 	mux.Handle("GET /api/base/{id}/pricing", s.auth(s.handlePricingAPI))
+	mux.Handle("GET /api/search", s.auth(s.handleSearchAPI))
+	mux.Handle("GET /api/entries/precheck", s.auth(s.handleEntryPrecheck))
 
 	mux.Handle("GET /prices", s.auth(s.handlePrices))
 	mux.Handle("GET /prices/compare", s.auth(s.handlePriceCompare))
@@ -182,6 +194,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /account/sessions/revoke", s.auth(s.handleSessionRevoke))
 	mux.Handle("POST /account/sessions/revoke-others", s.auth(s.handleSessionRevokeOthers))
 
+	mux.Handle("GET /entries/import", s.auth(s.handleImportForm))
+	mux.Handle("GET /entries/import/sample.csv", s.auth(s.handleImportSample))
+	mux.Handle("POST /entries/import/preview", s.auth(s.handleImportPreview))
+	mux.Handle("POST /entries/import", s.auth(s.handleImportCommit))
 	mux.Handle("GET /export/year/{id}", s.auth(s.handleExportYear))
 	mux.Handle("GET /export/neighbor/{id}", s.auth(s.handleExportNeighbor))
 	mux.Handle("GET /neighbors/{id}/dsgvo-export.json", s.auth(s.handleNeighborDataExport))
@@ -250,6 +266,14 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 					return
 				}
 				limit = maxBackupUpload
+			} else if isPhotoUploadPath(r.URL.Path) {
+				// A phone photo exceeds 1 MiB; allow more, but only for an
+				// authenticated user (no pre-auth large-body parse).
+				if u := s.currentUser(r); u == nil {
+					http.Error(w, "Zugriff verweigert", http.StatusForbidden)
+					return
+				}
+				limit = maxPhotoUpload
 			}
 			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
@@ -263,6 +287,12 @@ func isBackupUploadPath(p string) bool {
 	return p == "/admin/backup/restore" || p == "/admin/backup/validate"
 }
 
+// isPhotoUploadPath reports the booking-photo upload route (POST
+// /entries/{id}/photos), which gets the larger photo body allowance.
+func isPhotoUploadPath(p string) bool {
+	return strings.HasPrefix(p, "/entries/") && strings.HasSuffix(p, "/photos")
+}
+
 // auth wraps a handler requiring an authenticated user. It also enforces the
 // forced-password-change flow and read-only (viewer) restrictions.
 func (s *Server) auth(h http.HandlerFunc) http.Handler {
@@ -272,6 +302,13 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		user := s.currentUser(r)
 		if user == nil {
+			// An offline replay is a background fetch, not a navigation: answer 401
+			// so the client keeps the booking queued and retries after the next
+			// login, instead of following a redirect it would read as success.
+			if r.Header.Get("X-Offline-Replay") == "1" {
+				http.Error(w, "Anmeldung erforderlich", http.StatusUnauthorized)
+				return
+			}
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}

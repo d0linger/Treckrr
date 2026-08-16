@@ -183,6 +183,9 @@ type Entry struct {
 	Voided     bool
 	VoidReason string
 	Created    time.Time
+	// IdempotencyKey is set only for offline-captured bookings replayed from the
+	// client queue; a unique index makes a duplicate replay a no-op.
+	IdempotencyKey string
 }
 
 // WebauthnCredential is a registered passkey (public key only).

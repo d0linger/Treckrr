@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -26,9 +27,12 @@ func (s *Server) newPage(w http.ResponseWriter, r *http.Request, title, active s
 		"Theme":    themeFromCookie(r),
 		"CSRF":     s.csrfToken(r),
 	}
-	if msg, kind := s.readFlash(w, r); msg != "" {
+	if msg, kind, undoURL := s.readFlash(w, r); msg != "" {
 		p["FlashMessage"] = msg
 		p["FlashKind"] = kind
+		if undoURL != "" {
+			p["FlashUndo"] = undoURL
+		}
 	}
 	return p
 }
@@ -43,7 +47,44 @@ func (s *Server) serverError(w http.ResponseWriter, what string, err error) {
 		errMsg = err.Error()
 	}
 	slog.Error("internal error", "what", sanitizeLog(what), "err", sanitizeLog(errMsg))
-	http.Error(w, "Interner Fehler", http.StatusInternalServerError)
+	writeErrorPage(w, http.StatusInternalServerError, "Interner Fehler",
+		"Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es erneut.")
+}
+
+// handleNotFound is the mux fallback for any path that no route matches; it
+// renders the branded 404 instead of net/http's plain-text default.
+func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
+	writeErrorPage(w, http.StatusNotFound, "Seite nicht gefunden",
+		"Diese Seite existiert nicht oder wurde verschoben.")
+}
+
+// errorPageTmpl is a self-contained, brand-consistent error document: it links
+// the app stylesheet (so fonts/colors match) and follows the system light/dark
+// preference via prefers-color-scheme. Standalone so it needs neither a session
+// nor the full page layout, and works for authenticated and anonymous requests.
+var errorPageTmpl = template.Must(template.New("errpage").Parse(
+	`<!doctype html><html lang="de"><head><meta charset="utf-8">` +
+		`<meta name="viewport" content="width=device-width, initial-scale=1">` +
+		`<title>{{.Title}} · Treckrr</title>` +
+		`<link rel="stylesheet" href="/static/css/app.css?v={{.Version}}"></head>` +
+		`<body class="errpage-body"><main class="errpage"><div class="errpage__card">` +
+		`<div class="errpage__code">{{.Status}}</div>` +
+		`<h1 class="errpage__title">{{.Title}}</h1>` +
+		`<p class="errpage__msg">{{.Msg}}</p>` +
+		`<a class="btn btn--primary" href="/">Zur Übersicht</a>` +
+		`</div></main></body></html>`))
+
+func writeErrorPage(w http.ResponseWriter, status int, title, msg string) {
+	var buf bytes.Buffer
+	if err := errorPageTmpl.Execute(&buf, map[string]any{
+		"Status": status, "Title": title, "Msg": msg, "Version": web.AssetVersion(),
+	}); err != nil { // never happens for this fixed template
+		http.Error(w, title, status)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write(buf.Bytes())
 }
 
 // render executes the named page template's "layout" into the response.
@@ -74,29 +115,43 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 // ---- Flash messages (cookie based) --------------------------------------
 
 func (s *Server) setFlash(w http.ResponseWriter, r *http.Request, kind, msg string) {
-	s.setCookie(w, r, &http.Cookie{
-		Name:   flashCookie,
-		Value:  kind + "|" + url.QueryEscape(msg),
-		MaxAge: 30,
-	})
+	s.setFlashUndo(w, r, kind, msg, "")
 }
 
-// readFlash returns the flash message and kind, clearing the cookie.
-func (s *Server) readFlash(w http.ResponseWriter, r *http.Request) (msg, kind string) {
+// setFlashUndo is setFlash with an optional undo action: the toast renders a
+// "Rückgängig" POST button targeting undoURL (only same-origin absolute paths).
+func (s *Server) setFlashUndo(w http.ResponseWriter, r *http.Request, kind, msg, undoURL string) {
+	val := kind + "|" + url.QueryEscape(msg)
+	if undoURL != "" {
+		val += "|" + url.QueryEscape(undoURL)
+	}
+	s.setCookie(w, r, &http.Cookie{Name: flashCookie, Value: val, MaxAge: 30})
+}
+
+// readFlash returns the flash message, kind and optional undo URL, clearing the
+// cookie. The undo URL is only honored when it is a same-origin absolute path.
+func (s *Server) readFlash(w http.ResponseWriter, r *http.Request) (msg, kind, undoURL string) {
 	c, err := r.Cookie(flashCookie)
 	if err != nil || c.Value == "" {
-		return "", ""
+		return "", "", ""
 	}
 	s.setCookie(w, r, &http.Cookie{Name: flashCookie, Value: "", MaxAge: -1})
-	parts := strings.SplitN(c.Value, "|", 2)
-	if len(parts) != 2 {
-		return "", ""
+	parts := strings.SplitN(c.Value, "|", 3)
+	if len(parts) < 2 {
+		return "", "", ""
 	}
 	decoded, err := url.QueryUnescape(parts[1])
 	if err != nil {
-		return "", ""
+		return "", "", ""
 	}
-	return decoded, parts[0]
+	if len(parts) == 3 {
+		if u, err := url.QueryUnescape(parts[2]); err == nil &&
+			strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") &&
+			!strings.Contains(u, "\\") { // "/\\evil.com" is read as "//evil.com" by browsers
+			undoURL = u
+		}
+	}
+	return decoded, parts[0], undoURL
 }
 
 // ---- Form helpers -------------------------------------------------------
@@ -104,6 +159,11 @@ func (s *Server) readFlash(w http.ResponseWriter, r *http.Request) (msg, kind st
 // pathID parses the {id} path value as int64.
 func pathID(r *http.Request) (int64, error) {
 	return strconv.ParseInt(r.PathValue("id"), 10, 64)
+}
+
+// formInt64FromPath parses a named path value (e.g. a second {pid}) as int64.
+func formInt64FromPath(r *http.Request, name string) (int64, error) {
+	return strconv.ParseInt(r.PathValue(name), 10, 64)
 }
 
 // formInt64 parses a form field as int64 (0 on empty/invalid).

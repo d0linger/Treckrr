@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/shopspring/decimal"
 
@@ -108,6 +109,33 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["StaleCount"] = staleCount
+
+	// First-run onboarding: nudge the operator through setup until all steps are
+	// done, then it disappears on its own (no dismiss needed). "Basis" is implicitly
+	// complete once the dashboard renders (a year requires a base).
+	company, _ := s.store.GetCompany(r.Context())
+	hasNeighbor := len(summaries) > 0
+	if !hasNeighbor {
+		hasNeighbor, _ = s.store.AnyNeighbors(r.Context())
+	}
+	hasBooking := false
+	for _, sm := range summaries {
+		if sm.Entries > 0 {
+			hasBooking = true
+			break
+		}
+	}
+	if !hasBooking { // a fresh year has no summaries; check globally like hasNeighbor
+		hasBooking, _ = s.store.AnyEntries(r.Context())
+	}
+	companyOK := strings.TrimSpace(company.Name) != ""
+	if !companyOK || !hasNeighbor || !hasBooking {
+		data["Onboarding"] = []map[string]any{
+			{"Done": companyOK, "Text": "Betriebsdaten hinterlegen", "Href": "/admin/company"},
+			{"Done": hasNeighbor, "Text": "Ersten Nachbarn anlegen", "Href": "/neighbors"},
+			{"Done": hasBooking, "Text": "Erste Buchung erfassen", "Href": dashboardURL(year.ID)},
+		}
+	}
 	s.render(w, r, "dashboard", data)
 }
 

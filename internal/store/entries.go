@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -79,6 +80,23 @@ func (s *Store) SetNeighborArchived(ctx context.Context, id int64, archived bool
 	return err
 }
 
+// SimilarEntryExists reports whether a non-voided booking with the same named
+// task already exists for this neighbor+year on the given date — a strong
+// duplicate signal used to warn (not block) before a second identical entry. An
+// empty task never matches (too weak a signal to warn on).
+func (s *Store) SimilarEntryExists(ctx context.Context, neighborID, yearID int64, date time.Time, task string) (bool, error) {
+	if strings.TrimSpace(task) == "" {
+		return false, nil
+	}
+	var exists bool
+	err := s.db.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM entries
+		   WHERE neighbor_id=$1 AND billing_year_id=$2 AND NOT voided
+		     AND entry_date=$3 AND task_label=$4)`,
+		neighborID, yearID, date, task).Scan(&exists)
+	return exists, err
+}
+
 // CreateNeighbor inserts a neighbor.
 func (s *Store) CreateNeighbor(ctx context.Context, name, note string) (int64, error) {
 	var id int64
@@ -127,6 +145,14 @@ func (s *Store) CountEntriesForNeighbor(ctx context.Context, neighborID int64) (
 	return n, err
 }
 
+// AnyEntries reports whether any booking exists at all (across every year), so
+// the first-run onboarding checklist doesn't reappear in a fresh, empty year.
+func (s *Store) AnyEntries(ctx context.Context) (bool, error) {
+	var exists bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM entries)`).Scan(&exists)
+	return exists, err
+}
+
 // ---- Entries -------------------------------------------------------------
 
 // CreateEntry inserts a booked work entry and links its machines.
@@ -154,11 +180,18 @@ func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 		`INSERT INTO entries
 		   (neighbor_id, billing_year_id, entry_date, task_label, gespann_id, tractor_id, load_level_id,
 		    tractor_label, load_label, machine_labels, hours, hourly_rate, cost, note,
-		    unit, quantity, unit_price)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
+		    unit, quantity, unit_price, idempotency_key)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+		 ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+		 RETURNING id`,
 		e.NeighborID, e.BillingYearID, e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID),
 		nullInt(e.LoadLevelID), e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours,
-		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice).Scan(&id)
+		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey)).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		// A replayed offline booking whose key already exists: a safe no-op. Commit
+		// the empty tx and return 0 to signal "already recorded".
+		return 0, tx.Commit()
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -290,7 +323,7 @@ func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open
 		                   AND NOT l.voided), 0) AS net,
 		    COALESCE((SELECT SUM(p.amount) FROM payments p
 		               WHERE p.neighbor_id = byn.neighbor_id
-		                 AND p.billing_year_id = byn.billing_year_id), 0) AS paid
+		                 AND p.billing_year_id = byn.billing_year_id AND p.deleted_at IS NULL), 0) AS paid
 		  FROM billing_year_neighbors byn
 		  WHERE byn.billing_year_id = $1
 		)
@@ -335,7 +368,7 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 		  (SELECT count(*) FROM entries e
 		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id) AS entries,
 		  COALESCE((SELECT SUM(p.amount) FROM payments p
-		             WHERE p.neighbor_id = n.id AND p.billing_year_id = byn.billing_year_id), 0) AS paid
+		             WHERE p.neighbor_id = n.id AND p.billing_year_id = byn.billing_year_id AND p.deleted_at IS NULL), 0) AS paid
 		FROM billing_year_neighbors byn
 		JOIN neighbors n ON n.id = byn.neighbor_id
 		WHERE byn.billing_year_id = $1

@@ -1,0 +1,99 @@
+name: E2E (Playwright)
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26.6"
+
+jobs:
+  e2e:
+    name: Browser smoke (login → booking → Beleg)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: treckrr
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: treckrr
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U treckrr"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://treckrr:test@localhost:5432/treckrr?sslmode=disable
+      SESSION_SECRET: e2e-session-secret-at-least-32-bytes!!
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: e2e-admin-password-123
+      APP_PORT: "8080"
+      RP_ID: localhost
+      RP_ORIGIN: http://localhost:8080
+      BASE_URL: http://localhost:8080
+      E2E_ADMIN_USER: admin
+      E2E_ADMIN_PASS: e2e-admin-password-123
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # Build and start the app; it auto-migrates and bootstraps the admin on boot.
+      - name: Build app
+        run: go build -o treckrr ./cmd/treckrr
+      - name: Start app
+        run: |
+          ./treckrr &
+          echo $! > app.pid
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then echo "app up"; exit 0; fi
+            sleep 1
+          done
+          echo "app did not become healthy"; exit 1
+
+      # Seed one base/year/neighbor (ids 1/1/1) and clear the admin's forced
+      # password change so the spec can log straight in.
+      - name: Seed test data
+        run: |
+          PGPASSWORD=test psql -h localhost -U treckrr -d treckrr -v ON_ERROR_STOP=1 <<'SQL'
+          UPDATE users SET must_change_password = false;
+          INSERT INTO price_bases (year, name) VALUES (2025, 'E2E-Basis');
+          INSERT INTO billing_years (year, base_id, label, status)
+            VALUES (2025, 1, '2025', 'open');
+          INSERT INTO neighbors (name) VALUES ('E2E Nachbar');
+          INSERT INTO billing_year_neighbors (billing_year_id, neighbor_id) VALUES (1, 1);
+          SQL
+
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        with:
+          node-version: "22"
+      - name: Install Playwright
+        working-directory: e2e
+        run: |
+          npm install --no-save @playwright/test@1.50.1
+          npx playwright install --with-deps chromium
+      - name: Run E2E
+        working-directory: e2e
+        run: npx playwright test
+
+      - name: Stop app
+        if: always()
+        run: kill "$(cat app.pid)" 2>/dev/null || true
+      - name: Upload report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          if-no-files-found: ignore

@@ -57,3 +57,9 @@ Noppanschoftshilfe.xlsx
 
 # graphify knowledge graph output
 /graphify-out/
+
+# E2E (Playwright) artifacts
+/treckrr-e2e
+e2e/node_modules/
+e2e/playwright-report/
+e2e/test-results/

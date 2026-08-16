@@ -2,7 +2,7 @@
 <section class="stack beleg-page">
 	<a class="backlink no-print" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ {{.Neighbor.Name}} · {{.Year.Year}}</a>
 
-	<div class="beleg{{if .ShowGrund}} beleg--grund{{end}}{{if .Bundle}} beleg--bundle{{end}}{{if .Rechnung}} beleg--rechnung{{end}}" id="beleg">
+	<div class="beleg{{if .ShowGrund}} beleg--grund{{end}}{{if .Bundle}} beleg--bundle{{end}}{{if .Rechnung}} beleg--rechnung{{end}}" id="beleg" data-beleg-name="Beleg_{{.Neighbor.Name}}_{{.Year.Year}}">
 		{{if .HasInvoice}}
 		<div class="beleg__invoice">
 			<div class="beleg__inv-top">
@@ -172,6 +172,9 @@
 			<button type="button" class="btn btn--ghost" data-beleg-copy>{{template "ic-copy"}} Text kopieren</button>
 			<button type="button" class="btn btn--ghost" data-beleg-image>
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m4 17 5-5 4 4 3-3 4 4"/></svg>Bild
+			</button>
+			<button type="button" class="btn btn--ghost" data-beleg-share>
+				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>Teilen
 			</button>
 			{{if .CanBundle}}
 			<button type="button" class="btn btn--ghost" data-beleg-bundle aria-controls="beleg-items beleg-bundle" aria-pressed="{{if .Bundle}}true{{else}}false{{end}}">

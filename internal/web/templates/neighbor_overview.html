@@ -1,12 +1,22 @@
 {{define "content"}}
-<section class="stack">
-	<a class="backlink" href="/neighbors">‹ Nachbarn</a>
+<section class="stack stack--statement">
+	<a class="backlink no-print" href="/neighbors">‹ Nachbarn</a>
+
+	<div class="statement-head print-only">
+		<div>{{with .Company.Name}}{{.}}{{else}}Kontoauszug{{end}}</div>
+		<div class="statement-head__meta">Kontoauszug · {{.Neighbor.Name}} · Stand {{date .Today}}</div>
+	</div>
+
 	<div class="summary-card card">
 		<div>
 			<span class="summary-card__label">{{.Neighbor.Name}} · alle Jahre</span>
 			<span class="summary-card__value">{{money .TotalCost}}</span>
 		</div>
 		<div class="summary-card__meta"><span>{{num .TotalHours}} h gesamt</span></div>
+	</div>
+
+	<div class="btnrow no-print">
+		<button type="button" class="btn btn--ghost btn--sm" data-print>Drucken / Als PDF</button>
 	</div>
 
 	<h2 class="section-title">Jahresverlauf &amp; Zahlungshistorie</h2>

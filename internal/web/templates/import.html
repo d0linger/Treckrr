@@ -1,0 +1,48 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/?year={{.Year.ID}}" aria-label="Zurück">{{template "ic-back"}}</a>
+		<h1 class="pagehead__t">Buchungen importieren · {{.Year.Year}}</h1>
+	</div>
+
+	{{if not .Rows}}
+	<p class="muted small">CSV im Format des <strong>CSV-Exports</strong> (Spalten: Nachbar; Datum; Tätigkeit; …; Einheit; Menge; Satz; …; Notiz). Semikolon-getrennt. Die Kosten werden aus Menge × Satz neu berechnet; Traktor/Belastung/Maschinen-Spalten werden ignoriert. Nachbarn müssen bereits im Jahr sein.</p>
+	<form method="post" action="/entries/import/preview" enctype="multipart/form-data" class="card form">
+		<input type="hidden" name="year_id" value="{{.Year.ID}}">
+		<label class="field"><span>CSV-Datei</span>
+			<input class="input" type="file" name="file" accept=".csv,text/csv" required></label>
+		<div class="btnrow">
+			<button class="btn btn--primary btn--sm" type="submit">Vorschau</button>
+			<a class="btn btn--ghost btn--sm" href="/entries/import/sample.csv" download>Beispiel-CSV herunterladen</a>
+		</div>
+	</form>
+	{{else}}
+	<p class="muted small">{{.OKCount}} von {{.Total}} Zeilen importierbar. Fehlerhafte Zeilen werden übersprungen.</p>
+	<div class="tablewrap">
+		<table class="dtable">
+			<thead><tr><th>Zeile</th><th>Nachbar</th><th>Datum</th><th>Tätigkeit</th><th>Einheit</th><th class="dtable__num">Menge</th><th class="dtable__num">Satz</th><th class="dtable__num">Kosten</th><th>Status</th></tr></thead>
+			<tbody>
+				{{range .Rows}}
+				<tr class="{{if not .OK}}dtable__row--bad{{end}}">
+					<td>{{.Line}}</td><td>{{.Neighbor}}</td><td>{{.DateStr}}</td><td>{{.Task}}</td><td>{{.Unit}}</td>
+					<td class="dtable__num">{{num .Qty}}</td><td class="dtable__num">{{num .Price}}</td><td class="dtable__num">{{money .Cost}}</td>
+					<td>{{if .OK}}<span class="tag tag--paid">OK</span>{{else}}<span class="tag tag--open">{{.Err}}</span>{{end}}</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	<div class="btnrow">
+		{{if .OKCount}}
+		<form method="post" action="/entries/import">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<input type="hidden" name="csv" value="{{.CSV}}">
+			<input type="hidden" name="import_token" value="{{.ImportToken}}">
+			<button class="btn btn--primary btn--sm" type="submit" data-confirm="{{.OKCount}} Buchung(en) importieren?">{{.OKCount}} importieren</button>
+		</form>
+		{{end}}
+		<a class="btn btn--ghost btn--sm" href="/entries/import?year={{.Year.ID}}">Abbrechen</a>
+	</div>
+	{{end}}
+</section>
+{{end}}

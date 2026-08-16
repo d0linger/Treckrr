@@ -33,3 +33,31 @@ func TestLenError(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizeQueryParam(t *testing.T) {
+	cases := []struct {
+		name     string
+		value    string
+		maxRunes int
+		want     string
+	}{
+		{"empty string", "", 100, ""},
+		{"short string", "  search term  ", 100, "search term"},
+		{"exact length", strings.Repeat("a", 100), 100, strings.Repeat("a", 100)},
+		{"over limit truncated", strings.Repeat("a", 150), 100, strings.Repeat("a", 100)},
+		{"multibyte runes within limit", "  " + strings.Repeat("ä", 100) + "  ", 100, strings.Repeat("ä", 100)},
+		{"multibyte runes truncated", strings.Repeat("ä", 150), 100, strings.Repeat("ä", 100)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := sanitizeQueryParam(c.value, c.maxRunes)
+			if got != c.want {
+				t.Errorf("sanitizeQueryParam(%q, %d) = %q, want %q", c.value, c.maxRunes, got, c.want)
+			}
+			if utf8.RuneCountInString(got) > c.maxRunes {
+				t.Errorf("sanitizeQueryParam(%q, %d) rune count = %d, want <= %d",
+					c.value, c.maxRunes, utf8.RuneCountInString(got), c.maxRunes)
+			}
+		})
+	}
+}

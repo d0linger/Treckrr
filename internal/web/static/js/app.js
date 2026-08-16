@@ -695,6 +695,27 @@
 				toast("Bild-Export hier nicht möglich – nutze Drucken/PDF");
 			}).then(function () { imgBtn.disabled = false; });
 		});
+
+		// Share the Beleg as a PNG via the native share sheet (WhatsApp/Signal/…),
+		// falling back to a download where file-sharing isn't supported.
+		var shareBtn = scope.querySelector("[data-beleg-share]");
+		if (shareBtn) shareBtn.addEventListener("click", function () {
+			if (shareBtn.disabled) return;
+			shareBtn.disabled = true;
+			var name = (beleg.getAttribute("data-beleg-name") || "beleg") + ".png";
+			belegPng().then(function (blob) {
+				var file = new File([blob], name, { type: "image/png" });
+				if (navigator.canShare && navigator.canShare({ files: [file] })) {
+					return navigator.share({ files: [file], title: "Beleg" }).catch(function (e) {
+						if (e && e.name === "AbortError") return; // user cancelled
+						download(blob, name); toast("Beleg gespeichert");
+					});
+				}
+				download(blob, name); toast("Teilen hier nicht möglich – Beleg gespeichert");
+			}).catch(function () {
+				toast("Bild-Export hier nicht möglich – nutze Drucken/PDF");
+			}).then(function () { shareBtn.disabled = false; });
+		});
 	})();
 
 	// Register the service worker for offline/PWA support.
@@ -897,6 +918,121 @@
 					out.classList.add("bkp__desc--bad");
 				})
 				.then(function () { btn.disabled = false; });
+		});
+	})();
+
+	// Command palette (Ctrl/Cmd+K): fuzzy jump to a neighbor, invoice or gespann
+	// via the /api/search endpoint. Debounced; keyboard-navigable.
+	(function () {
+		var ov = null, input = null, list = null, items = [], sel = -1, timer = null, seq = 0;
+		var ICON = { neighbor: "👤", invoice: "📄", gespann: "🚜" };
+		function close() { if (ov) { ov.remove(); ov = null; items = []; sel = -1; } }
+		function open() {
+			if (ov) return;
+			ov = document.createElement("div"); ov.className = "cmdk"; ov.setAttribute("role", "dialog");
+			ov.setAttribute("aria-label", "Suche");
+			var box = document.createElement("div"); box.className = "cmdk__box";
+			input = document.createElement("input"); input.className = "cmdk__input input";
+			input.type = "search"; input.placeholder = "Suchen: Nachbar, Rechnung, Gespann …";
+			input.setAttribute("aria-label", "Suche"); input.autocomplete = "off";
+			list = document.createElement("ul"); list.className = "cmdk__list";
+			box.appendChild(input); box.appendChild(list); ov.appendChild(box);
+			ov.addEventListener("mousedown", function (e) { if (e.target === ov) close(); });
+			input.addEventListener("input", function () { query(input.value); });
+			input.addEventListener("keydown", onKey);
+			document.body.appendChild(ov); input.focus();
+		}
+		function render(res) {
+			items = res; sel = res.length ? 0 : -1; list.textContent = "";
+			res.forEach(function (r, i) {
+				var li = document.createElement("li");
+				li.className = "cmdk__item" + (i === sel ? " is-sel" : "");
+				li.setAttribute("role", "option");
+				var ic = document.createElement("span"); ic.className = "cmdk__ic"; ic.textContent = ICON[r.kind] || "•";
+				var tx = document.createElement("span"); tx.className = "cmdk__tx";
+				var lb = document.createElement("span"); lb.className = "cmdk__lb"; lb.textContent = r.label;
+				tx.appendChild(lb);
+				if (r.sub) { var sb = document.createElement("span"); sb.className = "cmdk__sub"; sb.textContent = r.sub; tx.appendChild(sb); }
+				li.appendChild(ic); li.appendChild(tx);
+				li.addEventListener("mousedown", function (e) { e.preventDefault(); go(i); });
+				list.appendChild(li);
+			});
+		}
+		function highlight() {
+			Array.prototype.forEach.call(list.children, function (li, i) { li.classList.toggle("is-sel", i === sel); });
+		}
+		function go(i) { var r = items[i]; if (r && r.url) window.location.href = r.url; }
+		function query(q) {
+			clearTimeout(timer);
+			if (q.trim().length < 2) { render([]); return; }
+			var mine = ++seq;
+			timer = setTimeout(function () {
+				fetch("/api/search?q=" + encodeURIComponent(q.trim()), { credentials: "same-origin" })
+					.then(function (r) { return r.ok ? r.json() : []; })
+					.then(function (res) { if (mine === seq) render(res || []); })
+					.catch(function () { if (mine === seq) render([]); });
+			}, 180);
+		}
+		function onKey(e) {
+			if (e.key === "Escape") { e.preventDefault(); close(); }
+			else if (e.key === "ArrowDown") { e.preventDefault(); if (items.length) { sel = (sel + 1) % items.length; highlight(); } }
+			else if (e.key === "ArrowUp") { e.preventDefault(); if (items.length) { sel = (sel - 1 + items.length) % items.length; highlight(); } }
+			else if (e.key === "Enter") { e.preventDefault(); if (sel >= 0) go(sel); }
+		}
+		document.addEventListener("keydown", function (e) {
+			if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); if (ov) close(); else open(); }
+		});
+	})();
+
+	// Keyboard shortcuts: "/" focuses search, "g" then d/n/s/m/y/p navigates, "?"
+	// toggles a cheatsheet. Ignored while typing in a field so normal input works.
+	(function () {
+		var nav = { d: "/", n: "/neighbors", s: "/stats", m: "/mahnwesen", y: "/years", p: "/prices" };
+		var gPending = false, gTimer = null;
+		function typing(el) {
+			if (!el) return false;
+			var t = (el.tagName || "").toLowerCase();
+			return t === "input" || t === "textarea" || t === "select" || el.isContentEditable;
+		}
+		function help() {
+			var ex = document.getElementById("kbd-help");
+			if (ex) { ex.remove(); return; }
+			var rows = [
+				["Strg K", "Schnellsuche (Palette)"], ["/", "Suche fokussieren"],
+				["g d", "Übersicht"], ["g n", "Nachbarn"], ["g s", "Statistik"],
+				["g m", "Mahnwesen"], ["g y", "Jahre"], ["g p", "Preise"],
+				["?", "Diese Hilfe"], ["Esc", "Schließen"]
+			];
+			var ov = document.createElement("div");
+			ov.id = "kbd-help"; ov.className = "kbd-help"; ov.setAttribute("role", "dialog");
+			ov.setAttribute("aria-label", "Tastaturkürzel");
+			var card = document.createElement("div"); card.className = "kbd-help__card";
+			var h = document.createElement("h2"); h.className = "kbd-help__h"; h.textContent = "Tastaturkürzel";
+			card.appendChild(h);
+			rows.forEach(function (r) {
+				var row = document.createElement("div"); row.className = "kbd-help__row";
+				var k = document.createElement("kbd"); k.textContent = r[0];
+				var d = document.createElement("span"); d.textContent = r[1];
+				row.appendChild(k); row.appendChild(d); card.appendChild(row);
+			});
+			ov.appendChild(card);
+			ov.addEventListener("click", function (e) { if (e.target === ov) ov.remove(); });
+			document.body.appendChild(ov);
+		}
+		document.addEventListener("keydown", function (e) {
+			if (e.key === "Escape") { var h = document.getElementById("kbd-help"); if (h) h.remove(); }
+			if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
+			if (gPending) {
+				gPending = false; clearTimeout(gTimer);
+				var url = nav[e.key];
+				if (url) { e.preventDefault(); window.location.href = url; }
+				return;
+			}
+			if (e.key === "g") { gPending = true; gTimer = setTimeout(function () { gPending = false; }, 1200); return; }
+			if (e.key === "/") {
+				var box = document.querySelector('input[type="search"]:not([hidden])');
+				if (box) { e.preventDefault(); box.focus(); }
+			} else if (e.key === "?") { e.preventDefault(); help(); }
 		});
 	})();
 })();
