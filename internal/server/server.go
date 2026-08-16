@@ -302,6 +302,13 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		user := s.currentUser(r)
 		if user == nil {
+			// An offline replay is a background fetch, not a navigation: answer 401
+			// so the client keeps the booking queued and retries after the next
+			// login, instead of following a redirect it would read as success.
+			if r.Header.Get("X-Offline-Replay") == "1" {
+				http.Error(w, "Anmeldung erforderlich", http.StatusUnauthorized)
+				return
+			}
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}

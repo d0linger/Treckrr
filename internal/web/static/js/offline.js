@@ -82,13 +82,19 @@
 					if (token) body.set("csrf_token", token);
 					return fetch("/entries", {
 						method: "POST", credentials: "same-origin", redirect: "manual",
-						headers: { "Content-Type": "application/x-www-form-urlencoded" },
+						// The server answers a replay with an explicit status (not a redirect):
+						// 2xx = stored, 422/400 = permanent rejection, 401 = login needed.
+						headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Offline-Replay": "1" },
 						body: body.toString()
 					}).then(function (r) {
-						// A 3xx redirect (success), 2xx, or opaqueredirect all mean the server
-						// accepted it. A 400 is bad data that won't self-heal → drop it too so the
-						// queue can't get stuck. Only a transient/5xx leaves the item to retry.
-						if (r.status < 400 || r.type === "opaqueredirect" || r.status === 400) return del(item.id);
+						if (r.status >= 200 && r.status < 300) return del(item.id); // stored (or already recorded)
+						if (r.status === 422 || r.status === 400) {                 // won't self-heal (year closed/locked, bad data)
+							return del(item.id).then(function () {
+								toast("Eine offline erfasste Buchung wurde abgelehnt (z. B. Jahr gesperrt) und verworfen.");
+							});
+						}
+						// 401 (session expired), 403 (stale CSRF), 5xx, an opaqueredirect
+						// from an un-upgraded server, or a network error: keep it and retry.
 					}).catch(function () { /* network died mid-flush: keep for next time */ });
 				});
 			}, Promise.resolve());

@@ -314,6 +314,20 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	neighborID := formInt64(r, "neighbor_id")
 	yearID := formInt64(r, "year_id")
+	// An offline replay (offline.js) sets this header and wants a machine-readable
+	// status, not a redirect: 2xx = stored, 422 = permanent business rejection so
+	// the client drops it from the queue (and 401 from auth = retry after login).
+	// This lets the queue distinguish "won't self-heal" from "retry later" instead
+	// of treating every redirect as success and silently discarding the booking.
+	replay := r.Header.Get("X-Offline-Replay") == "1"
+	reject := func(status int, msg, redirectTo string) {
+		if replay {
+			http.Error(w, msg, status)
+			return
+		}
+		s.setFlash(w, r, "error", msg)
+		redirect(w, r, redirectTo)
+	}
 
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
@@ -321,21 +335,30 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if year.Completed() {
-		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen – es können keine Buchungen mehr erfasst werden.")
-		redirect(w, r, neighborURL(neighborID, yearID))
+		reject(http.StatusUnprocessableEntity, "Das Abrechnungsjahr ist abgeschlossen – es können keine Buchungen mehr erfasst werden.", neighborURL(neighborID, yearID))
 		return
 	}
-	if !s.neighborInYearOrRedirect(w, r, year.ID, neighborID) {
+	// Inline the neighbor-in-year and invoice-lock checks (rather than the
+	// w,r-writing helpers) so the same gates can answer a replay with a status
+	// code; the interactive messages/redirect targets are unchanged.
+	if in, err := s.store.NeighborInYear(r.Context(), year.ID, neighborID); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	} else if !in {
+		reject(http.StatusUnprocessableEntity, "Nachbar ist diesem Abrechnungsjahr nicht zugeordnet.", dashboardURL(yearID))
 		return
 	}
-	if s.invoiceLocked(w, r, year.ID, neighborID) {
+	if iv, err := s.store.GetInvoice(r.Context(), year.ID, neighborID); err == nil {
+		reject(http.StatusUnprocessableEntity, "Rechnung "+iv.Number+" ist festgeschrieben – Buchungen und Verrechnungen für diesen Nachbarn sind gesperrt. Für Korrekturen bitte die Rechnung stornieren.", neighborURL(neighborID, yearID))
+		return
+	} else if !errors.Is(err, store.ErrNotFound) {
+		reject(http.StatusUnprocessableEntity, "Rechnungsstatus konnte nicht geprüft werden.", neighborURL(neighborID, yearID))
 		return
 	}
 
 	entry, machineIDs, msg := s.resolveEntryFromForm(r)
 	if msg != "" {
-		s.setFlash(w, r, "error", msg)
-		redirect(w, r, neighborURL(neighborID, yearID))
+		reject(http.StatusUnprocessableEntity, msg, neighborURL(neighborID, yearID))
 		return
 	}
 	entry.NeighborID = neighborID
@@ -348,6 +371,10 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if newID == 0 { // duplicate replay of an offline booking — already recorded
+		if replay {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		s.setFlash(w, r, "success", "Buchung war bereits erfasst.")
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
@@ -363,6 +390,10 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 			entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2))
 	}
 	s.audit(r, "create", "entry", newID, detail)
+	if replay {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	s.setFlash(w, r, "success", "Buchung gespeichert.")
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
