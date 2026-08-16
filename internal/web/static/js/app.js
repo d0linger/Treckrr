@@ -921,11 +921,6 @@
 		});
 	})();
 
-	// Generic print buttons (CSP-safe, no inline onclick).
-	document.querySelectorAll("[data-print]").forEach(function (b) {
-		b.addEventListener("click", function () { window.print(); });
-	});
-
 	// Command palette (Ctrl/Cmd+K): fuzzy jump to a neighbor, invoice or gespann
 	// via the /api/search endpoint. Debounced; keyboard-navigable.
 	(function () {
