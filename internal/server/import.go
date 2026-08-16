@@ -56,6 +56,10 @@ func col(rec []string, i int) string {
 // against the year's members. It never touches the database beyond the caller's
 // prebuilt member map, so it is safe to run for the dry-run preview.
 func parseImportCSV(text string, members map[string]int64) ([]importRow, error) {
+	// Strip a leading UTF-8 BOM. Both our own CSV export and Excel/LibreOffice
+	// write one; left in place it prefixes the first cell (BOM + "Nachbar"), so
+	// the header-skip check below misses and the header parses as a bad data row.
+	text = strings.TrimPrefix(text, "\uFEFF")
 	cr := csv.NewReader(strings.NewReader(text))
 	cr.Comma = ';'
 	cr.FieldsPerRecord = -1 // tolerate ragged rows
@@ -134,6 +138,34 @@ func (s *Server) handleImportForm(w http.ResponseWriter, r *http.Request) {
 	data := s.newPage(w, r, "Buchungen importieren", "dashboard")
 	data["Year"] = year
 	s.render(w, r, "import", data)
+}
+
+// handleImportSample streams a small, correctly-formatted example CSV so a user
+// can see the exact import layout (same semicolon columns as the export) and fill
+// it in. It is a static template — no year or DB access — and mirrors the export's
+// UTF-8 BOM + ';' delimiter + German decimals so a real exported file and this
+// sample parse identically. The placeholder neighbours won't import until renamed
+// to actual year members; that's intentional (the file is a format guide).
+func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"treckrr_import_vorlage.csv\"")
+	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF}) // UTF-8 BOM, so Excel opens umlauts/€ correctly
+	cw := csv.NewWriter(w)
+	cw.Comma = ';'
+	defer cw.Flush()
+	_ = cw.Write([]string{
+		"Nachbar", "Datum", "Tätigkeit", "Traktor", "Belastung", "Maschinen",
+		"Einheit", "Menge", "Satz/Einheit (€)", "Kosten (€)", "Notiz",
+	})
+	// Rig columns (Traktor/Belastung/Maschinen) and Kosten are ignored on import;
+	// they stay for column alignment with the export. Cost is recomputed Menge×Satz.
+	for _, row := range [][]string{
+		{"Max Mustermann", "2026-03-14", "Ballenpressen", "", "", "", "Ballen", "10", "3,20", "32,00", "Beispiel: 10 × 3,20"},
+		{"Max Mustermann", "2026-04-02", "Mähen", "", "", "", "h", "4,5", "28,00", "126,00", "Einheit leer = Stunden"},
+		{"Anna Beispiel", "15.05.2026", "Transport", "", "", "", "km", "120", "0,90", "108,00", "Datum auch TT.MM.JJJJ"},
+	} {
+		_ = cw.Write(row)
+	}
 }
 
 // handleImportPreview parses the uploaded CSV and shows a dry-run: which rows
