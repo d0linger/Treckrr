@@ -73,10 +73,17 @@ func (s *Store) CountPaymentsForNeighborYear(ctx context.Context, yearID, neighb
 // DeletePayment soft-deletes a payment (sets deleted_at), so an accidental delete
 // can be undone. It drops out of every sum/list immediately; a background purge
 // removes it for good after the grace window.
-func (s *Store) DeletePayment(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx,
+// DeletePayment soft-deletes a payment. Returns true only when an active row was
+// actually deleted; false (no error) if it was already deleted or gone, so the
+// caller can skip a misleading success flash + audit event.
+func (s *Store) DeletePayment(ctx context.Context, id int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE payments SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL`, id)
-	return err
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // RestorePayment reverses a soft-delete (undo). Returns true only when a

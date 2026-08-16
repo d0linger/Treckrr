@@ -61,9 +61,11 @@ func TestPaymentSoftDeleteIntegration(t *testing.T) {
 	}
 	id := payID()
 
-	// Soft-delete → excluded from the sum and the list.
-	if err := st.DeletePayment(ctx, id); err != nil {
+	// Soft-delete → excluded from the sum and the list, and it reports the change.
+	if deleted, err := st.DeletePayment(ctx, id); err != nil {
 		t.Fatalf("delete: %v", err)
+	} else if !deleted {
+		t.Fatalf("delete reported no change, want deleted=true")
 	}
 	if got := sum(); got != "0" {
 		t.Errorf("sum after soft-delete = %s, want 0", got)
@@ -90,7 +92,7 @@ func TestPaymentSoftDeleteIntegration(t *testing.T) {
 	}
 
 	// Delete again, then purge with a future cutoff → gone for good.
-	if err := st.DeletePayment(ctx, id); err != nil {
+	if _, err := st.DeletePayment(ctx, id); err != nil {
 		t.Fatalf("delete2: %v", err)
 	}
 	if err := st.PurgeDeletedPayments(ctx, time.Now().Add(time.Hour)); err != nil {
