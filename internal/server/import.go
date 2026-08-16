@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"encoding/csv"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -10,6 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // importRow is one parsed CSV line for the booking import, with a per-row error
@@ -115,6 +118,28 @@ func parseImportCSV(text string, members map[string]int64) ([]importRow, error) 
 	return out, nil
 }
 
+// markLockedRows rejects any importable row whose neighbour already has a
+// festgeschriebene (issued) invoice for the year — mirroring the invoiceLocked
+// guard that the single-entry create enforces (§131/Festschreibung). Without it a
+// bulk import would silently add bookings to a frozen invoice basis. Looked up
+// once per distinct neighbour; a non-"not found" store error fails closed (locked).
+func (s *Server) markLockedRows(ctx context.Context, yearID int64, rows []importRow) {
+	locked := make(map[int64]bool)
+	for i := range rows {
+		if !rows[i].OK() {
+			continue
+		}
+		nid := rows[i].NeighborID
+		if _, seen := locked[nid]; !seen {
+			_, err := s.store.GetInvoice(ctx, yearID, nid)
+			locked[nid] = !errors.Is(err, store.ErrNotFound) // invoice present (or lookup failed) → locked
+		}
+		if locked[nid] {
+			rows[i].Err = "Rechnung festgeschrieben"
+		}
+	}
+}
+
 // yearMembers builds a lower-cased name → id map of the year's neighbors, so the
 // import can only target existing members (no silent neighbor creation).
 func (s *Server) yearMembers(r *http.Request, yearID int64) (map[string]int64, error) {
@@ -210,6 +235,7 @@ func (s *Server) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/entries/import?year="+itoa64(yearID))
 		return
 	}
+	s.markLockedRows(r.Context(), yearID, rows)
 	okCount := 0
 	for _, row := range rows {
 		if row.OK() {
@@ -253,6 +279,10 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/entries/import?year="+itoa64(yearID))
 		return
 	}
+	// Re-check locks at commit time (not just preview): an invoice may have been
+	// festgeschrieben between preview and commit. Locked rows get an error and are
+	// skipped by the !row.OK() guard below.
+	s.markLockedRows(r.Context(), yearID, rows)
 	created := 0
 	for _, row := range rows {
 		if !row.OK() {
