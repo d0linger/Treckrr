@@ -12,7 +12,8 @@ test("login, create a unit booking, and see it on the Beleg", async ({ page }) =
   await page.goto("/login");
   await page.locator('input[name="username"]').fill(USER);
   await page.locator('input[name="password"]').fill(PASS);
-  await page.getByRole("button", { name: "Anmelden" }).click();
+  // exact: the passkey button ("Mit Passkey anmelden") also matches "Anmelden".
+  await page.getByRole("button", { name: "Anmelden", exact: true }).click();
   // Lands on an authenticated page (the app shell shows the brand).
   await expect(page.locator(".appbar")).toBeVisible();
 

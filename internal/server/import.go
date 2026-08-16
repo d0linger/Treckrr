@@ -22,7 +22,7 @@ import (
 // row is keyed <token>:<line>, so a re-submitted commit (same token) dedupes every
 // row to a no-op via CreateEntry's ON CONFLICT, while two genuinely identical CSV
 // rows (different lines) still both import. Falls back to "" (no dedup) if the RNG
-// fails — worst case reverts to the prior non-idempotent behaviour.
+// fails — worst case reverts to the prior non-idempotent behavior.
 func importToken() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -134,11 +134,11 @@ func parseImportCSV(text string, members map[string]int64) ([]importRow, error) 
 	return out, nil
 }
 
-// markLockedRows rejects any importable row whose neighbour already has a
+// markLockedRows rejects any importable row whose neighbor already has a
 // festgeschriebene (issued) invoice for the year — mirroring the invoiceLocked
 // guard that the single-entry create enforces (§131/Festschreibung). Without it a
 // bulk import would silently add bookings to a frozen invoice basis. Looked up
-// once per distinct neighbour; a non-"not found" store error fails closed (locked).
+// once per distinct neighbor; a non-"not found" store error fails closed (locked).
 func (s *Server) markLockedRows(ctx context.Context, yearID int64, rows []importRow) {
 	locked := make(map[int64]bool)
 	for i := range rows {
@@ -185,7 +185,7 @@ func (s *Server) handleImportForm(w http.ResponseWriter, r *http.Request) {
 // can see the exact import layout (same semicolon columns as the export) and fill
 // it in. It is a static template — no year or DB access — and mirrors the export's
 // UTF-8 BOM + ';' delimiter + German decimals so a real exported file and this
-// sample parse identically. The placeholder neighbours won't import until renamed
+// sample parse identically. The placeholder neighbors won't import until renamed
 // to actual year members; that's intentional (the file is a format guide).
 func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")

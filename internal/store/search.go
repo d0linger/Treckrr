@@ -45,12 +45,12 @@ func (s *Store) Search(ctx context.Context, q string, perKind int) ([]SearchResu
 		var id int64
 		var name, note string
 		if err := rows.Scan(&id, &name, &note); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		out = append(out, SearchResult{Kind: "neighbor", Label: name, Sub: note, URL: neighborPath(id)})
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -69,12 +69,12 @@ func (s *Store) Search(ctx context.Context, q string, perKind int) ([]SearchResu
 		var number, name string
 		var nid, yid int64
 		if err := rows.Scan(&number, &name, &nid, &yid); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		out = append(out, SearchResult{Kind: "invoice", Label: "Rechnung " + number, Sub: name, URL: belegPath(nid, yid)})
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -88,11 +88,11 @@ func (s *Store) Search(ctx context.Context, q string, perKind int) ([]SearchResu
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		out = append(out, SearchResult{Kind: "gespann", Label: name, Sub: "Gespann", URL: "/gespanne"})
 	}
-	rows.Close()
+	_ = rows.Close()
 	return out, rows.Err()
 }
