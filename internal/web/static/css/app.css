@@ -916,9 +916,10 @@ em { font-style: normal; color: var(--muted); }
 /* ---- Beleg: shareable statement (Saldo first + compact table) --------- */
 .beleg { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
 	overflow: hidden; box-shadow: var(--card-shadow);
-	/* Document-like width so it stays readable in landscape / on wide screens
-	   instead of stretching across the viewport. */
-	max-width: 40rem; margin-inline: auto; }
+	/* Match the app's content column (--maxw) rather than a narrower document cap,
+	   so it fills the page like every other view instead of looking like a thin
+	   strip on wide screens. The @media print rule below overrides to full A4. */
+	max-width: var(--maxw); margin-inline: auto; }
 
 .beleg__hero { padding: .85rem .9rem; color: var(--on-primary);
 	background: linear-gradient(135deg, var(--primary), var(--primary-strong)); }
