@@ -118,6 +118,11 @@
 		var hours = isHours();
 		if (hOnly) hOnly.hidden = !hours;
 		if (qtyOnly) qtyOnly.hidden = hours;
+		// The hours field is `required`, but on the quantity path it's inside the
+		// display:none panel; a required non-focusable field makes Chromium abort the
+		// submit silently ("invalid form control is not focusable"). Only require it
+		// while it's the visible path so a quantity booking can actually be saved.
+		if (hoursEl) hoursEl.required = hours;
 		var label = unitValue() || "Einheit";
 		for (var i = 0; i < unitLabels.length; i++) unitLabels[i].textContent = label;
 		update();
