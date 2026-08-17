@@ -51,10 +51,33 @@ self.addEventListener("fetch", (event) => {
 		return;
 	}
 
-	// Navigations: network-first, fall back to cache, then offline page.
+	// Navigations: network-first, fall back to the cached page, then the cached
+	// /offline shell, and — as a last resort if even that isn't cached yet (first
+	// visit already offline) — a minimal branded inline page, so a navigation
+	// offline never resolves to a raw browser error.
 	if (req.mode === "navigate") {
 		event.respondWith(
-			fetch(req).catch(() => caches.match(req).then((hit) => hit || caches.match("/offline")))
+			fetch(req).catch(() =>
+				caches.match(req).then((hit) =>
+					hit || caches.match("/offline").then((off) => off || OFFLINE_FALLBACK())
+				)
+			)
 		);
 	}
 });
+
+// OFFLINE_FALLBACK is the SW's own tiny branded page, used only when the cached
+// /offline shell is unavailable. Kept inline so it needs no network or cache.
+function OFFLINE_FALLBACK() {
+	const html = '<!doctype html><html lang="de"><head><meta charset="utf-8">'
+		+ '<meta name="viewport" content="width=device-width,initial-scale=1">'
+		+ '<title>Offline</title><style>body{margin:0;min-height:100vh;display:grid;'
+		+ 'place-items:center;font-family:system-ui,sans-serif;background:#f4f2ea;color:#1b2420}'
+		+ '@media(prefers-color-scheme:dark){body{background:#11140f;color:#e9ede4}}'
+		+ '.c{text-align:center;max-width:22rem;padding:2rem}h1{color:#115638;margin:.2rem 0}'
+		+ '@media(prefers-color-scheme:dark){h1{color:#7fce9f}}a{color:inherit}</style></head>'
+		+ '<body><div class="c"><h1>Offline</h1><p>Keine Verbindung. Sobald Sie wieder online '
+		+ 'sind, geht es weiter — offline erfasste Buchungen werden dann gespeichert.</p>'
+		+ '<p><a href="/">Erneut versuchen</a></p></div></body></html>';
+	return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
