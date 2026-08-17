@@ -13,6 +13,7 @@ import (
 
 	"github.com/d0linger/treckrr/internal/calc"
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -166,6 +167,44 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 	data["Company"] = company
 	data["Today"] = time.Now()
 	s.render(w, r, "neighbor_overview", data)
+}
+
+// handleNeighborOverviewPDF serves the multi-year Kontoauszug as a PDF.
+func (s *Server) handleNeighborOverviewPDF(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	history, err := s.store.NeighborYearHistory(r.Context(), id)
+	if err != nil {
+		s.serverError(w, "overview pdf: history", err)
+		return
+	}
+	company, _ := s.store.GetCompany(r.Context())
+	sd := pdf.StatementData{
+		IssuerName: company.Name, IssuerAddress: company.Address,
+		RecipientName: neighbor.Name, RecipientAddr: neighbor.Address, Today: time.Now(),
+	}
+	for _, h := range history {
+		sd.Rows = append(sd.Rows, pdf.StatementYear{Year: h.Year, Cost: h.Net, Hours: h.Hours, Paid: h.Paid})
+		sd.TotalCost = sd.TotalCost.Add(h.Net)
+		sd.TotalHours = sd.TotalHours.Add(h.Hours)
+	}
+	blob, err := pdf.RenderStatement(sd)
+	if err != nil {
+		s.serverError(w, "overview pdf", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", `inline; filename="Kontoauszug_`+sanitizeFilename(neighbor.Name)+`.pdf"`)
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(blob)
 }
 
 // neighborName returns a neighbor's name for audit details, or "#id" if it
@@ -995,6 +1034,7 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	data["Photos"] = photos
 	data["UnitIsCustom"] = unitIsCustom(entry.Unit)
 	data["IsQtyEntry"] = entry.Unit != "" && entry.Unit != "h"
+	data["NextWeek"] = time.Now().AddDate(0, 0, 7).Format("2006-01-02")
 	s.render(w, r, "entry_edit", data)
 }
 

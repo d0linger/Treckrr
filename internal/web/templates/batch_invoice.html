@@ -1,0 +1,48 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/?year={{.Year.ID}}" aria-label="Zurück">{{template "ic-back"}}</a>
+		<h1 class="pagehead__t">Sammel-Festschreibung · {{.Year.Year}}</h1>
+	</div>
+
+	{{if not .CompanyOK}}
+	<div class="card"><p class="muted">Bitte zuerst die <a class="link" href="/admin/company">Betriebsdaten (Absender)</a> ausfüllen — ohne diese kann keine Rechnung festgeschrieben werden.</p></div>
+	{{else}}
+	<p class="muted small">Vorschau aller Nachbarn mit Buchungen. Beim Festschreiben erhält jede Rechnung eine fortlaufende Nummer und wird gesperrt (§ 131 — nur per Storno korrigierbar). Bereits berechnete oder unvollständige Nachbarn werden übersprungen.</p>
+
+	<div class="tablewrap">
+		<table class="dtable">
+			<thead><tr><th>Nachbar</th><th class="dtable__num">Buchungen</th><th class="dtable__num">Brutto</th><th>Status</th></tr></thead>
+			<tbody>
+				{{range .Rows}}
+				<tr>
+					<td>{{.Neighbor.Name}}</td>
+					<td class="dtable__num">{{.Bookings}}</td>
+					<td class="dtable__num">{{if .AlreadyInvoiced}}–{{else}}{{money .Gross}}{{end}}</td>
+					<td>
+						{{if .AlreadyInvoiced}}<span class="tag">bereits berechnet</span>
+						{{else if .Issuable}}<span class="tag tag--paid">wird festgeschrieben</span>
+						{{else}}<span class="tag tag--open">unvollständig: {{range $i, $m := .Missing}}{{if $i}}, {{end}}{{$m}}{{end}}</span>{{end}}
+					</td>
+				</tr>
+				{{else}}
+				<tr><td colspan="4" class="muted">Keine Nachbarn mit Buchungen in diesem Jahr.</td></tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+
+	<div class="card statusrow">
+		<div class="statusrow__info">
+			<strong>{{.Issuable}} Rechnung(en)</strong> werden festgeschrieben · Summe {{money .Total}}
+		</div>
+		{{if .Issuable}}
+		<form method="post" action="/years/{{.Year.ID}}/issue-all"
+			data-confirm="{{.Issuable}} Rechnung(en) über {{money .Total}} jetzt endgültig festschreiben? Das ist irreversibel (nur per Storno korrigierbar).">
+			<button class="btn btn--primary btn--sm" type="submit">{{.Issuable}} festschreiben</button>
+		</form>
+		{{end}}
+	</div>
+	{{end}}
+</section>
+{{end}}

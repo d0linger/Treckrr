@@ -1,0 +1,155 @@
+// Package mail sends a Beleg/Rechnung by e-mail with a PDF attachment via SMTP.
+// Uses only net/smtp (STARTTLS + AUTH), no third-party client.
+package mail
+
+import (
+	"bytes"
+	"crypto/tls"
+	"encoding/base64"
+	"fmt"
+	"mime"
+	"net"
+	netmail "net/mail"
+	"net/smtp"
+	"strings"
+	"time"
+
+	"github.com/d0linger/treckrr/internal/config"
+)
+
+// Attachment is a file to attach (filename + bytes, content-type).
+type Attachment struct {
+	Filename    string
+	ContentType string
+	Data        []byte
+}
+
+// Send delivers a plain-text mail with optional attachments to one recipient. It
+// dials cfg.SMTPHost:SMTPPort, upgrades via STARTTLS when configured, authenticates
+// (PLAIN) if a user is set, and sends. Errors are returned to the caller to surface.
+func Send(cfg *config.Config, to, subject, body string, atts []Attachment) error {
+	if !cfg.MailEnabled() {
+		return fmt.Errorf("e-mail ist nicht konfiguriert")
+	}
+	to = strings.TrimSpace(to)
+	if to == "" {
+		return fmt.Errorf("kein Empfänger")
+	}
+	// Reject anything that isn't a single, well-formed address — in particular a
+	// value with embedded CR/LF, which would otherwise inject extra SMTP headers
+	// (Bcc/spoofing) via the To line. Use the PARSED address downstream, not the raw
+	// input: a comment-form value like "x@y (junk\r\nBcc: …)" parses OK but keeps the
+	// CRLF in its raw form — feeding that to the To header / RCPT would still inject.
+	parsed, err := netmail.ParseAddress(to)
+	if err != nil {
+		return fmt.Errorf("ungültige Empfängeradresse")
+	}
+	to = parsed.Address
+	// The From may be configured with a display name ("MR <mr@x.at>") — fine for the
+	// From: header, but the SMTP envelope (MAIL FROM) needs the bare address, or the
+	// server rejects it. Parse once: raw string for the header, .Address for the envelope.
+	fromHeader := strings.TrimSpace(cfg.SMTPFrom)
+	fromEnvelope := fromHeader
+	if pf, perr := netmail.ParseAddress(fromHeader); perr == nil {
+		fromEnvelope = pf.Address
+	}
+	msg := buildMessage(fromHeader, to, subject, body, atts)
+
+	addr := cfg.SMTPHost + ":" + cfg.SMTPPort
+	// Dial with an explicit timeout and set a deadline covering the whole exchange
+	// (greeting, EHLO, STARTTLS, AUTH, delivery), so an unresponsive server can't
+	// hang the request goroutine indefinitely.
+	conn, err := (&net.Dialer{Timeout: 15 * time.Second}).Dial("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("SMTP-Verbindung: %w", err)
+	}
+	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
+	c, err := smtp.NewClient(conn, cfg.SMTPHost)
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("SMTP-Verbindung: %w", err)
+	}
+	defer func() { _ = c.Close() }()
+	if err := c.Hello("treckrr"); err != nil {
+		return err
+	}
+	if cfg.SMTPStartTLS {
+		// STARTTLS is required when configured: if the server does not advertise it,
+		// refuse rather than fall through and send credentials + PII in cleartext.
+		if ok, _ := c.Extension("STARTTLS"); !ok {
+			return fmt.Errorf("SMTP-Server bietet kein STARTTLS an")
+		}
+		if err := c.StartTLS(&tls.Config{ServerName: cfg.SMTPHost, MinVersion: tls.VersionTLS12}); err != nil {
+			return fmt.Errorf("STARTTLS: %w", err)
+		}
+	}
+	if strings.TrimSpace(cfg.SMTPUser) != "" {
+		if err := c.Auth(smtp.PlainAuth("", cfg.SMTPUser, cfg.SMTPPassword, cfg.SMTPHost)); err != nil {
+			return fmt.Errorf("SMTP-Auth: %w", err)
+		}
+	}
+	if err := c.Mail(fromEnvelope); err != nil {
+		return err
+	}
+	if err := c.Rcpt(to); err != nil {
+		return err
+	}
+	wc, err := c.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := wc.Write(msg); err != nil {
+		_ = wc.Close()
+		return err
+	}
+	if err := wc.Close(); err != nil {
+		return err
+	}
+	return c.Quit()
+}
+
+// buildMessage assembles a MIME multipart/mixed message (text + attachments).
+func buildMessage(from, to, subject, body string, atts []Attachment) []byte {
+	var b bytes.Buffer
+	boundary := fmt.Sprintf("treckrr-%d", time.Now().UnixNano())
+	enc := mime.QEncoding.Encode
+
+	fmt.Fprintf(&b, "From: %s\r\n", from)
+	fmt.Fprintf(&b, "To: %s\r\n", to)
+	fmt.Fprintf(&b, "Subject: %s\r\n", enc("utf-8", subject))
+	fmt.Fprintf(&b, "Date: %s\r\n", time.Now().Format(time.RFC1123Z))
+	b.WriteString("MIME-Version: 1.0\r\n")
+	fmt.Fprintf(&b, "Content-Type: multipart/mixed; boundary=%q\r\n\r\n", boundary)
+
+	// text part
+	fmt.Fprintf(&b, "--%s\r\n", boundary)
+	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+	b.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
+	writeBase64(&b, []byte(body))
+
+	for _, a := range atts {
+		ct := a.ContentType
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		fmt.Fprintf(&b, "\r\n--%s\r\n", boundary)
+		fmt.Fprintf(&b, "Content-Type: %s\r\n", ct)
+		b.WriteString("Content-Transfer-Encoding: base64\r\n")
+		fmt.Fprintf(&b, "Content-Disposition: attachment; filename=%q\r\n\r\n", a.Filename)
+		writeBase64(&b, a.Data)
+	}
+	fmt.Fprintf(&b, "\r\n--%s--\r\n", boundary)
+	return b.Bytes()
+}
+
+// writeBase64 writes data base64-encoded in 76-char lines (RFC 2045).
+func writeBase64(b *bytes.Buffer, data []byte) {
+	enc := base64.StdEncoding.EncodeToString(data)
+	for len(enc) > 76 {
+		b.WriteString(enc[:76])
+		b.WriteString("\r\n")
+		enc = enc[76:]
+	}
+	b.WriteString(enc)
+	b.WriteString("\r\n")
+}

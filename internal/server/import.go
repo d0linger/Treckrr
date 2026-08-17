@@ -121,6 +121,12 @@ func parseImportCSV(text string, members map[string]int64) ([]importRow, error) 
 			row.Err = "Menge muss > 0 sein"
 		case !row.Price.IsPositive():
 			row.Err = "Satz muss > 0 sein"
+		case lenError("Tätigkeit", row.Task, maxNameLen) != "":
+			row.Err = lenError("Tätigkeit", row.Task, maxNameLen)
+		case lenError("Einheit", row.Unit, 16) != "":
+			row.Err = lenError("Einheit", row.Unit, 16)
+		case lenError("Notiz", row.Note, maxNoteLen) != "":
+			row.Err = lenError("Notiz", row.Note, maxNoteLen)
 		default:
 			if t, ok := parseImportDate(row.DateStr); ok {
 				row.Date = t

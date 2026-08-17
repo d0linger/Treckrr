@@ -1,0 +1,35 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/" aria-label="Zurück">{{template "ic-back"}}</a>
+		<h1 class="pagehead__t">Wiederkehrende Buchungen</h1>
+	</div>
+	<p class="muted small">Fällige Buchungen werden automatisch im offenen Jahr des Nachbarn angelegt. Eine Serie richtest du über eine bestehende Buchung ein („Bearbeiten" → „Als Serie wiederholen").</p>
+	{{if .Rules}}
+	<div class="tablewrap">
+		<table class="dtable">
+			<thead><tr><th>Nachbar</th><th>Buchung</th><th>Rhythmus</th><th>Nächster Lauf</th><th>Status</th><th></th></tr></thead>
+			<tbody>
+				{{range .Rules}}
+				<tr>
+					<td>{{.NeighborName}}</td>
+					<td>{{.Template.Summary}}</td>
+					<td>{{if eq .IntervalKind "monthly"}}monatlich{{else}}wöchentlich{{end}}</td>
+					<td>{{.NextRun.Format "02.01.2006"}}</td>
+					<td>{{if .Active}}<span class="tag tag--paid">aktiv</span>{{else}}<span class="tag tag--open">pausiert</span>{{end}}</td>
+					<td>
+						<div class="recur__acts">
+							<form method="post" action="/recurring/{{.ID}}/toggle"><button class="btn btn--ghost btn--sm" type="submit">{{if .Active}}Pausieren{{else}}Fortsetzen{{end}}</button></form>
+							<form method="post" action="/recurring/{{.ID}}/delete" data-confirm="Serie entfernen? Bereits erstellte Buchungen bleiben erhalten."><button class="btn btn--ghost btn--icon" type="submit" aria-label="Serie entfernen">{{template "ic-trash"}}</button></form>
+						</div>
+					</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	{{else}}
+	<p class="muted">Noch keine Serie eingerichtet.</p>
+	{{end}}
+</section>
+{{end}}

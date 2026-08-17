@@ -138,6 +138,9 @@
 		else update();
 	});
 
+	var previews = form.querySelectorAll("[data-rate-preview]");
+	function setLoading(on) { for (var i = 0; i < previews.length; i++) previews[i].classList.toggle("is-loading", on); }
+	setLoading(true);
 	fetch(form.getAttribute("data-pricing-url"), { credentials: "same-origin" })
 		.then(function (r) { return r.json(); })
 		.then(function (data) {
@@ -149,7 +152,8 @@
 			};
 			applyMode();
 		})
-		.catch(function () { /* preview stays inert; server still calculates */ });
+		.catch(function () { /* preview stays inert; server still calculates */ })
+		.then(function () { setLoading(false); });
 
 	// Pre-save guard: warn (never block) on implausible hours or a same-day
 	// duplicate of the same task. Keeps the form intact — a cancelled confirm just

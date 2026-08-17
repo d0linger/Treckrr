@@ -1,7 +1,10 @@
 package server
 
 import (
+	"context"
+	"crypto/rand"
 	"encoding/csv"
+	"encoding/hex"
 	"log/slog"
 	"net"
 	"net/http"
@@ -9,6 +12,16 @@ import (
 	"strings"
 	"time"
 )
+
+// newReqID returns a short random id used to correlate a request's access-log
+// line with any error it logs.
+func newReqID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "-"
+	}
+	return hex.EncodeToString(b)
+}
 
 // auditPageSize is how many audit rows are shown per page (keeps the trail from
 // becoming one endless scroll while staying searchable/filterable).
@@ -238,7 +251,7 @@ func (sr *statusRecorder) WriteHeader(code int) {
 // (static assets, PWA plumbing, health checks, browser probes).
 func noisyPath(p string) bool {
 	switch p {
-	case "/healthz", "/manifest.webmanifest", "/sw.js", "/favicon.ico":
+	case "/healthz", "/readyz", "/livez", "/csp-report", "/manifest.webmanifest", "/sw.js", "/favicon.ico":
 		return true
 	}
 	return strings.HasPrefix(p, "/static/") || strings.HasPrefix(p, "/.well-known/")
@@ -250,6 +263,9 @@ func noisyPath(p string) bool {
 func (s *Server) accessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		id := newReqID()
+		w.Header().Set("X-Request-Id", id)
+		r = r.WithContext(context.WithValue(r.Context(), reqIDKey, id))
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 		if noisyPath(r.URL.Path) && rec.status < 400 {
@@ -260,6 +276,7 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 			user = u.Username
 		}
 		slog.Info("request",
+			"req_id", id,
 			"method", sanitizeLog(r.Method),
 			"path", sanitizeLog(r.URL.Path),
 			"status", rec.status,

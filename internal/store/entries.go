@@ -37,8 +37,8 @@ func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 func (s *Store) GetNeighbor(ctx context.Context, id int64) (*models.Neighbor, error) {
 	var n models.Neighbor
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, note, address, tax_id, archived, anonymized, created_at FROM neighbors WHERE id=$1`, id).
-		Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Archived, &n.Anonymized, &n.Created)
+		`SELECT id, name, note, address, tax_id, email, archived, anonymized, created_at FROM neighbors WHERE id=$1`, id).
+		Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Email, &n.Archived, &n.Anonymized, &n.Created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -54,7 +54,7 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE neighbors
 		    SET name = 'anonymisiert #' || id,
-		        note = '', address = '', tax_id = '',
+		        note = '', address = '', tax_id = '', email = '',
 		        archived = TRUE, anonymized = TRUE
 		  WHERE id = $1 AND NOT anonymized`, id)
 	if err != nil {
@@ -106,13 +106,13 @@ func (s *Store) CreateNeighbor(ctx context.Context, name, note string) (int64, e
 }
 
 // UpdateNeighbor updates a neighbor.
-func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note, address, taxID string) error {
+func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note, address, taxID, email string) error {
 	// Never re-populate personal fields on an anonymized neighbor (DSGVO Art. 17):
 	// the UI hides the edit form, and this WHERE clause is the server-side backstop
 	// against a crafted POST reviving erased data.
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE neighbors SET name=$1, note=$2, address=$3, tax_id=$4 WHERE id=$5 AND NOT anonymized`,
-		name, note, address, taxID, id)
+		`UPDATE neighbors SET name=$1, note=$2, address=$3, tax_id=$4, email=$5 WHERE id=$6 AND NOT anonymized`,
+		name, note, address, taxID, email, id)
 	return err
 }
 

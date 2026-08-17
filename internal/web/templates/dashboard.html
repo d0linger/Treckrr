@@ -78,15 +78,21 @@
 			<button class="btn btn--primary btn--sm" type="submit">Jahr abschließen</button>
 		</form>
 		{{end}}
+		<a class="btn btn--ghost btn--sm" href="/years/{{.Year.ID}}/issue-all" title="Alle offenen Nachbarn auf einmal abrechnen">Sammel-Festschreibung</a>
 	</div>
 
 	<h2 class="section-title" id="nachbarn">Nachbarn im Jahr {{.Year.Year}}</h2>
 	{{if .Summaries}}
-	<input class="input" type="search" placeholder="Nachbar suchen …" data-search="[data-nb-item]" aria-label="Nachbar suchen">
+	<div class="listtools">
+		<input class="input" type="search" placeholder="Nachbar suchen …" data-search="[data-nb-item]" aria-label="Nachbar suchen">
+		{{if .Completed}}
+		<label class="switch"><input type="checkbox" data-open-filter><span>Nur offene</span></label>
+		{{end}}
+	</div>
 	{{end}}
 	<div class="list">
 		{{range .Summaries}}
-		<div class="list__row card" data-nb-item>
+		<div class="list__row card" data-nb-item{{if and $.Completed (not .Paid)}} data-open="1"{{end}}>
 			<a class="list__main list__main--link" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}">
 				<span class="list__title">{{.Neighbor.Name}}</span>
 				<span class="list__sub">{{.Entries}} Buchungen · {{num .Hours}} h</span>

@@ -65,16 +65,24 @@
 		} catch (e) { /* keep the static favicon */ }
 	})();
 
-	// Live text search: filter items matching [data-search]'s target selector.
+	// Live text search over [data-search]'s target selector, plus an optional
+	// "only open" companion checkbox ([data-open-filter]) that also hides rows
+	// without a data-open marker. Both signals feed one visibility pass so they
+	// never fight over the inline display value.
 	document.querySelectorAll("[data-search]").forEach(function (input) {
 		var sel = input.getAttribute("data-search");
-		input.addEventListener("input", function () {
+		var openCb = document.querySelector("[data-open-filter]");
+		function apply() {
 			var q = input.value.toLowerCase();
+			var onlyOpen = openCb && openCb.checked;
 			document.querySelectorAll(sel).forEach(function (item) {
 				var hit = item.textContent.toLowerCase().indexOf(q) >= 0;
+				if (onlyOpen && !item.hasAttribute("data-open")) hit = false;
 				item.style.display = hit ? "" : "none";
 			});
-		});
+		}
+		input.addEventListener("input", apply);
+		if (openCb) openCb.addEventListener("change", apply);
 	});
 
 	// Auto-submit the enclosing form when a marked select changes.
@@ -397,6 +405,19 @@
 		}
 	}
 
+	// Copy a companion input's value to the clipboard (e.g. the public Beleg link).
+	document.querySelectorAll("[data-copy-src-btn]").forEach(function (btn) {
+		btn.addEventListener("click", function () {
+			var input = btn.parentElement.querySelector("[data-copy-src]");
+			if (!input) return;
+			input.select();
+			var done = function () { var t = btn.textContent; btn.textContent = "Kopiert ✓"; setTimeout(function () { btn.textContent = t; }, 1500); };
+			var legacy = function () { try { if (document.execCommand("copy")) done(); } catch (e) {} };
+			if (navigator.clipboard) { navigator.clipboard.writeText(input.value).then(done).catch(legacy); }
+			else { legacy(); }
+		});
+	});
+
 	// Print trigger (CSP-safe replacement for an inline onclick handler).
 	document.querySelectorAll("[data-print]").forEach(function (btn) {
 		btn.addEventListener("click", function () { window.print(); });
@@ -613,9 +634,34 @@
 		}
 		function belegPng() {
 			var rect = beleg.getBoundingClientRect();
-			var w = Math.ceil(rect.width), h = Math.ceil(beleg.scrollHeight);
-			var clone = beleg.cloneNode(true);
-			inlineStyles(beleg, clone);
+			// Use the full CONTENT size, not the viewport-constrained box: on a narrow
+			// screen the beleg's rows/summary line can be wider than what's visible, and
+			// sizing the canvas to rect.width alone clips everything on the right.
+			var w = Math.ceil(Math.max(rect.width, beleg.scrollWidth));
+			// Measure the height AND capture the computed styles at the SAME width the
+			// clone will render at: forcing a wider width reflows the content (grid
+			// tracks, wrap points, height), so both must be read while the widened layout
+			// is applied. Briefly apply the width, then clone + inline styles + measure
+			// inside that window; try/finally guarantees the live element is restored even
+			// if cloning throws.
+			var prevW = beleg.style.width, prevMax = beleg.style.maxWidth, prevOv = beleg.style.overflow;
+			var h, clone;
+			try {
+				beleg.style.maxWidth = "none"; beleg.style.overflow = "visible"; beleg.style.width = w + "px";
+				h = Math.ceil(beleg.scrollHeight);
+				clone = beleg.cloneNode(true);
+				inlineStyles(beleg, clone);
+			} finally {
+				beleg.style.width = prevW; beleg.style.maxWidth = prevMax; beleg.style.overflow = prevOv;
+			}
+			// The live .beleg clips with overflow:hidden and is capped by max-width; in the
+			// foreignObject those would shave the right edge off. Let the clone size to the
+			// full captured width and show everything so no column is cut.
+			clone.style.overflow = "visible";
+			clone.style.maxWidth = "none";
+			clone.style.width = w + "px";
+			clone.style.marginLeft = "0";
+			clone.style.marginRight = "0";
 			return inlineFonts().then(function (fontCss) {
 				var xml = new XMLSerializer().serializeToString(clone);
 				var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">'

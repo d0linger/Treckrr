@@ -484,6 +484,28 @@ em { font-style: normal; color: var(--muted); }
 .rate-preview__rate { font-size: var(--fs-sm); opacity: .92; text-align: right; }
 .rate-preview strong { font-variant-numeric: tabular-nums; font-weight: 700; }
 
+/* Skeleton shimmer over the live figures while the pricing table is still being
+   fetched — so the "–" placeholder reads as "loading", not "broken". */
+@keyframes tw-shimmer { 0% { background-position: -160px 0; } 100% { background-position: 160px 0; } }
+.rate-preview.is-loading [data-rate],
+.rate-preview.is-loading [data-cost],
+.rate-preview.is-loading [data-qty-cost] {
+	color: transparent; border-radius: 6px; min-width: 3.5rem; display: inline-block;
+	background: linear-gradient(90deg, rgba(255,255,255,.18) 25%, rgba(255,255,255,.42) 37%, rgba(255,255,255,.18) 63%);
+	background-size: 300px 100%; animation: tw-shimmer 1.1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+	.rate-preview.is-loading [data-rate],
+	.rate-preview.is-loading [data-cost],
+	.rate-preview.is-loading [data-qty-cost] { animation: none; }
+}
+
+/* Dashboard list toolbar: search field + "Nur offene" toggle side by side. */
+.listtools { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .2rem; }
+.listtools .input { flex: 1 1 12rem; }
+.switch { display: inline-flex; align-items: center; gap: .4rem; font-size: var(--fs-sm); color: var(--text-muted); cursor: pointer; white-space: nowrap; user-select: none; }
+.switch input { accent-color: var(--primary); width: 1.05rem; height: 1.05rem; }
+
 /* ---- Chips ------------------------------------------------------------ */
 .ratechips { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .6rem; }
 .chip { background: var(--surface-2); border-radius: 999px; padding: .2rem .6rem; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -1012,7 +1034,36 @@ em { font-style: normal; color: var(--muted); }
 .beleg__foot { text-align: center; color: var(--muted); font-family: var(--font-mono); font-size: .73rem; padding: .7rem .9rem .5rem; }
 
 .beleg__actions { display: flex; flex-direction: column; gap: .5rem; margin-top: .85rem; }
-.beleg__actrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .5rem; }
+/* Wide-enough tracks that the longest label ("Als versendet markieren") stays on
+   one line; auto-fit then packs as many columns as fit and reflows to fewer on
+   narrow screens instead of forcing every button to wrap. */
+.beleg__actrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .5rem; }
+.beleg__markform { display: contents; } /* let the button lay out as an actrow grid child */
+/* min-width:0 lets a button shrink to its track (grid children default to
+   min-width:auto). Keep labels on one line by default — with the wide track they
+   all fit — and only permit wrapping on phone-width screens, where the 2-column
+   grid makes a cell too narrow for the longest label and nowrap would overflow. */
+.beleg__actrow .btn { min-width: 0; text-align: center; }
+@media (max-width: 30rem) {
+	.beleg__actrow .btn { white-space: normal; }
+}
+/* "Versendet" once the Beleg was marked sent: a filled/done look so the status is
+   readable straight off the button, distinct from the neutral not-yet-sent state. */
+.beleg__actrow .btn.is-sent {
+	background: var(--primary-tint);
+	border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+	color: var(--primary-strong);
+	font-weight: 700;
+}
+.beleg__actrow .btn.is-sent .ic { color: var(--primary); }
+.sharebox { margin-top: .6rem; padding: .7rem .8rem; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--radius); }
+.sharebox p { margin: 0 0 .4rem; }
+.sharebox__row { display: flex; gap: .4rem; }
+.sharebox__row .input { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); font-size: .8rem; }
+.recur__acts { display: flex; gap: .3rem; align-items: center; justify-content: flex-end; }
+.recur__acts form { display: inline; }
+.beleg__sent { display: flex; align-items: center; gap: .4rem; margin: .5rem 0 0; }
+.beleg__sent .ic { width: 1em; height: 1em; flex: none; }
 
 /* Invoice corrections (Storno / Gutschrift) + document history, screen only. */
 .beleg__invacts { gap: .5rem; padding-top: .5rem; margin-top: .2rem; border-top: 1px solid var(--card-hairline); }

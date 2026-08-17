@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"html/template"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -66,6 +67,7 @@ func New(cfg *config.Config, st *store.Store, bk *backup.Service) (*Server, erro
 type ctxKey string
 
 const userCtxKey ctxKey = "user"
+const reqIDKey ctxKey = "reqid"
 
 // Handler builds the top-level http.Handler with all routes registered.
 func (s *Server) Handler() http.Handler {
@@ -77,7 +79,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handleNotFound)
 
 	// Health & PWA plumbing (public).
-	mux.HandleFunc("GET /healthz", s.handleHealth)
+	mux.HandleFunc("GET /healthz", s.handleHealth) // legacy alias (DB-checking) — kept
+	mux.HandleFunc("GET /readyz", s.handleHealth)  // readiness: app + DB reachable
+	mux.HandleFunc("GET /livez", s.handleLive)     // liveness: process only, no DB
+	mux.HandleFunc("POST /csp-report", s.handleCSPReport)
 	// Prometheus metrics — only registered when METRICS_TOKEN is set AND long enough
 	// to resist brute force; the handler itself enforces the bearer token so an
 	// unauthenticated scrape gets 401. A set-but-too-short token stays disabled with
@@ -107,7 +112,16 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /stats/all", s.auth(s.handleStatsAll))
 	mux.Handle("GET /neighbors/{id}", s.auth(s.handleNeighborDetail))
 	mux.Handle("GET /neighbors/{id}/overview", s.auth(s.handleNeighborOverview))
+	mux.Handle("GET /neighbors/{id}/overview.pdf", s.auth(s.handleNeighborOverviewPDF))
 	mux.Handle("GET /neighbors/{id}/beleg", s.auth(s.handleNeighborBeleg))
+	mux.Handle("GET /neighbors/{id}/beleg.pdf", s.auth(s.handleBelegPDF))
+	mux.Handle("POST /neighbors/{id}/beleg/email", s.auth(s.handleBelegEmail))
+	mux.Handle("POST /neighbors/{id}/beleg/mark-sent", s.auth(s.handleBelegMarkSent))
+	mux.Handle("POST /neighbors/{id}/beleg/unsend", s.auth(s.handleBelegUnsend))
+	mux.Handle("POST /neighbors/{id}/beleg/share", s.auth(s.handleBelegShareCreate))
+	mux.HandleFunc("GET /s/beleg/{token}", s.handleSharedBeleg) // public, token-gated read-only Beleg
+	mux.Handle("GET /years/{id}/issue-all", s.auth(s.handleBatchIssuePreview))
+	mux.Handle("POST /years/{id}/issue-all", s.auth(s.handleBatchIssueCommit))
 	mux.Handle("GET /neighbors/{id}/invoice/confirm", s.auth(s.handleInvoiceConfirm))
 	mux.Handle("POST /neighbors/{id}/invoice", s.auth(s.handleInvoiceIssue))
 	mux.Handle("POST /neighbors/{id}/invoice/storno", s.auth(s.handleInvoiceStorno))
@@ -194,6 +208,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /account/sessions/revoke", s.auth(s.handleSessionRevoke))
 	mux.Handle("POST /account/sessions/revoke-others", s.auth(s.handleSessionRevokeOthers))
 
+	mux.Handle("GET /payments/import", s.auth(s.handlePaymentImportForm))
+	mux.Handle("POST /payments/import/preview", s.auth(s.handlePaymentImportPreview))
+	mux.Handle("POST /payments/import", s.auth(s.handlePaymentImportCommit))
+	mux.Handle("GET /recurring", s.auth(s.handleRecurringList))
+	mux.Handle("POST /entries/{id}/recur", s.auth(s.handleRecurringCreate))
+	mux.Handle("POST /recurring/{id}/toggle", s.auth(s.handleRecurringToggle))
+	mux.Handle("POST /recurring/{id}/delete", s.auth(s.handleRecurringDelete))
 	mux.Handle("GET /entries/import", s.auth(s.handleImportForm))
 	mux.Handle("GET /entries/import/sample.csv", s.auth(s.handleImportSample))
 	mux.Handle("POST /entries/import/preview", s.auth(s.handleImportPreview))
@@ -205,6 +226,8 @@ func (s *Server) Handler() http.Handler {
 	// Mahnwesen (dunning): overdue list + printable reminder + its EPC-QR.
 	mux.Handle("GET /mahnwesen", s.auth(s.handleMahnwesen))
 	mux.Handle("GET /neighbors/{id}/mahnung", s.auth(s.handleNeighborMahnung))
+	mux.Handle("GET /neighbors/{id}/mahnung.pdf", s.auth(s.handleMahnungPDF))
+	mux.Handle("POST /neighbors/{id}/mahnung/email", s.auth(s.handleMahnungEmail))
 	mux.Handle("GET /neighbors/{id}/mahnung/epc-qr.png", s.auth(s.handleMahnungEpcQR))
 
 	// Admin only.
@@ -415,6 +438,25 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("ok"))
 }
 
+// handleLive is a pure liveness probe: it answers 200 as long as the process can
+// serve, with NO database call — so a transient DB outage doesn't make an
+// orchestrator kill and restart a healthy container. Readiness (/readyz, /healthz)
+// stays DB-checking.
+func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	_, _ = w.Write([]byte("ok"))
+}
+
+// handleCSPReport records Content-Security-Policy violation reports the browser
+// posts to report-uri. Public (browsers send it without credentials) and never
+// trusted for anything but a log line — the strict CSP has no unsafe-inline, so a
+// report usually means an accidental inline handler/style regressed.
+func (s *Server) handleCSPReport(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<10)) // reports are small
+	slog.Warn("csp violation", "report", sanitizeLog(strings.TrimSpace(string(body))), "ua", sanitizeLog(r.UserAgent()))
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // The two possible CSP values, fixed at compile time (all assets are served
 // locally, so a strict policy is possible). The secure variant additionally
 // upgrades plain-HTTP subresource requests — advertised alongside HSTS only.
@@ -424,7 +466,7 @@ const (
 	// embeds them as data: inside that SVG image, so font-src stays strict. The
 	// connect/manifest/worker/frame-src directives make the same-origin-only
 	// posture explicit rather than relying on the default-src fallback.
-	cspBase   = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-src 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
+	cspBase   = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-src 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'; report-uri /csp-report"
 	cspSecure = cspBase + "; upgrade-insecure-requests"
 )
 
