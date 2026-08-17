@@ -245,6 +245,7 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
+	_ = s.store.RecordBelegSend(r.Context(), v.Year.ID, v.Neighbor.ID, "mahnung") // send trail
 	s.audit(r, "mahnung_email", "neighbor", v.Neighbor.ID, v.Neighbor.Name+" · "+v.Neighbor.Email+" · "+v.Title+" "+v.Invoice.Number)
 	s.setFlash(w, r, "success", v.Title+" an "+v.Neighbor.Email+" gesendet.")
 	redirect(w, r, back)

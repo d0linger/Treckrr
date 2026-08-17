@@ -68,6 +68,39 @@ func gblock(pdf *gopdf.GoPdf, x, y, size float64, s string) float64 {
 	return y
 }
 
+// gaccent draws the short "Treckrr green" rule under the issuer name.
+func gaccent(pdf *gopdf.GoPdf, x, y float64) {
+	pdf.SetLineWidth(2.4)
+	pdf.SetStrokeColor(17, 86, 56) // #115638
+	pdf.Line(x, y, x+48, y)
+	pdf.SetLineWidth(0.6)
+	pdf.SetStrokeColor(120, 120, 120) // reset to the neutral table stroke
+}
+
+// gfooter draws a thin rule + a small-print issuer line at the A4 bottom.
+func gfooter(pdf *gopdf.GoPdf, name, address, taxID, iban string) {
+	y := 806.0
+	pdf.SetLineWidth(0.5)
+	pdf.SetStrokeColor(205, 205, 205)
+	pdf.Line(marginL, y, pageW-marginR, y)
+	var parts []string
+	if s := strings.TrimSpace(name); s != "" {
+		parts = append(parts, s)
+	}
+	if s := strings.TrimSpace(strings.ReplaceAll(address, "\n", ", ")); s != "" {
+		parts = append(parts, s)
+	}
+	if s := strings.TrimSpace(taxID); s != "" {
+		parts = append(parts, "UID "+s)
+	}
+	if s := strings.TrimSpace(iban); s != "" {
+		parts = append(parts, "IBAN "+s)
+	}
+	pdf.SetTextColor(120, 120, 120)
+	gtext(pdf, marginL, y+6, 7.5, false, strings.Join(parts, "  ·  "))
+	pdf.SetTextColor(0, 0, 0)
+}
+
 // selfTest renders a page with German glyphs + € and returns the bytes; used by the
 // test to prove the embedded font covers the charset we need.
 func selfTest() ([]byte, error) {

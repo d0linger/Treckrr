@@ -36,7 +36,8 @@ func RenderMahnung(m MahnungData) ([]byte, error) {
 	y := 48.0
 
 	gtext(pdf, marginL, y, 15, true, firstNonEmpty(m.IssuerName, "Mahnung"))
-	y += 20
+	gaccent(pdf, marginL, y+18)
+	y += 24
 	yIss := gblock(pdf, marginL, y, 9.5, m.IssuerAddress)
 
 	gtextR(pdf, right, y, 18, true, strings.ToUpper(firstNonEmpty(m.Title, "Mahnung")))
@@ -91,6 +92,7 @@ func RenderMahnung(m MahnungData) ([]byte, error) {
 		gtext(pdf, marginL, y, 9.5, false, "Betrag: "+money(m.Open))
 	}
 
+	gfooter(pdf, m.IssuerName, m.IssuerAddress, "", m.IssuerIBAN)
 	var buf bytes.Buffer
 	if _, err := pdf.WriteTo(&buf); err != nil {
 		return nil, err

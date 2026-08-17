@@ -39,7 +39,8 @@ func RenderStatement(s StatementData) ([]byte, error) {
 	y := 48.0
 
 	gtext(pdf, marginL, y, 15, true, firstNonEmpty(s.IssuerName, "Kontoauszug"))
-	y += 20
+	gaccent(pdf, marginL, y+18)
+	y += 24
 	yIss := gblock(pdf, marginL, y, 9.5, s.IssuerAddress)
 
 	gtextR(pdf, right, y, 18, true, "KONTOAUSZUG")
@@ -89,6 +90,7 @@ func RenderStatement(s StatementData) ([]byte, error) {
 	gtext(pdf, colPaid, y, 11, true, "Summe")
 	gtextR(pdf, right, y, 11, true, money(s.TotalCost))
 
+	gfooter(pdf, s.IssuerName, s.IssuerAddress, "", "")
 	var buf bytes.Buffer
 	if _, err := pdf.WriteTo(&buf); err != nil {
 		return nil, err

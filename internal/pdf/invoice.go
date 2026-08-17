@@ -89,7 +89,8 @@ func RenderInvoice(iv *models.Invoice) ([]byte, error) {
 
 	// Header: issuer (sender) block, left.
 	text(marginL, y, 15, true, firstNonEmpty(c.Issuer.Name, "Rechnung"))
-	y += 20
+	gaccent(pdf, marginL, y+18)
+	y += 24
 	yIssuer := block(marginL, y, 9.5, c.Issuer.Address)
 	if strings.TrimSpace(c.Issuer.TaxID) != "" {
 		text(marginL, yIssuer, 9.5, false, "UID/Steuernr.: "+c.Issuer.TaxID)
@@ -187,6 +188,7 @@ func RenderInvoice(iv *models.Invoice) ([]byte, error) {
 		text(marginL, y, 9.5, false, "Betrag: "+money(c.Gross))
 	}
 
+	gfooter(pdf, c.Issuer.Name, c.Issuer.Address, c.Issuer.TaxID, c.Issuer.IBAN)
 	var buf bytes.Buffer
 	if _, err := pdf.WriteTo(&buf); err != nil {
 		return nil, err
