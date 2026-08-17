@@ -37,6 +37,33 @@ func TestRenderInvoice(t *testing.T) {
 	}
 }
 
+func TestRenderMahnung(t *testing.T) {
+	b, err := RenderMahnung(MahnungData{
+		IssuerName: "MR Müller", IssuerAddress: "Feldweg 3\n4780 Schärding", IssuerIBAN: "AT61 1904 3002 3457 3201",
+		RecipientName: "Josef Öllinger", RecipientAddr: "Dorfstraße 5\n4780 Schärding",
+		Title: "1. Mahnung", Intro: "Trotz unserer Zahlungserinnerung ist der folgende Betrag noch offen. Wir bitten um Überweisung binnen 14 Tagen.",
+		InvoiceNo: "2026-003", IssuedOn: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), DueOn: time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC),
+		Open: decimal.RequireFromString("575.00"), Paid: decimal.RequireFromString("0"), Today: time.Now(),
+	})
+	if err != nil || !bytes.HasPrefix(b, []byte("%PDF-")) || len(b) < 2000 {
+		t.Fatalf("mahnung PDF invalid: err=%v size=%d", err, len(b))
+	}
+}
+
+func TestRenderStatement(t *testing.T) {
+	b, err := RenderStatement(StatementData{
+		IssuerName: "MR Müller", RecipientName: "Josef Öllinger", RecipientAddr: "Dorfstraße 5",
+		Rows: []StatementYear{
+			{Year: 2025, Cost: decimal.RequireFromString("1200.00"), Hours: decimal.RequireFromString("26"), Paid: true},
+			{Year: 2026, Cost: decimal.RequireFromString("575.00"), Hours: decimal.RequireFromString("12.5"), Paid: false},
+		},
+		TotalCost: decimal.RequireFromString("1775.00"), TotalHours: decimal.RequireFromString("38.5"), Today: time.Now(),
+	})
+	if err != nil || !bytes.HasPrefix(b, []byte("%PDF-")) || len(b) < 2000 {
+		t.Fatalf("statement PDF invalid: err=%v size=%d", err, len(b))
+	}
+}
+
 func TestMoney(t *testing.T) {
 	cases := map[string]string{"1234.56": "1.234,56 €", "0": "0,00 €", "-50": "-50,00 €", "1000000": "1.000.000,00 €"}
 	for in, want := range cases {

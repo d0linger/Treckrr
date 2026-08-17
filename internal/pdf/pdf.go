@@ -6,6 +6,7 @@ package pdf
 
 import (
 	"bytes"
+	"strings"
 
 	"github.com/signintech/gopdf"
 	"golang.org/x/image/font/gofont/gobold"
@@ -28,6 +29,43 @@ func newDoc() (*gopdf.GoPdf, error) {
 		return nil, err
 	}
 	return pdf, nil
+}
+
+// Shared drawing helpers (used by the Mahnung and Kontoauszug renderers).
+
+func gtext(pdf *gopdf.GoPdf, x, y, size float64, bold bool, s string) {
+	f := fontRegular
+	if bold {
+		f = fontBold
+	}
+	_ = pdf.SetFont(f, "", size)
+	pdf.SetXY(x, y)
+	_ = pdf.Cell(nil, s)
+}
+
+// gtextR draws right-aligned text ending at x=right.
+func gtextR(pdf *gopdf.GoPdf, right, y, size float64, bold bool, s string) {
+	f := fontRegular
+	if bold {
+		f = fontBold
+	}
+	_ = pdf.SetFont(f, "", size)
+	wdt, _ := pdf.MeasureTextWidth(s)
+	pdf.SetXY(right-wdt, y)
+	_ = pdf.Cell(nil, s)
+}
+
+// gblock draws a multi-line block and returns the new y.
+func gblock(pdf *gopdf.GoPdf, x, y, size float64, s string) float64 {
+	for _, line := range strings.Split(s, "\n") {
+		if strings.TrimSpace(line) == "" {
+			y += size * 0.6
+			continue
+		}
+		gtext(pdf, x, y, size, false, strings.TrimSpace(line))
+		y += size * 1.25
+	}
+	return y
 }
 
 // selfTest renders a page with German glyphs + € and returns the bytes; used by the

@@ -112,6 +112,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /stats/all", s.auth(s.handleStatsAll))
 	mux.Handle("GET /neighbors/{id}", s.auth(s.handleNeighborDetail))
 	mux.Handle("GET /neighbors/{id}/overview", s.auth(s.handleNeighborOverview))
+	mux.Handle("GET /neighbors/{id}/overview.pdf", s.auth(s.handleNeighborOverviewPDF))
 	mux.Handle("GET /neighbors/{id}/beleg", s.auth(s.handleNeighborBeleg))
 	mux.Handle("GET /neighbors/{id}/beleg.pdf", s.auth(s.handleBelegPDF))
 	mux.Handle("POST /neighbors/{id}/beleg/email", s.auth(s.handleBelegEmail))
@@ -224,6 +225,8 @@ func (s *Server) Handler() http.Handler {
 	// Mahnwesen (dunning): overdue list + printable reminder + its EPC-QR.
 	mux.Handle("GET /mahnwesen", s.auth(s.handleMahnwesen))
 	mux.Handle("GET /neighbors/{id}/mahnung", s.auth(s.handleNeighborMahnung))
+	mux.Handle("GET /neighbors/{id}/mahnung.pdf", s.auth(s.handleMahnungPDF))
+	mux.Handle("POST /neighbors/{id}/mahnung/email", s.auth(s.handleMahnungEmail))
 	mux.Handle("GET /neighbors/{id}/mahnung/epc-qr.png", s.auth(s.handleMahnungEpcQR))
 
 	// Admin only.

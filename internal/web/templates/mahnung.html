@@ -42,7 +42,15 @@
 			{{if .HasEpcQR}}<img class="beleg__epcqr" src="/neighbors/{{.Neighbor.ID}}/mahnung/epc-qr.png?year={{.Year.ID}}" width="118" height="118" alt="EPC-QR-Code zum Bezahlen des offenen Betrags (GiroCode)" loading="lazy">{{end}}
 		</div>
 
-		<p class="no-print muted small">Zum Drucken/Speichern: Browser-Menü → Drucken → „Als PDF speichern".</p>
+		<div class="btnrow no-print">
+			<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}/mahnung.pdf?year={{.Year.ID}}&stufe={{.Stage}}" target="_blank" rel="noopener">Als PDF</a>
+			{{if and .MailEnabled .NeighborEmail}}
+			<form method="post" action="/neighbors/{{.Neighbor.ID}}/mahnung/email?year={{.Year.ID}}&stufe={{.Stage}}" class="beleg__markform"
+				data-confirm="{{.Title}} als PDF an {{.NeighborEmail}} senden?">
+				<button type="submit" class="btn btn--ghost btn--sm">✉ Per E-Mail senden</button>
+			</form>
+			{{end}}
+		</div>
 	</div>
 </section>
 {{end}}
