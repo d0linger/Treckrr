@@ -15,6 +15,7 @@ import (
 
 	"github.com/d0linger/treckrr/internal/calc"
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -519,6 +520,41 @@ func (s *Server) handleSharedBeleg(w http.ResponseWriter, r *http.Request) {
 	data["Shared"] = true
 	w.Header().Set("Cache-Control", "no-store") // per-neighbor PII — don't cache
 	s.render(w, r, "beleg", data)
+}
+
+// handleBelegPDF serves the festgeschriebene Rechnung as a server-rendered PDF —
+// consistent and archivable regardless of the viewer's browser. Only for an issued
+// invoice (which has a frozen snapshot to render from).
+func (s *Server) handleBelegPDF(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	year, ok := s.resolveYear(w, r)
+	if !ok {
+		return
+	}
+	iv, err := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
+	if err != nil || iv.Content == nil {
+		s.setFlash(w, r, "error", "Ein PDF gibt es erst nach dem Festschreiben der Rechnung.")
+		redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID))
+		return
+	}
+	blob, err := pdf.RenderInvoice(&iv)
+	if err != nil {
+		s.serverError(w, "beleg pdf", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", `inline; filename="Rechnung_`+sanitizeFilename(iv.Number)+`.pdf"`)
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(blob)
 }
 
 // absoluteURL builds a full URL for path from the request, honoring a TLS proxy.

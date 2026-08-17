@@ -8,7 +8,9 @@ require (
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shopspring/decimal v1.4.0
+	github.com/signintech/gopdf v0.38.0
 	golang.org/x/crypto v0.55.0
+	golang.org/x/image v0.45.0
 	rsc.io/qr v0.2.0
 )
 
@@ -30,6 +32,8 @@ require (
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
+	github.com/phpdave11/gofpdi v1.0.14-0.20211212211723-1f10f9844311 // indirect
+	github.com/pkg/errors v0.8.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
