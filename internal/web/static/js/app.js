@@ -65,16 +65,24 @@
 		} catch (e) { /* keep the static favicon */ }
 	})();
 
-	// Live text search: filter items matching [data-search]'s target selector.
+	// Live text search over [data-search]'s target selector, plus an optional
+	// "only open" companion checkbox ([data-open-filter]) that also hides rows
+	// without a data-open marker. Both signals feed one visibility pass so they
+	// never fight over the inline display value.
 	document.querySelectorAll("[data-search]").forEach(function (input) {
 		var sel = input.getAttribute("data-search");
-		input.addEventListener("input", function () {
+		var openCb = document.querySelector("[data-open-filter]");
+		function apply() {
 			var q = input.value.toLowerCase();
+			var onlyOpen = openCb && openCb.checked;
 			document.querySelectorAll(sel).forEach(function (item) {
 				var hit = item.textContent.toLowerCase().indexOf(q) >= 0;
+				if (onlyOpen && !item.hasAttribute("data-open")) hit = false;
 				item.style.display = hit ? "" : "none";
 			});
-		});
+		}
+		input.addEventListener("input", apply);
+		if (openCb) openCb.addEventListener("change", apply);
 	});
 
 	// Auto-submit the enclosing form when a marked select changes.

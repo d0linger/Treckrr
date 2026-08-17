@@ -484,6 +484,28 @@ em { font-style: normal; color: var(--muted); }
 .rate-preview__rate { font-size: var(--fs-sm); opacity: .92; text-align: right; }
 .rate-preview strong { font-variant-numeric: tabular-nums; font-weight: 700; }
 
+/* Skeleton shimmer over the live figures while the pricing table is still being
+   fetched — so the "–" placeholder reads as "loading", not "broken". */
+@keyframes tw-shimmer { 0% { background-position: -160px 0; } 100% { background-position: 160px 0; } }
+.rate-preview.is-loading [data-rate],
+.rate-preview.is-loading [data-cost],
+.rate-preview.is-loading [data-qty-cost] {
+	color: transparent; border-radius: 6px; min-width: 3.5rem; display: inline-block;
+	background: linear-gradient(90deg, rgba(255,255,255,.18) 25%, rgba(255,255,255,.42) 37%, rgba(255,255,255,.18) 63%);
+	background-size: 300px 100%; animation: tw-shimmer 1.1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+	.rate-preview.is-loading [data-rate],
+	.rate-preview.is-loading [data-cost],
+	.rate-preview.is-loading [data-qty-cost] { animation: none; }
+}
+
+/* Dashboard list toolbar: search field + "Nur offene" toggle side by side. */
+.listtools { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .2rem; }
+.listtools .input { flex: 1 1 12rem; }
+.switch { display: inline-flex; align-items: center; gap: .4rem; font-size: var(--fs-sm); color: var(--text-muted); cursor: pointer; white-space: nowrap; user-select: none; }
+.switch input { accent-color: var(--primary); width: 1.05rem; height: 1.05rem; }
+
 /* ---- Chips ------------------------------------------------------------ */
 .ratechips { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .6rem; }
 .chip { background: var(--surface-2); border-radius: 999px; padding: .2rem .6rem; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
