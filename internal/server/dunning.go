@@ -1,10 +1,12 @@
 package server
 
 import (
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/web"
 )
 
 // dunningStage maps a stage code to its German document heading + intro line.
@@ -59,6 +62,48 @@ func (s *Server) handleMahnwesen(w http.ResponseWriter, r *http.Request) {
 	data["Rows"] = rows
 	data["Term"] = term
 	s.render(w, r, "mahnwesen", data)
+}
+
+// handleMahnwesenExport exports the overdue list of the selected year as a
+// German-locale, semicolon-separated CSV (BOM + csvSafe), for the bookkeeping.
+// Same overdue definition as the on-screen list (DunningRows).
+func (s *Server) handleMahnwesenExport(w http.ResponseWriter, r *http.Request) {
+	year, ok := s.resolveYear(w, r)
+	if !ok {
+		return
+	}
+	company, err := s.store.GetCompany(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	term := company.PaymentTermDays
+	if term < 0 {
+		term = 14
+	}
+	rows, err := s.store.DunningRows(r.Context(), year.ID, term, time.Now())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+fmt.Sprintf("treckrr_mahnwesen_%d.csv", year.Year)+"\"")
+	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF}) // UTF-8 BOM for Excel
+	cw := csv.NewWriter(w)
+	cw.Comma = ';'
+	defer cw.Flush()
+	_ = cw.Write([]string{"Nachbar", "Rechnung", "Rechnungsdatum", "Fällig am", "Tage überfällig", "Offener Betrag (€)"})
+	for _, dr := range rows {
+		_ = cw.Write([]string{
+			csvSafe(dr.Name),
+			csvSafe(dr.InvoiceNo),
+			dr.IssuedOn.Format("02.01.2006"),
+			dr.DueOn.Format("02.01.2006"),
+			strconv.Itoa(dr.DaysOverdue),
+			web.Num(dr.Open), // German decimal, matches the CSV export convention
+		})
+	}
 }
 
 // handleNeighborMahnung renders a printable reminder/dunning letter for one

@@ -225,6 +225,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Mahnwesen (dunning): overdue list + printable reminder + its EPC-QR.
 	mux.Handle("GET /mahnwesen", s.auth(s.handleMahnwesen))
+	mux.Handle("GET /mahnwesen/export.csv", s.auth(s.handleMahnwesenExport))
 	mux.Handle("GET /neighbors/{id}/mahnung", s.auth(s.handleNeighborMahnung))
 	mux.Handle("GET /neighbors/{id}/mahnung.pdf", s.auth(s.handleMahnungPDF))
 	mux.Handle("POST /neighbors/{id}/mahnung/email", s.auth(s.handleMahnungEmail))

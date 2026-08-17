@@ -1525,6 +1525,7 @@ span.paychip { cursor: default; }
 .backbtn:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); color: var(--primary); }
 .backbtn .ic { width: 1.3em; height: 1.3em; }
 .pagehead__t { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.02em; margin: 0; }
+.pagehead__action { margin-left: auto; }
 
 .kv { display: flex; justify-content: space-between; align-items: center; gap: 1rem;
 	padding: .55rem 0; border-bottom: 1px solid var(--border); }
