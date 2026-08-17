@@ -30,7 +30,7 @@ func (s *Store) DeleteLatestManualBelegSend(ctx context.Context, yearID, neighbo
 		`DELETE FROM beleg_sends
 		  WHERE id = (SELECT id FROM beleg_sends
 		               WHERE billing_year_id=$1 AND neighbor_id=$2 AND channel='manuell'
-		               ORDER BY sent_at DESC LIMIT 1)`,
+		               ORDER BY sent_at DESC, id DESC LIMIT 1)`,
 		yearID, neighborID)
 	if err != nil {
 		return false, err

@@ -638,16 +638,22 @@
 			// screen the beleg's rows/summary line can be wider than what's visible, and
 			// sizing the canvas to rect.width alone clips everything on the right.
 			var w = Math.ceil(Math.max(rect.width, beleg.scrollWidth));
-			// Measure the height at the SAME width the clone will render at: forcing a
-			// wider width reflows the content (usually shorter), so reading scrollHeight
-			// off the narrow live layout would size the canvas wrong. Briefly apply the
-			// width to the live element, read the reflowed height, then restore it.
+			// Measure the height AND capture the computed styles at the SAME width the
+			// clone will render at: forcing a wider width reflows the content (grid
+			// tracks, wrap points, height), so both must be read while the widened layout
+			// is applied. Briefly apply the width, then clone + inline styles + measure
+			// inside that window; try/finally guarantees the live element is restored even
+			// if cloning throws.
 			var prevW = beleg.style.width, prevMax = beleg.style.maxWidth, prevOv = beleg.style.overflow;
-			beleg.style.maxWidth = "none"; beleg.style.overflow = "visible"; beleg.style.width = w + "px";
-			var h = Math.ceil(beleg.scrollHeight);
-			beleg.style.width = prevW; beleg.style.maxWidth = prevMax; beleg.style.overflow = prevOv;
-			var clone = beleg.cloneNode(true);
-			inlineStyles(beleg, clone);
+			var h, clone;
+			try {
+				beleg.style.maxWidth = "none"; beleg.style.overflow = "visible"; beleg.style.width = w + "px";
+				h = Math.ceil(beleg.scrollHeight);
+				clone = beleg.cloneNode(true);
+				inlineStyles(beleg, clone);
+			} finally {
+				beleg.style.width = prevW; beleg.style.maxWidth = prevMax; beleg.style.overflow = prevOv;
+			}
 			// The live .beleg clips with overflow:hidden and is capped by max-width; in the
 			// foreignObject those would shave the right edge off. Let the clone size to the
 			// full captured width and show everything so no column is cut.
