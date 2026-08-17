@@ -241,6 +241,12 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 		if err := st.PurgeDeletedPayments(bg, time.Now().Add(-paymentUndoGrace)); err != nil {
 			slog.Error("purge deleted payments", "err", err)
 		}
+		// Materialize any due recurring bookings (idempotent).
+		if n, err := st.RunDueRecurring(bg); err != nil {
+			slog.Error("recurring generation", "err", err)
+		} else if n > 0 {
+			slog.Info("recurring bookings created", "count", n)
+		}
 	}
 	purge()
 	ticker := time.NewTicker(15 * time.Minute)

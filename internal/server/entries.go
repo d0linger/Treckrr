@@ -995,6 +995,7 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	data["Photos"] = photos
 	data["UnitIsCustom"] = unitIsCustom(entry.Unit)
 	data["IsQtyEntry"] = entry.Unit != "" && entry.Unit != "h"
+	data["NextWeek"] = time.Now().AddDate(0, 0, 7).Format("2006-01-02")
 	s.render(w, r, "entry_edit", data)
 }
 

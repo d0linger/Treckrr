@@ -54,6 +54,53 @@ type Session struct {
 	Current   bool // set at render time for the requesting session
 }
 
+// RecurTemplate is the booking blueprint a recurring rule stores (JSON). It mirrors
+// the fields CreateEntry needs; Cost is stored for display and recomputed on create.
+type RecurTemplate struct {
+	Unit          string          `json:"unit"`
+	Quantity      decimal.Decimal `json:"quantity"`
+	UnitPrice     decimal.Decimal `json:"unit_price"`
+	Hours         decimal.Decimal `json:"hours"`
+	HourlyRate    decimal.Decimal `json:"hourly_rate"`
+	Cost          decimal.Decimal `json:"cost"`
+	TractorID     *int64          `json:"tractor_id,omitempty"`
+	LoadLevelID   *int64          `json:"load_level_id,omitempty"`
+	MachineIDs    []int64         `json:"machine_ids,omitempty"`
+	TractorLabel  string          `json:"tractor_label"`
+	LoadLabel     string          `json:"load_label"`
+	MachineLabels string          `json:"machine_labels"`
+	TaskLabel     string          `json:"task_label"`
+	Note          string          `json:"note"`
+}
+
+// Summary renders a one-line human description of the recurring booking.
+func (t RecurTemplate) Summary() string {
+	label := t.TaskLabel
+	if label == "" {
+		label = t.Note
+	}
+	if label == "" {
+		label = "Buchung"
+	}
+	if t.Unit != "" && t.Unit != "h" {
+		return label + " · " + t.Quantity.String() + " " + t.Unit
+	}
+	return label + " · " + t.Hours.String() + " h"
+}
+
+// RecurringEntry is a stored recurring-booking rule.
+type RecurringEntry struct {
+	ID           int64
+	NeighborID   int64
+	NeighborName string // joined for display
+	Template     RecurTemplate
+	IntervalKind string
+	NextRun      time.Time
+	Active       bool
+	CreatedAt    time.Time
+	LastRunAt    *time.Time
+}
+
 // BelegSend records that a neighbor's Beleg was sent/handed over in a year.
 type BelegSend struct {
 	ID            int64

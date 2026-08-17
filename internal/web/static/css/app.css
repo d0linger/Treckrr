@@ -1040,6 +1040,8 @@ em { font-style: normal; color: var(--muted); }
 .sharebox p { margin: 0 0 .4rem; }
 .sharebox__row { display: flex; gap: .4rem; }
 .sharebox__row .input { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); font-size: .8rem; }
+.recur__acts { display: flex; gap: .3rem; align-items: center; justify-content: flex-end; }
+.recur__acts form { display: inline; }
 .beleg__sent { display: flex; align-items: center; gap: .4rem; margin: .5rem 0 0; }
 .beleg__sent .ic { width: 1em; height: 1em; flex: none; }
 

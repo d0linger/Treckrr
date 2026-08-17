@@ -126,6 +126,24 @@
 			<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit">Foto anhängen</button></div>
 		</form>
 	</div>
+
+	<div class="card stack stack--tight">
+		<div class="section-title">Als Serie wiederholen</div>
+		<p class="muted small">Legt diese Buchung automatisch wiederkehrend im offenen Jahr des Nachbarn an.</p>
+		<form method="post" action="/entries/{{.Entry.ID}}/recur" class="form">
+			<div class="form__grid">
+				<label class="field"><span>Rhythmus</span>
+					<select class="select" name="interval_kind">
+						<option value="weekly">wöchentlich</option>
+						<option value="monthly">monatlich</option>
+					</select>
+				</label>
+				<label class="field"><span>Erster Lauf</span>
+					<input class="input" type="date" name="next_run" value="{{.NextWeek}}"></label>
+			</div>
+			<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit">Serie einrichten</button> <a class="link small" href="/recurring">Serien verwalten ›</a></div>
+		</form>
+	</div>
 	{{end}}
 </section>
 {{end}}

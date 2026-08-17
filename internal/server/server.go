@@ -202,6 +202,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /account/sessions/revoke", s.auth(s.handleSessionRevoke))
 	mux.Handle("POST /account/sessions/revoke-others", s.auth(s.handleSessionRevokeOthers))
 
+	mux.Handle("GET /recurring", s.auth(s.handleRecurringList))
+	mux.Handle("POST /entries/{id}/recur", s.auth(s.handleRecurringCreate))
+	mux.Handle("POST /recurring/{id}/toggle", s.auth(s.handleRecurringToggle))
+	mux.Handle("POST /recurring/{id}/delete", s.auth(s.handleRecurringDelete))
 	mux.Handle("GET /entries/import", s.auth(s.handleImportForm))
 	mux.Handle("GET /entries/import/sample.csv", s.auth(s.handleImportSample))
 	mux.Handle("POST /entries/import/preview", s.auth(s.handleImportPreview))
