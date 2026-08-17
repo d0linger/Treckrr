@@ -116,6 +116,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /neighbors/{id}/beleg/mark-sent", s.auth(s.handleBelegMarkSent))
 	mux.Handle("POST /neighbors/{id}/beleg/share", s.auth(s.handleBelegShareCreate))
 	mux.HandleFunc("GET /s/beleg/{token}", s.handleSharedBeleg) // public, token-gated read-only Beleg
+	mux.Handle("GET /years/{id}/issue-all", s.auth(s.handleBatchIssuePreview))
+	mux.Handle("POST /years/{id}/issue-all", s.auth(s.handleBatchIssueCommit))
 	mux.Handle("GET /neighbors/{id}/invoice/confirm", s.auth(s.handleInvoiceConfirm))
 	mux.Handle("POST /neighbors/{id}/invoice", s.auth(s.handleInvoiceIssue))
 	mux.Handle("POST /neighbors/{id}/invoice/storno", s.auth(s.handleInvoiceStorno))
