@@ -1036,6 +1036,10 @@ em { font-style: normal; color: var(--muted); }
 .beleg__actions { display: flex; flex-direction: column; gap: .5rem; margin-top: .85rem; }
 .beleg__actrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .5rem; }
 .beleg__markform { display: contents; } /* let the button lay out as an actrow grid child */
+.sharebox { margin-top: .6rem; padding: .7rem .8rem; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--radius); }
+.sharebox p { margin: 0 0 .4rem; }
+.sharebox__row { display: flex; gap: .4rem; }
+.sharebox__row .input { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); font-size: .8rem; }
 .beleg__sent { display: flex; align-items: center; gap: .4rem; margin: .5rem 0 0; }
 .beleg__sent .ic { width: 1em; height: 1em; flex: none; }
 

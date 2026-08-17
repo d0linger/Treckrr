@@ -405,6 +405,18 @@
 		}
 	}
 
+	// Copy a companion input's value to the clipboard (e.g. the public Beleg link).
+	document.querySelectorAll("[data-copy-src-btn]").forEach(function (btn) {
+		btn.addEventListener("click", function () {
+			var input = btn.parentElement.querySelector("[data-copy-src]");
+			if (!input) return;
+			input.select();
+			var done = function () { var t = btn.textContent; btn.textContent = "Kopiert ✓"; setTimeout(function () { btn.textContent = t; }, 1500); };
+			if (navigator.clipboard) { navigator.clipboard.writeText(input.value).then(done).catch(function () {}); }
+			else { try { document.execCommand("copy"); done(); } catch (e) {} }
+		});
+	});
+
 	// Print trigger (CSP-safe replacement for an inline onclick handler).
 	document.querySelectorAll("[data-print]").forEach(function (btn) {
 		btn.addEventListener("click", function () { window.print(); });

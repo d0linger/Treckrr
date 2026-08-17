@@ -1,6 +1,9 @@
 package server
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -78,39 +81,22 @@ func deu2(d decimal.Decimal) string {
 	return s
 }
 
-// handleNeighborBeleg renders a compact, share-friendly statement for one
-// neighbor and year (bookings + ledger + saldo) — a clean list to screenshot
-// and hand over. Read-only; no actions, no editing.
-func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
-	id, err := pathID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	neighbor, err := s.store.GetNeighbor(r.Context(), id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	year, ok := s.resolveYear(w, r)
-	if !ok {
-		return
-	}
-
+// buildBelegData assembles the full Beleg view model for a neighbor+year: the
+// bookings table, totals, ledger, payments, invoice/snapshot state, EPC-QR and the
+// Kostengrundlage appendix. Shared by the authenticated Beleg page and the public
+// share link so both render the identical document.
+func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor *models.Neighbor, year *models.BillingYear) (pageData, error) {
 	entries, err := s.store.ListEntries(r.Context(), neighbor.ID, year.ID)
 	if err != nil {
-		s.serverError(w, "beleg: entries", err)
-		return
+		return nil, err
 	}
 	cost, hours, err := s.store.NeighborTotal(r.Context(), neighbor.ID, year.ID)
 	if err != nil {
-		s.serverError(w, "beleg: total", err)
-		return
+		return nil, err
 	}
 	ledger, err := s.store.ListNeighborLedger(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
-		s.serverError(w, "beleg: ledger", err)
-		return
+		return nil, err
 	}
 	ledgerSum := decimal.Zero
 	for _, l := range ledger {
@@ -262,8 +248,7 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	// Payments toward this year and the resulting open balance (saldo − paid).
 	payments, err := s.store.ListPayments(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
-		s.serverError(w, "beleg: payments", err)
-		return
+		return nil, err
 	}
 	paidSum := decimal.Zero
 	for _, p := range payments {
@@ -283,8 +268,7 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	// to pay, so surface it rather than render a wrong total.
 	documents, err := s.store.ListInvoiceDocuments(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
-		s.serverError(w, "beleg: documents", err)
-		return
+		return nil, err
 	}
 	var invCredits decimal.Decimal // negative: sum of active credit-note gross
 	for _, d := range documents {
@@ -295,8 +279,7 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 
 	data := s.newPage(w, r, neighbor.Name+" · Beleg", "dashboard")
 	if err := s.withYearSelector(r, data, year); err != nil {
-		s.serverError(w, "beleg: year selector", err)
-		return
+		return nil, err
 	}
 	data["Neighbor"] = neighbor
 	data["Days"] = days
@@ -407,9 +390,144 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["Bookings"] = bookings
 	data["ShowGrund"] = r.URL.Query().Get("grundlage") == "1"
 	data["Today"] = time.Now().Format("02.01.2006")
-	lastSend, _ := s.store.LastBelegSend(r.Context(), year.ID, neighbor.ID) // best-effort marker
-	data["LastSend"] = lastSend
+	return data, nil
+}
+
+// handleNeighborBeleg renders the authenticated Beleg page for one neighbor+year.
+func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	year, ok := s.resolveYear(w, r)
+	if !ok {
+		return
+	}
+	data, err := s.buildBelegData(w, r, neighbor, year)
+	if err != nil {
+		s.serverError(w, "beleg", err)
+		return
+	}
+	data["LastSend"], _ = s.store.LastBelegSend(r.Context(), year.ID, neighbor.ID) // best-effort marker
+	if tok := strings.TrimSpace(r.URL.Query().Get("share")); tok != "" {
+		data["ShareToken"] = tok // echo a freshly generated link so the page can show/copy it
+		data["ShareURL"] = absoluteURL(r, "/s/beleg/"+tok)
+	}
 	s.render(w, r, "beleg", data)
+}
+
+// signBelegShare mints an HMAC-signed, self-expiring token that grants read-only
+// access to exactly one neighbor's festgeschriebener Beleg — no DB row, revoked
+// simply by expiry (or by rotating SESSION_SECRET).
+func (s *Server) signBelegShare(neighborID, yearID int64, exp time.Time) string {
+	payload := fmt.Sprintf("%d:%d:%d", neighborID, yearID, exp.Unix())
+	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
+	mac.Write([]byte("belegshare:" + payload))
+	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." +
+		base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// verifyBelegShare validates a share token (signature + expiry) and returns the
+// neighbor+year it grants. ok=false for anything tampered, malformed or expired.
+func (s *Server) verifyBelegShare(token string) (neighborID, yearID int64, ok bool) {
+	parts := strings.SplitN(token, ".", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	pb, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	payload := string(pb)
+	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
+	mac.Write([]byte("belegshare:" + payload))
+	want := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(want), []byte(parts[1])) {
+		return 0, 0, false
+	}
+	var exp int64
+	if _, err := fmt.Sscanf(payload, "%d:%d:%d", &neighborID, &yearID, &exp); err != nil {
+		return 0, 0, false
+	}
+	if time.Now().Unix() > exp {
+		return 0, 0, false
+	}
+	return neighborID, yearID, true
+}
+
+// handleBelegShareCreate mints a public link for a neighbor's Beleg — only once
+// the invoice is festgeschrieben, so a public URL never exposes draft/live data.
+func (s *Server) handleBelegShareCreate(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	year, ok := s.resolveYear(w, r)
+	if !ok {
+		return
+	}
+	if _, err := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID); err != nil {
+		s.setFlash(w, r, "error", "Ein öffentlicher Link ist erst nach dem Festschreiben der Rechnung möglich.")
+		redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID))
+		return
+	}
+	tok := s.signBelegShare(neighbor.ID, year.ID, time.Now().Add(30*24*time.Hour))
+	s.audit(r, "beleg_share", "neighbor", neighbor.ID, neighbor.Name+" · "+s.yearLabel(r, year.ID))
+	redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID)+"&share="+tok)
+}
+
+// handleSharedBeleg renders the read-only public Beleg for a valid share token.
+// Unauthenticated (so the layout drops all chrome) and gated on a festgeschriebene
+// invoice; anything else 404s so a token can't probe live data.
+func (s *Server) handleSharedBeleg(w http.ResponseWriter, r *http.Request) {
+	nID, yID, ok := s.verifyBelegShare(r.PathValue("token"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), nID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	year, err := s.store.GetBillingYear(r.Context(), yID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID); err != nil {
+		http.NotFound(w, r) // not festgeschrieben (or gone) → no public view
+		return
+	}
+	data, err := s.buildBelegData(w, r, neighbor, year)
+	if err != nil {
+		s.serverError(w, "shared beleg", err)
+		return
+	}
+	data["Shared"] = true
+	w.Header().Set("Cache-Control", "no-store") // per-neighbor PII — don't cache
+	s.render(w, r, "beleg", data)
+}
+
+// absoluteURL builds a full URL for path from the request, honoring a TLS proxy.
+func absoluteURL(r *http.Request, path string) string {
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host + path
 }
 
 // handleBelegMarkSent records that this neighbor's Beleg was handed over/sent, so

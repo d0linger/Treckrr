@@ -1,6 +1,6 @@
 {{define "content"}}
 <section class="stack beleg-page">
-	<a class="backlink no-print" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ {{.Neighbor.Name}} · {{.Year.Year}}</a>
+	{{if not .Shared}}<a class="backlink no-print" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ {{.Neighbor.Name}} · {{.Year.Year}}</a>{{end}}
 
 	<div class="beleg{{if .ShowGrund}} beleg--grund{{end}}{{if .Bundle}} beleg--bundle{{end}}{{if .Rechnung}} beleg--rechnung{{end}}" id="beleg" data-beleg-name="Beleg_{{.Neighbor.Name}}_{{.Year.Year}}">
 		{{if .HasInvoice}}
@@ -176,9 +176,16 @@
 			<button type="button" class="btn btn--ghost" data-beleg-share>
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>Teilen
 			</button>
+			{{if not .Shared}}
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/mark-sent?year={{.Year.ID}}" class="beleg__markform">
 				<button type="submit" class="btn btn--ghost">{{template "ic-check"}} Als versendet markieren</button>
 			</form>
+			{{if .HasInvoice}}
+			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/share?year={{.Year.ID}}" class="beleg__markform">
+				<button type="submit" class="btn btn--ghost">{{template "ic-copy"}} Öffentlichen Link erzeugen</button>
+			</form>
+			{{end}}
+			{{end}}
 			{{if .CanBundle}}
 			<button type="button" class="btn btn--ghost" data-beleg-bundle aria-controls="beleg-items beleg-bundle" aria-pressed="{{if .Bundle}}true{{else}}false{{end}}">
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 4.5-9 4.5-9-4.5 9-4.5Z"/><path d="m3 16.5 9 4.5 9-4.5"/><path d="m3 12 9 4.5 9-4.5"/></svg>Bündeln
@@ -195,10 +202,19 @@
 			</button>
 			{{end}}
 		</div>
+		{{if .ShareToken}}
+		<div class="sharebox no-print">
+			<p class="small muted">Öffentlicher Link (30 Tage gültig) — zeigt nur diesen festgeschriebenen Beleg:</p>
+			<div class="sharebox__row">
+				<input class="input" type="text" readonly value="{{.ShareURL}}" data-copy-src aria-label="Öffentlicher Beleg-Link">
+				<button type="button" class="btn btn--ghost btn--sm" data-copy-src-btn>Kopieren</button>
+			</div>
+		</div>
+		{{end}}
 		{{with .LastSend}}
 		<p class="beleg__sent muted small">{{template "ic-check"}} Zuletzt versendet am {{.SentAt.Format "02.01.2006, 15:04"}} Uhr ({{.Channel}})</p>
 		{{end}}
-		{{if not .HasInvoice}}
+		{{if and (not .HasInvoice) (not .Shared)}}
 		<a class="btn btn--primary btn--block" href="/neighbors/{{.Neighbor.ID}}/invoice/confirm?year={{.Year.ID}}">Rechnung ausstellen &amp; festschreiben</a>
 		{{end}}
 		{{if .HasDocuments}}
