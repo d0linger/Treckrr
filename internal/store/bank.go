@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
 )
@@ -16,7 +19,7 @@ func (s *Store) InvoiceByReferenceText(ctx context.Context, text string) (*model
 	iv, err := scanInvoice(s.db.QueryRowContext(ctx,
 		`SELECT `+invoiceCols+` FROM invoices
 		  WHERE kind='invoice' AND status='issued' AND payment_reference <> ''
-		    AND position(payment_reference in $1) > 0
+		    AND $1 ~ ('(^|[^0-9A-Za-z])' || payment_reference || '([^0-9A-Za-z]|$)')
 		  ORDER BY length(payment_reference) DESC LIMIT 1`, text))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -34,15 +37,30 @@ func (s *Store) PaymentImportSeen(ctx context.Context, hash string) (bool, error
 	return seen, err
 }
 
-// RecordPaymentImport marks a bank transaction hash as imported. Returns true only
-// if it was newly recorded (i.e. not seen before), so the caller books the payment
-// exactly once even across re-imports.
-func (s *Store) RecordPaymentImport(ctx context.Context, hash string) (bool, error) {
-	res, err := s.db.ExecContext(ctx,
+// ImportPayment books a bank credit and records its de-dup hash ATOMICALLY, in one
+// transaction: it inserts the hash (ON CONFLICT DO NOTHING) and — only if that hash
+// was new — inserts the payment. Returns (true, nil) when a payment was booked,
+// (false, nil) when the credit was already imported. This closes the lost-payment
+// window where a marked-imported hash could survive a failed AddPayment and skip
+// the credit forever.
+func (s *Store) ImportPayment(ctx context.Context, hash string, yearID, neighborID int64, amount decimal.Decimal, paidOn time.Time, note string) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx,
 		`INSERT INTO payment_imports (hash) VALUES ($1) ON CONFLICT (hash) DO NOTHING`, hash)
 	if err != nil {
 		return false, err
 	}
-	n, _ := res.RowsAffected()
-	return n > 0, nil
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false, tx.Commit() // already imported → nothing to book
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO payments (billing_year_id, neighbor_id, amount, paid_on, note)
+		 VALUES ($1,$2,$3,$4,$5)`, yearID, neighborID, amount, paidOn, note); err != nil {
+		return false, err // rollback also undoes the hash insert
+	}
+	return true, tx.Commit()
 }

@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"mime"
+	netmail "net/mail"
 	"net/smtp"
 	"strings"
 	"time"
@@ -32,6 +33,12 @@ func Send(cfg *config.Config, to, subject, body string, atts []Attachment) error
 	to = strings.TrimSpace(to)
 	if to == "" {
 		return fmt.Errorf("kein Empfänger")
+	}
+	// Reject anything that isn't a single, well-formed address — in particular a
+	// value with embedded CR/LF, which would otherwise inject extra SMTP headers
+	// (Bcc/spoofing) via the To line.
+	if _, err := netmail.ParseAddress(to); err != nil {
+		return fmt.Errorf("ungültige Empfängeradresse")
 	}
 	msg := buildMessage(cfg.SMTPFrom, to, subject, body, atts)
 

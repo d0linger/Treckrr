@@ -67,10 +67,17 @@ func (s *Store) DeleteRecurring(ctx context.Context, id int64) error {
 	return err
 }
 
-// advanceDate steps a date by one cadence.
+// advanceDate steps a date by one cadence. Monthly clamps to the target month's
+// last day (so a rule on the 31st doesn't skip February and land on March 3rd via
+// AddDate's overflow); it still generates an occurrence every month.
 func advanceDate(d time.Time, kind string) time.Time {
 	if kind == "monthly" {
-		return d.AddDate(0, 1, 0)
+		y, m, day := d.Date()
+		firstNext := time.Date(y, m, 1, 0, 0, 0, 0, d.Location()).AddDate(0, 1, 0)
+		if last := firstNext.AddDate(0, 1, -1).Day(); day > last {
+			day = last
+		}
+		return time.Date(firstNext.Year(), firstNext.Month(), day, 0, 0, 0, 0, d.Location())
 	}
 	return d.AddDate(0, 0, 7) // weekly (default)
 }
@@ -100,7 +107,8 @@ func (s *Store) neighborYearForDate(ctx context.Context, neighborID int64, d tim
 // double-books. A per-rule cap bounds catch-up after downtime. Returns the number
 // of bookings actually created.
 func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
-	today := time.Now().Truncate(24 * time.Hour)
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()) // local midnight, not UTC
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, neighbor_id, template, interval_kind, next_run
 		   FROM recurring_entries WHERE active AND next_run <= $1`, today)
@@ -135,35 +143,47 @@ func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 	created := 0
 	for _, d := range list {
 		next := d.next
-		var lastRun time.Time
+		var lastRun *time.Time
 		for i := 0; i < 60 && !next.After(today); i++ { // cap catch-up per rule per tick
 			yid, ok, yerr := s.neighborYearForDate(ctx, d.neighborID, next)
 			if yerr != nil {
 				return created, yerr
 			}
-			if ok {
-				e := entryFromTemplate(d.tmpl)
-				e.NeighborID = d.neighborID
-				e.BillingYearID = yid
-				e.Date = next
-				e.IdempotencyKey = fmt.Sprintf("recur:%d:%s", d.id, next.Format("2006-01-02"))
-				id, cerr := s.CreateEntry(ctx, e, d.tmpl.MachineIDs)
-				if cerr != nil {
-					return created, cerr
-				}
-				if id != 0 {
-					created++
-				}
-			} else {
-				slog.Warn("recurring booking skipped: no open year", "rule", d.id, "neighbor", d.neighborID, "date", next.Format("2006-01-02"))
+			if !ok {
+				// No open year for this date yet. Stop WITHOUT advancing so the
+				// occurrence is retried once that year opens, instead of being
+				// skipped past forever (which would silently drop the booking).
+				slog.Warn("recurring booking waiting: no open year", "rule", d.id, "neighbor", d.neighborID, "date", next.Format("2006-01-02"))
+				break
 			}
-			lastRun = next
+			e := entryFromTemplate(d.tmpl)
+			e.NeighborID = d.neighborID
+			e.BillingYearID = yid
+			e.Date = next
+			e.IdempotencyKey = fmt.Sprintf("recur:%d:%s", d.id, next.Format("2006-01-02"))
+			id, cerr := s.CreateEntry(ctx, e, d.tmpl.MachineIDs)
+			if cerr != nil {
+				return created, cerr
+			}
+			if id != 0 {
+				created++
+			}
+			ran := next
+			lastRun = &ran
 			next = advanceDate(next, d.kind)
 		}
-		if _, err := s.db.ExecContext(ctx,
-			`UPDATE recurring_entries SET next_run=$1, last_run_at=$2 WHERE id=$3`,
-			next, lastRun, d.id); err != nil {
-			return created, err
+		// Always persist next_run (unchanged if we're waiting); touch last_run_at
+		// only when an occurrence actually ran.
+		if lastRun != nil {
+			if _, err := s.db.ExecContext(ctx,
+				`UPDATE recurring_entries SET next_run=$1, last_run_at=$2 WHERE id=$3`, next, *lastRun, d.id); err != nil {
+				return created, err
+			}
+		} else if !next.Equal(d.next) {
+			if _, err := s.db.ExecContext(ctx,
+				`UPDATE recurring_entries SET next_run=$1 WHERE id=$2`, next, d.id); err != nil {
+				return created, err
+			}
 		}
 	}
 	return created, nil
@@ -181,6 +201,7 @@ func entryFromTemplate(t models.RecurTemplate) *models.Entry {
 		Hours:         t.Hours,
 		HourlyRate:    t.HourlyRate,
 		Cost:          t.Cost,
+		GespannID:     t.GespannID,
 		TractorID:     t.TractorID,
 		LoadLevelID:   t.LoadLevelID,
 		TractorLabel:  t.TractorLabel,

@@ -63,6 +63,7 @@ type RecurTemplate struct {
 	Hours         decimal.Decimal `json:"hours"`
 	HourlyRate    decimal.Decimal `json:"hourly_rate"`
 	Cost          decimal.Decimal `json:"cost"`
+	GespannID     *int64          `json:"gespann_id,omitempty"`
 	TractorID     *int64          `json:"tractor_id,omitempty"`
 	LoadLevelID   *int64          `json:"load_level_id,omitempty"`
 	MachineIDs    []int64         `json:"machine_ids,omitempty"`

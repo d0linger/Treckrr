@@ -482,9 +482,12 @@ func (s *Server) handleBelegShareCreate(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	if _, err := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID); err != nil {
+	if _, err := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID); errors.Is(err, store.ErrNotFound) {
 		s.setFlash(w, r, "error", "Ein öffentlicher Link ist erst nach dem Festschreiben der Rechnung möglich.")
 		redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID))
+		return
+	} else if err != nil {
+		s.serverError(w, "share create: invoice lookup", err)
 		return
 	}
 	tok := s.signBelegShare(neighbor.ID, year.ID, time.Now().Add(30*24*time.Hour))

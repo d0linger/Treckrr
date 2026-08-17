@@ -49,7 +49,7 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 	tmpl := models.RecurTemplate{
 		Unit: entry.Unit, Quantity: entry.Quantity, UnitPrice: entry.UnitPrice,
 		Hours: entry.Hours, HourlyRate: entry.HourlyRate, Cost: entry.Cost,
-		TractorID: entry.TractorID, LoadLevelID: entry.LoadLevelID, MachineIDs: machineIDs,
+		GespannID: entry.GespannID, TractorID: entry.TractorID, LoadLevelID: entry.LoadLevelID, MachineIDs: machineIDs,
 		TractorLabel: entry.TractorLabel, LoadLabel: entry.LoadLabel, MachineLabels: entry.MachineLabels,
 		TaskLabel: entry.TaskLabel, Note: entry.Note,
 	}

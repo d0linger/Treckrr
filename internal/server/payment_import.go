@@ -121,21 +121,19 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		if !row.Importable() {
 			continue
 		}
-		fresh, err := s.store.RecordPaymentImport(r.Context(), row.Txn.Hash)
+		note := "Bank-Import"
+		if ref := strings.TrimSpace(row.Txn.Reference); ref != "" {
+			note += ": " + ref
+		}
+		// Atomic: hash + payment are booked together, so a failure never leaves the
+		// credit marked-imported-but-unbooked (which would skip it forever).
+		fresh, err := s.store.ImportPayment(r.Context(), row.Txn.Hash, row.YearID, row.NeighborID, row.Txn.Amount, row.Txn.Date, note)
 		if err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		if !fresh {
 			continue // a concurrent/earlier import already booked it
-		}
-		note := "Bank-Import"
-		if ref := strings.TrimSpace(row.Txn.Reference); ref != "" {
-			note += ": " + ref
-		}
-		if err := s.store.AddPayment(r.Context(), row.YearID, row.NeighborID, row.Txn.Amount, row.Txn.Date, note); err != nil {
-			s.serverError(w, r.URL.Path, err)
-			return
 		}
 		s.audit(r, "payment_import", "neighbor", row.NeighborID, row.NeighborName+" · "+row.Txn.Amount.StringFixed(2)+" € · Rechnung "+row.InvoiceNumber)
 		booked++

@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	netmail "net/mail"
 	"strings"
 
 	"github.com/shopspring/decimal"
@@ -252,6 +253,13 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	if s.tooLong(w, r, "E-Mail", email, maxNameLen) {
 		redirect(w, r, neighborReturnURL(r, id))
 		return
+	}
+	if email != "" {
+		if _, err := netmail.ParseAddress(email); err != nil {
+			s.setFlash(w, r, "error", "Ungültige E-Mail-Adresse.")
+			redirect(w, r, neighborReturnURL(r, id))
+			return
+		}
 	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
 	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email); err != nil {
