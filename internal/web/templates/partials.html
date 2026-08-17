@@ -118,7 +118,7 @@
 		{{$selected := .Selected}}
 		{{range .Machines}}
 			<label class="check">
-				<input type="checkbox" name="machine_ids" value="{{.ID}}"
+				<input type="checkbox" name="machine_ids" value="{{.ID}}" data-machine
 					{{if contains $selected .ID}}checked{{end}}>
 				<span>{{.Name}} <em>({{num .HourlyRate}} €/h)</em></span>
 			</label>

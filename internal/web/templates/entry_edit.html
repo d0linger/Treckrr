@@ -27,27 +27,30 @@
 			<input class="input" type="text" name="unit_custom" placeholder="z. B. Stk, Fuder" maxlength="16" value="{{if .UnitIsCustom}}{{.Entry.Unit}}{{end}}" data-unit-custom-input></label>
 
 		<div data-h-only {{if .IsQtyEntry}}hidden{{end}}>
+		{{/* Preselect the mode the booking was actually made in: a Gespann booking
+		     stores its GespannID, everything else is Manuell. */}}
+		{{$gsel := .Entry.GespannID}}
 		<div class="segmented" role="tablist">
 			<label class="segmented__item">
-				<input type="radio" name="mode" value="gespann" data-mode-toggle>
+				<input type="radio" name="mode" value="gespann" {{if $gsel}}checked{{end}} data-mode-toggle>
 				<span>Gespann</span>
 			</label>
 			<label class="segmented__item">
-				<input type="radio" name="mode" value="manual" checked data-mode-toggle>
+				<input type="radio" name="mode" value="manual" {{if not $gsel}}checked{{end}} data-mode-toggle>
 				<span>Manuell</span>
 			</label>
 		</div>
 
-		<div data-mode-panel="gespann" hidden>
+		<div data-mode-panel="gespann" {{if not $gsel}}hidden{{end}}>
 			<label class="field"><span>Fixes Gespann</span>
 				<select class="select" name="gespann_id" data-gespann-select>
 					<option value="">— wählen —</option>
-					{{range .Gespanne}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+					{{range .Gespanne}}<option value="{{.ID}}" {{if and $gsel (eq .ID (deref $gsel))}}selected{{end}}>{{.Name}}</option>{{end}}
 				</select>
 			</label>
 		</div>
 
-		<div data-mode-panel="manual">
+		<div data-mode-panel="manual" {{if $gsel}}hidden{{end}}>
 			<label class="field"><span>Traktor</span>
 				<select class="select" name="tractor_id" data-tractor-select>
 					<option value="">— wählen —</option>

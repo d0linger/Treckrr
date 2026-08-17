@@ -634,9 +634,21 @@
 		}
 		function belegPng() {
 			var rect = beleg.getBoundingClientRect();
-			var w = Math.ceil(rect.width), h = Math.ceil(beleg.scrollHeight);
+			// Use the full CONTENT size, not the viewport-constrained box: on a narrow
+			// screen the beleg's rows/summary line can be wider than what's visible, and
+			// sizing the canvas to rect.width alone clips everything on the right.
+			var w = Math.ceil(Math.max(rect.width, beleg.scrollWidth));
+			var h = Math.ceil(beleg.scrollHeight);
 			var clone = beleg.cloneNode(true);
 			inlineStyles(beleg, clone);
+			// The live .beleg clips with overflow:hidden and is capped by max-width; in the
+			// foreignObject those would shave the right edge off. Let the clone size to the
+			// full captured width and show everything so no column is cut.
+			clone.style.overflow = "visible";
+			clone.style.maxWidth = "none";
+			clone.style.width = w + "px";
+			clone.style.marginLeft = "0";
+			clone.style.marginRight = "0";
 			return inlineFonts().then(function (fontCss) {
 				var xml = new XMLSerializer().serializeToString(clone);
 				var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">'
