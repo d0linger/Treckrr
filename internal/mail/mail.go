@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"mime"
+	"net"
 	netmail "net/mail"
 	"net/smtp"
 	"strings"
@@ -43,8 +44,17 @@ func Send(cfg *config.Config, to, subject, body string, atts []Attachment) error
 	msg := buildMessage(cfg.SMTPFrom, to, subject, body, atts)
 
 	addr := cfg.SMTPHost + ":" + cfg.SMTPPort
-	c, err := smtp.Dial(addr)
+	// Dial with an explicit timeout and set a deadline covering the whole exchange
+	// (greeting, EHLO, STARTTLS, AUTH, delivery), so an unresponsive server can't
+	// hang the request goroutine indefinitely.
+	conn, err := (&net.Dialer{Timeout: 15 * time.Second}).Dial("tcp", addr)
 	if err != nil {
+		return fmt.Errorf("SMTP-Verbindung: %w", err)
+	}
+	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
+	c, err := smtp.NewClient(conn, cfg.SMTPHost)
+	if err != nil {
+		_ = conn.Close()
 		return fmt.Errorf("SMTP-Verbindung: %w", err)
 	}
 	defer func() { _ = c.Close() }()
@@ -52,10 +62,13 @@ func Send(cfg *config.Config, to, subject, body string, atts []Attachment) error
 		return err
 	}
 	if cfg.SMTPStartTLS {
-		if ok, _ := c.Extension("STARTTLS"); ok {
-			if err := c.StartTLS(&tls.Config{ServerName: cfg.SMTPHost, MinVersion: tls.VersionTLS12}); err != nil {
-				return fmt.Errorf("STARTTLS: %w", err)
-			}
+		// STARTTLS is required when configured: if the server does not advertise it,
+		// refuse rather than fall through and send credentials + PII in cleartext.
+		if ok, _ := c.Extension("STARTTLS"); !ok {
+			return fmt.Errorf("SMTP-Server bietet kein STARTTLS an")
+		}
+		if err := c.StartTLS(&tls.Config{ServerName: cfg.SMTPHost, MinVersion: tls.VersionTLS12}); err != nil {
+			return fmt.Errorf("STARTTLS: %w", err)
 		}
 	}
 	if strings.TrimSpace(cfg.SMTPUser) != "" {

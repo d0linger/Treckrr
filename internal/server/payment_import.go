@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/d0linger/treckrr/internal/bankimport"
 )
@@ -125,9 +126,15 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		if ref := strings.TrimSpace(row.Txn.Reference); ref != "" {
 			note += ": " + ref
 		}
+		// A statement without a parseable date carries the zero time; book it as
+		// received today. The de-dup hash is unaffected (it never uses time.Now()).
+		paidOn := row.Txn.Date
+		if paidOn.IsZero() {
+			paidOn = time.Now()
+		}
 		// Atomic: hash + payment are booked together, so a failure never leaves the
 		// credit marked-imported-but-unbooked (which would skip it forever).
-		fresh, err := s.store.ImportPayment(r.Context(), row.Txn.Hash, row.YearID, row.NeighborID, row.Txn.Amount, row.Txn.Date, note)
+		fresh, err := s.store.ImportPayment(r.Context(), row.Txn.Hash, row.YearID, row.NeighborID, row.Txn.Amount, paidOn, note)
 		if err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return

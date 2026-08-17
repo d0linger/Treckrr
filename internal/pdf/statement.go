@@ -83,6 +83,12 @@ func RenderStatement(s StatementData) ([]byte, error) {
 		y += 14
 	}
 
+	// Keep the summary rule + total row together above the footer if the last data
+	// row ended near the page bottom.
+	if y > 740 {
+		pdf.AddPage()
+		y = 56
+	}
 	y += 4
 	pdf.Line(colHours, y, right, y)
 	y += 10

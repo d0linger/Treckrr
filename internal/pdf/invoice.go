@@ -156,7 +156,13 @@ func RenderInvoice(iv *models.Invoice) ([]byte, error) {
 		y += 14
 	}
 
-	// Totals.
+	// Totals. Keep the whole totals + tax-note + payment block together above the
+	// footer: if the line list ended near the page bottom there isn't room, so start
+	// a fresh page rather than letting it collide with / spill past the footer.
+	if y > 640 {
+		pdf.AddPage()
+		y = 56
+	}
 	y += 4
 	pdf.Line(colQty, y, pageW-marginR, y)
 	y += 10

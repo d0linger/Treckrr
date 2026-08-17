@@ -48,14 +48,19 @@ func parseAmount(raw string) (decimal.Decimal, bool) {
 	return d, true
 }
 
-func parseDate(raw string) time.Time {
+// parseDate returns (t, true) for a recognized layout. On an absent or malformed
+// date it returns the zero time and false — never time.Now(), which would make
+// setHash non-deterministic (the same credit re-imported later would get a
+// different "today" and thus a different hash, defeating de-duplication and
+// double-booking the payment). Callers substitute a booking date at book time.
+func parseDate(raw string) (time.Time, bool) {
 	s := strings.TrimSpace(raw)
 	for _, layout := range []string{"2006-01-02", "02.01.2006", "02.01.06", "2006/01/02"} {
 		if t, err := time.Parse(layout, s); err == nil {
-			return t
+			return t, true
 		}
 	}
-	return time.Now()
+	return time.Time{}, false
 }
 
 // ParseCSV reads a bank CSV, detecting the delimiter and the columns by header
@@ -102,7 +107,8 @@ func ParseCSV(data []byte) ([]Txn, error) {
 		if !ok || !amt.IsPositive() {
 			continue // skip non-credits / unparsable
 		}
-		t := Txn{Amount: amt, Reference: col(rec, ri), Name: col(rec, ni), Date: parseDate(col(rec, di))}
+		date, _ := parseDate(col(rec, di))
+		t := Txn{Amount: amt, Reference: col(rec, ri), Name: col(rec, ni), Date: date}
 		t.setHash()
 		out = append(out, t)
 	}
@@ -125,13 +131,15 @@ type camtDoc struct {
 	Entries []camtEntry `xml:"BkToCstmrStmt>Stmt>Ntry"`
 }
 type camtEntry struct {
-	Amt       camtAmt      `xml:"Amt"`
-	CdtDbtInd string       `xml:"CdtDbtInd"`
-	BookgDt   camtDt       `xml:"BookgDt"`
-	Details   []camtTxDtls `xml:"NtryDtls>TxDtls"`
+	Amt         camtAmt      `xml:"Amt"`
+	CdtDbtInd   string       `xml:"CdtDbtInd"`
+	BookgDt     camtDt       `xml:"BookgDt"`
+	AcctSvcrRef string       `xml:"AcctSvcrRef"` // bank's unique reference for the entry
+	Details     []camtTxDtls `xml:"NtryDtls>TxDtls"`
 }
 type camtAmt struct {
 	Value string `xml:",chardata"`
+	Ccy   string `xml:"Ccy,attr"`
 }
 type camtDt struct {
 	Dt   string `xml:"Dt"`
@@ -153,8 +161,20 @@ func ParseCamt053(data []byte) ([]Txn, error) {
 		if !strings.EqualFold(strings.TrimSpace(e.CdtDbtInd), "CRDT") {
 			continue // only money received
 		}
+		// Reject non-EUR credits: the amount carries a Ccy attribute and the app
+		// books plain euro. A foreign-currency value must never be recorded as EUR.
+		if ccy := strings.TrimSpace(e.Amt.Ccy); ccy != "" && !strings.EqualFold(ccy, "EUR") {
+			continue
+		}
 		amt, ok := parseAmount(e.Amt.Value)
 		if !ok || !amt.IsPositive() {
+			continue
+		}
+		// A batch entry (several TxDtls) carries one aggregate Amt but multiple
+		// remittance texts. Joining them into a single Txn would book the batch
+		// total against a merged reference and mis-attribute the money, so skip it
+		// rather than emit a wrong booking.
+		if len(e.Details) > 1 {
 			continue
 		}
 		var refs []string
@@ -169,8 +189,18 @@ func ParseCamt053(data []byte) ([]Txn, error) {
 		if date == "" && len(e.BookgDt.DtTm) >= 10 {
 			date = e.BookgDt.DtTm[:10]
 		}
-		t := Txn{Amount: amt, Reference: strings.TrimSpace(strings.Join(refs, " ")), Name: name, Date: parseDate(date)}
-		t.setHash()
+		bookg, _ := parseDate(date)
+		t := Txn{Amount: amt, Reference: strings.TrimSpace(strings.Join(refs, " ")), Name: name, Date: bookg}
+		// Prefer the bank's own unique entry reference for de-duplication: the
+		// date/amount/reference/name tuple collides for two legitimately identical
+		// credits (same payer, same amount, same day) and would silently drop the
+		// second. Fall back to the tuple hash only when no bank reference exists.
+		if ref := strings.TrimSpace(e.AcctSvcrRef); ref != "" {
+			sum := sha256.Sum256([]byte("camt:acctsvcrref:" + ref))
+			t.Hash = hex.EncodeToString(sum[:])
+		} else {
+			t.setHash()
+		}
 		out = append(out, t)
 	}
 	if len(out) == 0 {

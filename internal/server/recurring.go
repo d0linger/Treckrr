@@ -37,7 +37,12 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	machineIDs, _ := s.store.EntryMachineIDs(r.Context(), id)
+	machineIDs, err := s.store.EntryMachineIDs(r.Context(), id)
+	if err != nil {
+		// Don't save a template that would silently drop the entry's machines.
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	kind := r.FormValue("interval_kind")
 	if kind != "weekly" && kind != "monthly" {
 		kind = "weekly"

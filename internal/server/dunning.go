@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/d0linger/treckrr/internal/mail"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/pdf"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // dunningStage maps a stage code to its German document heading + intro line.
@@ -78,13 +80,19 @@ type mahnungView struct {
 // buildMahnungData resolves a reminder for a neighbor+year+stage. ok=false when
 // there is nothing to dun (no neighbor/year/issued invoice → caller 404s).
 func (s *Server) buildMahnungData(r *http.Request, neighborID, yearID int64, stage int) (*mahnungView, bool, error) {
+	// (nil, false, nil) means "no such reminder" → 404; a real DB error must
+	// propagate as (nil, false, err) → 500, not be masked as not-found.
 	neighbor, err := s.store.GetNeighbor(r.Context(), neighborID)
-	if err != nil {
+	if errors.Is(err, store.ErrNotFound) {
 		return nil, false, nil
+	} else if err != nil {
+		return nil, false, err
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
-	if err != nil {
+	if errors.Is(err, store.ErrNotFound) {
 		return nil, false, nil
+	} else if err != nil {
+		return nil, false, err
 	}
 	company, err := s.store.GetCompany(r.Context())
 	if err != nil {
@@ -92,8 +100,10 @@ func (s *Server) buildMahnungData(r *http.Request, neighborID, yearID int64, sta
 	}
 	// A reminder only makes sense for a formally issued invoice.
 	iv, err := s.store.GetInvoice(r.Context(), yearID, neighborID)
-	if err != nil {
+	if errors.Is(err, store.ErrNotFound) {
 		return nil, false, nil
+	} else if err != nil {
+		return nil, false, err
 	}
 	// Open = amount STILL PAYABLE on the frozen invoice (gross less credits, ledger,
 	// payments) — same figure the Beleg/EPC-QR use. paid = payments total (info line).

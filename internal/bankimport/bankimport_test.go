@@ -55,6 +55,55 @@ func TestParseCamt053(t *testing.T) {
 	}
 }
 
+// A foreign-currency credit must be skipped, not booked as EUR; a batch entry
+// (multiple TxDtls under one aggregate Amt) must be skipped rather than mis-booked;
+// and a bank AcctSvcrRef must drive de-duplication so two otherwise-identical
+// credits are both kept.
+func TestParseCamt053_CurrencyBatchAndBankRef(t *testing.T) {
+	xml := `<?xml version="1.0"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
+ <BkToCstmrStmt><Stmt>
+  <Ntry>
+    <Amt Ccy="USD">50.00</Amt><CdtDbtInd>CRDT</CdtDbtInd>
+    <BookgDt><Dt>2026-03-14</Dt></BookgDt>
+    <NtryDtls><TxDtls><RmtInf><Ustrd>USD zahlung</Ustrd></RmtInf></TxDtls></NtryDtls>
+  </Ntry>
+  <Ntry>
+    <Amt Ccy="EUR">200.00</Amt><CdtDbtInd>CRDT</CdtDbtInd>
+    <BookgDt><Dt>2026-03-14</Dt></BookgDt>
+    <NtryDtls>
+      <TxDtls><RmtInf><Ustrd>Rechnung A</Ustrd></RmtInf></TxDtls>
+      <TxDtls><RmtInf><Ustrd>Rechnung B</Ustrd></RmtInf></TxDtls>
+    </NtryDtls>
+  </Ntry>
+  <Ntry>
+    <Amt Ccy="EUR">10.00</Amt><CdtDbtInd>CRDT</CdtDbtInd>
+    <AcctSvcrRef>BANKREF-1</AcctSvcrRef>
+    <BookgDt><Dt>2026-03-14</Dt></BookgDt>
+    <NtryDtls><TxDtls><RmtInf><Ustrd>Rechnung 2026-009</Ustrd></RmtInf></TxDtls></NtryDtls>
+  </Ntry>
+  <Ntry>
+    <Amt Ccy="EUR">10.00</Amt><CdtDbtInd>CRDT</CdtDbtInd>
+    <AcctSvcrRef>BANKREF-2</AcctSvcrRef>
+    <BookgDt><Dt>2026-03-14</Dt></BookgDt>
+    <NtryDtls><TxDtls><RmtInf><Ustrd>Rechnung 2026-009</Ustrd></RmtInf></TxDtls></NtryDtls>
+  </Ntry>
+ </Stmt></BkToCstmrStmt>
+</Document>`
+	txns, err := ParseCamt053([]byte(xml))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// USD skipped + batch skipped → only the two BANKREF entries survive.
+	if len(txns) != 2 {
+		t.Fatalf("got %d credits, want 2 (USD + batch skipped)", len(txns))
+	}
+	// Same date/amount/reference but distinct bank refs → distinct hashes (both kept).
+	if txns[0].Hash == txns[1].Hash {
+		t.Errorf("identical credits with different AcctSvcrRef must get different hashes")
+	}
+}
+
 func TestParseSniff(t *testing.T) {
 	if _, err := Parse([]byte(`<?xml version="1.0"?><Document><BkToCstmrStmt><Stmt><Ntry><Amt>5.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt>2026-01-01</Dt></BookgDt><NtryDtls><TxDtls><RmtInf><Ustrd>x</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry></Stmt></BkToCstmrStmt></Document>`)); err != nil {
 		t.Errorf("xml sniff: %v", err)

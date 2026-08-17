@@ -54,7 +54,7 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE neighbors
 		    SET name = 'anonymisiert #' || id,
-		        note = '', address = '', tax_id = '',
+		        note = '', address = '', tax_id = '', email = '',
 		        archived = TRUE, anonymized = TRUE
 		  WHERE id = $1 AND NOT anonymized`, id)
 	if err != nil {
