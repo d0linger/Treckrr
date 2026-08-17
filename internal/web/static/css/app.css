@@ -1035,6 +1035,9 @@ em { font-style: normal; color: var(--muted); }
 
 .beleg__actions { display: flex; flex-direction: column; gap: .5rem; margin-top: .85rem; }
 .beleg__actrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .5rem; }
+.beleg__markform { display: contents; } /* let the button lay out as an actrow grid child */
+.beleg__sent { display: flex; align-items: center; gap: .4rem; margin: .5rem 0 0; }
+.beleg__sent .ic { width: 1em; height: 1em; flex: none; }
 
 /* Invoice corrections (Storno / Gutschrift) + document history, screen only. */
 .beleg__invacts { gap: .5rem; padding-top: .5rem; margin-top: .2rem; border-top: 1px solid var(--card-hairline); }

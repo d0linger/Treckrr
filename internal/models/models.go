@@ -54,6 +54,15 @@ type Session struct {
 	Current   bool // set at render time for the requesting session
 }
 
+// BelegSend records that a neighbor's Beleg was sent/handed over in a year.
+type BelegSend struct {
+	ID            int64
+	BillingYearID int64
+	NeighborID    int64
+	SentAt        time.Time
+	Channel       string
+}
+
 // PriceBase is a pricing basis (Bemessungsgrundlage). It is published roughly
 // every few years and reused by several billing years. Year documents when the
 // basis becomes valid ("gültig ab"). Locking freezes its values.

@@ -407,7 +407,36 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["Bookings"] = bookings
 	data["ShowGrund"] = r.URL.Query().Get("grundlage") == "1"
 	data["Today"] = time.Now().Format("02.01.2006")
+	lastSend, _ := s.store.LastBelegSend(r.Context(), year.ID, neighbor.ID) // best-effort marker
+	data["LastSend"] = lastSend
 	s.render(w, r, "beleg", data)
+}
+
+// handleBelegMarkSent records that this neighbor's Beleg was handed over/sent, so
+// the page can show "zuletzt versendet am …". Manual channel; the e-mail feature
+// records its own send with channel "e-mail".
+func (s *Server) handleBelegMarkSent(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	year, ok := s.resolveYear(w, r)
+	if !ok {
+		return
+	}
+	if err := s.store.RecordBelegSend(r.Context(), year.ID, neighbor.ID, "manuell"); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	s.audit(r, "beleg_sent", "neighbor", neighbor.ID, neighbor.Name+" · "+s.yearLabel(r, year.ID)+" (manuell)")
+	s.setFlash(w, r, "success", "Als versendet markiert.")
+	redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID))
 }
 
 // handleInvoiceConfirm renders the pre-issuance confirmation: the § 11 checklist
