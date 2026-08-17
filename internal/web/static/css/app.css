@@ -708,6 +708,10 @@ em { font-style: normal; color: var(--muted); }
 .paychip--paid { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 .paychip--open { background: transparent; color: var(--accent-text); border-color: color-mix(in srgb, #d89b00 55%, transparent); }
 .paychip--open:hover { background: color-mix(in srgb, #d89b00 12%, transparent); }
+/* Read-only status chip (running year): not a button, so no pointer/hover. */
+.paychip--static { cursor: default; }
+.paychip--static:hover { background: transparent; }
+span.paychip { cursor: default; }
 .carryover strong { display: block; }
 .carryover .muted { font-size: .82rem; }
 
