@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"html/template"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -66,6 +67,7 @@ func New(cfg *config.Config, st *store.Store, bk *backup.Service) (*Server, erro
 type ctxKey string
 
 const userCtxKey ctxKey = "user"
+const reqIDKey ctxKey = "reqid"
 
 // Handler builds the top-level http.Handler with all routes registered.
 func (s *Server) Handler() http.Handler {
@@ -77,7 +79,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handleNotFound)
 
 	// Health & PWA plumbing (public).
-	mux.HandleFunc("GET /healthz", s.handleHealth)
+	mux.HandleFunc("GET /healthz", s.handleHealth) // legacy alias (DB-checking) — kept
+	mux.HandleFunc("GET /readyz", s.handleHealth)  // readiness: app + DB reachable
+	mux.HandleFunc("GET /livez", s.handleLive)     // liveness: process only, no DB
+	mux.HandleFunc("POST /csp-report", s.handleCSPReport)
 	// Prometheus metrics — only registered when METRICS_TOKEN is set AND long enough
 	// to resist brute force; the handler itself enforces the bearer token so an
 	// unauthenticated scrape gets 401. A set-but-too-short token stays disabled with
@@ -415,6 +420,25 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("ok"))
 }
 
+// handleLive is a pure liveness probe: it answers 200 as long as the process can
+// serve, with NO database call — so a transient DB outage doesn't make an
+// orchestrator kill and restart a healthy container. Readiness (/readyz, /healthz)
+// stays DB-checking.
+func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	_, _ = w.Write([]byte("ok"))
+}
+
+// handleCSPReport records Content-Security-Policy violation reports the browser
+// posts to report-uri. Public (browsers send it without credentials) and never
+// trusted for anything but a log line — the strict CSP has no unsafe-inline, so a
+// report usually means an accidental inline handler/style regressed.
+func (s *Server) handleCSPReport(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<10)) // reports are small
+	slog.Warn("csp violation", "report", sanitizeLog(strings.TrimSpace(string(body))), "ua", sanitizeLog(r.UserAgent()))
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // The two possible CSP values, fixed at compile time (all assets are served
 // locally, so a strict policy is possible). The secure variant additionally
 // upgrades plain-HTTP subresource requests — advertised alongside HSTS only.
@@ -424,7 +448,7 @@ const (
 	// embeds them as data: inside that SVG image, so font-src stays strict. The
 	// connect/manifest/worker/frame-src directives make the same-origin-only
 	// posture explicit rather than relying on the default-src fallback.
-	cspBase   = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-src 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
+	cspBase   = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-src 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'; report-uri /csp-report"
 	cspSecure = cspBase + "; upgrade-insecure-requests"
 )
 

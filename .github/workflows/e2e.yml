@@ -81,7 +81,7 @@ jobs:
       - name: Install Playwright
         working-directory: e2e
         run: |
-          npm install --no-save @playwright/test@1.50.1
+          npm ci
           npx playwright install --with-deps chromium
       - name: Run E2E
         working-directory: e2e
