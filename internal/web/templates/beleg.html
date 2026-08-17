@@ -189,7 +189,7 @@
 			{{end}}
 			{{if not .Shared}}
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/mark-sent?year={{.Year.ID}}" class="beleg__markform">
-				<button type="submit" class="btn btn--ghost">{{template "ic-check"}} Als versendet markieren</button>
+				<button type="submit" class="btn btn--ghost">{{template "ic-check"}} Versendet</button>
 			</form>
 			{{if .HasInvoice}}
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/share?year={{.Year.ID}}" class="beleg__markform">
