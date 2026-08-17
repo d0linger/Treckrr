@@ -3,6 +3,6 @@
   "private": true,
   "description": "Playwright end-to-end smoke tests for Treckrr.",
   "devDependencies": {
-    "@playwright/test": "1.50.1"
+    "@playwright/test": "1.62.1"
   }
 }
