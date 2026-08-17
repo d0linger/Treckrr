@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/shopspring/decimal"
@@ -98,6 +99,9 @@ func TestParseImportCSV_Rejections(t *testing.T) {
 		"unknown neighbor": {"Fremd;2026-01-02;X;;;;h;1;1,00;1,00;", "Nachbar nicht im Jahr"},
 		"zero qty":         {"Max Mustermann;2026-01-02;X;;;;h;0;1,00;0,00;", "Menge muss > 0 sein"},
 		"zero price":       {"Max Mustermann;2026-01-02;X;;;;h;1;0,00;0,00;", "Satz muss > 0 sein"},
+		"task too long":    {"Max Mustermann;2026-01-02;" + strings.Repeat("a", 101) + ";;;;h;1;1,00;1,00;", "Tätigkeit darf höchstens 100 Zeichen lang sein."},
+		"unit too long":    {"Max Mustermann;2026-01-02;Mähen;;;;" + strings.Repeat("u", 17) + ";1;1,00;1,00;", "Einheit darf höchstens 16 Zeichen lang sein."},
+		"note too long":    {"Max Mustermann;2026-01-02;Mähen;;;;h;1;1,00;1,00;" + strings.Repeat("n", 501), "Notiz darf höchstens 500 Zeichen lang sein."},
 		"bad date":         {"Max Mustermann;2026-13-40;X;;;;h;1;1,00;1,00;", "Datum ungültig (JJJJ-MM-TT)"},
 	}
 	for name, tc := range cases {
