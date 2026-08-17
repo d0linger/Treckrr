@@ -1047,6 +1047,15 @@ em { font-style: normal; color: var(--muted); }
 @media (max-width: 30rem) {
 	.beleg__actrow .btn { white-space: normal; }
 }
+/* "Versendet" once the Beleg was marked sent: a filled/done look so the status is
+   readable straight off the button, distinct from the neutral not-yet-sent state. */
+.beleg__actrow .btn.is-sent {
+	background: var(--primary-tint);
+	border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+	color: var(--primary-strong);
+	font-weight: 700;
+}
+.beleg__actrow .btn.is-sent .ic { color: var(--primary); }
 .sharebox { margin-top: .6rem; padding: .7rem .8rem; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--radius); }
 .sharebox p { margin: 0 0 .4rem; }
 .sharebox__row { display: flex; gap: .4rem; }

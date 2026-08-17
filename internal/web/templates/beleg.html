@@ -189,7 +189,11 @@
 			{{end}}
 			{{if not .Shared}}
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/mark-sent?year={{.Year.ID}}" class="beleg__markform">
+				{{if .LastSend}}
+				<button type="submit" class="btn btn--ghost is-sent" title="Zuletzt versendet am {{.LastSend.SentAt.Format "02.01.2006, 15:04"}} Uhr ({{.LastSend.Channel}}) · erneut markieren">{{template "ic-check"}} Versendet am {{.LastSend.SentAt.Format "02.01."}}</button>
+				{{else}}
 				<button type="submit" class="btn btn--ghost">{{template "ic-check"}} Versendet</button>
+				{{end}}
 			</form>
 			{{if .HasInvoice}}
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/share?year={{.Year.ID}}" class="beleg__markform">
