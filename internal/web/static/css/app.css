@@ -1034,13 +1034,19 @@ em { font-style: normal; color: var(--muted); }
 .beleg__foot { text-align: center; color: var(--muted); font-family: var(--font-mono); font-size: .73rem; padding: .7rem .9rem .5rem; }
 
 .beleg__actions { display: flex; flex-direction: column; gap: .5rem; margin-top: .85rem; }
-.beleg__actrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .5rem; }
+/* Wide-enough tracks that the longest label ("Als versendet markieren") stays on
+   one line; auto-fit then packs as many columns as fit and reflows to fewer on
+   narrow screens instead of forcing every button to wrap. */
+.beleg__actrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .5rem; }
 .beleg__markform { display: contents; } /* let the button lay out as an actrow grid child */
-/* Grid children default to min-width:auto, so a nowrap button wider than its 8rem
-   track (e.g. "Als versendet markieren") overflows its cell. Let these buttons
-   shrink to the track and wrap their label instead of bleeding past the edge. */
-.beleg__actrow .btn { min-width: 0; padding-inline: .7rem; }
-.beleg__actrow .btn > span, .beleg__actrow .btn { white-space: normal; }
+/* min-width:0 lets a button shrink to its track (grid children default to
+   min-width:auto). Keep labels on one line by default — with the wide track they
+   all fit — and only permit wrapping on phone-width screens, where the 2-column
+   grid makes a cell too narrow for the longest label and nowrap would overflow. */
+.beleg__actrow .btn { min-width: 0; text-align: center; }
+@media (max-width: 30rem) {
+	.beleg__actrow .btn { white-space: normal; }
+}
 .sharebox { margin-top: .6rem; padding: .7rem .8rem; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--radius); }
 .sharebox p { margin: 0 0 .4rem; }
 .sharebox__row { display: flex; gap: .4rem; }
