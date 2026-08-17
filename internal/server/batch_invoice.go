@@ -81,7 +81,11 @@ func (s *Server) handleBatchIssuePreview(w http.ResponseWriter, r *http.Request)
 		s.serverError(w, "batch issue: preview", err)
 		return
 	}
-	company, _ := s.store.GetCompany(r.Context())
+	company, err := s.store.GetCompany(r.Context())
+	if err != nil {
+		s.serverError(w, "batch issue: company", err)
+		return
+	}
 	total := decimal.Zero
 	for _, row := range rows {
 		if row.Issuable {

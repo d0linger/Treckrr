@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -255,8 +256,16 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
-	_ = s.store.RecordBelegSend(r.Context(), v.Year.ID, v.Neighbor.ID, "mahnung") // send trail
-	s.audit(r, "mahnung_email", "neighbor", v.Neighbor.ID, v.Neighbor.Name+" · "+v.Neighbor.Email+" · "+v.Title+" "+v.Invoice.Number)
+	// Delivery succeeded; the send-trail marker is secondary — mirror handleBelegEmail:
+	// log a failed write and tell the user the reminder went out but wasn't recorded.
+	if err := s.store.RecordBelegSend(r.Context(), v.Year.ID, v.Neighbor.ID, "mahnung"); err != nil {
+		slog.Error("record beleg send failed", "kind", "mahnung", "year", v.Year.ID, "neighbor", v.Neighbor.ID, "err", err)
+		s.audit(r, "mahnung_email", "neighbor", v.Neighbor.ID, v.Neighbor.Name+" · E-Mail · "+v.Title+" "+v.Invoice.Number)
+		s.setFlash(w, r, "success", v.Title+" an "+v.Neighbor.Email+" gesendet (Versand-Historie konnte nicht gespeichert werden).")
+		redirect(w, r, back)
+		return
+	}
+	s.audit(r, "mahnung_email", "neighbor", v.Neighbor.ID, v.Neighbor.Name+" · E-Mail · "+v.Title+" "+v.Invoice.Number)
 	s.setFlash(w, r, "success", v.Title+" an "+v.Neighbor.Email+" gesendet.")
 	redirect(w, r, back)
 }

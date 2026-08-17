@@ -2,6 +2,7 @@ package pdf
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 
 	"github.com/shopspring/decimal"
@@ -47,6 +48,9 @@ func money(d decimal.Decimal) string {
 // from the frozen invoice snapshot — never from live data, so a re-issue is
 // byte-stable. iv.Content must be non-nil.
 func RenderInvoice(iv *models.Invoice) ([]byte, error) {
+	if iv == nil || iv.Content == nil {
+		return nil, fmt.Errorf("kein Rechnungs-Snapshot vorhanden")
+	}
 	c := iv.Content
 	pdf, err := newDoc()
 	if err != nil {

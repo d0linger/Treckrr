@@ -62,8 +62,13 @@ func RenderMahnung(m MahnungData) ([]byte, error) {
 	gtext(pdf, marginL, y, 10, true, ref)
 	y += 22
 
-	// intro text (wraps at ~95 chars per line manually — gopdf has no auto-wrap)
+	// intro text (wraps at ~95 chars per line manually — gopdf has no auto-wrap).
+	// Break to a new page before a line would run into the footer for a long intro.
 	for _, line := range wrap(m.Intro, 95) {
+		if y > 720 {
+			pdf.AddPage()
+			y = 56
+		}
 		gtext(pdf, marginL, y, 10.5, false, line)
 		y += 16
 	}

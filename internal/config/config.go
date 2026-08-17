@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"net"
+	netmail "net/mail"
 	"os"
 	"strconv"
 	"strings"
@@ -169,6 +170,13 @@ func Load() (*Config, error) {
 		}
 	} else if len(c.BackupEncryptionKey) < 16 {
 		return nil, fmt.Errorf("BACKUP_ENCRYPTION_KEY must be at least 16 characters")
+	}
+	// A configured sender must be a well-formed address, or every send fails at
+	// runtime with an opaque error. Blank stays valid (e-mail is simply disabled).
+	if from := strings.TrimSpace(c.SMTPFrom); from != "" {
+		if _, err := netmail.ParseAddress(from); err != nil {
+			return nil, fmt.Errorf("SMTP_FROM is not a valid e-mail address: %w", err)
+		}
 	}
 	return c, nil
 }

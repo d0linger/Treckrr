@@ -629,12 +629,12 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	// history entry didn't, so "zuletzt versendet am …" being absent isn't a mystery.
 	if err := s.store.RecordBelegSend(r.Context(), year.ID, neighbor.ID, "e-mail"); err != nil {
 		slog.Error("record beleg send failed", "year", year.ID, "neighbor", neighbor.ID, "err", err)
-		s.audit(r, "beleg_email", "neighbor", neighbor.ID, neighbor.Name+" · "+neighbor.Email+" · Rechnung "+iv.Number)
+		s.audit(r, "beleg_email", "neighbor", neighbor.ID, neighbor.Name+" · E-Mail · Rechnung "+iv.Number)
 		s.setFlash(w, r, "success", "Rechnung an "+neighbor.Email+" gesendet (Versand-Historie konnte nicht gespeichert werden).")
 		redirect(w, r, back)
 		return
 	}
-	s.audit(r, "beleg_email", "neighbor", neighbor.ID, neighbor.Name+" · "+neighbor.Email+" · Rechnung "+iv.Number)
+	s.audit(r, "beleg_email", "neighbor", neighbor.ID, neighbor.Name+" · E-Mail · Rechnung "+iv.Number)
 	s.setFlash(w, r, "success", "Rechnung an "+neighbor.Email+" gesendet.")
 	redirect(w, r, back)
 }

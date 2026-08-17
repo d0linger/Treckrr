@@ -105,7 +105,7 @@ func TestParseCamt053_CurrencyBatchAndBankRef(t *testing.T) {
 }
 
 func TestParseSniff(t *testing.T) {
-	if _, err := Parse([]byte(`<?xml version="1.0"?><Document><BkToCstmrStmt><Stmt><Ntry><Amt>5.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt>2026-01-01</Dt></BookgDt><NtryDtls><TxDtls><RmtInf><Ustrd>x</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry></Stmt></BkToCstmrStmt></Document>`)); err != nil {
+	if _, err := Parse([]byte(`<?xml version="1.0"?><Document><BkToCstmrStmt><Stmt><Ntry><Amt Ccy="EUR">5.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt>2026-01-01</Dt></BookgDt><NtryDtls><TxDtls><RmtInf><Ustrd>x</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry></Stmt></BkToCstmrStmt></Document>`)); err != nil {
 		t.Errorf("xml sniff: %v", err)
 	}
 	if _, err := Parse([]byte("Betrag;Verwendungszweck\n5,00;test\n")); err != nil {

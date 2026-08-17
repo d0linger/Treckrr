@@ -37,7 +37,7 @@ func TestAnonymizeNeighborIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create neighbor: %v", err)
 	}
-	if err := st.UpdateNeighbor(ctx, id, name, "eine Notiz", "Dorfstraße 1", "ATU99999999", ""); err != nil {
+	if err := st.UpdateNeighbor(ctx, id, name, "eine Notiz", "Dorfstraße 1", "ATU99999999", "kunde@example.at"); err != nil {
 		t.Fatalf("update neighbor: %v", err)
 	}
 
@@ -51,8 +51,8 @@ func TestAnonymizeNeighborIntegration(t *testing.T) {
 	if !n.Anonymized || !n.Archived {
 		t.Errorf("expected anonymized+archived, got anonymized=%v archived=%v", n.Anonymized, n.Archived)
 	}
-	if n.Note != "" || n.Address != "" || n.TaxID != "" {
-		t.Errorf("PII not cleared: note=%q address=%q tax_id=%q", n.Note, n.Address, n.TaxID)
+	if n.Note != "" || n.Address != "" || n.TaxID != "" || n.Email != "" {
+		t.Errorf("PII not cleared: note=%q address=%q tax_id=%q email=%q", n.Note, n.Address, n.TaxID, n.Email)
 	}
 	if strings.Contains(n.Name, "Anon Test") {
 		t.Errorf("name still identifying: %q", n.Name)

@@ -412,8 +412,9 @@
 			if (!input) return;
 			input.select();
 			var done = function () { var t = btn.textContent; btn.textContent = "Kopiert ✓"; setTimeout(function () { btn.textContent = t; }, 1500); };
-			if (navigator.clipboard) { navigator.clipboard.writeText(input.value).then(done).catch(function () {}); }
-			else { try { document.execCommand("copy"); done(); } catch (e) {} }
+			var legacy = function () { try { if (document.execCommand("copy")) done(); } catch (e) {} };
+			if (navigator.clipboard) { navigator.clipboard.writeText(input.value).then(done).catch(legacy); }
+			else { legacy(); }
 		});
 	});
 

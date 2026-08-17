@@ -3,6 +3,7 @@ package mail
 import (
 	"bufio"
 	"net"
+	netmail "net/mail"
 	"strings"
 	"testing"
 
@@ -16,6 +17,26 @@ func TestSendRejectsHeaderInjection(t *testing.T) {
 	err := Send(cfg, "victim@x.com\r\nBcc: leak@evil.com", "s", "b", nil)
 	if err == nil || !strings.Contains(err.Error(), "ungültige") {
 		t.Fatalf("expected rejection of CRLF address, got %v", err)
+	}
+}
+
+// TestBuildMessageNormalizesCommentCRLF: a comment-form value like
+// "x@y (junk\r\nBcc: …)" is ACCEPTED by net/mail.ParseAddress but must not carry
+// its CRLF into the To header. buildMessage is fed the parsed .Address, so the
+// rendered message contains only the bare address and no injected header.
+func TestBuildMessageNormalizesCommentCRLF(t *testing.T) {
+	raw := "kunde@example.at (x\r\nBcc: leak@evil.com)"
+	parsed, err := netmail.ParseAddress(raw)
+	if err != nil {
+		t.Fatalf("ParseAddress unexpectedly rejected %q: %v", raw, err)
+	}
+	// Send feeds the parsed .Address (not the raw input) to buildMessage.
+	msg := string(buildMessage("mr@example.at", parsed.Address, "s", "b", nil))
+	if strings.Contains(msg, "Bcc:") || strings.Contains(msg, "leak@evil.com") {
+		t.Fatalf("injected header leaked into message:\n%s", msg)
+	}
+	if !strings.Contains(msg, "To: kunde@example.at") {
+		t.Fatalf("expected clean To header, got:\n%s", msg)
 	}
 }
 

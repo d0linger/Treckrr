@@ -161,9 +161,10 @@ func ParseCamt053(data []byte) ([]Txn, error) {
 		if !strings.EqualFold(strings.TrimSpace(e.CdtDbtInd), "CRDT") {
 			continue // only money received
 		}
-		// Reject non-EUR credits: the amount carries a Ccy attribute and the app
-		// books plain euro. A foreign-currency value must never be recorded as EUR.
-		if ccy := strings.TrimSpace(e.Amt.Ccy); ccy != "" && !strings.EqualFold(ccy, "EUR") {
+		// Book only explicit-EUR credits: the amount carries a Ccy attribute and the
+		// app books plain euro. Reject a foreign currency (would be mis-booked as EUR)
+		// and also a blank/absent Ccy (ambiguous — real camt.053 always states it).
+		if !strings.EqualFold(strings.TrimSpace(e.Amt.Ccy), "EUR") {
 			continue
 		}
 		amt, ok := parseAmount(e.Amt.Value)

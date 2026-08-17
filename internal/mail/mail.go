@@ -37,10 +37,14 @@ func Send(cfg *config.Config, to, subject, body string, atts []Attachment) error
 	}
 	// Reject anything that isn't a single, well-formed address — in particular a
 	// value with embedded CR/LF, which would otherwise inject extra SMTP headers
-	// (Bcc/spoofing) via the To line.
-	if _, err := netmail.ParseAddress(to); err != nil {
+	// (Bcc/spoofing) via the To line. Use the PARSED address downstream, not the raw
+	// input: a comment-form value like "x@y (junk\r\nBcc: …)" parses OK but keeps the
+	// CRLF in its raw form — feeding that to the To header / RCPT would still inject.
+	parsed, err := netmail.ParseAddress(to)
+	if err != nil {
 		return fmt.Errorf("ungültige Empfängeradresse")
 	}
+	to = parsed.Address
 	msg := buildMessage(cfg.SMTPFrom, to, subject, body, atts)
 
 	addr := cfg.SMTPHost + ":" + cfg.SMTPPort
