@@ -188,7 +188,8 @@
 			{{end}}
 			{{end}}
 			{{if not .Shared}}
-			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/mark-sent?year={{.Year.ID}}" class="beleg__markform">
+			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/mark-sent?year={{.Year.ID}}" class="beleg__markform"
+				data-confirm="Beleg als versendet markieren? Das ist nur ein interner Vermerk — es wird nichts an den Nachbarn geschickt.">
 				{{if .LastSend}}
 				<button type="submit" class="btn btn--ghost is-sent" title="Zuletzt versendet am {{.LastSend.SentAt.Format "02.01.2006, 15:04"}} Uhr ({{.LastSend.Channel}}) · erneut markieren">{{template "ic-check"}} Versendet am {{.LastSend.SentAt.Format "02.01."}}</button>
 				{{else}}

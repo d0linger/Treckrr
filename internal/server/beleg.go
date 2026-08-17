@@ -662,7 +662,40 @@ func (s *Server) handleBelegMarkSent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "beleg_sent", "neighbor", neighbor.ID, neighbor.Name+" · "+s.yearLabel(r, year.ID)+" (manuell)")
-	s.setFlash(w, r, "success", "Als versendet markiert.")
+	// A manual mark is a reversible note — offer a one-click Undo in the toast.
+	s.setFlashUndo(w, r, "success", "Als versendet markiert.",
+		"/neighbors/"+itoa64(id)+"/beleg/unsend?year="+itoa64(year.ID))
+	redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID))
+}
+
+// handleBelegUnsend reverses the most recent MANUAL "als versendet" mark — the Undo
+// action from the mark-sent toast. It only removes a manual note, never an e-mail or
+// Mahnung send record.
+func (s *Server) handleBelegUnsend(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	year, ok := s.resolveYear(w, r)
+	if !ok {
+		return
+	}
+	undone, err := s.store.DeleteLatestManualBelegSend(r.Context(), year.ID, neighbor.ID)
+	switch {
+	case err != nil:
+		s.setFlash(w, r, "error", "Rückgängig machen fehlgeschlagen.")
+	case undone:
+		s.audit(r, "beleg_unsent", "neighbor", neighbor.ID, neighbor.Name+" · "+s.yearLabel(r, year.ID)+" (manuell)")
+		s.setFlash(w, r, "success", "Versendet-Markierung entfernt.")
+	default: // nothing manual to undo (e.g. only an e-mail send exists)
+		s.setFlash(w, r, "info", "Keine manuelle Markierung zum Entfernen.")
+	}
 	redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID))
 }
 

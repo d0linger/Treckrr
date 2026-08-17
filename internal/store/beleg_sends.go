@@ -21,6 +21,24 @@ func (s *Store) RecordBelegSend(ctx context.Context, yearID, neighborID int64, c
 	return err
 }
 
+// DeleteLatestManualBelegSend removes the most recent MANUAL "als versendet"
+// mark for a neighbor+year — the Undo of handleBelegMarkSent. It never touches an
+// e-mail/mahnung send record (those reflect a real delivery). Returns true when a
+// row was deleted, false when there was no manual mark to undo.
+func (s *Store) DeleteLatestManualBelegSend(ctx context.Context, yearID, neighborID int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM beleg_sends
+		  WHERE id = (SELECT id FROM beleg_sends
+		               WHERE billing_year_id=$1 AND neighbor_id=$2 AND channel='manuell'
+		               ORDER BY sent_at DESC LIMIT 1)`,
+		yearID, neighborID)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
 // LastBelegSend returns the most recent send for a neighbor+year, or (nil, nil)
 // if the Beleg was never marked sent.
 func (s *Store) LastBelegSend(ctx context.Context, yearID, neighborID int64) (*models.BelegSend, error) {
