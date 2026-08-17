@@ -40,6 +40,75 @@ func TestBuildMessageNormalizesCommentCRLF(t *testing.T) {
 	}
 }
 
+// TestSendEnvelopeFromIsBareAddress: a display-name SMTP_FROM ("MR <mr@x.at>") is
+// fine for the From: header but the SMTP envelope (MAIL FROM) must carry only the
+// bare address, or the server rejects it. Drives a fake SMTP server that records
+// the MAIL FROM line and the DATA body.
+func TestSendEnvelopeFromIsBareAddress(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	got := make(chan struct{ mailFrom, body string }, 1)
+	go func() {
+		conn, aerr := ln.Accept()
+		if aerr != nil {
+			return
+		}
+		defer conn.Close()
+		br := bufio.NewReader(conn)
+		_, _ = conn.Write([]byte("220 test ESMTP\r\n"))
+		var mailFrom string
+		var body strings.Builder
+		inData := false
+		for {
+			line, rerr := br.ReadString('\n')
+			if rerr != nil {
+				return
+			}
+			if inData {
+				if line == ".\r\n" {
+					inData = false
+					_, _ = conn.Write([]byte("250 ok\r\n"))
+					got <- struct{ mailFrom, body string }{mailFrom, body.String()}
+					continue
+				}
+				body.WriteString(line)
+				continue
+			}
+			switch {
+			case strings.HasPrefix(line, "EHLO"), strings.HasPrefix(line, "HELO"):
+				_, _ = conn.Write([]byte("250-test\r\n250 SIZE 10240000\r\n"))
+			case strings.HasPrefix(line, "MAIL FROM:"):
+				mailFrom = strings.TrimSpace(line[len("MAIL FROM:"):])
+				_, _ = conn.Write([]byte("250 ok\r\n"))
+			case strings.HasPrefix(line, "DATA"):
+				_, _ = conn.Write([]byte("354 go\r\n"))
+				inData = true
+			case strings.HasPrefix(line, "QUIT"):
+				_, _ = conn.Write([]byte("221 bye\r\n"))
+				return
+			default:
+				_, _ = conn.Write([]byte("250 ok\r\n"))
+			}
+		}
+	}()
+
+	host, port, _ := net.SplitHostPort(ln.Addr().String())
+	cfg := &config.Config{SMTPHost: host, SMTPPort: port, SMTPFrom: "Maschinenring <mr@example.at>", SMTPStartTLS: false}
+	if err := Send(cfg, "n@example.at", "s", "b", nil); err != nil {
+		t.Fatalf("Send failed: %v", err)
+	}
+	res := <-got
+	if res.mailFrom != "<mr@example.at>" {
+		t.Errorf("envelope MAIL FROM = %q, want %q (bare address, no display name)", res.mailFrom, "<mr@example.at>")
+	}
+	if !strings.Contains(res.body, "From: Maschinenring <mr@example.at>") {
+		t.Errorf("From: header should keep the display name, got body:\n%s", res.body)
+	}
+}
+
 // TestSendRequiresStartTLS: when STARTTLS is configured but the server does not
 // advertise the extension, Send must refuse rather than send in cleartext.
 func TestSendRequiresStartTLS(t *testing.T) {

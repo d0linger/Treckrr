@@ -45,7 +45,15 @@ func Send(cfg *config.Config, to, subject, body string, atts []Attachment) error
 		return fmt.Errorf("ungültige Empfängeradresse")
 	}
 	to = parsed.Address
-	msg := buildMessage(cfg.SMTPFrom, to, subject, body, atts)
+	// The From may be configured with a display name ("MR <mr@x.at>") — fine for the
+	// From: header, but the SMTP envelope (MAIL FROM) needs the bare address, or the
+	// server rejects it. Parse once: raw string for the header, .Address for the envelope.
+	fromHeader := strings.TrimSpace(cfg.SMTPFrom)
+	fromEnvelope := fromHeader
+	if pf, perr := netmail.ParseAddress(fromHeader); perr == nil {
+		fromEnvelope = pf.Address
+	}
+	msg := buildMessage(fromHeader, to, subject, body, atts)
 
 	addr := cfg.SMTPHost + ":" + cfg.SMTPPort
 	// Dial with an explicit timeout and set a deadline covering the whole exchange
@@ -80,7 +88,7 @@ func Send(cfg *config.Config, to, subject, body string, atts []Attachment) error
 			return fmt.Errorf("SMTP-Auth: %w", err)
 		}
 	}
-	if err := c.Mail(cfg.SMTPFrom); err != nil {
+	if err := c.Mail(fromEnvelope); err != nil {
 		return err
 	}
 	if err := c.Rcpt(to); err != nil {

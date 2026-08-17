@@ -74,6 +74,13 @@ func RenderMahnung(m MahnungData) ([]byte, error) {
 	}
 	y += 8
 
+	// Keep the amount box + paid line + Zahlung/IBAN block together above the footer
+	// (drawn at y=806): if a long intro pushed us near the bottom, this whole block
+	// (~80pt) would otherwise overrun it, so start a fresh page first.
+	if y > 700 {
+		pdf.AddPage()
+		y = 56
+	}
 	// amount box
 	gtext(pdf, marginL, y, 11, true, "Offener Betrag")
 	gtextR(pdf, right, y, 13, true, money(m.Open))

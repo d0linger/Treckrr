@@ -2,6 +2,7 @@ package pdf
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,6 +48,48 @@ func TestRenderMahnung(t *testing.T) {
 	})
 	if err != nil || !bytes.HasPrefix(b, []byte("%PDF-")) || len(b) < 2000 {
 		t.Fatalf("mahnung PDF invalid: err=%v size=%d", err, len(b))
+	}
+}
+
+// TestMahnungPagination: a normal reminder fits one page, but a very long intro
+// must break to a new page BEFORE the amount/IBAN block so it never overruns the
+// footer. gopdf shares one /MediaBox object across pages, so count pages via the
+// page-tree /Count.
+func TestMahnungPagination(t *testing.T) {
+	pageCount := func(b []byte) int {
+		i := bytes.Index(b, []byte("/Count "))
+		if i < 0 {
+			return -1
+		}
+		n := 0
+		for _, c := range b[i+len("/Count "):] {
+			if c < '0' || c > '9' {
+				break
+			}
+			n = n*10 + int(c-'0')
+		}
+		return n
+	}
+	base := MahnungData{
+		IssuerName: "MR Müller", IssuerAddress: "Feldweg 3\n4780 Schärding", IssuerIBAN: "AT61 1904 3002 3457 3201",
+		RecipientName: "Josef Öllinger", RecipientAddr: "Dorfstraße 5",
+		Title: "1. Mahnung", InvoiceNo: "2026-003", Open: decimal.RequireFromString("575.00"), Today: time.Now(),
+	}
+	base.Intro = "Trotz unserer Zahlungserinnerung ist der folgende Betrag noch offen."
+	short, err := RenderMahnung(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := pageCount(short); p != 1 {
+		t.Errorf("normal mahnung should be 1 page, got %d (spurious break)", p)
+	}
+	base.Intro = strings.Repeat("Dies ist ein sehr langer Mahntext der viele Zeilen fuellt. ", 60)
+	long, err := RenderMahnung(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := pageCount(long); p < 2 {
+		t.Errorf("very long intro should paginate to >=2 pages, got %d", p)
 	}
 }
 
