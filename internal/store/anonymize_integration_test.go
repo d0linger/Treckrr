@@ -37,7 +37,7 @@ func TestAnonymizeNeighborIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create neighbor: %v", err)
 	}
-	if err := st.UpdateNeighbor(ctx, id, name, "eine Notiz", "Dorfstraße 1", "ATU99999999"); err != nil {
+	if err := st.UpdateNeighbor(ctx, id, name, "eine Notiz", "Dorfstraße 1", "ATU99999999", ""); err != nil {
 		t.Fatalf("update neighbor: %v", err)
 	}
 

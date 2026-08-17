@@ -14,6 +14,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/calc"
+	"github.com/d0linger/treckrr/internal/mail"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
@@ -416,6 +417,8 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data["LastSend"], _ = s.store.LastBelegSend(r.Context(), year.ID, neighbor.ID) // best-effort marker
+	data["MailEnabled"] = s.cfg.MailEnabled()
+	data["NeighborEmail"] = neighbor.Email
 	if tok := strings.TrimSpace(r.URL.Query().Get("share")); tok != "" {
 		data["ShareToken"] = tok // echo a freshly generated link so the page can show/copy it
 		data["ShareURL"] = absoluteURL(r, "/s/beleg/"+tok)
@@ -564,6 +567,63 @@ func absoluteURL(r *http.Request, path string) string {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host + path
+}
+
+// handleBelegEmail sends the festgeschriebene Rechnung PDF to the neighbor's
+// e-mail. Requires SMTP configured, a neighbor e-mail, and an issued invoice.
+func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	neighbor, err := s.store.GetNeighbor(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	year, ok := s.resolveYear(w, r)
+	if !ok {
+		return
+	}
+	back := "/neighbors/" + itoa64(id) + "/beleg?year=" + itoa64(year.ID)
+	if !s.cfg.MailEnabled() {
+		s.setFlash(w, r, "error", "E-Mail-Versand ist nicht konfiguriert (SMTP_HOST/SMTP_FROM).")
+		redirect(w, r, back)
+		return
+	}
+	if strings.TrimSpace(neighbor.Email) == "" {
+		s.setFlash(w, r, "error", "Für "+neighbor.Name+" ist keine E-Mail-Adresse hinterlegt.")
+		redirect(w, r, back)
+		return
+	}
+	iv, err := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
+	if err != nil || iv.Content == nil {
+		s.setFlash(w, r, "error", "E-Mail-Versand ist erst nach dem Festschreiben der Rechnung möglich.")
+		redirect(w, r, back)
+		return
+	}
+	blob, err := pdf.RenderInvoice(&iv)
+	if err != nil {
+		s.serverError(w, "beleg email: pdf", err)
+		return
+	}
+	company, _ := s.store.GetCompany(r.Context())
+	from := strings.TrimSpace(company.Name)
+	if from == "" {
+		from = "Ihr Maschinenring"
+	}
+	body := "Guten Tag " + neighbor.Name + ",\n\nanbei die Rechnung " + iv.Number + " als PDF.\n\nMit freundlichen Grüßen\n" + from
+	att := mail.Attachment{Filename: "Rechnung_" + sanitizeFilename(iv.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
+	if err := mail.Send(s.cfg, neighbor.Email, "Rechnung "+iv.Number, body, []mail.Attachment{att}); err != nil {
+		s.setFlash(w, r, "error", "Versand fehlgeschlagen: "+err.Error())
+		redirect(w, r, back)
+		return
+	}
+	_ = s.store.RecordBelegSend(r.Context(), year.ID, neighbor.ID, "e-mail")
+	s.audit(r, "beleg_email", "neighbor", neighbor.ID, neighbor.Name+" · "+neighbor.Email+" · Rechnung "+iv.Number)
+	s.setFlash(w, r, "success", "Rechnung an "+neighbor.Email+" gesendet.")
+	redirect(w, r, back)
 }
 
 // handleBelegMarkSent records that this neighbor's Beleg was handed over/sent, so

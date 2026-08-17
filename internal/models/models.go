@@ -205,6 +205,7 @@ type Neighbor struct {
 	Note     string
 	Address  string // optional, for the invoice recipient block
 	TaxID    string // optional recipient UID/tax number (§ 11 on invoices > 10k)
+	Email    string // optional, for sending the Beleg/Rechnung by e-mail
 	Archived bool
 	// Anonymized marks a neighbor whose live personal data was erased (DSGVO
 	// Art. 17) while retained invoice snapshots stay intact. Such rows are also

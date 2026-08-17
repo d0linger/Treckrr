@@ -68,6 +68,20 @@ type Config struct {
 	// text format) guarded by an "Authorization: Bearer <token>" header. Empty
 	// (the default) leaves the endpoint unregistered, so metrics are opt-in.
 	MetricsToken string
+
+	// SMTP settings enable sending a Beleg/Rechnung by e-mail. Feature is opt-in:
+	// e-mail send is offered only when SMTPHost and SMTPFrom are both set.
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUser     string
+	SMTPPassword string
+	SMTPFrom     string
+	SMTPStartTLS bool
+}
+
+// MailEnabled reports whether e-mail sending is configured.
+func (c *Config) MailEnabled() bool {
+	return strings.TrimSpace(c.SMTPHost) != "" && strings.TrimSpace(c.SMTPFrom) != ""
 }
 
 // Load reads configuration from the environment and validates required values.
@@ -94,6 +108,12 @@ func Load() (*Config, error) {
 		RPID:                getenv("RP_ID", "localhost"),
 		RPOrigin:            getenv("RP_ORIGIN", "http://localhost:8080"),
 		MetricsToken:        os.Getenv("METRICS_TOKEN"),
+		SMTPHost:            os.Getenv("SMTP_HOST"),
+		SMTPPort:            getenv("SMTP_PORT", "587"),
+		SMTPUser:            os.Getenv("SMTP_USER"),
+		SMTPPassword:        os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:            os.Getenv("SMTP_FROM"),
+		SMTPStartTLS:        strings.EqualFold(getenv("SMTP_STARTTLS", "true"), "true"),
 	}
 
 	// Data-at-rest encryption key. Defaults to SessionSecret so existing

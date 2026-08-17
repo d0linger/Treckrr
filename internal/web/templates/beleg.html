@@ -178,6 +178,12 @@
 			</button>
 			{{if .HasInvoice}}
 			<a class="btn btn--ghost" href="/neighbors/{{.Neighbor.ID}}/beleg.pdf?year={{.Year.ID}}" target="_blank" rel="noopener">{{template "ic-copy"}} Rechnung als PDF</a>
+			{{if and (not .Shared) .MailEnabled .NeighborEmail}}
+			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/email?year={{.Year.ID}}" class="beleg__markform"
+				data-confirm="Rechnung als PDF an {{.NeighborEmail}} senden?">
+				<button type="submit" class="btn btn--ghost">✉ Per E-Mail senden</button>
+			</form>
+			{{end}}
 			{{end}}
 			{{if not .Shared}}
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/mark-sent?year={{.Year.ID}}" class="beleg__markform">
