@@ -1139,6 +1139,10 @@ span.paychip { cursor: default; }
 .beleg__invoice { padding: .85rem .9rem; border-bottom: 1px solid var(--border); }
 .beleg__inv-top { display: flex; justify-content: space-between; gap: .5rem; font-family: var(--font-mono); font-size: .8rem; margin-bottom: .55rem; }
 .beleg__inv-no { font-weight: 700; }
+.beleg__inv-due { font-family: var(--font-mono); font-size: .76rem; color: var(--muted); margin: -.25rem 0 .55rem; }
+.beleg__inv-due strong { color: var(--text); font-weight: 700; }
+.beleg__inv-due--over { color: var(--danger); }
+.beleg__inv-due--over strong { color: var(--danger); }
 .beleg__inv-pp { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; font-size: .84rem; align-items: start; }
 .beleg__inv-k { font-family: var(--font-mono); font-size: .6rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: .1rem; }
 .beleg__inv-addr { white-space: pre-line; }
