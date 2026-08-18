@@ -494,6 +494,11 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 	// half-restored; give it its own fresh deadline.
 	rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
 	defer rcancel()
+	// [T-05] Enter maintenance mode for the whole restore + reconcile: other requests
+	// get a 503 so none can read/write a half-restored schema. This admin request
+	// already passed the gate, so it isn't blocked. Cleared on every exit path.
+	s.setMaintenance(true)
+	defer s.setMaintenance(false)
 	if err := s.backup.RestoreRaw(rctx, raw, s.cfg.DatabaseURL); err != nil {
 		slog.Error("restore failed", "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Wiederherstellung fehlgeschlagen.")
