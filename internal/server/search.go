@@ -21,7 +21,7 @@ func (s *Server) handleEntryPrecheck(w http.ResponseWriter, r *http.Request) {
 	if warn == "" {
 		neighborID := formInt64FromQuery(r, "neighbor_id")
 		yearID := formInt64FromQuery(r, "year_id")
-		task := strings.TrimSpace(q.Get("task_label"))
+		task := sanitizeQueryParam(q.Get("task_label"), maxNameLen)
 		date, derr := time.Parse("2006-01-02", strings.TrimSpace(q.Get("entry_date")))
 		if neighborID > 0 && yearID > 0 && derr == nil {
 			if dup, err := s.store.SimilarEntryExists(r.Context(), neighborID, yearID, date, task); err == nil && dup {

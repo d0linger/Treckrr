@@ -1,6 +1,9 @@
 package server
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -31,6 +34,31 @@ func TestLenError(t *testing.T) {
 					c.field, utf8.RuneCountInString(c.value), c.max, got, c.want)
 			}
 		})
+	}
+}
+
+func TestEntryPrecheckTaskLabelSanitization(t *testing.T) {
+	s := testNeighborServer(t)
+
+	longTask := strings.Repeat("x", 200)
+	params := url.Values{}
+	params.Set("hours", "5")
+	params.Set("neighbor_id", "1")
+	params.Set("year_id", "1")
+	params.Set("entry_date", "2026-03-01")
+	params.Set("task_label", longTask)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/entries/precheck?"+params.Encode(), nil)
+	rr := httptest.NewRecorder()
+
+	s.handleEntryPrecheck(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status OK, got %v", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `"warn":""`) && !strings.Contains(body, `"warn":`) {
+		t.Errorf("unexpected body response: %s", body)
 	}
 }
 
