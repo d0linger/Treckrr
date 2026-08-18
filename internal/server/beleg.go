@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -394,13 +393,8 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 		}
 		due := invoice.IssuedOn.AddDate(0, 0, term)
 		data["DueOn"] = due
-		// Whole-day difference (local midnight), positive = days left, negative = overdue.
-		today := time.Now()
-		startToday := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
-		startDue := time.Date(due.Year(), due.Month(), due.Day(), 0, 0, 0, 0, due.Location())
-		// Round, not truncate: across a DST switch two local midnights are 23h/25h
-		// apart, so a plain /24 truncation would be off by one for that one day.
-		days := int(math.Round(startDue.Sub(startToday).Hours() / 24))
+		// Whole-day, DST-safe difference (shared with the dunning overdue count).
+		days := calc.DaysBetween(time.Now(), due)
 		data["DueDays"] = days // >0 days left, 0 today, <0 overdue
 		if days < 0 {
 			data["OverdueDays"] = -days

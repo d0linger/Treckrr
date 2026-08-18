@@ -33,6 +33,7 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   // Kleinunternehmer: no USt-Ausweis, so § 11 needs no VAT rate for this test.
   await page.locator('select[name="tax_mode"]').selectOption("kleinunternehmer");
   await page.getByRole("button", { name: /speichern/i }).first().click();
+  await page.waitForLoadState("networkidle"); // let the save redirect settle
 
   await page.goto("/neighbors");
   // Each neighbor's edit form sits in a collapsed <details><summary>Bearbeiten</summary>;
@@ -45,6 +46,9 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
     .locator('form[action="/neighbors/1/update"]')
     .getByRole("button", { name: /speichern/i })
     .click();
+  // The save POST redirects; wait for that navigation to settle before the next
+  // goto, or the in-flight redirect aborts it (net::ERR_ABORTED under CI).
+  await page.waitForLoadState("networkidle");
 
   // --- a booking to invoice. Use the UNIT path (Menge × Einzelpreis): the CI seed
   // has no tractors/load levels, so an hours booking (which needs a rig) can't be
@@ -68,7 +72,13 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   await page.getByRole("button", { name: "Jetzt festschreiben" }).click();
   const okBtn = page.locator("#confirmModal [data-modal-ok]");
   await okBtn.waitFor({ state: "attached", timeout: 4000 });
-  await okBtn.click({ force: true });
+  // The dialog OK submits the pending form (POST /neighbors/1/invoice) which
+  // redirects back to the Beleg. Wait for that navigation to finish before asserting
+  // — otherwise the next goto races the redirect and the invoice isn't committed yet.
+  await Promise.all([
+    page.waitForURL(/\/neighbors\/1\/beleg/, { timeout: 10000 }),
+    okBtn.click({ force: true }),
+  ]);
 
   // --- the Beleg now shows a frozen invoice number + the due-date line ---
   await page.goto("/neighbors/1/beleg?year=1&rechnung=1");
@@ -80,10 +90,16 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   await page.locator('form[action*="mark-sent"] button').click();
   const okBtn2 = page.locator("#confirmModal [data-modal-ok]");
   await okBtn2.waitFor({ state: "attached", timeout: 4000 });
-  await okBtn2.click({ force: true });
+  await Promise.all([
+    page.waitForURL(/\/neighbors\/1\/beleg/, { timeout: 10000 }),
+    okBtn2.click({ force: true }),
+  ]);
   await expect(page.locator('form[action*="mark-sent"] button.is-sent')).toBeVisible();
-  // Undo from the toast.
-  await page.locator(".toast .toast__undo button").click();
+  // Undo from the toast (POST /beleg/unsend redirects back to the Beleg).
+  await Promise.all([
+    page.waitForURL(/\/neighbors\/1\/beleg/, { timeout: 10000 }),
+    page.locator(".toast .toast__undo button").click(),
+  ]);
   await expect(page.locator('form[action*="mark-sent"] button.is-sent')).toHaveCount(0);
 });
 

@@ -10,10 +10,25 @@
 package calc
 
 import (
+	"math"
+	"time"
+
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
 )
+
+// DaysBetween returns the whole-day difference from `from` to `to`, counted by
+// calendar day in `from`'s location (both collapsed to local midnight): positive
+// when `to` is later, negative when earlier, 0 for the same day. It rounds rather
+// than truncating so a day that spans a DST transition (23h or 25h between two
+// local midnights) still counts as one day. Used for invoice due-date countdowns
+// and dunning overdue counts so both agree.
+func DaysBetween(from, to time.Time) int {
+	startFrom := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, from.Location())
+	startTo := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, to.Location())
+	return int(math.Round(startTo.Sub(startFrom).Hours() / 24))
+}
 
 // TractorRate returns the hourly rate for a tractor at a given load level.
 func TractorRate(t models.Tractor, l models.LoadLevel) decimal.Decimal {
