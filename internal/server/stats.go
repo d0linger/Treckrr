@@ -166,6 +166,51 @@ func maxCost(rows []aggRow) decimal.Decimal {
 	return m
 }
 
+// maxHours returns the largest hours value in the rows (for scaling an
+// hours-based bar chart).
+func maxHours(rows []aggRow) decimal.Decimal {
+	m := decimal.Zero
+	for _, r := range rows {
+		if r.Hours.GreaterThan(m) {
+			m = r.Hours
+		}
+	}
+	return m
+}
+
+// aggregateMachineHours sums each booking's hours onto every machine it ran (a
+// booking's MachineLabels is the comma-joined set). Cost is intentionally left out:
+// a rig's cost belongs to the whole combination, not one machine, so only the
+// unambiguous hours-of-use is reported. Rows are sorted by hours descending.
+func aggregateMachineHours(entries []models.Entry) []aggRow {
+	order := []string{}
+	byKey := map[string]*aggRow{}
+	for _, e := range entries {
+		if e.Voided || strings.TrimSpace(e.MachineLabels) == "" {
+			continue
+		}
+		for _, name := range strings.Split(e.MachineLabels, ",") {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			row, ok := byKey[name]
+			if !ok {
+				row = &aggRow{Label: name}
+				byKey[name] = row
+				order = append(order, name)
+			}
+			row.Hours = row.Hours.Add(e.Hours)
+		}
+	}
+	out := make([]aggRow, 0, len(order))
+	for _, k := range order {
+		out = append(out, *byKey[k])
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Hours.GreaterThan(out[j].Hours) })
+	return out
+}
+
 // yearStat is one row of the all-years overview.
 type yearStat struct {
 	Year      int
@@ -300,6 +345,11 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return e.TaskLabel
 	})
 	byTractor := aggregate(entries, func(e models.Entry) string { return e.TractorLabel })
+	// Stunden je Maschine: a booking can run several machines (MachineLabels is the
+	// comma-joined set), and its cost is for the whole rig — so cost can't be split
+	// per machine cleanly. Hours-of-use CAN: attribute the booking's hours to each
+	// machine it ran. Answers "which machine is used most this year".
+	byMachine := aggregateMachineHours(entries)
 
 	// Payment split (paid vs open), computed in a single query.
 	paidCost, openCost, creditCost, err := s.store.YearPaymentTotals(r.Context(), year.ID)
@@ -384,6 +434,8 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["ByTaskMax"] = maxCost(byTask)
 	data["ByTractor"] = byTractor
 	data["ByTractorMax"] = maxCost(byTractor)
+	data["ByMachine"] = byMachine
+	data["ByMachineMax"] = maxHours(byMachine)
 
 	// Year-over-year comparison with the previous billing year.
 	if prev, err := s.store.PreviousBillingYear(r.Context(), year.Year); err == nil {
