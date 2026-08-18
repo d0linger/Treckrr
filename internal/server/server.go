@@ -256,7 +256,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/users/{id}/reset-2fa", s.admin(s.handleUserResetTotp))
 	mux.Handle("POST /admin/users/{id}/delete", s.admin(s.handleUserDelete))
 
-	return s.limitBody(s.accessLog(s.maintenanceGate(s.securityHeaders(s.csrf(mux)))))
+	// securityHeaders wraps maintenanceGate so even the 503 maintenance page carries
+	// the nosniff/frame/CSP headers (the gate returns before inner handlers run).
+	return s.limitBody(s.accessLog(s.securityHeaders(s.maintenanceGate(s.csrf(mux)))))
 }
 
 // setMaintenance toggles maintenance mode. While on, maintenanceGate serves 503
@@ -264,9 +266,12 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) setMaintenance(on bool) { s.maintenance.Store(on) }
 
 // maintenanceGate returns 503 for normal traffic while a restore is in progress.
-// Liveness/readiness probes still pass (so the orchestrator doesn't kill the app)
-// and static assets are served (so the 503 page renders), but every app route —
-// reads included, since a read could hit a half-restored schema — is refused.
+// Only the DB-free liveness probe (/livez) and static assets stay reachable, so
+// the orchestrator doesn't restart the app and the 503 page's CSS renders. Every
+// app route — reads included, since a read could hit a half-restored schema — is
+// refused. Readiness (/readyz, /healthz) is intentionally NOT exempt: during a
+// restore the app is genuinely not ready, so it should report 503 — and doing it
+// through the gate is deterministic, versus letting handleHealth's DB ping flap.
 func (s *Server) maintenanceGate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.maintenance.Load() && !isMaintenanceExempt(r.URL.Path) {
@@ -279,12 +284,12 @@ func (s *Server) maintenanceGate(next http.Handler) http.Handler {
 	})
 }
 
-// isMaintenanceExempt reports paths that stay reachable during maintenance: the
-// health probes (orchestrator must not restart the app) and static assets (so the
-// 503 page's CSS renders).
+// isMaintenanceExempt reports paths that stay reachable during maintenance: only
+// the DB-free liveness probe (so the orchestrator doesn't restart the app) and
+// static assets (so the 503 page's CSS renders). Readiness probes are gated too —
+// the app really isn't ready mid-restore.
 func isMaintenanceExempt(p string) bool {
-	switch p {
-	case "/livez", "/readyz", "/healthz":
+	if p == "/livez" {
 		return true
 	}
 	return strings.HasPrefix(p, "/static/")

@@ -16,7 +16,6 @@ import (
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
-	"github.com/d0linger/treckrr/internal/web"
 )
 
 // dunningStage maps a stage code to its German document heading + intro line.
@@ -101,7 +100,7 @@ func (s *Server) handleMahnwesenExport(w http.ResponseWriter, r *http.Request) {
 			dr.IssuedOn.Format("02.01.2006"),
 			dr.DueOn.Format("02.01.2006"),
 			strconv.Itoa(dr.DaysOverdue),
-			web.Num(dr.Open), // German decimal, matches the CSV export convention
+			deDecimal(dr.Open), // German decimal "1234,50", same as the other CSV exports
 		})
 	}
 }

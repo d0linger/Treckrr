@@ -40,10 +40,16 @@ func TestMaintenanceGate(t *testing.T) {
 	if code, ok := call("/"); code != http.StatusServiceUnavailable || ok {
 		t.Errorf("on: / = %d reached=%v, want 503 false", code, ok)
 	}
-	// Health probes stay up so the orchestrator doesn't restart the app mid-restore.
-	for _, p := range []string{"/livez", "/readyz", "/healthz"} {
-		if code, ok := call(p); code != http.StatusOK || !ok {
-			t.Errorf("on: %s = %d reached=%v, want 200 true (probe must stay up)", p, code, ok)
+	// Only the DB-free liveness probe stays up (so the orchestrator doesn't restart
+	// the app mid-restore).
+	if code, ok := call("/livez"); code != http.StatusOK || !ok {
+		t.Errorf("on: /livez = %d reached=%v, want 200 true (liveness must stay up)", code, ok)
+	}
+	// Readiness probes are gated: mid-restore the app is genuinely not ready, so
+	// they must report 503 (deterministically via the gate, not a flapping DB ping).
+	for _, p := range []string{"/readyz", "/healthz"} {
+		if code, ok := call(p); code != http.StatusServiceUnavailable || ok {
+			t.Errorf("on: %s = %d reached=%v, want 503 false (readiness gated in maintenance)", p, code, ok)
 		}
 	}
 	// Static assets stay up so the 503 page's CSS renders.

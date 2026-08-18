@@ -204,8 +204,12 @@
 		if ((e.ctrlKey || e.metaKey) && (e.key === "Enter" || e.keyCode === 13)) {
 			e.preventDefault();
 			if (form.dataset.submitting === "1" || form.dataset.checking === "1") return; // a save is already in flight
+			// requestSubmit() so the plausibility precheck + double-submit guard run,
+			// exactly as a click would. NO form.submit() fallback: a raw submit would
+			// skip those handlers (the thing this shortcut must never do). requestSubmit
+			// is supported by every browser since ~2020; on an older one Ctrl+Enter is a
+			// no-op and the user clicks the button instead.
 			if (typeof form.requestSubmit === "function") form.requestSubmit();
-			else form.submit();
 		}
 	});
 

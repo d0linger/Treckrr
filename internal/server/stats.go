@@ -189,7 +189,10 @@ func aggregateMachineHours(entries []models.Entry) []aggRow {
 		if e.Voided || strings.TrimSpace(e.MachineLabels) == "" {
 			continue
 		}
-		for _, name := range strings.Split(e.MachineLabels, ",") {
+		// MachineLabels is joined with ", " (see entries.go), so split on that exact
+		// separator — splitting on "," alone would tear a name that itself contains a
+		// comma (e.g. "Ladewagen, klein") into two phantom machines.
+		for _, name := range strings.Split(e.MachineLabels, ", ") {
 			name = strings.TrimSpace(name)
 			if name == "" {
 				continue
