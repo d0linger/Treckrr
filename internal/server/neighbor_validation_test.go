@@ -43,7 +43,18 @@ func (s *mockNeighborStmt) NumInput() int { return -1 }
 func (s *mockNeighborStmt) Exec(args []driver.Value) (driver.Result, error) {
 	return &mockNeighborResult{}, nil
 }
+
+// capturedSimilarTask records the task_label argument the precheck handler passed
+// into the SimilarEntryExists query, so a test can assert it was sanitized before
+// reaching the store. Only the EXISTS-on-entries query writes it.
+var capturedSimilarTask string
+
 func (s *mockNeighborStmt) Query(args []driver.Value) (driver.Rows, error) {
+	if strings.Contains(s.query, "SELECT EXISTS") && strings.Contains(s.query, "task_label") && len(args) >= 4 {
+		if t, ok := args[3].(string); ok {
+			capturedSimilarTask = t // the 4th bound arg is `task`
+		}
+	}
 	return &mockNeighborRows{query: s.query}, nil
 }
 
@@ -61,6 +72,9 @@ func (r *mockNeighborRows) Columns() []string {
 	if strings.Contains(r.query, "INSERT INTO neighbors") {
 		return []string{"id"}
 	}
+	if strings.Contains(r.query, "SELECT EXISTS") {
+		return []string{"exists"}
+	}
 	// GetNeighbor columns: id, name, note, archived, created_at
 	return []string{"id", "name", "note", "archived", "created_at"}
 }
@@ -74,6 +88,8 @@ func (r *mockNeighborRows) Next(dest []driver.Value) error {
 	r.hasRead = true
 	if strings.Contains(r.query, "INSERT INTO") {
 		dest[0] = int64(123)
+	} else if strings.Contains(r.query, "SELECT EXISTS") {
+		dest[0] = true // a similar entry "exists" → handler builds the warn with the task
 	} else {
 		// GetNeighbor expectation
 		dest[0] = int64(456)
