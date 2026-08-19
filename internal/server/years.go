@@ -151,10 +151,23 @@ func (s *Server) handleYearUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Snapshot before overwriting so the audit trail shows old → new — including a
+	// basis switch, the most consequential change here (it shifts the whole year's
+	// price basis). On a read error fall back to the new label rather than a bogus diff.
+	before, _ := s.store.GetBillingYear(r.Context(), id)
 	if err := s.store.UpdateBillingYear(r.Context(), id, baseID, label); err != nil {
 		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")
 	} else {
-		s.audit(r, "update", "year", id, label)
+		detail := label
+		if before != nil {
+			if d := diffFields(
+				fieldChange{"Bezeichnung", before.Label, label},
+				fieldChange{"Grundlage", s.baseName(r, before.BaseID), s.baseName(r, baseID)},
+			); d != "" {
+				detail = d
+			}
+		}
+		s.audit(r, "update", "year", id, detail)
 		s.setFlash(w, r, "success", "Abrechnungsjahr aktualisiert.")
 	}
 	redirect(w, r, "/years")

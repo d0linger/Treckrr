@@ -265,6 +265,14 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 			slog.Error("recurring generation", "err", err)
 		} else if n > 0 {
 			slog.Info("recurring bookings created", "count", n)
+			// These are system-created bookings (no HTTP request / user), so record a
+			// system-actor audit line — otherwise the entries appear in the DB with no
+			// trail explaining who created them. Best-effort: a missing line must not
+			// abort the maintenance tick.
+			detail := fmt.Sprintf("%d Buchung(en) aus fälligen Serien erzeugt", n)
+			if err := st.AddAudit(bg, nil, "system", "recurring_run", "recurring", "", detail, ""); err != nil {
+				slog.Error("audit recurring run", "err", err)
+			}
 		}
 		// Staggered audit-log retention: pure security/auth/ops noise expires after the
 		// short window (DSGVO Art. 5(1)(e) data minimisation); business- and tax-relevant
