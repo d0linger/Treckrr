@@ -58,6 +58,17 @@ func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
 		"Diese Seite existiert nicht oder wurde verschoben.")
 }
 
+// badRequest renders the branded error page for a 400 on a user-facing HTML route
+// (a manipulated URL, a stale form, a missing/invalid parameter) instead of
+// net/http's bare plain-text default. Do NOT use it on JSON/fetch API endpoints —
+// those must keep a plain status the client-side code can parse.
+func (s *Server) badRequest(w http.ResponseWriter, msg string) {
+	if strings.TrimSpace(msg) == "" {
+		msg = "Die Anfrage war ungültig."
+	}
+	writeErrorPage(w, http.StatusBadRequest, "Ungültige Anfrage", msg)
+}
+
 // errorPageTmpl is a self-contained, brand-consistent error document: it links
 // the app stylesheet (so fonts/colors match) and follows the system light/dark
 // preference via prefers-color-scheme. Standalone so it needs neither a session

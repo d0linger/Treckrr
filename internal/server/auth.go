@@ -54,7 +54,7 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 // it establishes the session directly.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	// POST /login has no session yet, so the general csrf() middleware can't guard
@@ -130,7 +130,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 // handleLogin2FA is step 2: verify the TOTP code for the pending user.
 func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	c, err := r.Cookie(pending2FACookie)

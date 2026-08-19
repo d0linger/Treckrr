@@ -130,7 +130,7 @@ func (s *Server) handleGespanne(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGespannSave(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	baseID := s.baseIDFromForm(r)

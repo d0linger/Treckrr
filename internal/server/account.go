@@ -45,7 +45,7 @@ func (s *Server) handleAccountPasswordForm(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	user := userFromCtx(r)
@@ -162,7 +162,7 @@ func (s *Server) handleTwoFactorQR(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	user := userFromCtx(r)
@@ -203,7 +203,7 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 // the old ones), after confirming the account password.
 func (s *Server) handleRecoveryRegenerate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	user := userFromCtx(r)
@@ -247,7 +247,7 @@ func (s *Server) issueAndShowRecoveryCodes(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	user := userFromCtx(r)
@@ -278,7 +278,7 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	user := userFromCtx(r)

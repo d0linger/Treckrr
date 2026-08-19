@@ -216,7 +216,7 @@ const maxBackupInputLen = 100
 // handleBackupSettings persists the GUI-edited backup schedule.
 func (s *Server) handleBackupSettings(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	bs := models.BackupSettings{

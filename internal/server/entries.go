@@ -348,7 +348,7 @@ func (s *Server) invoiceLocked(w http.ResponseWriter, r *http.Request, yearID, n
 
 func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	neighborID := formInt64(r, "neighbor_id")
@@ -370,7 +370,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
-		http.Error(w, "Unbekanntes Abrechnungsjahr", http.StatusBadRequest)
+		s.badRequest(w, "Unbekanntes Abrechnungsjahr")
 		return
 	}
 	if year.Completed() {
@@ -607,7 +607,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	existing, err := s.store.GetEntry(r.Context(), id)
@@ -643,7 +643,7 @@ func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	entry, err := s.store.GetEntry(r.Context(), id)
@@ -773,12 +773,12 @@ func (s *Server) handleLedgerAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := s.yearIDFromForm(r)
 	if yearID == 0 {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
@@ -854,7 +854,7 @@ func (s *Server) handleLedgerUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID, neighborID, _, err := s.store.GetLedgerEntry(r.Context(), id)
@@ -890,7 +890,7 @@ func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID, neighborID, e, err := s.store.GetLedgerEntry(r.Context(), id)
@@ -1096,14 +1096,14 @@ func (s *Server) handleEntryCopy(w http.ResponseWriter, r *http.Request) {
 // (date, fixed gespann, hours).
 func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	neighborID := formInt64(r, "neighbor_id")
 	yearID := formInt64(r, "year_id")
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
-		http.Error(w, "Unbekanntes Abrechnungsjahr", http.StatusBadRequest)
+		s.badRequest(w, "Unbekanntes Abrechnungsjahr")
 		return
 	}
 	if year.Completed() {

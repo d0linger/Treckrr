@@ -45,7 +45,7 @@ func (s *Server) handleNeighborsManage(w http.ResponseWriter, r *http.Request) {
 // handleNeighborManageCreate creates a neighbor from the central page.
 func (s *Server) handleNeighborManageCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	name := trimmed(r, "name")
@@ -77,7 +77,7 @@ func (s *Server) handleNeighborManageCreate(w http.ResponseWriter, r *http.Reque
 // from the previous billing year into the current one.
 func (s *Server) handleCarryOverNeighbors(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := s.yearIDFromForm(r)
@@ -151,7 +151,7 @@ func (s *Server) handleNeighborArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	archived := r.FormValue("archived") == "true"

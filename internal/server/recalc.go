@@ -122,7 +122,7 @@ func (s *Server) handleNeighborRecalcPreview(w http.ResponseWriter, r *http.Requ
 	}
 	yearID := formInt64(r, "year") // link uses ?year= like the rest of the neighbor flow
 	if yearID == 0 {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	if s.invoiceLocked(w, r, yearID, neighborID) {
@@ -140,12 +140,12 @@ func (s *Server) handleNeighborRecalcApply(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := s.yearIDFromForm(r)
 	if yearID == 0 {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	if s.invoiceLocked(w, r, yearID, neighborID) {
