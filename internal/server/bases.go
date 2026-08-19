@@ -103,10 +103,24 @@ func (s *Server) handleBaseUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/bases")
 		return
 	}
+	// Snapshot before overwriting so the audit trail shows old → new (name AND year).
+	// GetBase returns a non-nil zero-value pointer alongside a non-ErrNoRows error, so
+	// gate the diff on the ERROR, not on before != nil — otherwise a transient read
+	// failure would emit a bogus "— → …" diff. On error, fall back to the new name.
+	before, beforeErr := s.store.GetBase(r.Context(), id)
 	if err := s.store.UpdateBase(r.Context(), id, year, name); err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen (Jahr bereits vergeben?).")
 	} else {
-		s.audit(r, "update", "base", id, name)
+		detail := name
+		if beforeErr == nil {
+			if d := diffFields(
+				fieldChange{"Name", before.Name, name},
+				fieldChange{"Jahr", strconv.Itoa(before.Year), strconv.Itoa(year)},
+			); d != "" {
+				detail = d
+			}
+		}
+		s.audit(r, "update", "base", id, detail)
 		s.setFlash(w, r, "success", "Bemessungsgrundlage aktualisiert.")
 	}
 	redirect(w, r, "/bases")

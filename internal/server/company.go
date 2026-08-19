@@ -54,11 +54,49 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/company")
 		return
 	}
+	// Snapshot the current values before overwriting, so the audit trail can show
+	// what actually changed (old → new) like the other update handlers do. If the
+	// read fails, we have no trustworthy "before" — skip the diff rather than emit a
+	// bogus one built from a zero-value company (which would show every field as
+	// newly set).
+	before, beforeErr := s.store.GetCompany(r.Context())
 	if err := s.store.UpdateCompany(r.Context(), c); err != nil {
 		slog.Error("company update failed", "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	} else {
-		s.audit(r, "update", "company", 1, "Betriebsdaten aktualisiert")
+		detail := "Betriebsdaten aktualisiert"
+		if beforeErr == nil {
+			// Business fields are logged in clear (as neighbor UID already is). The
+			// IBAN is handled separately (masked, and robust to same-tail swaps) by
+			// ibanChangeMarker, so it is not passed to diffFields.
+			// USt-Satz: compare by decimal value, not String() — a stored 13.00 and a
+			// submitted 13 are numerically equal but differ textually, which would log
+			// a phantom change. Only surface the pair when the values truly differ.
+			vatOld, vatNew := "", ""
+			if !before.VATRate.Equal(c.VATRate) {
+				vatOld, vatNew = before.VATRate.String(), c.VATRate.String()
+			}
+			d := diffFields(
+				fieldChange{"Name", before.Name, c.Name},
+				fieldChange{"Adresse", before.Address, c.Address},
+				fieldChange{"UID/Steuernr.", before.TaxID, c.TaxID},
+				fieldChange{"Steuerhinweis", before.TaxNote, c.TaxNote},
+				fieldChange{"Steuermodus", before.TaxMode, c.TaxMode},
+				fieldChange{"USt-Satz", vatOld, vatNew},
+				fieldChange{"Zahlungsziel", strconv.Itoa(before.PaymentTermDays), strconv.Itoa(c.PaymentTermDays)},
+			)
+			if iban := ibanChangeMarker(before.IBAN, c.IBAN); iban != "" {
+				if d == "" {
+					d = iban
+				} else {
+					d += " · " + iban
+				}
+			}
+			if d != "" {
+				detail = d
+			}
+		}
+		s.audit(r, "update", "company", 1, detail)
 		s.setFlash(w, r, "success", "Betriebsdaten gespeichert.")
 	}
 	redirect(w, r, "/admin/company")

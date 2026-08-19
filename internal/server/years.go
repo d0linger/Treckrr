@@ -132,6 +132,15 @@ func (s *Server) handleYearUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load the year once, up front — used for the basis-change safety check AND the
+	// audit diff (GetBillingYear returns nil on error and also populates .Base). A
+	// missing/unreadable year from the URL path is a 404, as before.
+	before, err := s.store.GetBillingYear(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
 	// Changing the basis is only safe while no entries are booked, otherwise the
 	// booked tractor/machine references would point at a different basis.
 	count, err := s.store.CountEntriesForYear(r.Context(), id)
@@ -139,22 +148,47 @@ func (s *Server) handleYearUpdate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	if count > 0 {
-		year, err := s.store.GetBillingYear(r.Context(), id)
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		if baseID != year.BaseID {
-			s.setFlash(w, r, "error", "Bemessungsgrundlage kann nicht mehr geändert werden – es gibt bereits Buchungen.")
-			redirect(w, r, "/years")
-			return
-		}
+	if count > 0 && baseID != before.BaseID {
+		s.setFlash(w, r, "error", "Bemessungsgrundlage kann nicht mehr geändert werden – es gibt bereits Buchungen.")
+		redirect(w, r, "/years")
+		return
 	}
+
 	if err := s.store.UpdateBillingYear(r.Context(), id, baseID, label); err != nil {
 		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")
 	} else {
-		s.audit(r, "update", "year", id, label)
+		// A basis switch is the most consequential change here (it shifts the whole
+		// year's price basis), so decide it on the id — base names are NOT unique, so
+		// comparing names would drop a real switch between two like-named bases. The
+		// old name is already loaded on before.Base (no extra query); resolve only the
+		// new one. If the two names happen to collide, emit an explicit marker so the
+		// switch is never swallowed by the value-comparing diff.
+		grundlage := ""
+		if baseID != before.BaseID {
+			oldName := s.baseName(r, before.BaseID)
+			if before.Base != nil {
+				oldName = before.Base.Name
+			}
+			newName := s.baseName(r, baseID)
+			if oldName == newName {
+				grundlage = "Grundlage: geändert (" + newName + ")"
+			} else {
+				grundlage = "Grundlage: " + orDash(oldName) + " → " + orDash(newName)
+			}
+		}
+		detail := label
+		d := diffFields(fieldChange{"Bezeichnung", before.Label, label})
+		if grundlage != "" {
+			if d == "" {
+				d = grundlage
+			} else {
+				d += " · " + grundlage
+			}
+		}
+		if d != "" {
+			detail = d
+		}
+		s.audit(r, "update", "year", id, detail)
 		s.setFlash(w, r, "success", "Abrechnungsjahr aktualisiert.")
 	}
 	redirect(w, r, "/years")

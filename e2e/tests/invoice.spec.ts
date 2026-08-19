@@ -68,14 +68,21 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   // --- festschreiben: confirm page must allow issuing, then issue ---
   await page.goto("/neighbors/1/beleg?year=1");
   await page.getByRole("link", { name: /festschreiben/i }).click();
+  // The link NAVIGATES to the confirm page. Wait for that page to finish loading so
+  // the deferred app.js has attached the data-confirm submit handler BEFORE we click
+  // "Jetzt festschreiben" — otherwise the form posts directly (issuing the invoice
+  // with no modal), and the modal-OK click below has no open dialog to act on.
+  await page.waitForLoadState("load");
   await expect(page.getByText("§ 11 UStG · Pflichtangaben")).toBeVisible();
   // The "Jetzt festschreiben" submit sits in a data-confirm form → clicking it opens
   // the custom <dialog>; the modal's OK (data-modal-ok) closes it with a "confirm"
-  // return value, which submits the pending form. A <dialog> child reports as not
-  // "visible" to Playwright's stability check, so wait for it attached and force-click.
+  // return value, which submits the pending form.
   await page.getByRole("button", { name: "Jetzt festschreiben" }).click();
   const okBtn = page.locator("#confirmModal [data-modal-ok]");
-  await okBtn.waitFor({ state: "attached", timeout: 4000 });
+  // Wait for the dialog to actually OPEN (button visible), not merely be in the DOM:
+  // #confirmModal lives in the layout on every page, so "attached" is always true and
+  // would race ahead of showModal().
+  await okBtn.waitFor({ state: "visible", timeout: 4000 });
   // The dialog OK submits the pending form (POST /neighbors/1/invoice) which
   // redirects back to the Beleg. Wait for that navigation to finish before asserting
   // — otherwise the next goto races the redirect and the invoice isn't committed yet.
@@ -93,7 +100,7 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   await page.goto("/neighbors/1/beleg?year=1");
   await page.locator('form[action*="mark-sent"] button').click();
   const okBtn2 = page.locator("#confirmModal [data-modal-ok]");
-  await okBtn2.waitFor({ state: "attached", timeout: 4000 });
+  await okBtn2.waitFor({ state: "visible", timeout: 4000 });
   await Promise.all([
     page.waitForURL(/\/neighbors\/1\/beleg/, { timeout: 10000 }),
     okBtn2.click({ force: true }),
