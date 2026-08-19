@@ -55,10 +55,15 @@ func (s *Store) ListRecurring(ctx context.Context) ([]models.RecurringEntry, err
 	return out, rows.Err()
 }
 
-// ToggleRecurring flips a rule's active flag.
-func (s *Store) ToggleRecurring(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE recurring_entries SET active = NOT active WHERE id=$1`, id)
-	return err
+// ToggleRecurring flips a rule's active flag and returns the new state, so the
+// caller can audit "paused" vs "resumed". ErrNotFound when the id doesn't exist.
+func (s *Store) ToggleRecurring(ctx context.Context, id int64) (active bool, err error) {
+	err = s.db.QueryRowContext(ctx,
+		`UPDATE recurring_entries SET active = NOT active WHERE id=$1 RETURNING active`, id).Scan(&active)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, ErrNotFound
+	}
+	return active, err
 }
 
 // DeleteRecurring removes a rule (already-created bookings are untouched).
