@@ -177,10 +177,12 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 		s.setFlash(w, r, "error", "Änderung fehlgeschlagen.")
 	default:
 		// Rotate privileges: end the user's sessions so the new role takes effect on
-		// their next (re-authenticated) session. Log a failure — the flash claims the
-		// sessions were ended, and a stale session keeps the OLD privileges.
+		// their next (re-authenticated) session. This is load-bearing — a stale session
+		// keeps the OLD (possibly higher) privileges — so a revoke failure must surface
+		// rather than be reported as "Sitzungen beendet". Same as the password-reset path.
 		if err := s.store.DeleteUserSessionsExcept(r.Context(), id, ""); err != nil {
-			slog.Error("set role: revoke sessions failed", "user", id, "err", sanitizeLog(err.Error()))
+			s.serverError(w, "set role: revoke sessions", err)
+			return
 		}
 		s.audit(r, "set_role", "user", id, role+"; Sitzungen beendet")
 		s.setFlash(w, r, "success", "Rolle aktualisiert. Sitzungen des Benutzers wurden beendet.")

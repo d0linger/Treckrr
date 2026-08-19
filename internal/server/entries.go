@@ -369,8 +369,13 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
-	if err != nil {
+	if errors.Is(err, store.ErrNotFound) {
 		s.badRequest(w, "Unbekanntes Abrechnungsjahr")
+		return
+	} else if err != nil {
+		// A real DB error is not "unknown year": surface a 500 so a replay client
+		// retries later instead of dropping the booking as a permanent rejection.
+		s.serverError(w, "entry create: load year", err)
 		return
 	}
 	if year.Completed() {
@@ -1102,8 +1107,11 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	neighborID := formInt64(r, "neighbor_id")
 	yearID := formInt64(r, "year_id")
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
-	if err != nil {
+	if errors.Is(err, store.ErrNotFound) {
 		s.badRequest(w, "Unbekanntes Abrechnungsjahr")
+		return
+	} else if err != nil {
+		s.serverError(w, "quick entries: load year", err)
 		return
 	}
 	if year.Completed() {
