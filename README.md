@@ -186,7 +186,10 @@ when a basis is edited later. Alongside the priced work, each neighbour has a
 - **Abuse resistance**: rate limiting on login and every sensitive action;
   TOTP replay protection.
 - **Audit trail** (`/admin/audit`) with search, action filter and CSV export; every
-  request is also logged to stdout.
+  request is also logged to stdout. The `audit_log` table is **append-only** at the
+  database level (a trigger blocks UPDATE and unauthorised DELETE) so the trail is
+  tamper-evident, and entries are pruned on a **staggered retention** — security/auth
+  noise after ~1 year, business- and tax-relevant events kept ~7 years (§ 132 BAO).
 - **Recoverable access**: the bootstrap admin is reconciled from environment
   variables on every start.
 
@@ -405,9 +408,10 @@ library.
 - `sessions` — rolling login sessions; `login_attempts` — rate-limit counters.
 - `webauthn_credentials` — registered passkeys (public keys only);
   `totp_recovery_codes` — hashed one-time recovery codes.
-- `audit_log` — security-/data-relevant actions.
+- `audit_log` — security-/data-relevant actions; **append-only** (trigger-guarded)
+  with staggered retention (security ~1 year, business/tax ~7 years per § 132 BAO).
 
-Fifteen ordered, embedded migrations run automatically on startup.
+Thirty-six ordered, embedded migrations run automatically on startup.
 
 </details>
 
