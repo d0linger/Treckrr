@@ -160,6 +160,22 @@ func orDash(s string) string {
 	return s
 }
 
+// maskIBAN reduces a bank account number to a change-marker for the audit trail:
+// the last 4 characters are kept (enough to see WHICH account a change refers to)
+// and the rest is replaced with an ellipsis, so the full IBAN never lands in the
+// log. A blank value stays blank (so a cleared field still renders as an em dash),
+// and a value too short to mask meaningfully is dropped to a bare marker.
+func maskIBAN(s string) string {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return ""
+	}
+	if len(t) <= 4 {
+		return "••••"
+	}
+	return "…" + t[len(t)-4:]
+}
+
 // yearLabel resolves a billing-year id to its human year (e.g. "2025") for
 // audit detail; falls back to "#id" if the year can't be loaded.
 func (s *Server) yearLabel(r *http.Request, id int64) string {
