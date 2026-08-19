@@ -634,7 +634,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	s.audit(r, "update", "entry", id, entryUpdateDetail(existing, entry))
+	s.audit(r, "update", "entry", id, s.neighborName(r, existing.NeighborID)+" · "+entryUpdateDetail(existing, entry))
 	s.setFlash(w, r, "success", "Buchung aktualisiert.")
 	redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
 }

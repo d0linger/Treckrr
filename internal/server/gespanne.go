@@ -171,7 +171,9 @@ func (s *Server) handleGespannSave(w http.ResponseWriter, r *http.Request) {
 					fieldChange{"Last", s.loadName(r, before.LoadLevelID), s.loadName(r, loadID)},
 					fieldChange{"Maschinen", s.machineNames(r, before.MachineIDs), s.machineNames(r, machineIDs)},
 				); d != "" {
-					detail = d
+					// Prefix the Gespann name so the entry says WHICH gespann changed,
+					// even when the name itself wasn't one of the changed fields.
+					detail = name + " · " + d
 				}
 			}
 			s.audit(r, "update", "gespann", id, detail)

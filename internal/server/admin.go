@@ -250,9 +250,11 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request) {
 	if email != target.Email {
 		parts = append(parts, "E‑Mail: "+disp(target.Email)+" → "+disp(email))
 	}
-	detail := "Zugangsdaten aktualisiert"
+	// Prefix the (pre-change) username so the entry names WHICH user changed, even
+	// when only the e-mail was edited.
+	detail := target.Username + " · Zugangsdaten aktualisiert"
 	if len(parts) > 0 {
-		detail = strings.Join(parts, "; ")
+		detail = target.Username + " · " + strings.Join(parts, "; ")
 	}
 	s.audit(r, "update", "user", id, detail)
 	s.setFlash(w, r, "success", "Zugangsdaten aktualisiert.")
