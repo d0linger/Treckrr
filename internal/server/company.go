@@ -55,34 +55,39 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Snapshot the current values before overwriting, so the audit trail can show
-	// what actually changed (old → new) like the other update handlers do.
-	before, _ := s.store.GetCompany(r.Context())
+	// what actually changed (old → new) like the other update handlers do. If the
+	// read fails, we have no trustworthy "before" — skip the diff rather than emit a
+	// bogus one built from a zero-value company (which would show every field as
+	// newly set).
+	before, beforeErr := s.store.GetCompany(r.Context())
 	if err := s.store.UpdateCompany(r.Context(), c); err != nil {
 		slog.Error("company update failed", "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	} else {
-		// Business fields are logged in clear (as neighbor UID already is). For the
-		// IBAN, decide on the RAW values whether it changed — so a swap to a different
-		// account with the same last 4 digits isn't swallowed — but only ever emit the
-		// masked tail marker, never the full account number.
-		ibanOld, ibanNew := before.IBAN, c.IBAN
-		if strings.TrimSpace(ibanOld) == strings.TrimSpace(ibanNew) {
-			ibanOld, ibanNew = "", "" // unchanged → diffFields skips it
-		} else {
-			ibanOld, ibanNew = maskIBAN(ibanOld), maskIBAN(ibanNew)
-		}
 		detail := "Betriebsdaten aktualisiert"
-		if d := diffFields(
-			fieldChange{"Name", before.Name, c.Name},
-			fieldChange{"Adresse", before.Address, c.Address},
-			fieldChange{"UID/Steuernr.", before.TaxID, c.TaxID},
-			fieldChange{"Steuerhinweis", before.TaxNote, c.TaxNote},
-			fieldChange{"Steuermodus", before.TaxMode, c.TaxMode},
-			fieldChange{"USt-Satz", before.VATRate.String(), c.VATRate.String()},
-			fieldChange{"Zahlungsziel", strconv.Itoa(before.PaymentTermDays), strconv.Itoa(c.PaymentTermDays)},
-			fieldChange{"IBAN", ibanOld, ibanNew},
-		); d != "" {
-			detail = d
+		if beforeErr == nil {
+			// Business fields are logged in clear (as neighbor UID already is). The
+			// IBAN is handled separately (masked, and robust to same-tail swaps) by
+			// ibanChangeMarker, so it is not passed to diffFields.
+			d := diffFields(
+				fieldChange{"Name", before.Name, c.Name},
+				fieldChange{"Adresse", before.Address, c.Address},
+				fieldChange{"UID/Steuernr.", before.TaxID, c.TaxID},
+				fieldChange{"Steuerhinweis", before.TaxNote, c.TaxNote},
+				fieldChange{"Steuermodus", before.TaxMode, c.TaxMode},
+				fieldChange{"USt-Satz", before.VATRate.String(), c.VATRate.String()},
+				fieldChange{"Zahlungsziel", strconv.Itoa(before.PaymentTermDays), strconv.Itoa(c.PaymentTermDays)},
+			)
+			if iban := ibanChangeMarker(before.IBAN, c.IBAN); iban != "" {
+				if d == "" {
+					d = iban
+				} else {
+					d += " · " + iban
+				}
+			}
+			if d != "" {
+				detail = d
+			}
 		}
 		s.audit(r, "update", "company", 1, detail)
 		s.setFlash(w, r, "success", "Betriebsdaten gespeichert.")

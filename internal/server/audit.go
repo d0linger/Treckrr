@@ -176,6 +176,31 @@ func maskIBAN(s string) string {
 	return "…" + t[len(t)-4:]
 }
 
+// ibanChangeMarker returns a masked audit fragment for an IBAN change, or "" if the
+// account did not change (compared on the RAW values, so a swap to a different
+// account with the same last four digits still registers). When the two masked
+// tails happen to match, it emits an explicit "geändert" marker so the change is
+// never silently dropped by a value-equality diff.
+func ibanChangeMarker(oldIBAN, newIBAN string) string {
+	if strings.TrimSpace(oldIBAN) == strings.TrimSpace(newIBAN) {
+		return ""
+	}
+	mo, mn := maskIBAN(oldIBAN), maskIBAN(newIBAN)
+	if mo == mn {
+		return "IBAN: geändert (" + mn + ")"
+	}
+	return "IBAN: " + orDash(mo) + " → " + orDash(mn)
+}
+
+// baseName resolves a rate-basis id to its name for audit detail; falls back to
+// "#id" if the basis can't be loaded (mirrors neighborName / yearLabel).
+func (s *Server) baseName(r *http.Request, id int64) string {
+	if b, err := s.store.GetBase(r.Context(), id); err == nil && b != nil {
+		return b.Name
+	}
+	return "#" + strconv.FormatInt(id, 10)
+}
+
 // yearLabel resolves a billing-year id to its human year (e.g. "2025") for
 // audit detail; falls back to "#id" if the year can't be loaded.
 func (s *Server) yearLabel(r *http.Request, id int64) string {
