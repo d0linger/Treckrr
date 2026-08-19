@@ -16,6 +16,7 @@ jobs:
   e2e:
     name: Browser smoke (login → booking → Beleg)
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # the whole job runs in ~2 min; fail fast if a step hangs
     services:
       postgres:
         image: postgres:16-alpine
@@ -82,7 +83,10 @@ jobs:
         working-directory: e2e
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          # No --with-deps: ubuntu-latest ships the browser's OS libraries already,
+          # and the apt step it triggers intermittently hangs on unreachable Ubuntu
+          # mirrors. Just download the browser binary.
+          npx playwright install chromium
       - name: Run E2E
         working-directory: e2e
         run: npx playwright test
