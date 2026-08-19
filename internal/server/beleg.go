@@ -383,6 +383,23 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	data["InvCredits"] = invCredits           // negative sum of credit notes
 	data["HasCredits"] = invCredits.IsNegative()
 	data["InvRest"] = invRest
+	// Due date + countdown for the invoice: same definition as the Mahnwesen list
+	// (issue date + company payment term). Only meaningful while something is still
+	// payable; the template shows "fällig am … (in N Tagen / seit N Tagen überfällig)".
+	if hasInvoice && !invoice.IssuedOn.IsZero() && invRest.IsPositive() {
+		term := company.PaymentTermDays
+		if term < 0 {
+			term = 14
+		}
+		due := invoice.IssuedOn.AddDate(0, 0, term)
+		data["DueOn"] = due
+		// Whole-day, DST-safe difference (shared with the dunning overdue count).
+		days := calc.DaysBetween(time.Now(), due)
+		data["DueDays"] = days // >0 days left, 0 today, <0 overdue
+		if days < 0 {
+			data["OverdueDays"] = -days
+		}
+	}
 	// § 11: the recipient's UID/tax number is required on invoices over €10,000
 	// gross. Soft reminder only — it never blocks issuing.
 	data["InvNeedRecipientVATID"] = invBrutto.GreaterThan(decimal.NewFromInt(10000)) &&

@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+
+	"github.com/d0linger/treckrr/internal/calc"
 )
 
 // DunningRow is one overdue neighbor in a billing year: an issued invoice whose
@@ -60,7 +62,9 @@ func (s *Store) DunningRows(ctx context.Context, yearID int64, termDays int, asO
 			return nil, err
 		}
 		r.DueOn = r.IssuedOn.AddDate(0, 0, termDays)
-		if d := int(asOf.Sub(r.DueOn).Hours() / 24); d > 0 {
+		// Whole-day, DST-safe overdue count (shared with the Beleg due-date line via
+		// calc.DaysBetween), so the dunning list, CSV export and Beleg all agree.
+		if d := calc.DaysBetween(r.DueOn, asOf); d > 0 {
 			r.DaysOverdue = d
 		}
 		out = append(out, r)

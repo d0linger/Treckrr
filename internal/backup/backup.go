@@ -607,10 +607,11 @@ func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) 
 		return err
 	}
 	defer s.releaseOp()
-	// TODO: [T-05] full atomicity also wants a server-level maintenance mode that
-	// pauses HTTP + scheduling and drains active DB users before the restore; today
-	// the pool is only reset AFTER via ReconcileAfterRestore. Add a maintenance flag
-	// + middleware so in-flight requests can't observe the mid-restore schema.
+	// [T-05] Server-level maintenance mode (a flag + gate middleware that 503s normal
+	// traffic so in-flight requests can't observe the mid-restore schema) is wired at
+	// the HTTP layer: the server's handleBackupRestore sets it around this call and
+	// ReconcileAfterRestore. This package stays HTTP-agnostic and only serializes the
+	// op + resets the pool afterwards.
 	tmp, cleanup, err := writeTemp(raw)
 	if err != nil {
 		return err

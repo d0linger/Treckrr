@@ -56,5 +56,12 @@
 		<h2 class="section-title">Umsatz je Traktor</h2>
 		{{template "bar-chart" (dict "Rows" .ByTractor "Max" .ByTractorMax "Money" true)}}
 	</div>
+	{{if .ByMachine}}
+	<div class="card">
+		<h2 class="section-title">Stunden je Maschine</h2>
+		<p class="muted small">Einsatzstunden je Maschine in {{.Year.Year}}. Der Umsatz einer Buchung gehört dem gesamten Gespann, daher wird hier die eindeutige Nutzungsdauer gezeigt.</p>
+		{{template "bar-chart" (dict "Rows" .ByMachine "Max" .ByMachineMax "Money" false)}}
+	</div>
+	{{end}}
 </section>
 {{end}}

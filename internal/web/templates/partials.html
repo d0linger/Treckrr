@@ -40,7 +40,7 @@
 			<svg class="bchart" preserveAspectRatio="none">
 				<title>{{.Label}} · {{if $money}}{{money .Cost}}{{else}}{{num .Hours}} h{{end}}</title>
 				<rect class="bchart__track" x="0" y="0" width="100%" height="10" rx="5"></rect>
-				<rect class="bchart__fill" x="0" y="0" width="{{pct .Cost $max}}" height="10" rx="5"></rect>
+				<rect class="bchart__fill" x="0" y="0" width="{{if $money}}{{pct .Cost $max}}{{else}}{{pct .Hours $max}}{{end}}" height="10" rx="5"></rect>
 			</svg>
 			<span class="barchart__val">{{if $money}}{{money .Cost}}{{else}}{{num .Hours}} h{{end}}</span>
 		</div>

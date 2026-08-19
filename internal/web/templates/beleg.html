@@ -9,6 +9,14 @@
 				<span class="beleg__inv-no">RECHNUNG Nr. {{.Invoice.Number}} <span class="beleg__inv-lock no-print">🔒 festgeschrieben</span></span>
 				<span>Datum {{date .Invoice.IssuedOn}}</span>
 			</div>
+			{{if .DueOn}}
+			<div class="beleg__inv-due{{if lt .DueDays 0}} beleg__inv-due--over{{end}}">
+				Fällig am {{date .DueOn}} ·
+				{{if gt .DueDays 0}}<span>in {{.DueDays}} Tag{{if ne .DueDays 1}}en{{end}}</span>
+				{{else if eq .DueDays 0}}<strong>heute fällig</strong>
+				{{else}}<strong>{{.OverdueDays}} Tag{{if ne .OverdueDays 1}}e{{end}} überfällig</strong>{{end}}
+			</div>
+			{{end}}
 			<div class="beleg__inv-pp">
 				<div><div class="beleg__inv-k">Von</div><span class="beleg__inv-addr">{{.InvIssuer.Name}}{{with .InvIssuer.Address}}
 {{.}}{{end}}{{with .InvIssuer.TaxID}}

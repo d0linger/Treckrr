@@ -708,6 +708,10 @@ em { font-style: normal; color: var(--muted); }
 .paychip--paid { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 .paychip--open { background: transparent; color: var(--accent-text); border-color: color-mix(in srgb, #d89b00 55%, transparent); }
 .paychip--open:hover { background: color-mix(in srgb, #d89b00 12%, transparent); }
+/* Read-only status chip (running year): not a button, so no pointer/hover. */
+.paychip--static { cursor: default; }
+.paychip--static:hover { background: transparent; }
+span.paychip { cursor: default; }
 .carryover strong { display: block; }
 .carryover .muted { font-size: .82rem; }
 
@@ -1135,6 +1139,10 @@ em { font-style: normal; color: var(--muted); }
 .beleg__invoice { padding: .85rem .9rem; border-bottom: 1px solid var(--border); }
 .beleg__inv-top { display: flex; justify-content: space-between; gap: .5rem; font-family: var(--font-mono); font-size: .8rem; margin-bottom: .55rem; }
 .beleg__inv-no { font-weight: 700; }
+.beleg__inv-due { font-family: var(--font-mono); font-size: .76rem; color: var(--muted); margin: -.25rem 0 .55rem; }
+.beleg__inv-due strong { color: var(--text); font-weight: 700; }
+.beleg__inv-due--over { color: var(--danger); }
+.beleg__inv-due--over strong { color: var(--danger); }
 .beleg__inv-pp { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; font-size: .84rem; align-items: start; }
 .beleg__inv-k { font-family: var(--font-mono); font-size: .6rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: .1rem; }
 .beleg__inv-addr { white-space: pre-line; }
@@ -1517,6 +1525,7 @@ em { font-style: normal; color: var(--muted); }
 .backbtn:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); color: var(--primary); }
 .backbtn .ic { width: 1.3em; height: 1.3em; }
 .pagehead__t { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.02em; margin: 0; }
+.pagehead__action { margin-left: auto; }
 
 .kv { display: flex; justify-content: space-between; align-items: center; gap: 1rem;
 	padding: .55rem 0; border-bottom: 1px solid var(--border); }

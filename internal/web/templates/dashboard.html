@@ -111,7 +111,15 @@
 					</button>
 				</form>
 				{{end}}
-			{{else if eq .Entries 0}}
+			{{else if gt .Entries 0}}
+				{{/* Running year: show payment status at a glance (read-only — the
+				     "als bezahlt verbuchen" toggle stays gated to completed years). */}}
+				{{if .Paid}}
+				<span class="paychip paychip--paid" title="Vollständig bezahlt">{{template "ic-check"}} Bezahlt</span>
+				{{else}}
+				<span class="paychip paychip--open paychip--static" title="Noch offener Betrag">Offen · {{money .Remaining}}</span>
+				{{end}}
+			{{else}}
 			<form method="post" action="/years/remove-neighbor" class="list__remove"
 				data-confirm="{{.Neighbor.Name}} aus diesem Jahr entfernen?">
 				<input type="hidden" name="year_id" value="{{$.Year.ID}}">

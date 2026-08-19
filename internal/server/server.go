@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
@@ -31,13 +32,14 @@ const (
 
 // Server holds shared dependencies for the HTTP handlers.
 type Server struct {
-	cfg       *config.Config
-	store     *store.Store
-	backup    *backup.Service
-	templates map[string]*template.Template
-	logins    *loginLimiter
-	wa        *webauthn.WebAuthn
-	started   time.Time
+	cfg         *config.Config
+	store       *store.Store
+	backup      *backup.Service
+	templates   map[string]*template.Template
+	logins      *loginLimiter
+	wa          *webauthn.WebAuthn
+	started     time.Time
+	maintenance atomic.Bool // set during a restore: the gate serves 503 for normal traffic
 }
 
 // New constructs a Server and parses templates.
@@ -225,6 +227,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Mahnwesen (dunning): overdue list + printable reminder + its EPC-QR.
 	mux.Handle("GET /mahnwesen", s.auth(s.handleMahnwesen))
+	mux.Handle("GET /mahnwesen/export.csv", s.auth(s.handleMahnwesenExport))
 	mux.Handle("GET /neighbors/{id}/mahnung", s.auth(s.handleNeighborMahnung))
 	mux.Handle("GET /neighbors/{id}/mahnung.pdf", s.auth(s.handleMahnungPDF))
 	mux.Handle("POST /neighbors/{id}/mahnung/email", s.auth(s.handleMahnungEmail))
@@ -253,7 +256,43 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/users/{id}/reset-2fa", s.admin(s.handleUserResetTotp))
 	mux.Handle("POST /admin/users/{id}/delete", s.admin(s.handleUserDelete))
 
-	return s.limitBody(s.accessLog(s.securityHeaders(s.csrf(mux))))
+	// securityHeaders wraps maintenanceGate so even the 503 maintenance page carries
+	// the nosniff/frame/CSP headers (the gate returns before inner handlers run).
+	return s.limitBody(s.accessLog(s.securityHeaders(s.maintenanceGate(s.csrf(mux)))))
+}
+
+// setMaintenance toggles maintenance mode. While on, maintenanceGate serves 503
+// for normal traffic so no request can observe the database mid-restore.
+func (s *Server) setMaintenance(on bool) { s.maintenance.Store(on) }
+
+// maintenanceGate returns 503 for normal traffic while a restore is in progress.
+// Only the DB-free liveness probe (/livez) and static assets stay reachable, so
+// the orchestrator doesn't restart the app and the 503 page's CSS renders. Every
+// app route — reads included, since a read could hit a half-restored schema — is
+// refused. Readiness (/readyz, /healthz) is intentionally NOT exempt: during a
+// restore the app is genuinely not ready, so it should report 503 — and doing it
+// through the gate is deterministic, versus letting handleHealth's DB ping flap.
+func (s *Server) maintenanceGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.maintenance.Load() && !isMaintenanceExempt(r.URL.Path) {
+			w.Header().Set("Retry-After", "30")
+			writeErrorPage(w, http.StatusServiceUnavailable, "Wartung",
+				"Eine Wiederherstellung läuft gerade. Bitte in Kürze erneut versuchen.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isMaintenanceExempt reports paths that stay reachable during maintenance: only
+// the DB-free liveness probe (so the orchestrator doesn't restart the app) and
+// static assets (so the 503 page's CSS renders). Readiness probes are gated too —
+// the app really isn't ready mid-restore.
+func isMaintenanceExempt(p string) bool {
+	if p == "/livez" {
+		return true
+	}
+	return strings.HasPrefix(p, "/static/")
 }
 
 // maxRequestBody caps how many bytes the server will read from a request body.

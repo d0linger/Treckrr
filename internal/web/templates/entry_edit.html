@@ -102,7 +102,7 @@
 		<label class="field"><span>Notiz (optional)</span>
 			<input class="input" type="text" name="note" value="{{.Entry.Note}}"></label>
 
-		<button class="btn btn--primary btn--block" type="submit">{{if .Copy}}Buchung anlegen{{else}}Änderungen speichern{{end}}</button>
+		<button class="btn btn--primary btn--block" type="submit" title="Strg + Enter">{{if .Copy}}Buchung anlegen{{else}}Änderungen speichern{{end}}</button>
 	</form>
 
 	{{if not .Copy}}
