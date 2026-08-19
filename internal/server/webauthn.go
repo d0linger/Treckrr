@@ -197,10 +197,10 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.DeleteWebauthnCredential(r.Context(), user.ID, id); err != nil {
+	if name, err := s.store.DeleteWebauthnCredential(r.Context(), user.ID, id); err != nil {
 		s.setFlash(w, r, "error", "Passkey konnte nicht entfernt werden.")
 	} else {
-		s.audit(r, "passkey_delete", "user", user.ID, "")
+		s.audit(r, "passkey_delete", "user", user.ID, "Passkey „"+name+"“ entfernt")
 		s.setFlash(w, r, "success", "Passkey entfernt.")
 	}
 	redirect(w, r, "/profile")

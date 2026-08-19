@@ -66,10 +66,16 @@ func (s *Store) ToggleRecurring(ctx context.Context, id int64) (active bool, err
 	return active, err
 }
 
-// DeleteRecurring removes a rule (already-created bookings are untouched).
-func (s *Store) DeleteRecurring(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM recurring_entries WHERE id=$1`, id)
-	return err
+// DeleteRecurring removes a rule (already-created bookings are untouched) and
+// returns the neighbor it belonged to, so the caller can name it in the audit
+// trail. ErrNotFound when the id doesn't exist.
+func (s *Store) DeleteRecurring(ctx context.Context, id int64) (neighborID int64, err error) {
+	err = s.db.QueryRowContext(ctx,
+		`DELETE FROM recurring_entries WHERE id=$1 RETURNING neighbor_id`, id).Scan(&neighborID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return neighborID, err
 }
 
 // advanceDate steps a date by one cadence. Monthly clamps to the target month's

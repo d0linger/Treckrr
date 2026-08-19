@@ -154,7 +154,7 @@ func (s *Server) handleEntryPhotoDelete(w http.ResponseWriter, r *http.Request) 
 	if err := s.store.DeleteEntryPhoto(r.Context(), entryID, photoID); err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
-		s.audit(r, "photo_delete", "entry", entryID, "")
+		s.audit(r, "photo_delete", "entry", entryID, s.neighborName(r, entry.NeighborID)+" · Foto entfernt")
 		s.setFlash(w, r, "success", "Foto entfernt.")
 	}
 	redirect(w, r, "/entries/"+itoa64(entryID)+"/edit")

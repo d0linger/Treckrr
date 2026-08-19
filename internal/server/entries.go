@@ -672,7 +672,7 @@ func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "void", "entry", id, fmt.Sprintf("%s · %s € %s", nb, entry.Cost.StringFixed(2), reason))
 		s.setFlash(w, r, "success", "Buchung storniert.")
 	} else {
-		s.audit(r, "unvoid", "entry", id, nb)
+		s.audit(r, "unvoid", "entry", id, fmt.Sprintf("%s · %s €", nb, entry.Cost.StringFixed(2)))
 		s.setFlash(w, r, "success", "Stornierung aufgehoben.")
 	}
 	redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
