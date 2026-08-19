@@ -118,6 +118,74 @@ func humanSize(n int64) string {
 	}
 }
 
+// humanAgeDE renders how long ago t was, in compact German ("vor 3 Std.", "vor 2
+// Tagen"). A zero or future time renders as an em dash / "gerade eben".
+func humanAgeDE(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	d := time.Since(t)
+	if d < 0 {
+		d = 0
+	}
+	switch {
+	case d < time.Hour:
+		if m := int(d.Minutes()); m > 1 {
+			return fmt.Sprintf("vor %d Min.", m)
+		}
+		return "gerade eben"
+	case d < 24*time.Hour:
+		return fmt.Sprintf("vor %d Std.", int(d.Hours()))
+	default:
+		days := int(d.Hours()) / 24
+		if days == 1 {
+			return "vor 1 Tag"
+		}
+		return fmt.Sprintf("vor %d Tagen", days)
+	}
+}
+
+// backupHealthView is the compact dashboard tile summarizing backup health, so an
+// admin sees at a glance whether the last backup succeeded and how old it is
+// without opening the full panel. Tone drives the tile color.
+type backupHealthView struct {
+	Tone          string // "ok" | "warn" | "bad"
+	Title         string
+	AgeLabel      string // "vor 3 Std." (empty when there is no successful backup)
+	S3            string // "ok" | "fehlgeschlagen" | ""
+	Encrypted     bool
+	RestoreTested time.Time
+}
+
+// backupHealth builds the dashboard tile from the same status.json + classifier the
+// admin panel uses, so the two never disagree. Callers gate this on the admin role.
+func (s *Server) backupHealth() backupHealthView {
+	if s.backup == nil || !s.backup.Enabled() {
+		return backupHealthView{Tone: "warn", Title: "Backups nicht aktiviert"}
+	}
+	st := readBackupStatus(s.cfg.BackupStatusFile)
+	if !st.Configured {
+		return backupHealthView{Tone: "warn", Title: "Noch kein automatisches Backup"}
+	}
+	v := backupHealthView{
+		AgeLabel:      humanAgeDE(st.LastBackup),
+		S3:            st.S3,
+		Encrypted:     st.Encrypted,
+		RestoreTested: st.RestoreTested,
+	}
+	switch st.State {
+	case "ok":
+		v.Tone, v.Title = "ok", "Backup aktuell"
+	case "stale":
+		v.Tone, v.Title = "warn", "Backup veraltet"
+	case "failed":
+		v.Tone, v.Title = "bad", "Letztes Backup fehlgeschlagen"
+	default:
+		v.Tone, v.Title = "warn", "Backup-Status unklar"
+	}
+	return v
+}
+
 // handleBackupStatus renders the admin Backup panel from status.json.
 func (s *Server) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
 	st := readBackupStatus(s.cfg.BackupStatusFile)

@@ -111,6 +111,13 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	data["StaleCount"] = staleCount
 
+	// Backup-health tile: admins get an at-a-glance "did the last backup succeed / how
+	// old is it" without opening the full panel. Computed (a cheap status-file read)
+	// only for admins so non-admins never trigger it.
+	if u := userFromCtx(r); u != nil && u.IsAdmin {
+		data["BackupHealth"] = s.backupHealth()
+	}
+
 	// First-run onboarding: nudge the operator through setup until all steps are
 	// done, then it disappears on its own (no dismiss needed). "Basis" is implicitly
 	// complete once the dashboard renders (a year requires a base).

@@ -931,6 +931,24 @@ span.paychip { cursor: default; }
 .attn__txt strong { font-weight: 800; }
 .attn__go { color: var(--muted); font-size: 1.1rem; line-height: 1; }
 
+/* ---- Backup-health tile (admin dashboard) ----------------------------- */
+.bkhealth { display: flex; align-items: center; gap: .65rem; text-decoration: none; color: var(--text);
+	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+	padding: .55rem .7rem; box-shadow: var(--shadow); }
+.bkhealth:hover { background: var(--surface-2); }
+.bkhealth__dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; background: var(--muted); }
+.bkhealth__body { display: flex; flex-direction: column; gap: .05rem; flex: 1; min-width: 0; }
+.bkhealth__title { font-size: .9rem; font-weight: 700; }
+.bkhealth__meta { font-size: .78rem; color: var(--muted); }
+.bkhealth__go { color: var(--muted); font-size: 1.1rem; line-height: 1; flex: 0 0 auto; }
+.bkhealth--ok { border-color: color-mix(in srgb, var(--primary) 40%, var(--border)); background: color-mix(in srgb, var(--primary) 6%, var(--surface)); }
+.bkhealth--ok .bkhealth__dot { background: var(--primary-strong); }
+.bkhealth--warn { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.bkhealth--warn .bkhealth__dot { background: var(--accent); }
+.bkhealth--bad { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
+.bkhealth--bad .bkhealth__dot { background: var(--danger); }
+.bkhealth--bad .bkhealth__title { color: var(--danger); }
+
 /* ---- Floating action button (quick-book) ------------------------------ */
 .fab { position: fixed; right: 1rem; z-index: 25;
 	bottom: calc(1rem + 58px + env(safe-area-inset-bottom));
