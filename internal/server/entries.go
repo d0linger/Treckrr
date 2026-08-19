@@ -634,7 +634,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	s.audit(r, "update", "entry", id, entryUpdateDetail(existing, entry))
+	s.audit(r, "update", "entry", id, s.neighborName(r, existing.NeighborID)+" · "+entryUpdateDetail(existing, entry))
 	s.setFlash(w, r, "success", "Buchung aktualisiert.")
 	redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
 }
@@ -672,7 +672,7 @@ func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "void", "entry", id, fmt.Sprintf("%s · %s € %s", nb, entry.Cost.StringFixed(2), reason))
 		s.setFlash(w, r, "success", "Buchung storniert.")
 	} else {
-		s.audit(r, "unvoid", "entry", id, nb)
+		s.audit(r, "unvoid", "entry", id, fmt.Sprintf("%s · %s €", nb, entry.Cost.StringFixed(2)))
 		s.setFlash(w, r, "success", "Stornierung aufgehoben.")
 	}
 	redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))

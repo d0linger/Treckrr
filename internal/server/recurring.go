@@ -1,10 +1,12 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // handleRecurringList shows all recurring-booking rules.
@@ -74,10 +76,21 @@ func (s *Server) handleRecurringToggle(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.ToggleRecurring(r.Context(), id); err != nil {
+	active, err := s.store.ToggleRecurring(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	// Audit the state change: pausing/resuming a rule is a data modification like
+	// create/delete, so it belongs in the trail (it was the one modify handler missing it).
+	state := "pausiert"
+	if active {
+		state = "aktiviert"
+	}
+	s.audit(r, "recurring_toggle", "recurring", id, state)
 	redirect(w, r, "/recurring")
 }
 
@@ -88,11 +101,15 @@ func (s *Server) handleRecurringDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.DeleteRecurring(r.Context(), id); err != nil {
+	neighborID, err := s.store.DeleteRecurring(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	s.audit(r, "recurring_delete", "recurring", id, "")
+	s.audit(r, "recurring_delete", "recurring", id, s.neighborName(r, neighborID)+" · Serie entfernt")
 	s.setFlash(w, r, "success", "Serie entfernt.")
 	redirect(w, r, "/recurring")
 }

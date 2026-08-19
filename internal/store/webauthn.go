@@ -95,9 +95,14 @@ func (s *Store) TouchWebauthnCredential(ctx context.Context, credentialID []byte
 	return err
 }
 
-// DeleteWebauthnCredential removes one of a user's passkeys.
-func (s *Store) DeleteWebauthnCredential(ctx context.Context, userID, id int64) error {
-	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM webauthn_credentials WHERE id=$1 AND user_id=$2`, id, userID)
-	return err
+// DeleteWebauthnCredential removes one of the user's passkeys and returns its name,
+// so the caller can name it in the audit trail. ErrNotFound when no such credential
+// belongs to the user.
+func (s *Store) DeleteWebauthnCredential(ctx context.Context, userID, id int64) (name string, err error) {
+	err = s.db.QueryRowContext(ctx,
+		`DELETE FROM webauthn_credentials WHERE id=$1 AND user_id=$2 RETURNING name`, id, userID).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return name, err
 }

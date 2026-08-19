@@ -17,6 +17,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // webauthnErrReason extracts a concise, log-safe reason from a WebAuthn error.
@@ -197,10 +198,17 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.DeleteWebauthnCredential(r.Context(), user.ID, id); err != nil {
+	name, err := s.store.DeleteWebauthnCredential(r.Context(), user.ID, id)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		// Already gone (double-submit, stale page, or someone else's id): the
+		// desired end state — no such passkey for this user — already holds, so
+		// treat it as success and don't write an audit line for a no-op delete.
+		s.setFlash(w, r, "success", "Passkey entfernt.")
+	case err != nil:
 		s.setFlash(w, r, "error", "Passkey konnte nicht entfernt werden.")
-	} else {
-		s.audit(r, "passkey_delete", "user", user.ID, "")
+	default:
+		s.audit(r, "passkey_delete", "user", user.ID, "Passkey „"+name+"“ entfernt")
 		s.setFlash(w, r, "success", "Passkey entfernt.")
 	}
 	redirect(w, r, "/profile")
