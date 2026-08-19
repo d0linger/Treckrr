@@ -144,8 +144,32 @@ when a basis is edited later. Alongside the priced work, each neighbour has a
   that roll into the year's **balance**.
 - Cross-year **history** per neighbour, including payment history.
 - **Printable Beleg** — a compact, screenshot-ready receipt per neighbour/year for
-  handing over or messaging.
-- **CSV export** per year and per neighbour.
+  handing over or messaging, also as **PDF** and by **e-mail**.
+- **CSV export** per year and per neighbour; **CSV import** of bookings.
+- **Photo receipts** — attach photos to a booking.
+
+**Invoicing (§ 11 UStG)**
+- **Issue a formal invoice** (*Rechnung festschreiben*): a confirm step checks the
+  § 11 mandatory fields (issuer/recipient, tax note, and the recipient UID once an
+  invoice exceeds € 10,000), then **freezes an immutable snapshot** — net / USt /
+  gross / rate and the legal fields are pinned at issuance and carry an integrity
+  anchor, so a later basis or master-data edit never rewrites an issued invoice.
+- **Corrections keep the trail**: *Storno* cancels an invoice and *Gutschrift*
+  books a credit note (e.g. a **Skonto** early-payment discount), split into net and
+  VAT — the original stays on record.
+- **Scan-to-pay**: an **EPC/GiroCode QR** on issued invoices with an IBAN and an
+  open amount; **PDF** and **e-mail** dispatch; mark-sent with undo.
+- **Issuer master data** (*Betriebsdaten*): sender details and tax mode
+  (incl. *Kleinunternehmer*), used across every invoice.
+
+**Payments & dunning**
+- **Record payments** per neighbour (with a soft-delete undo grace) and **import
+  bank credits** from a **CSV** or **camt.053** (ISO 20022) file with a preview.
+- **Mahnwesen**: an overdue overview per year (CSV export) and a three-stage
+  reminder flow — friendly *Zahlungserinnerung* → *1. Mahnung* → *2. Mahnung* — each
+  as PDF, by e-mail, with its own scan-to-pay QR.
+- **Recurring bookings** (*Serienbuchungen*): turn a booking into a weekly/monthly
+  rule that materialises automatically; pause/resume or delete.
 
 **Rate bases & master data**
 - Editable name and "valid-from" year; **clone** a basis into a new one (the source
@@ -390,8 +414,9 @@ internal/web       Embedded HTML templates & local assets (CSS / JS / icons / fo
 ```
 
 **Dependencies** are few and audited: `pgx` (Postgres), `x/crypto`,
-`shopspring/decimal`, `go-webauthn` and `rsc.io/qr` — everything else is the standard
-library.
+`shopspring/decimal`, `go-webauthn`, `rsc.io/qr` (EPC-QR), `signintech/gopdf` +
+`x/image` (PDF Belege/Rechnungen/Mahnungen), `minio-go` (optional S3 backups) and
+`robfig/cron` (backup schedule) — everything else is the standard library.
 
 <details>
 <summary><strong>Data model</strong></summary>
@@ -402,12 +427,19 @@ library.
 - `billing_years` — billing year; references **one** `price_bases`.
 - `billing_year_neighbors` — which neighbours participate in a year.
 - `neighbors` — global, reused across years.
-- `entries` (+ `entry_machines`) — bookings with **frozen** price snapshots.
+- `entries` (+ `entry_machines`) — bookings with **frozen** price snapshots;
+  `entry_photos` — photos attached to a booking.
 - `neighbor_ledger` — offsetting account entries (*Verrechnung*) per neighbour/year.
+- `invoices` — issued invoices, Storno and Gutschrift with their **immutable
+  snapshots**; `payments` — recorded/imported payments; `recurring_entries` —
+  Serienbuchungen rules.
+- `company` — issuer master data (*Betriebsdaten*) for § 11 invoices.
 - `users` — accounts, roles and (optional) email.
 - `sessions` — rolling login sessions; `login_attempts` — rate-limit counters.
 - `webauthn_credentials` — registered passkeys (public keys only);
+  `webauthn_ceremonies` — short-lived registration/login challenges;
   `totp_recovery_codes` — hashed one-time recovery codes.
+- `backup_settings` — the backup schedule set in the admin panel.
 - `audit_log` — security-/data-relevant actions; **append-only** (trigger-guarded)
   with staggered retention (security ~1 year, business/tax ~7 years per § 132 BAO).
 
@@ -446,10 +478,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
 GitHub workflows under `.github/workflows/`:
 
 - **CI** (`ci.yml`) — `go vet`, tests with the race detector, build, and `golangci-lint`.
+- **E2E** (`e2e.yml`) — Playwright browser smoke tests (login → booking → Beleg → invoice)
+  and an axe-core accessibility scan.
 - **Security** (`security.yml`) — `gosec` (static analysis) and `govulncheck` (known CVEs).
 - **Dependency review** (`dependency-review.yml`) — on pull requests.
 - **Gitleaks** (`gitleaks.yml`) — scans the full git history for leaked secrets.
 - **DeadCode** (`deadcode.yml`) — fails the build on unreachable functions.
+- **SBOM** (`sbom.yml`) — generates a software bill of materials.
 - **Docker** (`docker-publish.yml`) — builds the multi-arch image and pushes it to GHCR.
 
 **Dependabot** keeps Go modules, GitHub Actions and the Docker base image current.
