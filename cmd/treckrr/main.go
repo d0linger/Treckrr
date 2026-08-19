@@ -27,6 +27,15 @@ import (
 // maintenance loop purges it for good.
 const paymentUndoGrace = 7 * 24 * time.Hour
 
+// Audit-log retention windows (staggered): short covers pure security/auth/ops
+// events (kept only as long as useful for incident review, per DSGVO data
+// minimisation); long covers business- and tax-relevant events, matching the
+// Austrian § 132 BAO 7-year bookkeeping-record retention.
+const (
+	auditRetentionShort = 365 * 24 * time.Hour     // ~1 year
+	auditRetentionLong  = 7 * 365 * 24 * time.Hour // ~7 years
+)
+
 func main() {
 	setupLogging()
 
@@ -246,6 +255,17 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 			slog.Error("recurring generation", "err", err)
 		} else if n > 0 {
 			slog.Info("recurring bookings created", "count", n)
+		}
+		// Staggered audit-log retention: pure security/auth/ops noise expires after the
+		// short window (DSGVO Art. 5(1)(e) data minimisation); business- and tax-relevant
+		// events are kept for the long window (§ 132 BAO, 7 years). The classification
+		// lives in the store (shortLivedAuditActions); everything not listed defaults to
+		// the long window, so a new action is never dropped early by omission.
+		now := time.Now()
+		if n, err := st.PurgeAuditLog(bg, now.Add(-auditRetentionShort), now.Add(-auditRetentionLong)); err != nil {
+			slog.Error("purge audit log", "err", err)
+		} else if n > 0 {
+			slog.Info("audit log purged", "count", n)
 		}
 	}
 	purge()

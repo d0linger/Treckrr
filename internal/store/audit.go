@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
+	"time"
 
 	"github.com/d0linger/treckrr/internal/models"
 )
@@ -14,6 +16,39 @@ func (s *Store) AddAudit(ctx context.Context, userID *int64, username, action, e
 		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
 		nullInt(userID), username, action, entity, entityID, detail, ip)
 	return err
+}
+
+// shortLivedAuditActions are pure security/auth/operational events with no tax or
+// business-record value — safe to expire on the shorter DSGVO-minimisation window.
+// Everything NOT in this set is treated as business/tax-relevant and kept for the
+// long window (§ 132 BAO), so a new action defaults to "keep longer" — we never
+// silently drop a business event because it wasn't listed.
+var shortLivedAuditActions = []string{
+	"login", "login_failed", "login_blocked", "login_recovery", "login_2fa_failed",
+	"login_passkey", "login_passkey_failed", "login_passkey_clone_warning", "logout",
+	"rate_limited", "session_revoke", "session_revoke_others",
+	"backup_validate", "backup_validate_failed", "backup_download",
+}
+
+// PurgeAuditLog applies the staggered retention: short-lived auth/ops/noise events
+// older than shortCutoff are deleted; every other (business/tax-relevant) event is
+// deleted only past longCutoff. Returns how many rows were removed. Both cutoffs are
+// computed by the caller so the policy (windows) lives in one place.
+func (s *Store) PurgeAuditLog(ctx context.Context, shortCutoff, longCutoff time.Time) (int64, error) {
+	// The action list is a compile-time constant (never user input), so passing it as
+	// a Postgres text[] literal keeps this portable across the database/sql driver
+	// without a lib/pq dependency. strings.Join is safe here for the same reason.
+	shortList := "{" + strings.Join(shortLivedAuditActions, ",") + "}"
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM audit_log
+		 WHERE (action = ANY($1::text[]) AND created_at < $2)
+		    OR (NOT (action = ANY($1::text[])) AND created_at < $3)`,
+		shortList, shortCutoff, longCutoff)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }
 
 // auditFilter is the shared WHERE clause matching an action filter and a
