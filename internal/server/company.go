@@ -69,13 +69,20 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 			// Business fields are logged in clear (as neighbor UID already is). The
 			// IBAN is handled separately (masked, and robust to same-tail swaps) by
 			// ibanChangeMarker, so it is not passed to diffFields.
+			// USt-Satz: compare by decimal value, not String() — a stored 13.00 and a
+			// submitted 13 are numerically equal but differ textually, which would log
+			// a phantom change. Only surface the pair when the values truly differ.
+			vatOld, vatNew := "", ""
+			if !before.VATRate.Equal(c.VATRate) {
+				vatOld, vatNew = before.VATRate.String(), c.VATRate.String()
+			}
 			d := diffFields(
 				fieldChange{"Name", before.Name, c.Name},
 				fieldChange{"Adresse", before.Address, c.Address},
 				fieldChange{"UID/Steuernr.", before.TaxID, c.TaxID},
 				fieldChange{"Steuerhinweis", before.TaxNote, c.TaxNote},
 				fieldChange{"Steuermodus", before.TaxMode, c.TaxMode},
-				fieldChange{"USt-Satz", before.VATRate.String(), c.VATRate.String()},
+				fieldChange{"USt-Satz", vatOld, vatNew},
 				fieldChange{"Zahlungsziel", strconv.Itoa(before.PaymentTermDays), strconv.Itoa(c.PaymentTermDays)},
 			)
 			if iban := ibanChangeMarker(before.IBAN, c.IBAN); iban != "" {
