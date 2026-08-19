@@ -92,6 +92,8 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 		s.serverError(w, "password change: revoke sessions", err)
 		return
 	}
+	// Best-effort: clear the forced-change flag. A failure only re-prompts the user to
+	// change their (already changed) password next login — no security impact.
 	_ = s.store.SetMustChangePassword(r.Context(), user.ID, false)
 	s.audit(r, "password_change", "user", user.ID, "eigenes Passwort; andere Sitzungen beendet")
 	s.setFlash(w, r, "success", "Passwort geändert. Andere Sitzungen wurden beendet.")
@@ -264,6 +266,8 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 		s.serverError(w, "2fa disable: clear totp", err)
 		return
 	}
+	// Best-effort cleanup: with TOTP now off, leftover recovery codes can't be used to
+	// bypass anything (they only unlock an active second factor).
 	_ = s.store.ClearRecoveryCodes(r.Context(), user.ID)
 	s.audit(r, "2fa_disable", "user", user.ID, "")
 	s.setFlash(w, r, "success", "Zwei‑Faktor‑Authentifizierung deaktiviert.")

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -229,7 +230,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 		Value:  token,
 		MaxAge: int(sessionTTL.Seconds()),
 	})
-	_ = s.store.AddAudit(r.Context(), &user.ID, user.Username, "login", "auth", "", "", s.clientIP(r))
+	_ = s.store.AddAudit(r.Context(), &user.ID, user.Username, "login", "auth", "", "", s.clientIP(r)) // best-effort audit line
 	return true
 }
 
@@ -275,10 +276,14 @@ func (s *Server) clearPending2FA(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if u := s.currentUser(r); u != nil {
-		_ = s.store.AddAudit(r.Context(), &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r))
+		_ = s.store.AddAudit(r.Context(), &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r)) // best-effort audit line
 	}
 	if c, err := r.Cookie(s.sessionCookieName(r)); err == nil && c.Value != "" {
-		_ = s.store.DeleteSession(r.Context(), c.Value)
+		// Invalidate the server-side session, not just the cookie: if this fails the
+		// token stays valid server-side, so a captured token would still authenticate.
+		if err := s.store.DeleteSession(r.Context(), c.Value); err != nil {
+			slog.Error("logout: delete session failed", "err", sanitizeLog(err.Error()))
+		}
 	}
 	s.setCookie(w, r, &http.Cookie{Name: s.sessionCookieName(r), Value: "", MaxAge: -1})
 	redirect(w, r, "/login")
