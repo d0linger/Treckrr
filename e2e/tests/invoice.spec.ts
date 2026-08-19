@@ -60,6 +60,10 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   await page.locator('input[name="task_label"]').fill("E2E Ballen");
   await page.getByRole("button", { name: "Buchung speichern" }).click();
   await expect(page.getByText("E2E Ballen").first()).toBeVisible();
+  // The save POST redirects back to the neighbor page; the visibility assertion can
+  // pass while that redirect's tail is still in flight, so let it settle before the
+  // next goto — otherwise the in-flight navigation aborts it (net::ERR_ABORTED in CI).
+  await page.waitForLoadState("networkidle");
 
   // --- festschreiben: confirm page must allow issuing, then issue ---
   await page.goto("/neighbors/1/beleg?year=1");
