@@ -34,32 +34,48 @@ func TestAuditRetentionStaggeredIntegration(t *testing.T) {
 	// after itself even if it fails midway.
 	const shortMarker = "ret_short_marker"
 	const longMarker = "ret_business_marker"
+	// audit_log is append-only (0036 guard): a bare DELETE is blocked, so teardown
+	// deletes through the same treckrr.allow_audit_prune opt-in the purge uses.
 	clear := func() {
-		if _, err := pool.ExecContext(ctx,
+		tx, err := pool.BeginTx(ctx, nil)
+		if err != nil {
+			t.Errorf("clear begin: %v", err)
+			return
+		}
+		defer func() { _ = tx.Rollback() }()
+		if _, err := tx.ExecContext(ctx, `SET LOCAL treckrr.allow_audit_prune = 'on'`); err != nil {
+			t.Errorf("clear set flag: %v", err)
+			return
+		}
+		if _, err := tx.ExecContext(ctx,
 			`DELETE FROM audit_log WHERE detail IN ($1,$2)`, shortMarker, longMarker); err != nil {
 			t.Errorf("clear test audit rows: %v", err)
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			t.Errorf("clear commit: %v", err)
 		}
 	}
 	clear()
 	defer clear()
 
-	// One short-lived (login) row and one business row. The business row uses the
-	// real action a live entry edit emits ("update" / entity "entry"), so this test
-	// fails if someone ever moves "update" onto the short list — not a synthetic
-	// action string that could never regress.
-	if err := st.AddAudit(ctx, nil, "tester", "login", "auth", "", shortMarker, "10.0.0.1"); err != nil {
-		t.Fatalf("add login row: %v", err)
-	}
-	if err := st.AddAudit(ctx, nil, "tester", "update", "entry", "1", longMarker, "10.0.0.1"); err != nil {
-		t.Fatalf("add business row: %v", err)
-	}
-
-	// Backdate both rows to 2 years ago — older than the short window (1y) but
-	// younger than the long window (7y).
+	// Insert both rows already backdated to 2 years ago — older than the short window
+	// (1y) but younger than the long window (7y). We INSERT directly with an explicit
+	// created_at (rather than AddAudit + UPDATE) because the append-only guard blocks
+	// UPDATE unconditionally. The business row uses the real action a live entry edit
+	// emits ("update" / entity "entry"), so this test fails if someone ever moves
+	// "update" onto the short list — not a synthetic action string that never regresses.
 	old := time.Now().AddDate(-2, 0, 0)
-	if _, err := pool.ExecContext(ctx,
-		`UPDATE audit_log SET created_at=$1 WHERE detail IN ($2,$3)`, old, shortMarker, longMarker); err != nil {
-		t.Fatalf("backdate rows: %v", err)
+	for _, row := range []struct{ action, entity, detail string }{
+		{"login", "auth", shortMarker},
+		{"update", "entry", longMarker},
+	} {
+		if _, err := pool.ExecContext(ctx, `
+			INSERT INTO audit_log (username, action, entity, entity_id, detail, ip, created_at)
+			VALUES ('tester', $1, $2, '', $3, '10.0.0.1', $4)`,
+			row.action, row.entity, row.detail, old); err != nil {
+			t.Fatalf("insert backdated %s row: %v", row.detail, err)
+		}
 	}
 
 	count := func(detail string) int {
