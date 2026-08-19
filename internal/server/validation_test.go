@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -56,9 +57,27 @@ func TestEntryPrecheckTaskLabelSanitization(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected status OK, got %v", rr.Code)
 	}
+	// The mock store answers SimilarEntryExists with true and captures the task arg,
+	// so we can assert the endpoint sanitized it BEFORE the store call: the captured
+	// value must be truncated to exactly maxNameLen runes, not the raw 200. (The old
+	// assertion — Contains(body, `"warn":`) — was vacuous: every precheck response has
+	// a warn field, so it passed even when task_label was left un-truncated.)
+	if got := utf8.RuneCountInString(capturedSimilarTask); got != maxNameLen {
+		t.Errorf("store received task of %d runes, want %d (sanitizeQueryParam truncation)", got, maxNameLen)
+	}
+	if capturedSimilarTask != strings.Repeat("x", maxNameLen) {
+		t.Errorf("store received unexpected task: %q", capturedSimilarTask)
+	}
+	// The raw over-length input must never be reflected back in the response.
 	body := rr.Body.String()
-	if !strings.Contains(body, `"warn":""`) && !strings.Contains(body, `"warn":`) {
-		t.Errorf("unexpected body response: %s", body)
+	if strings.Contains(body, longTask) {
+		t.Errorf("response leaks the un-truncated %d-rune task_label: %s", len(longTask), body)
+	}
+	var resp struct {
+		Warn string `json:"warn"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v (body: %s)", err, body)
 	}
 }
 
