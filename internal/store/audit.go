@@ -25,9 +25,12 @@ func (s *Store) AddAudit(ctx context.Context, userID *int64, username, action, e
 // silently drop a business event because it wasn't listed.
 var shortLivedAuditActions = []string{
 	"login", "login_failed", "login_blocked", "login_recovery", "login_2fa_failed",
-	"login_passkey", "login_passkey_failed", "login_passkey_clone_warning", "logout",
+	"login_passkey", "login_passkey_failed", "logout",
 	"rate_limited", "session_revoke", "session_revoke_others",
 	"backup_validate", "backup_validate_failed", "backup_download",
+	// login_passkey_clone_warning is deliberately NOT here: a possible-clone
+	// signal is a security-incident marker that may be needed in an investigation
+	// long after routine auth noise is gone, so it keeps the long retention.
 }
 
 // PurgeAuditLog applies the staggered retention: short-lived auth/ops/noise events
@@ -35,15 +38,19 @@ var shortLivedAuditActions = []string{
 // deleted only past longCutoff. Returns how many rows were removed. Both cutoffs are
 // computed by the caller so the policy (windows) lives in one place.
 func (s *Store) PurgeAuditLog(ctx context.Context, shortCutoff, longCutoff time.Time) (int64, error) {
-	// The action list is a compile-time constant (never user input), so passing it as
-	// a Postgres text[] literal keeps this portable across the database/sql driver
-	// without a lib/pq dependency. strings.Join is safe here for the same reason.
-	shortList := "{" + strings.Join(shortLivedAuditActions, ",") + "}"
+	// Build the action set from a comma-separated string that Postgres splits back
+	// into rows via string_to_array — no hand-rolled array-literal escaping, so an
+	// action containing a brace/quote/backslash can never be mis-parsed. (A comma or
+	// NUL in an action name would still split wrong, but audit actions are fixed
+	// [a-z_] identifiers; this removes every other escaping footgun.) Passing one
+	// text parameter keeps it portable across the database/sql driver without a
+	// lib/pq dependency.
+	shortCSV := strings.Join(shortLivedAuditActions, ",")
 	res, err := s.db.ExecContext(ctx, `
 		DELETE FROM audit_log
-		 WHERE (action = ANY($1::text[]) AND created_at < $2)
-		    OR (NOT (action = ANY($1::text[])) AND created_at < $3)`,
-		shortList, shortCutoff, longCutoff)
+		 WHERE (action = ANY(string_to_array($1, ',')) AND created_at < $2)
+		    OR (NOT (action = ANY(string_to_array($1, ','))) AND created_at < $3)`,
+		shortCSV, shortCutoff, longCutoff)
 	if err != nil {
 		return 0, err
 	}

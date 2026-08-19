@@ -12,8 +12,8 @@ import (
 
 // TestAuditRetentionStaggeredIntegration verifies the staggered retention:
 // a short-lived security event (login) past the short cutoff is purged, while
-// a business/tax-relevant event (entry_update) of the same age survives until
-// the long cutoff. Runs only when TEST_DATABASE_URL is set.
+// a business/tax-relevant event (an entry "update") of the same age survives
+// until the long cutoff. Runs only when TEST_DATABASE_URL is set.
 func TestAuditRetentionStaggeredIntegration(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
@@ -43,11 +43,14 @@ func TestAuditRetentionStaggeredIntegration(t *testing.T) {
 	clear()
 	defer clear()
 
-	// One short-lived (login) row and one business (entry_update) row.
+	// One short-lived (login) row and one business row. The business row uses the
+	// real action a live entry edit emits ("update" / entity "entry"), so this test
+	// fails if someone ever moves "update" onto the short list — not a synthetic
+	// action string that could never regress.
 	if err := st.AddAudit(ctx, nil, "tester", "login", "auth", "", shortMarker, "10.0.0.1"); err != nil {
 		t.Fatalf("add login row: %v", err)
 	}
-	if err := st.AddAudit(ctx, nil, "tester", "entry_update", "entry", "1", longMarker, "10.0.0.1"); err != nil {
+	if err := st.AddAudit(ctx, nil, "tester", "update", "entry", "1", longMarker, "10.0.0.1"); err != nil {
 		t.Fatalf("add business row: %v", err)
 	}
 
