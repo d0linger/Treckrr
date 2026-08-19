@@ -222,7 +222,7 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 // back in a hidden field so the commit step re-parses the exact same input.
 func (s *Server) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(4 << 20); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := formInt64(r, "year_id")
@@ -279,7 +279,7 @@ func (s *Server) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 // handleImportCommit re-parses the echoed CSV and creates the importable rows.
 func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := formInt64(r, "year_id")

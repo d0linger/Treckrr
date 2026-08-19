@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -53,7 +54,7 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 // it establishes the session directly.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	// POST /login has no session yet, so the general csrf() middleware can't guard
@@ -129,7 +130,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 // handleLogin2FA is step 2: verify the TOTP code for the pending user.
 func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	c, err := r.Cookie(pending2FACookie)
@@ -229,7 +230,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 		Value:  token,
 		MaxAge: int(sessionTTL.Seconds()),
 	})
-	_ = s.store.AddAudit(r.Context(), &user.ID, user.Username, "login", "auth", "", "", s.clientIP(r))
+	_ = s.store.AddAudit(r.Context(), &user.ID, user.Username, "login", "auth", "", "", s.clientIP(r)) // best-effort audit line
 	return true
 }
 
@@ -275,10 +276,14 @@ func (s *Server) clearPending2FA(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if u := s.currentUser(r); u != nil {
-		_ = s.store.AddAudit(r.Context(), &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r))
+		_ = s.store.AddAudit(r.Context(), &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r)) // best-effort audit line
 	}
 	if c, err := r.Cookie(s.sessionCookieName(r)); err == nil && c.Value != "" {
-		_ = s.store.DeleteSession(r.Context(), c.Value)
+		// Invalidate the server-side session, not just the cookie: if this fails the
+		// token stays valid server-side, so a captured token would still authenticate.
+		if err := s.store.DeleteSession(r.Context(), c.Value); err != nil {
+			slog.Error("logout: delete session failed", "err", sanitizeLog(err.Error()))
+		}
 	}
 	s.setCookie(w, r, &http.Cookie{Name: s.sessionCookieName(r), Value: "", MaxAge: -1})
 	redirect(w, r, "/login")

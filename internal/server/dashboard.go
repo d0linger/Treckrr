@@ -143,7 +143,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 // handleYearAddNeighbor adds an existing neighbor to the billing year.
 func (s *Server) handleYearAddNeighbor(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := s.yearIDFromForm(r)
@@ -169,7 +169,7 @@ func (s *Server) handleYearAddNeighbor(w http.ResponseWriter, r *http.Request) {
 // skew the membership guard in handleLedgerAdd prevents on the add side.
 func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := s.yearIDFromForm(r)
@@ -221,7 +221,7 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	name := trimmed(r, "name")

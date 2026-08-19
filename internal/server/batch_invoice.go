@@ -112,7 +112,7 @@ func (s *Server) handleBatchIssueCommit(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)

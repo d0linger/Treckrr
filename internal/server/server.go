@@ -2,11 +2,13 @@
 package server
 
 import (
+	"compress/gzip"
 	"context"
 	"html/template"
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -542,10 +544,97 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 func staticServer() http.Handler {
 	fs := http.FileServer(http.FS(web.StaticFS()))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "public, max-age=3600")
-		fs.ServeHTTP(w, r)
+		// Templates append the content-hash as ?v=<hash>, so a versioned URL changes
+		// whenever the asset changes — it can be cached hard (immutable, 1 year). An
+		// unversioned direct hit (e.g. /sw.js fetching /static/... or a bookmark) keeps
+		// the short, revalidating cache so it can't get stuck on a stale build.
+		if r.URL.Query().Get("v") != "" {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+		}
+		gzipStatic(w, r, fs)
 	})
 }
+
+// gzipStatic serves next with gzip when the client accepts it and the asset is a
+// compressible text type. The embedded CSS/JS ship uncompressed otherwise; gzip
+// cuts them ~70-80%. Binary assets (woff2, png, svg-as-image) are already
+// compressed or tiny, so they're passed through untouched.
+func gzipStatic(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	// Vary before representation selection, so a cache keys correctly whether or not
+	// we end up compressing this particular request.
+	w.Header().Add("Vary", "Accept-Encoding")
+	// Bypass gzip when the client didn't (properly) ask for it, the asset isn't a
+	// compressible text type, or the request is a Range request — for a Range,
+	// http.FileServer answers 206 with a Content-Range measured on the UNCOMPRESSED
+	// body, so gzipping it would hand back bytes that don't match the range headers.
+	if !acceptsGzip(r.Header.Get("Accept-Encoding")) || !gzippableAsset(r.URL.Path) || r.Header.Get("Range") != "" {
+		next.ServeHTTP(w, r)
+		return
+	}
+	w.Header().Set("Content-Encoding", "gzip")
+	// Content-Length would describe the uncompressed size; drop it so it isn't wrong.
+	w.Header().Del("Content-Length")
+	gz := gzip.NewWriter(w)
+	defer gz.Close()
+	next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, gz: gz}, r)
+}
+
+// acceptsGzip parses an Accept-Encoding header and reports whether gzip is
+// acceptable: a "gzip" (or "*") token that is not disabled with q=0. Matching is
+// case-insensitive and ignores unrelated tokens like "x-gzip". Per RFC 7231 an
+// absent q-value defaults to 1 (acceptable).
+func acceptsGzip(header string) bool {
+	if header == "" {
+		return false
+	}
+	star := false
+	for _, part := range strings.Split(header, ",") {
+		tok := strings.TrimSpace(part)
+		name := tok
+		q := 1.0
+		if i := strings.IndexByte(tok, ';'); i >= 0 {
+			name = strings.TrimSpace(tok[:i])
+			// Look for a q= parameter; anything unparseable leaves q at its default.
+			for _, p := range strings.Split(tok[i+1:], ";") {
+				p = strings.TrimSpace(p)
+				if v, ok := strings.CutPrefix(p, "q="); ok {
+					if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+						q = f
+					}
+				}
+			}
+		}
+		if strings.EqualFold(name, "gzip") {
+			return q > 0
+		}
+		if name == "*" {
+			star = q > 0 // remember, but an explicit gzip token later still wins
+		}
+	}
+	return star
+}
+
+// gzippableAsset reports whether a static path is a text type worth compressing.
+func gzippableAsset(p string) bool {
+	switch {
+	case strings.HasSuffix(p, ".css"), strings.HasSuffix(p, ".js"),
+		strings.HasSuffix(p, ".svg"), strings.HasSuffix(p, ".json"),
+		strings.HasSuffix(p, ".webmanifest"), strings.HasSuffix(p, ".map"):
+		return true
+	}
+	return false
+}
+
+// gzipResponseWriter routes the body through gzip while leaving header writes on
+// the underlying ResponseWriter.
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	gz *gzip.Writer
+}
+
+func (w *gzipResponseWriter) Write(b []byte) (int, error) { return w.gz.Write(b) }
 
 // setCookie wraps http.SetCookie to apply consistent security defaults (Secure,
 // HttpOnly, SameSite).

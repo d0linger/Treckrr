@@ -48,12 +48,12 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := s.yearIDFromForm(r)
 	if yearID == 0 {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	member, err := s.store.NeighborInYear(r.Context(), yearID, neighborID)
@@ -180,13 +180,13 @@ func (s *Server) handlePaymentRestore(w http.ResponseWriter, r *http.Request) {
 // one-click "mark the rest as paid" action (replaces the old paid toggle).
 func (s *Server) handleNeighborSettle(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := s.yearIDFromForm(r)
 	neighborID := formInt64(r, "neighbor_id")
 	if yearID == 0 || neighborID == 0 {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	remaining, err := s.neighborRemaining(r.Context(), yearID, neighborID)
@@ -219,12 +219,12 @@ func (s *Server) handleNeighborCarryForward(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := s.yearIDFromForm(r)
 	if yearID == 0 {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)

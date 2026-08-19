@@ -64,7 +64,7 @@ func (s *Server) handlePaymentImportForm(w http.ResponseWriter, r *http.Request)
 // match an invoice. Nothing is written; the raw content is echoed for commit.
 func (s *Server) handlePaymentImportPreview(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(4 << 20); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	file, _, err := r.FormFile("file")
@@ -103,7 +103,7 @@ func (s *Server) handlePaymentImportPreview(w http.ResponseWriter, r *http.Reque
 // (or re-uploading the same statement) never double-books.
 func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	txns, perr := bankimport.Parse([]byte(r.FormValue("raw")))

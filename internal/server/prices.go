@@ -64,7 +64,7 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 func (s *Server) lockedRedirect(w http.ResponseWriter, r *http.Request, baseID int64, target string) bool {
 	base, err := s.store.GetBase(r.Context(), baseID)
 	if err != nil {
-		http.Error(w, "Unbekannte Bemessungsgrundlage", http.StatusBadRequest)
+		s.badRequest(w, "Unbekannte Bemessungsgrundlage")
 		return true
 	}
 	if base.Locked {
@@ -79,7 +79,7 @@ func (s *Server) lockedRedirect(w http.ResponseWriter, r *http.Request, baseID i
 
 func (s *Server) handleLoadLevelSave(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	baseID := s.baseIDFromForm(r)
@@ -141,7 +141,7 @@ func (s *Server) handleLoadLevelDelete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTractorSave(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	baseID := s.baseIDFromForm(r)
@@ -188,7 +188,7 @@ func (s *Server) handleTractorToggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	baseID := s.baseIDFromForm(r)
@@ -236,7 +236,7 @@ func (s *Server) handleTractorDelete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMachineSave(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	baseID := s.baseIDFromForm(r)
@@ -284,7 +284,7 @@ func (s *Server) handleMachineToggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	baseID := s.baseIDFromForm(r)

@@ -30,7 +30,7 @@
 		{{/* Preselect the mode the booking was actually made in: a Gespann booking
 		     stores its GespannID, everything else is Manuell. */}}
 		{{$gsel := .Entry.GespannID}}
-		<div class="segmented" role="tablist">
+		<div class="segmented" role="radiogroup" aria-label="Abrechnungsart">
 			<label class="segmented__item">
 				<input type="radio" name="mode" value="gespann" {{if $gsel}}checked{{end}} data-mode-toggle>
 				<span>Gespann</span>

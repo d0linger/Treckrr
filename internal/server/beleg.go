@@ -727,7 +727,7 @@ func (s *Server) handleInvoiceConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	yearID := formInt64(r, "year")
 	if yearID == 0 {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
@@ -773,12 +773,12 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := s.yearIDFromForm(r)
 	if yearID == 0 {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
@@ -841,12 +841,12 @@ func (s *Server) handleInvoiceStorno(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := s.yearIDFromForm(r)
 	if yearID == 0 {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
@@ -881,12 +881,12 @@ func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := s.yearIDFromForm(r)
 	if yearID == 0 {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID)

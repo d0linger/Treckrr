@@ -71,7 +71,7 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	username := strings.TrimSpace(r.FormValue("username"))
@@ -102,7 +102,11 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.FormValue("force_change") == "on" {
-		_ = s.store.SetMustChangePassword(r.Context(), newID, true)
+		// Log a failure: the admin asked for a forced change and a silent miss means it
+		// won't be enforced. Non-fatal — the user account was still created.
+		if err := s.store.SetMustChangePassword(r.Context(), newID, true); err != nil {
+			slog.Error("create user: set must-change-password failed", "user", newID, "err", sanitizeLog(err.Error()))
+		}
 	}
 	s.audit(r, "create", "user", newID, username+" ("+role+")")
 	s.setFlash(w, r, "success", "Benutzer angelegt.")
@@ -116,7 +120,7 @@ func (s *Server) handleUserPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	password := r.FormValue("password")
@@ -130,8 +134,12 @@ func (s *Server) handleUserPassword(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/users")
 		return
 	}
-	// Force the user to change this admin-set password at next login.
-	_ = s.store.SetMustChangePassword(r.Context(), id, r.FormValue("force_change") == "on")
+	// Force the user to change this admin-set password at next login. Log a failure —
+	// a silent miss means the forced change isn't enforced (the session revoke below
+	// is the load-bearing part and IS checked).
+	if err := s.store.SetMustChangePassword(r.Context(), id, r.FormValue("force_change") == "on"); err != nil {
+		slog.Error("password reset: set must-change-password failed", "user", id, "err", sanitizeLog(err.Error()))
+	}
 	// Terminate the target user's sessions so the reset takes effect immediately.
 	// Auth is by session token, not password, so this is load-bearing: a failure
 	// must surface rather than be reported to the admin as success.
@@ -168,9 +176,14 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 		slog.Error("set role failed", "user", id, "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Änderung fehlgeschlagen.")
 	default:
-		// Rotate privileges: end the user's sessions so the new role takes
-		// effect on their next (re-authenticated) session.
-		_ = s.store.DeleteUserSessionsExcept(r.Context(), id, "")
+		// Rotate privileges: end the user's sessions so the new role takes effect on
+		// their next (re-authenticated) session. This is load-bearing — a stale session
+		// keeps the OLD (possibly higher) privileges — so a revoke failure must surface
+		// rather than be reported as "Sitzungen beendet". Same as the password-reset path.
+		if err := s.store.DeleteUserSessionsExcept(r.Context(), id, ""); err != nil {
+			s.serverError(w, "set role: revoke sessions", err)
+			return
+		}
 		s.audit(r, "set_role", "user", id, role+"; Sitzungen beendet")
 		s.setFlash(w, r, "success", "Rolle aktualisiert. Sitzungen des Benutzers wurden beendet.")
 	}
@@ -264,6 +277,7 @@ func (s *Server) handleUserResetTotp(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/users")
 		return
 	}
+	// Best-effort: with the user's TOTP now reset, leftover recovery codes are inert.
 	_ = s.store.ClearRecoveryCodes(r.Context(), id)
 	s.audit(r, "2fa_reset", "user", id, "durch Admin ("+target.Username+")")
 	s.setFlash(w, r, "success", "2FA für "+target.Username+" zurückgesetzt. Der Benutzer kann es neu einrichten.")

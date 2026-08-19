@@ -184,7 +184,7 @@ func (s *Server) handleNeighborMahnung(w http.ResponseWriter, r *http.Request) {
 	}
 	yearID := formInt64(r, "year")
 	if yearID == 0 {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	// formInt parses via strconv.Atoi (no lossy int64->int narrowing); unknown

@@ -45,7 +45,7 @@ func (s *Server) handleBases(w http.ResponseWriter, r *http.Request) {
 // all its values are cloned; otherwise an empty basis is created.
 func (s *Server) handleBaseCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	year := formInt(r, "year")
@@ -89,7 +89,7 @@ func (s *Server) handleBaseUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	name := trimmed(r, "name")
