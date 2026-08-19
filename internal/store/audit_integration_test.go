@@ -31,10 +31,26 @@ func TestAuditFilterPaginationIntegration(t *testing.T) {
 	// Keep the exact-count assertions stable across repeated runs on a reused
 	// database: clear any rows from a previous run up front, and tidy up after.
 	// The defer runs before pool.Close() (LIFO), so the pool is still open.
+	// audit_log is append-only (0036 guard): delete through the treckrr.allow_audit_prune
+	// opt-in, the same path the retention purge uses.
 	clearTestAudit := func() {
-		if _, err := pool.ExecContext(ctx,
+		tx, err := pool.BeginTx(ctx, nil)
+		if err != nil {
+			t.Errorf("clear begin: %v", err)
+			return
+		}
+		defer func() { _ = tx.Rollback() }()
+		if _, err := tx.ExecContext(ctx, `SET LOCAL treckrr.allow_audit_prune = 'on'`); err != nil {
+			t.Errorf("clear set flag: %v", err)
+			return
+		}
+		if _, err := tx.ExecContext(ctx,
 			`DELETE FROM audit_log WHERE action IN ('itest_a','itest_b')`); err != nil {
 			t.Errorf("clear test audit rows: %v", err)
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			t.Errorf("clear commit: %v", err)
 		}
 	}
 	clearTestAudit()

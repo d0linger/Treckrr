@@ -37,7 +37,25 @@ var shortLivedAuditActions = []string{
 // older than shortCutoff are deleted; every other (business/tax-relevant) event is
 // deleted only past longCutoff. Returns how many rows were removed. Both cutoffs are
 // computed by the caller so the policy (windows) lives in one place.
+//
+// The audit_log table is append-only at the database level (0036: audit_log_guard
+// trigger), so the delete is wrapped in a transaction that opts in with
+// `SET LOCAL treckrr.allow_audit_prune = 'on'`. SET LOCAL is transaction-scoped and
+// reverts on COMMIT/ROLLBACK, so the opt-in can never leak to another query sharing
+// the same pooled connection — this deliberate retention job is the only path that
+// can delete an audit row.
 func (s *Store) PurgeAuditLog(ctx context.Context, shortCutoff, longCutoff time.Time) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }() // no-op after a successful Commit
+
+	// Authorize the delete for THIS transaction only (see the audit_log_guard trigger).
+	if _, err := tx.ExecContext(ctx, `SET LOCAL treckrr.allow_audit_prune = 'on'`); err != nil {
+		return 0, err
+	}
+
 	// Build the action set from a comma-separated string that Postgres splits back
 	// into rows via string_to_array — no hand-rolled array-literal escaping, so an
 	// action containing a brace/quote/backslash can never be mis-parsed. (A comma or
@@ -46,7 +64,7 @@ func (s *Store) PurgeAuditLog(ctx context.Context, shortCutoff, longCutoff time.
 	// text parameter keeps it portable across the database/sql driver without a
 	// lib/pq dependency.
 	shortCSV := strings.Join(shortLivedAuditActions, ",")
-	res, err := s.db.ExecContext(ctx, `
+	res, err := tx.ExecContext(ctx, `
 		DELETE FROM audit_log
 		 WHERE (action = ANY(string_to_array($1, ',')) AND created_at < $2)
 		    OR (NOT (action = ANY(string_to_array($1, ','))) AND created_at < $3)`,
@@ -55,6 +73,9 @@ func (s *Store) PurgeAuditLog(ctx context.Context, shortCutoff, longCutoff time.
 		return 0, err
 	}
 	n, _ := res.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
 	return n, nil
 }
 
