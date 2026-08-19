@@ -252,7 +252,8 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 	body := "Guten Tag " + v.Neighbor.Name + ",\n\nanbei " + v.Title + " zur Rechnung " + v.Invoice.Number + " als PDF.\n\nMit freundlichen Grüßen\n" + from
 	att := mail.Attachment{Filename: "Mahnung_" + sanitizeFilename(v.Invoice.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
 	if err := mail.Send(s.cfg, v.Neighbor.Email, v.Title+" · Rechnung "+v.Invoice.Number, body, []mail.Attachment{att}); err != nil {
-		s.setFlash(w, r, "error", "Versand fehlgeschlagen: "+err.Error())
+		slog.Error("mahnung email send failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
+		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
 		redirect(w, r, back)
 		return
 	}
