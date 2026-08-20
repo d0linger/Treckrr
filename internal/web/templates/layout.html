@@ -52,7 +52,7 @@
 			{{with .BackupHealth}}
 			<div class="bkdot bkdot--{{.Tone}}" data-bk>
 				<button class="appbar__icon bkdot__btn" type="button" data-bk-toggle aria-expanded="false" aria-controls="bkPop" aria-label="Backup: {{.Title}}{{if .AgeLabel}}, {{.AgeLabel}}{{end}}">
-					<span class="bkdot__mark" aria-hidden="true">{{if eq .Tone "ok"}}✓{{else if eq .Tone "bad"}}✕{{else}}!{{end}}</span>
+					<span class="bkdot__mark" aria-hidden="true">{{if eq .Tone "ok"}}<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.4 12.3l2.4 2.4 4.8-5.2"/></svg>{{else if eq .Tone "bad"}}<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg>{{else}}<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5"/><circle cx="12" cy="16" r=".7" fill="currentColor" stroke="none"/></svg>{{end}}</span>
 				</button>
 				<div class="bkdot__pop" id="bkPop" role="status">
 					<span class="bkdot__pop-title">{{.Title}}</span>

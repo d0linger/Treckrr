@@ -932,13 +932,23 @@ span.paychip { cursor: default; }
 .attn__go { color: var(--muted); font-size: 1.1rem; line-height: 1; }
 
 /* ---- Backup-health dot (header status indicator) ---------------------- */
+/* A fine stroked "signal ring", monochrome via currentColor — the status colour
+   comes from the tone class. Green checkmark (with a faint glow), amber pulsing
+   exclamation (= needs attention; NOT a spinner, which would imply "running"),
+   red cross. Three distinct shapes so state is never colour-alone. */
 .bkdot { position: relative; display: inline-flex; }
 .bkdot__btn { display: grid; place-items: center; }
-.bkdot__mark { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
-	font-size: 11px; font-weight: 900; line-height: 1; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.3); }
-.bkdot--ok .bkdot__mark { background: var(--primary-strong); }
-.bkdot--warn .bkdot__mark { background: var(--accent); }
-.bkdot--bad .bkdot__mark { background: var(--danger); }
+.bkdot__mark { display: inline-flex; color: var(--muted); }
+.bkdot__mark svg { display: block; }
+.bkdot--ok .bkdot__mark { color: var(--primary-strong);
+	filter: drop-shadow(0 0 2px color-mix(in srgb, currentColor 45%, transparent)); }
+.bkdot--warn .bkdot__mark { color: var(--accent); animation: bkdot-pulse 1.7s ease-in-out infinite; }
+.bkdot--bad .bkdot__mark { color: var(--danger); }
+@keyframes bkdot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+/* For a future real "Backup läuft" state, swap the amber icon for the open arc
+   (path "M12 3a9 9 0 1 0 9 9") and use: animation: bkdot-spin .9s linear infinite;
+   @keyframes bkdot-spin { to { transform: rotate(360deg); } } */
+@media (prefers-reduced-motion: reduce) { .bkdot--warn .bkdot__mark { animation: none; } }
 .bkdot__pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; min-width: 220px; max-width: 80vw;
 	display: none; flex-direction: column; gap: .15rem; text-align: left;
 	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
