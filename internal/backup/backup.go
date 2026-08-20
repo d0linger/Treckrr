@@ -526,12 +526,20 @@ func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
 				// A prior run may have uploaded this object but failed verification and
 				// left it un-pruned; blindly reporting S3OK here would mask a corrupt
 				// off-box copy forever. Re-verify the stored bytes (also catches at-rest
-				// bit-rot) instead of just refreshing the timer.
-				verr := s.verifyS3Object(ctx, newest, r.Size)
-				ok := verr == nil
+				// bit-rot); if it's bad but we still hold a good local dump, self-heal by
+				// overwriting it rather than staying failed until the next volume cycle.
+				err := s.verifyS3Object(ctx, newest, r.Size)
+				if err != nil {
+					if rerr := s.repairS3Mirror(ctx, newest); rerr != nil {
+						err = fmt.Errorf("s3 copy failed verification (%v) and repair failed: %w", err, rerr)
+					} else {
+						err = nil // repaired: the overwritten object re-verified
+					}
+				}
+				ok := err == nil
 				now := time.Now()
 				s.updateStatus(func(st *Status) { st.S3OK, st.LastS3 = &ok, now })
-				return verr
+				return err
 			}
 		}
 		name = newest
@@ -565,6 +573,24 @@ func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
 		s.pruneS3(ctx, s3keep)
 	}
 	return uerr
+}
+
+// repairS3Mirror re-pushes the local dump `name` to overwrite a remote copy that
+// failed verification, then re-verifies the replacement. The local archive is
+// verified first, so a bad local dump is never pushed over the (differently) bad
+// remote — repair only ever replaces a bad off-box copy with a known-good one.
+func (s *Service) repairS3Mirror(ctx context.Context, name string) error {
+	data, err := s.Open(name)
+	if err != nil {
+		return err
+	}
+	if err := s.verifyRestorable(ctx, data); err != nil {
+		return fmt.Errorf("local dump not restorable: %w", err)
+	}
+	if err := s.uploadS3(ctx, name, data); err != nil {
+		return err
+	}
+	return s.verifyS3Object(ctx, name, int64(len(data)))
 }
 
 // prune keeps only the newest keep dumps in the volume backup dir.
@@ -610,21 +636,31 @@ func (s *Service) listArchive(ctx context.Context, raw []byte) (int, string, err
 	return n, toc, nil
 }
 
-// ValidateArchive proves the decrypted bytes are a well-formed archive and returns
-// its object count.
+// ValidateArchive proves the decrypted bytes are a well-formed archive AND that its
+// contents look like a real Treckrr database, returning the object count. Shared by
+// the backup-time drill (verifyRestorable) and the restore path (before RestoreRaw),
+// so an empty/truncated/foreign archive is rejected before it can overwrite the DB.
 func (s *Service) ValidateArchive(ctx context.Context, raw []byte) (int, error) {
-	n, _, err := s.listArchive(ctx, raw)
-	return n, err
+	n, toc, err := s.listArchive(ctx, raw)
+	if err != nil {
+		return 0, err
+	}
+	if err := contentSanity(toc, n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // Content-sanity floor for a verified dump: a well-formed archive can still be a dump
 // of the wrong or an empty database. A real Treckrr dump carries the full migrated
 // schema (~188 TOC objects even with no business rows) plus these core tables, so a
 // generous floor + their presence rejects a truncated/foreign/empty archive without
-// risking a false reject of a legitimate — even fresh-install — backup.
+// risking a false reject of a legitimate backup. The required tables are all from the
+// first migration, so this holds even when RESTORING a very old backup (later tables
+// like invoices are deliberately NOT required, so pre-invoice dumps still restore).
 const minArchiveObjects = 40
 
-var requiredRelations = []string{"users", "neighbors", "entries", "invoices"}
+var requiredRelations = []string{"users", "neighbors", "entries"}
 
 // contentSanity rejects a structurally-valid archive whose contents don't look like a
 // real Treckrr database. Runs on the decrypted TOC as the last verify-before-promote
@@ -680,17 +716,14 @@ func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) 
 }
 
 // verifyRestorable is the automatic post-write drill: decrypt with the service key,
-// prove the archive is well-formed, and sanity-check its contents.
+// then prove the archive is well-formed and its contents look like a real Treckrr DB.
 func (s *Service) verifyRestorable(ctx context.Context, enc []byte) error {
 	raw, err := decrypt(enc, s.secret)
 	if err != nil {
 		return err
 	}
-	n, toc, err := s.listArchive(ctx, raw)
-	if err != nil {
-		return err
-	}
-	return contentSanity(toc, n)
+	_, err = s.ValidateArchive(ctx, raw)
+	return err
 }
 
 // DecryptWith decrypts using an operator-supplied key string — used by the GUI

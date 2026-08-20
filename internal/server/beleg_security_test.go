@@ -1,43 +1,74 @@
 package server
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 )
 
+// TestVerifyBelegShare_OversizedToken proves the LENGTH CAP — not an incidental
+// signature failure — is what rejects an oversized share token. The token is crafted
+// to be otherwise VALID (correct HMAC, parseable payload) but padded past the cap, so
+// if the cap were removed it would verify successfully and this test would fail.
 func TestVerifyBelegShare_OversizedToken(t *testing.T) {
 	s := testServer()
 
-	// Valid token should verify correctly.
-	validToken := s.signBelegShare(10, 20, time.Now().Add(1*time.Hour))
-	nID, yID, ok := s.verifyBelegShare(validToken)
-	if !ok || nID != 10 || yID != 20 {
-		t.Fatalf("expected valid token to verify successfully, got nID=%d, yID=%d, ok=%v", nID, yID, ok)
+	// A normal token still verifies.
+	if nID, yID, ok := s.verifyBelegShare(s.signBelegShare(10, 20, time.Now().Add(time.Hour))); !ok || nID != 10 || yID != 20 {
+		t.Fatalf("valid token failed to verify: nID=%d yID=%d ok=%v", nID, yID, ok)
 	}
 
-	// Oversized token (> 200 chars) must be rejected up front.
-	oversizedToken := validToken + "." + strings.Repeat("A", 250)
-	_, _, ok = s.verifyBelegShare(oversizedToken)
-	if ok {
-		t.Fatalf("expected oversized share token to be rejected, but verifyBelegShare returned ok=true")
+	// craft builds a share token exactly like signBelegShare, but pads the expiry with
+	// `pad` leading zeros — which ParseInt still accepts — to grow the length at will.
+	craft := func(pad int) string {
+		payload := fmt.Sprintf("%d:%d:%s%d", 10, 20, strings.Repeat("0", pad), time.Now().Add(time.Hour).Unix())
+		mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
+		mac.Write([]byte("belegshare:" + payload))
+		return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." +
+			base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	}
+	// Sanity: an un-padded crafted token verifies — proving the crafting matches the
+	// implementation, so the ONLY difference in the oversized case is its length.
+	if _, _, ok := s.verifyBelegShare(craft(0)); !ok {
+		t.Fatal("crafted (un-padded) token should verify — construction mismatch")
+	}
+	over := craft(300)
+	if len(over) <= maxBelegShareTokenLen {
+		t.Fatalf("crafted token is not oversized: len=%d", len(over))
+	}
+	if _, _, ok := s.verifyBelegShare(over); ok {
+		t.Fatal("an otherwise-valid oversized share token must be rejected by the length cap")
 	}
 }
 
+// TestVerifyPending2FA_OversizedToken — same isolation of the length cap, for the
+// pending-2FA cookie token.
 func TestVerifyPending2FA_OversizedToken(t *testing.T) {
 	s := testServer()
 
-	// Valid token should verify correctly.
-	validToken := s.signPending2FA(42)
-	uID, ok := s.verifyPending2FA(validToken)
-	if !ok || uID != 42 {
-		t.Fatalf("expected valid pending 2FA token to verify, got uID=%d, ok=%v", uID, ok)
+	if uID, ok := s.verifyPending2FA(s.signPending2FA(42)); !ok || uID != 42 {
+		t.Fatalf("valid pending-2FA token failed to verify: uID=%d ok=%v", uID, ok)
 	}
 
-	// Oversized token (> 200 chars) must be rejected up front.
-	oversizedToken := validToken + "." + strings.Repeat("B", 250)
-	_, ok = s.verifyPending2FA(oversizedToken)
-	if ok {
-		t.Fatalf("expected oversized pending 2FA token to be rejected, but verifyPending2FA returned ok=true")
+	craft := func(pad int) string {
+		payload := fmt.Sprintf("2fa:%d|%s%d", 42, strings.Repeat("0", pad), time.Now().Add(pending2FATTL).Unix())
+		mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
+		mac.Write([]byte(payload))
+		return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + hex.EncodeToString(mac.Sum(nil))
+	}
+	if _, ok := s.verifyPending2FA(craft(0)); !ok {
+		t.Fatal("crafted (un-padded) pending-2FA token should verify — construction mismatch")
+	}
+	over := craft(300)
+	if len(over) <= maxPending2FATokenLen {
+		t.Fatalf("crafted token is not oversized: len=%d", len(over))
+	}
+	if _, ok := s.verifyPending2FA(over); ok {
+		t.Fatal("an otherwise-valid oversized pending-2FA token must be rejected by the length cap")
 	}
 }

@@ -200,7 +200,7 @@ func TestContentSanity(t *testing.T) {
 	if err := contentSanity(toc, minArchiveObjects-1); err == nil {
 		t.Error("expected reject for object count below the floor")
 	}
-	missing := strings.ReplaceAll(toc, "TABLE public invoices treckrr", "TABLE public somethingelse treckrr")
+	missing := strings.ReplaceAll(toc, "TABLE public neighbors treckrr", "TABLE public somethingelse treckrr")
 	if err := contentSanity(missing, n); err == nil {
 		t.Error("expected reject when a core table is missing")
 	}

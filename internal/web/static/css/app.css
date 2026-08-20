@@ -957,7 +957,10 @@ span.paychip { cursor: default; }
 	display: none; flex-direction: column; gap: .15rem; text-align: left;
 	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
 	box-shadow: var(--shadow); padding: .6rem .7rem; }
-.bkdot:hover .bkdot__pop, .bkdot:focus-within .bkdot__pop, .bkdot.is-open .bkdot__pop { display: flex; }
+/* Hover (desktop) or the JS .is-open toggle (tap/keyboard) reveal the popover — NOT
+   :focus-within, which would keep it open after a click-to-close because the button
+   retains focus. Screen readers get the state from the button's aria-label anyway. */
+.bkdot:hover .bkdot__pop, .bkdot.is-open .bkdot__pop { display: flex; }
 .bkdot__pop-title { font-weight: 700; font-size: .85rem; }
 .bkdot__pop-meta { font-size: .78rem; color: var(--muted); }
 .bkdot__pop-link { font-size: .78rem; margin-top: .2rem; font-weight: 600; }
