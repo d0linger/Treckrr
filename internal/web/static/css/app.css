@@ -931,6 +931,40 @@ span.paychip { cursor: default; }
 .attn__txt strong { font-weight: 800; }
 .attn__go { color: var(--muted); font-size: 1.1rem; line-height: 1; }
 
+/* ---- Backup-health dot (header status indicator) ---------------------- */
+/* A fine stroked "signal ring", monochrome via currentColor — the status colour
+   comes from the tone class. Green checkmark (with a faint glow), amber pulsing
+   exclamation (= needs attention; NOT a spinner, which would imply "running"),
+   red cross. Three distinct shapes so state is never colour-alone. */
+.bkdot { position: relative; display: inline-flex; }
+.bkdot__btn { display: grid; place-items: center; }
+/* The app bar is a green (--primary) surface in BOTH themes, so the page-surface
+   status tokens don't work here — the mid-green --primary-strong is nearly the
+   header colour and vanishes in light mode. Use bright, header-tuned colours (same
+   reason .appbar icons are hard-coded #fff) + a faint dark shadow so the ring pops
+   on the green bar in light and dark alike. */
+.bkdot__mark { display: inline-flex; color: #fff; filter: drop-shadow(0 1px 1px rgba(0,0,0,.28)); }
+.bkdot__mark svg { display: block; }
+.bkdot--ok .bkdot__mark { color: #8fe6b6; }
+.bkdot--warn .bkdot__mark { color: #f6c650; animation: bkdot-pulse 1.7s ease-in-out infinite; }
+.bkdot--bad .bkdot__mark { color: #ff9078; }
+@keyframes bkdot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+/* For a future real "Backup läuft" state, swap the amber icon for the open arc
+   (path "M12 3a9 9 0 1 0 9 9") and use: animation: bkdot-spin .9s linear infinite;
+   @keyframes bkdot-spin { to { transform: rotate(360deg); } } */
+@media (prefers-reduced-motion: reduce) { .bkdot--warn .bkdot__mark { animation: none; } }
+.bkdot__pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; min-width: 220px; max-width: 80vw;
+	display: none; flex-direction: column; gap: .15rem; text-align: left;
+	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+	box-shadow: var(--shadow); padding: .6rem .7rem; }
+/* Hover (desktop) or the JS .is-open toggle (tap/keyboard) reveal the popover — NOT
+   :focus-within, which would keep it open after a click-to-close because the button
+   retains focus. Screen readers get the state from the button's aria-label anyway. */
+.bkdot:hover .bkdot__pop, .bkdot.is-open .bkdot__pop { display: flex; }
+.bkdot__pop-title { font-weight: 700; font-size: .85rem; }
+.bkdot__pop-meta { font-size: .78rem; color: var(--muted); }
+.bkdot__pop-link { font-size: .78rem; margin-top: .2rem; font-weight: 600; }
+
 /* ---- Floating action button (quick-book) ------------------------------ */
 .fab { position: fixed; right: 1rem; z-index: 25;
 	bottom: calc(1rem + 58px + env(safe-area-inset-bottom));

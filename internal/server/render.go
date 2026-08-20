@@ -19,13 +19,20 @@ type pageData map[string]any
 
 // newPage returns page data pre-filled with common fields (user, flash, nav).
 func (s *Server) newPage(w http.ResponseWriter, r *http.Request, title, active string) pageData {
+	u := userFromCtx(r)
 	p := pageData{
 		"Title":    title,
 		"Active":   active,
-		"User":     userFromCtx(r),
+		"User":     u,
 		"BasePath": r.URL.Path,
 		"Theme":    themeFromCookie(r),
 		"CSRF":     s.csrfToken(r),
+	}
+	// Backup-health dot in the header, for everyone who can act on it (admins +
+	// Erfasser, never Nur-Leser). Cheap status-file read; the template decides
+	// what each role sees (admins get the manage link).
+	if u != nil && u.CanWrite() {
+		p["BackupHealth"] = s.backupHealth()
 	}
 	if msg, kind, undoURL := s.readFlash(w, r); msg != "" {
 		p["FlashMessage"] = msg

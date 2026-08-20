@@ -2,6 +2,7 @@ package backup
 
 import (
 	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/minio/minio-go/v7"
 )
 
 // TestWriteFileAtomicConcurrent locks the status.json corruption fix: many
@@ -170,5 +173,79 @@ func TestDecryptLegacyTRKBK1(t *testing.T) {
 	}
 	if _, err := DecryptWith(legacy, string(secret)); err != nil {
 		t.Fatalf("DecryptWith on legacy dump failed: %v", err)
+	}
+}
+
+// TestContentSanity pins the verify-before-promote content floor against the REAL
+// pg_restore --list TOC format, so it rejects an empty/foreign/truncated dump but
+// never a legitimate one (a false reject would fail-close all future backups).
+func TestContentSanity(t *testing.T) {
+	base := []string{
+		"3; 1259 16400 TABLE public users treckrr",
+		"231; 1259 16519 TABLE public neighbors treckrr",
+		"233; 1259 16531 TABLE public entries treckrr",
+		"251; 1259 16780 TABLE public invoices treckrr",
+		"239; 1259 16627 TABLE public audit_log treckrr",
+	}
+	lines := append([]string{}, base...)
+	for i := len(lines); i < minArchiveObjects; i++ { // pad past the floor with filler
+		lines = append(lines, fmt.Sprintf("%d; 1259 %d INDEX public idx_%d treckrr", 400+i, 20000+i, i))
+	}
+	toc := strings.Join(lines, "\n")
+	n := len(lines)
+
+	if err := contentSanity(toc, n); err != nil {
+		t.Fatalf("a valid TOC was rejected: %v", err)
+	}
+	if err := contentSanity(toc, minArchiveObjects-1); err == nil {
+		t.Error("expected reject for object count below the floor")
+	}
+	missing := strings.ReplaceAll(toc, "TABLE public neighbors treckrr", "TABLE public somethingelse treckrr")
+	if err := contentSanity(missing, n); err == nil {
+		t.Error("expected reject when a core table is missing")
+	}
+	// A prefix-named table must NOT satisfy a core-table check (entry_photos != entries).
+	prefix := strings.ReplaceAll(toc, "TABLE public entries treckrr", "TABLE public entry_photos treckrr")
+	if err := contentSanity(prefix, n); err == nil {
+		t.Error("expected reject when only a prefix-named table is present")
+	}
+}
+
+// TestVerifyS3ObjectRejectsBadIntegration proves the post-upload S3 verification
+// catches a corrupt or incomplete off-box copy. Gated on TEST_S3_ENDPOINT; the
+// happy path is covered end-to-end by `treckrr backup` against MinIO.
+func TestVerifyS3ObjectRejectsBadIntegration(t *testing.T) {
+	ep := os.Getenv("TEST_S3_ENDPOINT")
+	if ep == "" {
+		t.Skip("TEST_S3_ENDPOINT not set; skipping S3 integration test")
+	}
+	svc := New(Options{
+		EncKey: "test-key-at-least-16chars",
+		S3: S3Options{
+			Endpoint:  ep,
+			Bucket:    os.Getenv("TEST_S3_BUCKET"),
+			AccessKey: os.Getenv("TEST_S3_ACCESS_KEY"),
+			SecretKey: os.Getenv("TEST_S3_SECRET_KEY"),
+			UseSSL:    false,
+		},
+	}, nil)
+	ctx := context.Background()
+	junk := []byte("this-is-not-a-valid-encrypted-treckrr-dump-000000")
+	name := "treckrr-verify-neg.dump.enc"
+	if err := svc.uploadS3(ctx, name, junk); err != nil {
+		t.Fatalf("seed upload: %v", err)
+	}
+	t.Cleanup(func() {
+		if cl, err := svc.s3Client(); err == nil {
+			_ = cl.RemoveObject(context.Background(), svc.opt.S3.Bucket, svc.opt.S3.Prefix+name, minio.RemoveObjectOptions{})
+		}
+	})
+	// Correct size, but the stored bytes are not a decryptable archive → must reject.
+	if err := svc.verifyS3Object(ctx, name, int64(len(junk))); err == nil {
+		t.Error("verifyS3Object accepted a non-decryptable stored object")
+	}
+	// Size mismatch (as from an incomplete upload) → must reject on the size check.
+	if err := svc.verifyS3Object(ctx, name, int64(len(junk))+100); err == nil {
+		t.Error("verifyS3Object accepted a size mismatch (incomplete upload)")
 	}
 }
