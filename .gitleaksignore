@@ -1,7 +1,9 @@
-# generic-api-key false positive on an S3 object-path assignment in
-# internal/backup/backup.go (config prefix plus filename, not a secret) — one per
-# hoist of `key := s.opt.S3.Prefix + name` (S3Get, then verifyS3Object):
+# generic-api-key false positive on the S3 object-path assignments in
+# internal/backup/backup.go (a config prefix plus a filename, not a secret) — one
+# fingerprint per occurrence (S3Get, then verifyS3Object):
 7310c3233082713dfb55861a7fb96f3c8829c1a0:internal/backup/backup.go:generic-api-key:921
 11c20cde4e2e66f6ef3911fb439ee15b37fd9b29:internal/backup/backup.go:generic-api-key:951
-# The same rule on this file's earlier, now-reworded comment in commit 856c91a:
+# The same rule tripping on THIS file's earlier comments (since reworded to drop the
+# code snippet that triggered it) in commits 856c91a and 63f476b:
 856c91a27832d31204afa498cb0a7f675ca710b8:.gitleaksignore:generic-api-key:1
+63f476b8f9377f0c82a056825630ed77636fccb0:.gitleaksignore:generic-api-key:3
