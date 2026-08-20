@@ -47,6 +47,13 @@ func TestSearchIntegration(t *testing.T) {
 		yearID, nid, invNo); err != nil {
 		t.Fatalf("invoice: %v", err)
 	}
+	// A tractor whose model carries the number "948".
+	tractorIdent := uniq + " 948"
+	if _, err := pool.ExecContext(ctx,
+		`INSERT INTO tractors (base_id, ident, name, ps) VALUES ($1,$2,'',480)`,
+		baseID, tractorIdent); err != nil {
+		t.Fatalf("tractor: %v", err)
+	}
 
 	// Neighbor by name.
 	res, err := st.Search(ctx, uniq, 6)
@@ -79,6 +86,39 @@ func TestSearchIntegration(t *testing.T) {
 	}
 	if !foundI {
 		t.Errorf("invoice not found by number %q: %+v", invNo, res)
+	}
+
+	// Tractor by the model NUMBER "948" (the reported failure) — matches its ident.
+	res, err = st.Search(ctx, "948", 6)
+	if err != nil {
+		t.Fatalf("search tractor: %v", err)
+	}
+	foundT := false
+	for _, r := range res {
+		if r.Kind == "tractor" && strings.Contains(r.Label, tractorIdent) {
+			foundT = true
+			if r.URL == "" {
+				t.Errorf("tractor result has no URL")
+			}
+		}
+	}
+	if !foundT {
+		t.Errorf("tractor not found by model number 948: %+v", res)
+	}
+
+	// Price basis (Grundlage) by name.
+	res, err = st.Search(ctx, "Such-Basis", 6)
+	if err != nil {
+		t.Fatalf("search base: %v", err)
+	}
+	foundB := false
+	for _, r := range res {
+		if r.Kind == "base" && strings.Contains(r.Label, "Such-Basis") {
+			foundB = true
+		}
+	}
+	if !foundB {
+		t.Errorf("price basis not found by name: %+v", res)
 	}
 
 	// A wildcard-only term must be escaped (searched literally) and not match all.
