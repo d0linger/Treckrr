@@ -547,6 +547,11 @@ func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
 		}
 	}
 	uerr := s.uploadS3(ctx, name, data)
+	if uerr == nil {
+		// A PUT returning nil is not proof the bytes landed complete and readable
+		// off-box — re-read and verify the stored object before trusting it.
+		uerr = s.verifyS3Object(ctx, name, int64(len(data)))
+	}
 	ok := uerr == nil
 	now := time.Now()
 	s.updateStatus(func(st *Status) { st.S3OK, st.LastS3 = &ok, now })
@@ -571,13 +576,13 @@ func (s *Service) prune(keep int) {
 	}
 }
 
-// ValidateArchive writes the raw (decrypted) dump to a temp file and lists its
-// table of contents via pg_restore --list — proving it is a well-formed archive
-// — and returns the object count. A corrupt/truncated dump fails here.
-func (s *Service) ValidateArchive(ctx context.Context, raw []byte) (int, error) {
+// listArchive lists the archive's table of contents via pg_restore --list — proving
+// it is a well-formed archive — and returns the object count plus the raw TOC text
+// (for content-sanity checks). A corrupt/truncated dump fails here.
+func (s *Service) listArchive(ctx context.Context, raw []byte) (int, string, error) {
 	tmp, cleanup, err := writeTemp(raw)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	defer cleanup()
 	// tmp is an internal temp file we just wrote, not user input.
@@ -586,16 +591,50 @@ func (s *Service) ValidateArchive(ctx context.Context, raw []byte) (int, error) 
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		return 0, fmt.Errorf("not a valid archive: %s", strings.TrimSpace(errBuf.String()))
+		return 0, "", fmt.Errorf("not a valid archive: %s", strings.TrimSpace(errBuf.String()))
 	}
+	toc := out.String()
 	n := 0
-	for _, line := range strings.Split(out.String(), "\n") {
+	for _, line := range strings.Split(toc, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" && !strings.HasPrefix(line, ";") {
 			n++
 		}
 	}
-	return n, nil
+	return n, toc, nil
+}
+
+// ValidateArchive proves the decrypted bytes are a well-formed archive and returns
+// its object count.
+func (s *Service) ValidateArchive(ctx context.Context, raw []byte) (int, error) {
+	n, _, err := s.listArchive(ctx, raw)
+	return n, err
+}
+
+// Content-sanity floor for a verified dump: a well-formed archive can still be a dump
+// of the wrong or an empty database. A real Treckrr dump carries the full migrated
+// schema (~188 TOC objects even with no business rows) plus these core tables, so a
+// generous floor + their presence rejects a truncated/foreign/empty archive without
+// risking a false reject of a legitimate — even fresh-install — backup.
+const minArchiveObjects = 40
+
+var requiredRelations = []string{"users", "neighbors", "entries", "invoices"}
+
+// contentSanity rejects a structurally-valid archive whose contents don't look like a
+// real Treckrr database. Runs on the decrypted TOC as the last verify-before-promote
+// step, so a corrupt new dump can never replace the last good recovery point.
+func contentSanity(toc string, objects int) error {
+	if objects < minArchiveObjects {
+		return fmt.Errorf("archive holds only %d objects (< %d) — dump looks truncated or empty", objects, minArchiveObjects)
+	}
+	for _, rel := range requiredRelations {
+		// pg_restore --list line: "231; 1259 16519 TABLE public neighbors treckrr".
+		// The trailing space anchors the full name (so "entries" ≠ "entry_photos").
+		if !strings.Contains(toc, "TABLE public "+rel+" ") {
+			return fmt.Errorf("core table %q missing from archive TOC — wrong or incomplete dump", rel)
+		}
+	}
+	return nil
 }
 
 // RestoreRaw restores decrypted dump bytes into targetURL, dropping and
@@ -634,15 +673,18 @@ func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) 
 	return nil
 }
 
-// verifyRestorable is the automatic post-write drill: decrypt with the service
-// key and validate the archive.
+// verifyRestorable is the automatic post-write drill: decrypt with the service key,
+// prove the archive is well-formed, and sanity-check its contents.
 func (s *Service) verifyRestorable(ctx context.Context, enc []byte) error {
 	raw, err := decrypt(enc, s.secret)
 	if err != nil {
 		return err
 	}
-	_, err = s.ValidateArchive(ctx, raw)
-	return err
+	n, toc, err := s.listArchive(ctx, raw)
+	if err != nil {
+		return err
+	}
+	return contentSanity(toc, n)
 }
 
 // DecryptWith decrypts using an operator-supplied key string — used by the GUI
@@ -879,6 +921,33 @@ func (s *Service) uploadS3(ctx context.Context, name string, data []byte) error 
 	_, err = cl.PutObject(ctx, s.opt.S3.Bucket, s.opt.S3.Prefix+name, bytes.NewReader(data), int64(len(data)),
 		minio.PutObjectOptions{ContentType: "application/octet-stream"})
 	return err
+}
+
+// verifyS3Object re-reads a just-uploaded object and runs the full local verify on
+// the STORED bytes — proving the off-box copy is actually intact, not merely that
+// PutObject returned. StatObject size catches an incomplete/truncated upload; the
+// GCM auth tag in decrypt catches corruption; contentSanity catches an empty archive.
+// Do NOT compare the ETag to an md5 — a multipart upload's ETag is not the object md5.
+func (s *Service) verifyS3Object(ctx context.Context, name string, wantSize int64) error {
+	cl, err := s.s3Client()
+	if err != nil {
+		return err
+	}
+	info, err := cl.StatObject(ctx, s.opt.S3.Bucket, s.opt.S3.Prefix+name, minio.StatObjectOptions{})
+	if err != nil {
+		return fmt.Errorf("s3 head: %w", err)
+	}
+	if info.Size != wantSize {
+		return fmt.Errorf("s3 stored %d bytes, expected %d (incomplete upload?)", info.Size, wantSize)
+	}
+	enc, err := s.S3Get(ctx, name) // bounded read + own StatObject size cap
+	if err != nil {
+		return fmt.Errorf("s3 read-back: %w", err)
+	}
+	if int64(len(enc)) != wantSize {
+		return fmt.Errorf("s3 short read: %d of %d bytes", len(enc), wantSize)
+	}
+	return s.verifyRestorable(ctx, enc)
 }
 
 // S3Test checks that the configured bucket is reachable — the panel's
