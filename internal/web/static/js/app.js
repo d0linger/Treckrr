@@ -1050,7 +1050,9 @@
 		function query(q) {
 			clearTimeout(timer);
 			var t = q.trim();
-			if (t.length < 2) { render([]); return; }
+			// seq++ so a fetch already in flight from a longer query can't repaint stale
+			// hits once the input narrows below the 2-char threshold.
+			if (t.length < 2) { seq++; render([]); return; }
 			// Show matching nav targets instantly; append the debounced API data hits.
 			var local = localCommands(t);
 			render(local);

@@ -151,6 +151,46 @@ func TestSearchIntegration(t *testing.T) {
 		t.Errorf("price basis not found by name: %+v", res)
 	}
 
+	// Machines, load levels and gespanne are each searchable by name and link to
+	// their basis; exercise one of each (Kind, Label and navigation URL).
+	machineName := uniq + " Maschine"
+	if _, err := pool.ExecContext(ctx,
+		`INSERT INTO machines (base_id, name, working_width, cost_per_ab) VALUES ($1,$2,3,10)`,
+		baseID, machineName); err != nil {
+		t.Fatalf("machine: %v", err)
+	}
+	loadName := uniq + " Stufe"
+	if _, err := pool.ExecContext(ctx,
+		`INSERT INTO load_levels (base_id, name, cost_per_ps) VALUES ($1,$2,5)`,
+		baseID, loadName); err != nil {
+		t.Fatalf("load level: %v", err)
+	}
+	gespannName := uniq + " Gespann"
+	if _, err := pool.ExecContext(ctx,
+		`INSERT INTO gespanne (base_id, name) VALUES ($1,$2)`,
+		baseID, gespannName); err != nil {
+		t.Fatalf("gespann: %v", err)
+	}
+	assertKind := func(query, wantKind, wantLabel, wantURL string) {
+		res, err := st.Search(ctx, query, 6)
+		if err != nil {
+			t.Fatalf("search %s: %v", wantKind, err)
+		}
+		for _, r := range res {
+			if r.Kind == wantKind && r.Label == wantLabel {
+				if r.URL != wantURL {
+					t.Errorf("%s %q: URL = %q, want %q", wantKind, wantLabel, r.URL, wantURL)
+				}
+				return
+			}
+		}
+		t.Errorf("%s not found by name %q: %+v", wantKind, query, res)
+	}
+	pricesURL := fmt.Sprintf("/prices?base=%d", baseID)
+	assertKind(machineName, "machine", machineName, pricesURL)
+	assertKind(loadName, "load", loadName, pricesURL)
+	assertKind(gespannName, "gespann", gespannName, fmt.Sprintf("/gespanne?base=%d", baseID))
+
 	// --- Stage 2: German stemming, diacritic folding, typo tolerance ---
 	if _, err := st.CreateNeighbor(ctx, uniq+"stem", "Traktor"); err != nil {
 		t.Fatalf("stem neighbor: %v", err)
