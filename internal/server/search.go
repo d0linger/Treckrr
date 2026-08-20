@@ -33,7 +33,8 @@ func (s *Server) handleEntryPrecheck(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSearchAPI powers the global search / command palette: it returns JSON
-// hits across neighbors, invoices and gespanne for a query of at least two
+// hits across the maintained master data — neighbors, invoices, and each basis with
+// its tractors, machines, load levels and gespanne — for a query of at least two
 // characters (shorter queries return an empty list to avoid noise).
 func (s *Server) handleSearchAPI(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))

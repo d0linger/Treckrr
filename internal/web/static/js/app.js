@@ -985,19 +985,40 @@
 		});
 	})();
 
-	// Command palette (Ctrl/Cmd+K): fuzzy jump to a neighbor, invoice or gespann
-	// via the /api/search endpoint. Debounced; keyboard-navigable.
+	// Command palette (Ctrl/Cmd+K): fuzzy jump to any master-data hit — neighbor,
+	// invoice, basis, tractor, machine, load level or gespann — plus static nav
+	// targets, via the /api/search endpoint. Debounced; keyboard-navigable.
 	(function () {
 		var ov = null, input = null, list = null, items = [], sel = -1, timer = null, seq = 0;
-		var ICON = { neighbor: "👤", invoice: "📄", gespann: "🚜" };
-		function close() { if (ov) { ov.remove(); ov = null; items = []; sel = -1; } }
+		var ICON = { neighbor: "👤", invoice: "📄", base: "📋", tractor: "🚜", machine: "⚙️", load: "🏋️", gespann: "🔗", nav: "➡️" };
+
+		// Static navigation targets: category/section names ("Grundlagen", "Jahre") are
+		// not data rows, so they can't come from /api/search — offer them as jump
+		// destinations, matched on their label + keywords (accent-folded).
+		var COMMANDS = [
+			{ label: "Übersicht", sub: "Dashboard", url: "/", kw: "start home dashboard uebersicht" },
+			{ label: "Nachbarn", sub: "verwalten", url: "/neighbors", kw: "nachbar kontakte" },
+			{ label: "Grundlagen", sub: "Traktoren · Maschinen · Belastungsstufen · Preise", url: "/bases", kw: "grundlagen bemessung preise preisliste traktoren maschinen belastungsstufen laststufen gespanne" },
+			{ label: "Jahre", sub: "Abrechnungsjahre", url: "/years", kw: "jahr abrechnung" },
+			{ label: "Mahnwesen", sub: "Offene Posten", url: "/mahnwesen", kw: "mahnung offen faellig zahlung" }
+		];
+		function fold(x) { return x.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, ""); }
+		function localCommands(q) {
+			var f = fold(q);
+			return COMMANDS.filter(function (c) { return fold(c.label + " " + c.kw).indexOf(f) !== -1; })
+				.map(function (c) { return { kind: "nav", label: c.label, sub: c.sub, url: c.url }; });
+		}
+		// Bump seq so an in-flight /api/search response is ignored once closed; otherwise
+		// it would repopulate items/sel on the now-detached list and a later reopen+Enter
+		// could jump to a hit the user never saw.
+		function close() { if (ov) { ov.remove(); ov = null; items = []; sel = -1; seq++; } }
 		function open() {
 			if (ov) return;
 			ov = document.createElement("div"); ov.className = "cmdk"; ov.setAttribute("role", "dialog");
 			ov.setAttribute("aria-label", "Suche");
 			var box = document.createElement("div"); box.className = "cmdk__box";
 			input = document.createElement("input"); input.className = "cmdk__input input";
-			input.type = "search"; input.placeholder = "Suchen: Nachbar, Rechnung, Gespann …";
+			input.type = "search"; input.placeholder = "Suchen: Nachbar, Rechnung, Traktor, Grundlagen …";
 			input.setAttribute("aria-label", "Suche"); input.autocomplete = "off";
 			list = document.createElement("ul"); list.className = "cmdk__list";
 			box.appendChild(input); box.appendChild(list); ov.appendChild(box);
@@ -1028,13 +1049,19 @@
 		function go(i) { var r = items[i]; if (r && r.url) window.location.href = r.url; }
 		function query(q) {
 			clearTimeout(timer);
-			if (q.trim().length < 2) { render([]); return; }
+			var t = q.trim();
+			// seq++ so a fetch already in flight from a longer query can't repaint stale
+			// hits once the input narrows below the 2-char threshold.
+			if (t.length < 2) { seq++; render([]); return; }
+			// Show matching nav targets instantly; append the debounced API data hits.
+			var local = localCommands(t);
+			render(local);
 			var mine = ++seq;
 			timer = setTimeout(function () {
-				fetch("/api/search?q=" + encodeURIComponent(q.trim()), { credentials: "same-origin" })
+				fetch("/api/search?q=" + encodeURIComponent(t), { credentials: "same-origin" })
 					.then(function (r) { return r.ok ? r.json() : []; })
-					.then(function (res) { if (mine === seq) render(res || []); })
-					.catch(function () { if (mine === seq) render([]); });
+					.then(function (res) { if (mine === seq) render(local.concat(res || [])); })
+					.catch(function () { if (mine === seq) render(local); });
 			}, 180);
 		}
 		function onKey(e) {

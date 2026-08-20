@@ -1,0 +1,21 @@
+-- 0037: fuzzy / stemmed / diacritic-folded global search.
+--
+-- Adds the two Postgres extensions the search query uses:
+--   pg_trgm  — trigram word-similarity for typo tolerance (Traktior → Traktor) and
+--              fast substring/ILIKE matching.
+--   unaccent — diacritic folding, so "Muller" finds "Müller" (drops the umlaut).
+-- German word stemming (Traktoren → Traktor) comes from to_tsvector('german', …) in
+-- the query itself and needs no schema change.
+--
+-- No indexes here on purpose. At this scale — a single household, a few hundred rows
+-- per table — the planner sequential-scans the tiny tables and computing to_tsvector
+-- / word_similarity on the fly is instant; a GIN index would just be unused
+-- maintenance. The scale-up path, should the data ever reach tens of thousands of
+-- rows, is a GIN trigram index (USING gin (col gin_trgm_ops)) plus a STORED generated
+-- tsvector column (with an IMMUTABLE unaccent wrapper) — added then, not now.
+--
+-- Note: unaccent folds the DIACRITIC (ü→u), not the German ue-convention (ü→ue), so
+-- "Mueller" does not fold to "Müller". A ü→ue mapping would need a custom unaccent
+-- rules file baked into the image — a separate, optional follow-up.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS unaccent;
