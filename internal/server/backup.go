@@ -149,12 +149,11 @@ func humanAgeDE(t time.Time) string {
 // admin sees at a glance whether the last backup succeeded and how old it is
 // without opening the full panel. Tone drives the tile color.
 type backupHealthView struct {
-	Tone          string // "ok" | "warn" | "bad"
-	Title         string
-	AgeLabel      string // "vor 3 Std." (empty when there is no successful backup)
-	S3            string // "ok" | "fehlgeschlagen" | ""
-	Encrypted     bool
-	RestoreTested time.Time
+	Tone      string // "ok" | "warn" | "bad"
+	Title     string
+	AgeLabel  string // "vor 3 Std." (empty when there is no successful backup)
+	S3        string // "ok" | "fehlgeschlagen" | ""
+	Encrypted bool
 }
 
 // backupHealth builds the dashboard tile from the same status.json + classifier the
@@ -168,10 +167,9 @@ func (s *Server) backupHealth() backupHealthView {
 		return backupHealthView{Tone: "warn", Title: "Noch kein automatisches Backup"}
 	}
 	v := backupHealthView{
-		AgeLabel:      humanAgeDE(st.LastBackup),
-		S3:            st.S3,
-		Encrypted:     st.Encrypted,
-		RestoreTested: st.RestoreTested,
+		AgeLabel:  humanAgeDE(st.LastBackup),
+		S3:        st.S3,
+		Encrypted: st.Encrypted,
 	}
 	switch st.State {
 	case "ok":

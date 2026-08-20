@@ -522,10 +522,16 @@ func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
 		newest := files[0].Name
 		remote, _ := s.S3List(ctx)
 		for _, r := range remote {
-			if r.Name == newest { // already mirrored — just refresh the timer
+			if r.Name == newest { // already mirrored — verify the stored copy before trusting it
+				// A prior run may have uploaded this object but failed verification and
+				// left it un-pruned; blindly reporting S3OK here would mask a corrupt
+				// off-box copy forever. Re-verify the stored bytes (also catches at-rest
+				// bit-rot) instead of just refreshing the timer.
+				verr := s.verifyS3Object(ctx, newest, r.Size)
+				ok := verr == nil
 				now := time.Now()
-				s.updateStatus(func(st *Status) { ok := true; st.S3OK, st.LastS3 = &ok, now })
-				return nil
+				s.updateStatus(func(st *Status) { st.S3OK, st.LastS3 = &ok, now })
+				return verr
 			}
 		}
 		name = newest
@@ -860,7 +866,16 @@ func (s *Service) ManualS3(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Same drill as the scheduled S3-only path: verify the dump restores before it
+	// becomes an off-box copy, then re-verify the STORED object — a PUT returning nil
+	// is not proof the bytes landed complete and readable off-box.
+	if err := s.verifyRestorable(ctx, enc); err != nil {
+		return "", err
+	}
 	uerr := s.uploadS3(ctx, name, enc)
+	if uerr == nil {
+		uerr = s.verifyS3Object(ctx, name, int64(len(enc)))
+	}
 	ok := uerr == nil
 	now := time.Now()
 	s.updateStatus(func(st *Status) { st.S3OK, st.LastS3 = &ok, now })
@@ -933,19 +948,29 @@ func (s *Service) verifyS3Object(ctx context.Context, name string, wantSize int6
 	if err != nil {
 		return err
 	}
-	info, err := cl.StatObject(ctx, s.opt.S3.Bucket, s.opt.S3.Prefix+name, minio.StatObjectOptions{})
+	key := s.opt.S3.Prefix + name
+	info, err := cl.StatObject(ctx, s.opt.S3.Bucket, key, minio.StatObjectOptions{})
 	if err != nil {
 		return fmt.Errorf("s3 head: %w", err)
 	}
 	if info.Size != wantSize {
 		return fmt.Errorf("s3 stored %d bytes, expected %d (incomplete upload?)", info.Size, wantSize)
 	}
-	enc, err := s.S3Get(ctx, name) // bounded read + own StatObject size cap
+	obj, err := cl.GetObject(ctx, s.opt.S3.Bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return fmt.Errorf("s3 read-back: %w", err)
+	}
+	defer obj.Close()
+	// Read exactly the size we uploaded (+1 guards against an over-long object). We
+	// know wantSize from our own upload, so this bounds memory by the expected size
+	// WITHOUT the generic 1 GiB S3Get ceiling, which would false-fail a legitimately
+	// large dump (a copy that IS stored and complete).
+	enc, err := io.ReadAll(io.LimitReader(obj, wantSize+1))
 	if err != nil {
 		return fmt.Errorf("s3 read-back: %w", err)
 	}
 	if int64(len(enc)) != wantSize {
-		return fmt.Errorf("s3 short read: %d of %d bytes", len(enc), wantSize)
+		return fmt.Errorf("s3 read-back size %d != expected %d", len(enc), wantSize)
 	}
 	return s.verifyRestorable(ctx, enc)
 }
