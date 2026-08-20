@@ -24,6 +24,24 @@
 		});
 	})();
 
+	// Backup-health dot: tap toggles the popover (hover/focus already reveal it via
+	// CSS on desktop). Closes on an outside click or Escape — needed on touch, where
+	// there is no hover.
+	(function () {
+		var wrap = document.querySelector("[data-bk]");
+		if (!wrap) return;
+		var btn = wrap.querySelector("[data-bk-toggle]");
+		if (!btn) return;
+		function close() { wrap.classList.remove("is-open"); btn.setAttribute("aria-expanded", "false"); }
+		btn.addEventListener("click", function (e) {
+			e.stopPropagation();
+			var open = wrap.classList.toggle("is-open");
+			btn.setAttribute("aria-expanded", open ? "true" : "false");
+		});
+		document.addEventListener("click", function (e) { if (!wrap.contains(e.target)) close(); });
+		document.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
+	})();
+
 	// Brand mark: pick one farm-machine symbol and keep it — stable across
 	// refreshes and in-app navigation. It only changes when the stored mark is
 	// missing (e.g. the browser cache / site data was cleared), where a fresh

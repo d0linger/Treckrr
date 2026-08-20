@@ -29,17 +29,6 @@
 		</div>
 	</div>
 
-	{{with .BackupHealth}}
-	<a class="bkhealth bkhealth--{{.Tone}}" href="/admin/backup">
-		<span class="bkhealth__dot" aria-hidden="true"></span>
-		<span class="bkhealth__body">
-			<span class="bkhealth__title">{{.Title}}</span>
-			<span class="bkhealth__meta">{{if .AgeLabel}}Letztes Backup {{.AgeLabel}}{{if eq .S3 "ok"}} · S3 ok{{else if eq .S3 "fehlgeschlagen"}} · S3 fehlgeschlagen{{end}}{{if .Encrypted}} · verschlüsselt{{end}}{{else}}Zur Backup-Verwaltung{{end}}</span>
-		</span>
-		<span class="bkhealth__go" aria-hidden="true">›</span>
-	</a>
-	{{end}}
-
 	{{if or (and (not .Completed) .StaleCount) (and .Completed .OpenCount)}}
 	<div>
 		<h2 class="section-title">Zu erledigen</h2>

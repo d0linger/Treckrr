@@ -931,23 +931,22 @@ span.paychip { cursor: default; }
 .attn__txt strong { font-weight: 800; }
 .attn__go { color: var(--muted); font-size: 1.1rem; line-height: 1; }
 
-/* ---- Backup-health tile (admin dashboard) ----------------------------- */
-.bkhealth { display: flex; align-items: center; gap: .65rem; text-decoration: none; color: var(--text);
+/* ---- Backup-health dot (header status indicator) ---------------------- */
+.bkdot { position: relative; display: inline-flex; }
+.bkdot__btn { display: grid; place-items: center; }
+.bkdot__mark { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
+	font-size: 11px; font-weight: 900; line-height: 1; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.3); }
+.bkdot--ok .bkdot__mark { background: var(--primary-strong); }
+.bkdot--warn .bkdot__mark { background: var(--accent); }
+.bkdot--bad .bkdot__mark { background: var(--danger); }
+.bkdot__pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; min-width: 220px; max-width: 80vw;
+	display: none; flex-direction: column; gap: .15rem; text-align: left;
 	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-	padding: .55rem .7rem; box-shadow: var(--shadow); }
-.bkhealth:hover { background: var(--surface-2); }
-.bkhealth__dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; background: var(--muted); }
-.bkhealth__body { display: flex; flex-direction: column; gap: .05rem; flex: 1; min-width: 0; }
-.bkhealth__title { font-size: .9rem; font-weight: 700; }
-.bkhealth__meta { font-size: .78rem; color: var(--muted); }
-.bkhealth__go { color: var(--muted); font-size: 1.1rem; line-height: 1; flex: 0 0 auto; }
-.bkhealth--ok { border-color: color-mix(in srgb, var(--primary) 40%, var(--border)); background: color-mix(in srgb, var(--primary) 6%, var(--surface)); }
-.bkhealth--ok .bkhealth__dot { background: var(--primary-strong); }
-.bkhealth--warn { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
-.bkhealth--warn .bkhealth__dot { background: var(--accent); }
-.bkhealth--bad { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
-.bkhealth--bad .bkhealth__dot { background: var(--danger); }
-.bkhealth--bad .bkhealth__title { color: var(--danger); }
+	box-shadow: var(--shadow); padding: .6rem .7rem; }
+.bkdot:hover .bkdot__pop, .bkdot:focus-within .bkdot__pop, .bkdot.is-open .bkdot__pop { display: flex; }
+.bkdot__pop-title { font-weight: 700; font-size: .85rem; }
+.bkdot__pop-meta { font-size: .78rem; color: var(--muted); }
+.bkdot__pop-link { font-size: .78rem; margin-top: .2rem; font-weight: 600; }
 
 /* ---- Floating action button (quick-book) ------------------------------ */
 .fab { position: fixed; right: 1rem; z-index: 25;
