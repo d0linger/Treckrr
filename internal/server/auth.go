@@ -246,7 +246,14 @@ func (s *Server) signPending2FA(userID int64) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + hex.EncodeToString(mac.Sum(nil))
 }
 
+// maxPending2FATokenLen bounds the raw pending-2FA cookie input so an oversized
+// payload cannot drive unnecessary string or base64 decoding allocations (DoS defense).
+const maxPending2FATokenLen = 200
+
 func (s *Server) verifyPending2FA(value string) (int64, bool) {
+	if len(value) > maxPending2FATokenLen {
+		return 0, false
+	}
 	parts := strings.SplitN(value, ".", 2)
 	if len(parts) != 2 {
 		return 0, false
