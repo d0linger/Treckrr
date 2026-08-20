@@ -1,5 +1,7 @@
 # generic-api-key false positive on an S3 object-path assignment in
-# internal/backup/backup.go (config prefix plus filename, not a secret):
+# internal/backup/backup.go (config prefix plus filename, not a secret) — one per
+# hoist of `key := s.opt.S3.Prefix + name` (S3Get, then verifyS3Object):
 7310c3233082713dfb55861a7fb96f3c8829c1a0:internal/backup/backup.go:generic-api-key:921
+11c20cde4e2e66f6ef3911fb439ee15b37fd9b29:internal/backup/backup.go:generic-api-key:951
 # The same rule on this file's earlier, now-reworded comment in commit 856c91a:
 856c91a27832d31204afa498cb0a7f675ca710b8:.gitleaksignore:generic-api-key:1
