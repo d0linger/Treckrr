@@ -938,12 +938,16 @@ span.paychip { cursor: default; }
    red cross. Three distinct shapes so state is never colour-alone. */
 .bkdot { position: relative; display: inline-flex; }
 .bkdot__btn { display: grid; place-items: center; }
-.bkdot__mark { display: inline-flex; color: var(--muted); }
+/* The app bar is a green (--primary) surface in BOTH themes, so the page-surface
+   status tokens don't work here — the mid-green --primary-strong is nearly the
+   header colour and vanishes in light mode. Use bright, header-tuned colours (same
+   reason .appbar icons are hard-coded #fff) + a faint dark shadow so the ring pops
+   on the green bar in light and dark alike. */
+.bkdot__mark { display: inline-flex; color: #fff; filter: drop-shadow(0 1px 1px rgba(0,0,0,.28)); }
 .bkdot__mark svg { display: block; }
-.bkdot--ok .bkdot__mark { color: var(--primary-strong);
-	filter: drop-shadow(0 0 2px color-mix(in srgb, currentColor 45%, transparent)); }
-.bkdot--warn .bkdot__mark { color: var(--accent); animation: bkdot-pulse 1.7s ease-in-out infinite; }
-.bkdot--bad .bkdot__mark { color: var(--danger); }
+.bkdot--ok .bkdot__mark { color: #8fe6b6; }
+.bkdot--warn .bkdot__mark { color: #f6c650; animation: bkdot-pulse 1.7s ease-in-out infinite; }
+.bkdot--bad .bkdot__mark { color: #ff9078; }
 @keyframes bkdot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
 /* For a future real "Backup läuft" state, swap the amber icon for the open arc
    (path "M12 3a9 9 0 1 0 9 9") and use: animation: bkdot-spin .9s linear infinite;
