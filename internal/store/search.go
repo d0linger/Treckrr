@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 func neighborPath(id int64) string { return "/neighbors/" + strconv.FormatInt(id, 10) }
@@ -32,12 +33,41 @@ func likeEscape(q string) string {
 	return "%" + r.Replace(q) + "%"
 }
 
-// searchSub runs one entity sub-query (bound to the escaped pattern $1 and the
-// per-kind cap $2) and appends a SearchResult per row via mk. Centralizing the
+// ftsWhere builds the fuzzy, diacritic-folded, German-stemmed predicate over the SQL
+// text expression expr. expr is trusted (a constant from this file, never user
+// input), so string-building it is safe; the user query is bound to $1/$2.
+//
+//	$1 = raw query    → FTS tsquery (word stemming) + trigram word-similarity (typos)
+//	$2 = ILIKE '%q%'  → diacritic-folded substring / model-number match
+//
+// The trigram term is added only for queries long enough to trigram meaningfully
+// (>= 4 runes), so a short numeric query like "948" can't drag in loose fuzzy hits.
+// $1::text / $2::text: unaccent is overloaded (text vs regdictionary), so an un-cast
+// placeholder is an ambiguous parameter type (42P18).
+func ftsWhere(expr string, fuzzy bool) string {
+	w := "to_tsvector('german', unaccent(" + expr + ")) @@ websearch_to_tsquery('german', unaccent($1::text))" +
+		" OR unaccent(" + expr + ") ILIKE unaccent($2::text) ESCAPE '\\'"
+	if fuzzy {
+		w += " OR word_similarity(unaccent($1::text), unaccent(" + expr + ")) >= 0.4"
+	}
+	return "(" + w + ")"
+}
+
+// rankOrder is the ORDER BY prefix that ranks a hit by relevance: an exact/substring
+// match first, then by trigram closeness. Without it, a loose fuzzy match could crowd
+// the real hit out from under the per-kind LIMIT (results are otherwise ordered by
+// name/date, not relevance). Placed before each entity's own tiebreak.
+func rankOrder(expr string) string {
+	return "(unaccent(" + expr + ") ILIKE unaccent($2::text) ESCAPE '\\') DESC," +
+		" word_similarity(unaccent($1::text), unaccent(" + expr + ")) DESC"
+}
+
+// searchSub runs one entity sub-query (bound to $1 = raw query, $2 = ILIKE pattern,
+// $3 = per-kind cap) and appends a SearchResult per row via mk. Centralizing the
 // query/scan/close plumbing keeps each entity a couple of lines and always closes
 // rows, even on a scan error.
-func (s *Store) searchSub(ctx context.Context, out *[]SearchResult, query, pat string, perKind int, mk func(*sql.Rows) (SearchResult, error)) error {
-	rows, err := s.db.QueryContext(ctx, query, pat, perKind)
+func (s *Store) searchSub(ctx context.Context, out *[]SearchResult, query, rawQ, pat string, perKind int, mk func(*sql.Rows) (SearchResult, error)) error {
+	rows, err := s.db.QueryContext(ctx, query, rawQ, pat, perKind)
 	if err != nil {
 		return err
 	}
@@ -53,19 +83,25 @@ func (s *Store) searchSub(ctx context.Context, out *[]SearchResult, query, pat s
 }
 
 // Search returns up to perKind matches per entity, combined into a flat, navigable
-// list. Case-insensitive ILIKE across the maintained master data — neighbors,
-// invoices, and each basis with its tractors / machines / load levels / gespanne —
-// with numbers searched via ::text, so "948" finds a tractor and "2025" a basis.
-// No extension needed at this scale.
+// list, across the maintained master data — neighbors, invoices, and each basis with
+// its tractors / machines / load levels / gespanne. Name/text fields match on German
+// stemming (to_tsvector), diacritic-folded substring (unaccent + ILIKE) and trigram
+// typo tolerance, so "Traktoren" finds "Traktor", "Muller" finds "Müller" and "948"
+// finds a tractor by its model number; matches are ranked exact-before-fuzzy.
 func (s *Store) Search(ctx context.Context, q string, perKind int) ([]SearchResult, error) {
 	pat := likeEscape(q)
+	// Only run the trigram word-similarity term for queries long enough for it to be
+	// meaningful; below ~one trigram it is noise, and short numeric codes are already
+	// covered by the substring match.
+	fuzzy := utf8.RuneCountInString(strings.TrimSpace(q)) >= 4
 	out := make([]SearchResult, 0, perKind*7)
 
 	// Neighbors (name or note).
+	nExpr := "coalesce(name,'') || ' ' || coalesce(note,'')"
 	if err := s.searchSub(ctx, &out, `
 		SELECT id, name, note FROM neighbors
-		WHERE name ILIKE $1 ESCAPE '\' OR note ILIKE $1 ESCAPE '\'
-		ORDER BY archived, name LIMIT $2`, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
+		WHERE `+ftsWhere(nExpr, fuzzy)+`
+		ORDER BY archived, `+rankOrder(nExpr)+`, name LIMIT $3`, q, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
 		var id int64
 		var name, note string
 		if err := rows.Scan(&id, &name, &note); err != nil {
@@ -76,12 +112,13 @@ func (s *Store) Search(ctx context.Context, q string, perKind int) ([]SearchResu
 		return nil, err
 	}
 
-	// Invoices by number → link to that neighbor's Beleg for the invoice's year.
+	// Invoices by number. Same hybrid predicate for consistency (and so $1 is bound
+	// here too); the substring term carries the real number matching.
 	if err := s.searchSub(ctx, &out, `
 		SELECT iv.number, n.name, iv.neighbor_id, iv.billing_year_id
 		FROM invoices iv JOIN neighbors n ON n.id = iv.neighbor_id
-		WHERE iv.number ILIKE $1 ESCAPE '\'
-		ORDER BY iv.issued_on DESC LIMIT $2`, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
+		WHERE `+ftsWhere("iv.number", fuzzy)+`
+		ORDER BY `+rankOrder("iv.number")+`, iv.issued_on DESC LIMIT $3`, q, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
 		var number, name string
 		var nid, yid int64
 		if err := rows.Scan(&number, &name, &nid, &yid); err != nil {
@@ -95,8 +132,8 @@ func (s *Store) Search(ctx context.Context, q string, perKind int) ([]SearchResu
 	// Price bases (Bemessungsgrundlagen) by name or "valid from" year.
 	if err := s.searchSub(ctx, &out, `
 		SELECT id, name, year FROM price_bases
-		WHERE name ILIKE $1 ESCAPE '\' OR year::text ILIKE $1 ESCAPE '\'
-		ORDER BY year DESC LIMIT $2`, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
+		WHERE `+ftsWhere("name", fuzzy)+` OR year::text ILIKE $2 ESCAPE '\'
+		ORDER BY `+rankOrder("name")+`, year DESC LIMIT $3`, q, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
 		var id int64
 		var name string
 		var year int
@@ -110,11 +147,12 @@ func (s *Store) Search(ctx context.Context, q string, perKind int) ([]SearchResu
 
 	// Tractors by model (ident/name) or horsepower (ps::text, so "948" matches the
 	// number too). trim_scale drops a NUMERIC's trailing zeros for a clean "180 PS".
+	tExpr := "t.ident || ' ' || coalesce(t.name,'')"
 	if err := s.searchSub(ctx, &out, `
 		SELECT t.ident, trim_scale(t.ps)::text, t.base_id, b.year
 		FROM tractors t JOIN price_bases b ON b.id = t.base_id
-		WHERE t.ident ILIKE $1 ESCAPE '\' OR t.name ILIKE $1 ESCAPE '\' OR t.ps::text ILIKE $1 ESCAPE '\'
-		ORDER BY b.year DESC, t.ident LIMIT $2`, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
+		WHERE `+ftsWhere(tExpr, fuzzy)+` OR t.ps::text ILIKE $2 ESCAPE '\'
+		ORDER BY `+rankOrder(tExpr)+`, b.year DESC, t.ident LIMIT $3`, q, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
 		var ident, ps string
 		var baseID int64
 		var year int
@@ -129,8 +167,8 @@ func (s *Store) Search(ctx context.Context, q string, perKind int) ([]SearchResu
 	// Machines by name.
 	if err := s.searchSub(ctx, &out, `
 		SELECT m.name, m.base_id, b.year FROM machines m JOIN price_bases b ON b.id = m.base_id
-		WHERE m.name ILIKE $1 ESCAPE '\'
-		ORDER BY b.year DESC, m.name LIMIT $2`, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
+		WHERE `+ftsWhere("m.name", fuzzy)+`
+		ORDER BY `+rankOrder("m.name")+`, b.year DESC, m.name LIMIT $3`, q, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
 		var name string
 		var baseID int64
 		var year int
@@ -145,8 +183,8 @@ func (s *Store) Search(ctx context.Context, q string, perKind int) ([]SearchResu
 	// Load levels (Belastungsstufen) by name.
 	if err := s.searchSub(ctx, &out, `
 		SELECT l.name, l.base_id, b.year FROM load_levels l JOIN price_bases b ON b.id = l.base_id
-		WHERE l.name ILIKE $1 ESCAPE '\'
-		ORDER BY b.year DESC, l.name LIMIT $2`, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
+		WHERE `+ftsWhere("l.name", fuzzy)+`
+		ORDER BY `+rankOrder("l.name")+`, b.year DESC, l.name LIMIT $3`, q, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
 		var name string
 		var baseID int64
 		var year int
@@ -161,7 +199,8 @@ func (s *Store) Search(ctx context.Context, q string, perKind int) ([]SearchResu
 	// Gespanne (fixed tractor+load+machine combos) by name.
 	if err := s.searchSub(ctx, &out, `
 		SELECT g.name, g.base_id FROM gespanne g
-		WHERE g.name ILIKE $1 ESCAPE '\' ORDER BY g.name LIMIT $2`, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
+		WHERE `+ftsWhere("g.name", fuzzy)+`
+		ORDER BY `+rankOrder("g.name")+`, g.name LIMIT $3`, q, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
 		var name string
 		var baseID int64
 		if err := rows.Scan(&name, &baseID); err != nil {

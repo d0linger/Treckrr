@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/d0linger/treckrr/internal/db"
 	"github.com/d0linger/treckrr/internal/store"
@@ -30,10 +31,22 @@ func TestSearchIntegration(t *testing.T) {
 	}
 	st := store.New(pool, "test-encryption-secret")
 
-	pid := os.Getpid()
-	uniq := fmt.Sprintf("Suchbar%d", pid)
-	baseID, _ := st.CreateEmptyBase(ctx, 4000+pid%1000, "Such-Basis")
-	yearID, _ := st.CreateBillingYear(ctx, 4000+pid%1000, baseID, "Such-Jahr")
+	// Unique per run so repeated runs against a shared integration DB don't collide on
+	// the UNIQUE constraints — neighbor name, invoice number, and billing_years.year
+	// (INTEGER NOT NULL UNIQUE). os.Getpid() alone repeats across separate containers,
+	// so derive both the name token and the year from one nanosecond stamp; the year is
+	// reduced into int4 range.
+	nano := time.Now().UnixNano()
+	uniq := fmt.Sprintf("Suchbar%d", nano)
+	yr := int(nano % 2_000_000_000)
+	baseID, err := st.CreateEmptyBase(ctx, yr, "Such-Basis")
+	if err != nil {
+		t.Fatalf("base: %v", err)
+	}
+	yearID, err := st.CreateBillingYear(ctx, yr, baseID, "Such-Jahr")
+	if err != nil {
+		t.Fatalf("year: %v", err)
+	}
 	nid, err := st.CreateNeighbor(ctx, uniq+" Nachbar", "notiz")
 	if err != nil {
 		t.Fatalf("neighbor: %v", err)
@@ -41,7 +54,7 @@ func TestSearchIntegration(t *testing.T) {
 	if err := st.AddNeighborToYear(ctx, yearID, nid); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	invNo := fmt.Sprintf("%d-SUCH", pid)
+	invNo := uniq + "R"
 	if _, err := pool.ExecContext(ctx,
 		`INSERT INTO invoices (billing_year_id, neighbor_id, number, gross) VALUES ($1,$2,$3,10)`,
 		yearID, nid, invNo); err != nil {
@@ -88,22 +101,39 @@ func TestSearchIntegration(t *testing.T) {
 		t.Errorf("invoice not found by number %q: %+v", invNo, res)
 	}
 
-	// Tractor by the model NUMBER "948" (the reported failure) — matches its ident.
+	// Tractor lookup, the two facets of the reported bug:
+	//  (a) the bare model NUMBER "948" must return tractors at all — it returned none
+	//      before Stage 1 extended coverage to tractors; assert some tractor comes back.
 	res, err = st.Search(ctx, "948", 6)
 	if err != nil {
-		t.Fatalf("search tractor: %v", err)
+		t.Fatalf("search tractor by number: %v", err)
 	}
-	foundT := false
+	found948 := false
 	for _, r := range res {
-		if r.Kind == "tractor" && strings.Contains(r.Label, tractorIdent) {
-			foundT = true
+		if r.Kind == "tractor" {
+			found948 = true
 			if r.URL == "" {
 				t.Errorf("tractor result has no URL")
 			}
 		}
 	}
+	if !found948 {
+		t.Errorf("model number 948 returned no tractor: %+v", res)
+	}
+	//  (b) this run's specific tractor is findable by its unique ident — isolated from
+	//      the other "948" rows a shared integration DB may accumulate.
+	res, err = st.Search(ctx, tractorIdent, 6)
+	if err != nil {
+		t.Fatalf("search tractor by ident: %v", err)
+	}
+	foundT := false
+	for _, r := range res {
+		if r.Kind == "tractor" && strings.Contains(r.Label, tractorIdent) {
+			foundT = true
+		}
+	}
 	if !foundT {
-		t.Errorf("tractor not found by model number 948: %+v", res)
+		t.Errorf("tractor not found by unique ident %q: %+v", tractorIdent, res)
 	}
 
 	// Price basis (Grundlage) by name.
@@ -120,6 +150,37 @@ func TestSearchIntegration(t *testing.T) {
 	if !foundB {
 		t.Errorf("price basis not found by name: %+v", res)
 	}
+
+	// --- Stage 2: German stemming, diacritic folding, typo tolerance ---
+	if _, err := st.CreateNeighbor(ctx, uniq+"stem", "Traktor"); err != nil {
+		t.Fatalf("stem neighbor: %v", err)
+	}
+	if _, err := st.CreateNeighbor(ctx, uniq+"grün", ""); err != nil {
+		t.Fatalf("diacritic neighbor: %v", err)
+	}
+	if _, err := st.CreateNeighbor(ctx, uniq+"Schmidt", ""); err != nil {
+		t.Fatalf("typo neighbor: %v", err)
+	}
+	assertNeighbor := func(query, wantLabel, what string) {
+		res, err := st.Search(ctx, query, 8)
+		if err != nil {
+			t.Fatalf("search (%s): %v", what, err)
+		}
+		for _, r := range res {
+			if r.Kind == "neighbor" && strings.Contains(r.Label, wantLabel) {
+				return
+			}
+		}
+		t.Errorf("%s: query %q did not find neighbor %q: %+v", what, query, wantLabel, res)
+	}
+	// Stemming: the plural query "Traktoren" matches the singular value "Traktor"
+	// (the unique token AND the stemmed word must both be present).
+	assertNeighbor(uniq+"stem Traktoren", uniq+"stem", "stemming")
+	// Diacritic folding: "grun" (no umlaut) finds "grün" via unaccent.
+	assertNeighbor(uniq+"grun", uniq+"grün", "diacritic folding")
+	// Typo tolerance: "Schmdt" (missing i) finds "Schmidt" via trigram word-similarity
+	// — neither the substring nor the stemmed match would catch this one.
+	assertNeighbor(uniq+"Schmdt", uniq+"Schmidt", "typo tolerance")
 
 	// A wildcard-only term must be escaped (searched literally) and not match all.
 	res, err = st.Search(ctx, "%", 6)
