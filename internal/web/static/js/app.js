@@ -985,8 +985,9 @@
 		});
 	})();
 
-	// Command palette (Ctrl/Cmd+K): fuzzy jump to a neighbor, invoice or gespann
-	// via the /api/search endpoint. Debounced; keyboard-navigable.
+	// Command palette (Ctrl/Cmd+K): fuzzy jump to any master-data hit — neighbor,
+	// invoice, basis, tractor, machine, load level or gespann — plus static nav
+	// targets, via the /api/search endpoint. Debounced; keyboard-navigable.
 	(function () {
 		var ov = null, input = null, list = null, items = [], sel = -1, timer = null, seq = 0;
 		var ICON = { neighbor: "👤", invoice: "📄", base: "📋", tractor: "🚜", machine: "⚙️", load: "🏋️", gespann: "🔗", nav: "➡️" };
@@ -1007,7 +1008,10 @@
 			return COMMANDS.filter(function (c) { return fold(c.label + " " + c.kw).indexOf(f) !== -1; })
 				.map(function (c) { return { kind: "nav", label: c.label, sub: c.sub, url: c.url }; });
 		}
-		function close() { if (ov) { ov.remove(); ov = null; items = []; sel = -1; } }
+		// Bump seq so an in-flight /api/search response is ignored once closed; otherwise
+		// it would repopulate items/sel on the now-detached list and a later reopen+Enter
+		// could jump to a hit the user never saw.
+		function close() { if (ov) { ov.remove(); ov = null; items = []; sel = -1; seq++; } }
 		function open() {
 			if (ov) return;
 			ov = document.createElement("div"); ov.className = "cmdk"; ov.setAttribute("role", "dialog");

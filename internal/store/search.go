@@ -89,11 +89,15 @@ func (s *Store) searchSub(ctx context.Context, out *[]SearchResult, query, rawQ,
 // typo tolerance, so "Traktoren" finds "Traktor", "Muller" finds "Müller" and "948"
 // finds a tractor by its model number; matches are ranked exact-before-fuzzy.
 func (s *Store) Search(ctx context.Context, q string, perKind int) ([]SearchResult, error) {
+	// Trim once so the fuzzy gate, the ILIKE pattern ($2) and the tsquery/trigram term
+	// ($1) all operate on the same string, regardless of surrounding whitespace a
+	// caller may pass (the HTTP handler pre-trims, but Search shouldn't rely on that).
+	q = strings.TrimSpace(q)
 	pat := likeEscape(q)
 	// Only run the trigram word-similarity term for queries long enough for it to be
 	// meaningful; below ~one trigram it is noise, and short numeric codes are already
 	// covered by the substring match.
-	fuzzy := utf8.RuneCountInString(strings.TrimSpace(q)) >= 4
+	fuzzy := utf8.RuneCountInString(q) >= 4
 	out := make([]SearchResult, 0, perKind*7)
 
 	// Neighbors (name or note).
@@ -147,12 +151,14 @@ func (s *Store) Search(ctx context.Context, q string, perKind int) ([]SearchResu
 
 	// Tractors by model (ident/name) or horsepower (ps::text, so "948" matches the
 	// number too). trim_scale drops a NUMERIC's trailing zeros for a clean "180 PS".
+	// active DESC first ranks deactivated (retired) tractors below active ones, as the
+	// neighbor query ranks archived below active.
 	tExpr := "t.ident || ' ' || coalesce(t.name,'')"
 	if err := s.searchSub(ctx, &out, `
 		SELECT t.ident, trim_scale(t.ps)::text, t.base_id, b.year
 		FROM tractors t JOIN price_bases b ON b.id = t.base_id
 		WHERE `+ftsWhere(tExpr, fuzzy)+` OR t.ps::text ILIKE $2 ESCAPE '\'
-		ORDER BY `+rankOrder(tExpr)+`, b.year DESC, t.ident LIMIT $3`, q, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
+		ORDER BY t.active DESC, `+rankOrder(tExpr)+`, b.year DESC, t.ident LIMIT $3`, q, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
 		var ident, ps string
 		var baseID int64
 		var year int
@@ -164,11 +170,11 @@ func (s *Store) Search(ctx context.Context, q string, perKind int) ([]SearchResu
 		return nil, err
 	}
 
-	// Machines by name.
+	// Machines by name (active DESC ranks deactivated machines last, as for tractors).
 	if err := s.searchSub(ctx, &out, `
 		SELECT m.name, m.base_id, b.year FROM machines m JOIN price_bases b ON b.id = m.base_id
 		WHERE `+ftsWhere("m.name", fuzzy)+`
-		ORDER BY `+rankOrder("m.name")+`, b.year DESC, m.name LIMIT $3`, q, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
+		ORDER BY m.active DESC, `+rankOrder("m.name")+`, b.year DESC, m.name LIMIT $3`, q, pat, perKind, func(rows *sql.Rows) (SearchResult, error) {
 		var name string
 		var baseID int64
 		var year int
