@@ -455,9 +455,16 @@ func (s *Server) signBelegShare(neighborID, yearID int64, exp time.Time) string 
 		base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
+// maxBelegShareTokenLen bounds the raw share token input so an oversized payload
+// cannot drive unnecessary memory allocations or HMAC hashing on the public route (DoS defense).
+const maxBelegShareTokenLen = 200
+
 // verifyBelegShare validates a share token (signature + expiry) and returns the
 // neighbor+year it grants. ok=false for anything tampered, malformed or expired.
 func (s *Server) verifyBelegShare(token string) (neighborID, yearID int64, ok bool) {
+	if len(token) > maxBelegShareTokenLen {
+		return 0, 0, false
+	}
 	parts := strings.SplitN(token, ".", 2)
 	if len(parts) != 2 {
 		return 0, 0, false
