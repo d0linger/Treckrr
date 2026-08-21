@@ -32,8 +32,10 @@
 	--signal-press: #c74d0c;
 	--on-signal: #1c1006;
 	--signal-tint: #f9e6da;
-	--danger: #b4442f;
-	--danger-tint: #f7e3df;
+	/* danger = CRIMSON, deliberately pulled away from the signal orange so a
+	   destructive control can never be confused with the primary action. */
+	--danger: #a4262e;
+	--danger-tint: #f4dcdd;
 	--accent: #c8891f;
 	/* Darker amber used only where amber is TEXT (links, warn chips, status tags):
 	   passes 4.5:1 in light mode where the vivid --accent does not. In dark mode it
@@ -97,8 +99,8 @@
 		--signal-press: #e86f31;
 		--on-signal: #201005;
 		--signal-tint: rgba(255, 129, 66, .16);
-		--danger: #e06a52;
-		--danger-tint: #33201c;
+		--danger: #e04b55; /* crimson — clearly apart from the #ff8142 signal */
+		--danger-tint: #341a1c;
 		--accent: #e0a640;
 		--accent-text: #e0a640;
 		--focus: #5b9bff;
@@ -138,8 +140,8 @@
 	--signal-press: #e86f31;
 	--on-signal: #201005;
 	--signal-tint: rgba(255, 129, 66, .16);
-	--danger: #e06a52;
-	--danger-tint: #33201c;
+	--danger: #e04b55; /* crimson — clearly apart from the #ff8142 signal */
+	--danger-tint: #341a1c;
 	--accent: #e0a640;
 	--accent-text: #e0a640;
 	--focus: #5b9bff;
@@ -479,7 +481,11 @@ em { font-style: normal; color: var(--muted); }
 .btn:active { transform: translateY(1px); }
 .btn--primary { background: var(--brand-grad); color: var(--on-signal); box-shadow: 0 4px 14px var(--btn-glow); }
 .btn--primary:hover { filter: brightness(1.06); }
-.btn--danger { color: var(--danger); background: var(--danger-tint); }
+/* Werkblatt danger: crimson OUTLINE by default — a destructive action must never
+   read like the page's signal action. The filled crimson is reserved for the
+   final confirmation step (btn--danger.btn--primary). */
+.btn--danger { color: var(--danger); background: transparent; border-color: var(--danger); }
+.btn--danger:hover { background: var(--danger-tint); }
 .btn--danger.btn--primary { background: var(--danger); color: #fff; box-shadow: var(--shadow); }
 .btn--ghost { background: transparent; border-color: var(--border); color: var(--primary); }
 .btn--sm { min-height: 36px; padding: .35rem .8rem; font-size: .85rem; }
@@ -1454,8 +1460,9 @@ span.paychip { cursor: default; }
 .bkp__danger .bkp__btnrow { margin-top: 0; }
 .bkp__danger { margin-top: 1rem; padding: .9rem; border: 1px solid color-mix(in srgb, var(--owe) 40%, var(--border));
 	border-radius: 11px; background: color-mix(in srgb, var(--owe) 7%, transparent); }
-.btn--danger { background: var(--owe); color: #fff; border-color: var(--owe); }
-.btn--danger:hover { filter: brightness(1.05); }
+/* (The former owe-filled .btn--danger override lived here and silently made
+   EVERY danger button a filled orange — removed; the canonical crimson outline
+   in the Buttons section now applies app-wide, including the backup danger zone.) */
 .bkp__sched { display: grid; grid-template-columns: 1fr; gap: .8rem; }
 @media (min-width: 560px) { .bkp__sched { grid-template-columns: 1fr 1fr; } }
 .bkp__sched-col { border: 1px solid var(--border); border-radius: 10px; padding: .7rem .8rem; background: var(--surface-2); }
