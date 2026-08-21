@@ -637,8 +637,9 @@
 			return btoa(s);
 		}
 		function inlineFonts() {
+			// Werkblatt: Manrope is retired — headings render in JetBrains Mono,
+			// so the export inlines only the faces the page actually uses.
 			var faces = [
-				["Manrope", 800, "/static/fonts/manrope-800.woff2"],
 				["Hanken Grotesk", 400, "/static/fonts/hanken-400.woff2"],
 				["Hanken Grotesk", 600, "/static/fonts/hanken-600.woff2"],
 				["JetBrains Mono", 500, "/static/fonts/jetbrainsmono-500.woff2"],
