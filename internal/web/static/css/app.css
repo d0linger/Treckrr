@@ -423,7 +423,12 @@ em { font-style: normal; color: var(--muted); }
    so fields inside them are spaced like direct form children. */
 [data-h-only], [data-qty-only] { display: flex; flex-direction: column; gap: .8rem; }
 .field { display: flex; flex-direction: column; gap: .3rem; font-size: .85rem; color: var(--muted); }
-.field > span { font-weight: 600; }
+/* Werkblatt F5: field labels are stamped plates app-wide — uppercase mono,
+   tracked (formerly only the login had this treatment). */
+.field > span {
+	font-family: var(--font-mono); font-size: .72rem; font-weight: 700;
+	letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
+}
 
 .input, .select {
 	width: 100%;
@@ -449,6 +454,19 @@ em { font-style: normal; color: var(--muted); }
 	background-size: .7rem;
 	padding-right: 2rem;
 }
+
+/* Werkblatt F5: the native file input joins the system — the picker button
+   renders as a small stamped Werkblatt button instead of raw browser chrome. */
+input[type="file"].input { padding: .45rem .55rem; font-size: .85rem; color: var(--muted); }
+input[type="file"].input::file-selector-button {
+	font-family: var(--font-display); font-size: .72rem; font-weight: 700;
+	letter-spacing: .04em; text-transform: uppercase;
+	color: var(--text); background: var(--surface-2);
+	border: 1px solid var(--line-strong, var(--border)); border-radius: 7px;
+	padding: .38rem .75rem; margin-right: .7rem; cursor: pointer;
+	transition: background .15s ease;
+}
+input[type="file"].input::file-selector-button:hover { background: var(--surface); }
 
 .fieldset { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .7rem; margin: 0; }
 .fieldset legend { font-size: .8rem; font-weight: 600; color: var(--muted); padding: 0 .3rem; }
@@ -1712,7 +1730,7 @@ span.paychip { cursor: default; }
 .auth__head { margin-bottom: .2rem; }
 .auth__head h2 { font-size: 1.55rem; letter-spacing: -.01em; }
 .auth__head p { margin: .3rem 0 0; font-size: .9rem; }
-.auth .field > span { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .04em; font-size: .72rem; font-weight: 700; color: var(--muted); }
+/* (.auth .field > span dropped — the plate-label treatment is app-wide now.) */
 .auth__or { display: flex; align-items: center; gap: 12px; margin: .2rem 0 -.2rem; color: var(--muted);
 	font-family: var(--font-mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; }
 .auth__or::before, .auth__or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
