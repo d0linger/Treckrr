@@ -102,10 +102,12 @@
 
 	<div class="card stack stack--tight">
 		<h2 class="section-title">Darstellung</h2>
-		<div class="btnrow">
-			<a class="btn {{if eq .Theme "light"}}btn--primary{{else}}btn--ghost{{end}} btn--sm" href="/theme?set=light" data-theme-set="light">Hell</a>
-			<a class="btn {{if eq .Theme "dark"}}btn--primary{{else}}btn--ghost{{end}} btn--sm" href="/theme?set=dark" data-theme-set="dark">Dunkel</a>
-			<a class="btn {{if eq .Theme "auto"}}btn--primary{{else}}btn--ghost{{end}} btn--sm" href="/theme?set=auto" data-theme-set="auto">Automatisch</a>
+		{{/* Werkblatt F2: the active theme is a selection STATE, so it wears the
+		     green selection language (like subtabs), never the orange signal. */}}
+		<div class="themeseg" role="group" aria-label="Darstellung wählen">
+			<a class="themeseg__item {{if eq .Theme "light"}}is-on{{end}}" href="/theme?set=light" data-theme-set="light" {{if eq .Theme "light"}}aria-current="true"{{end}}>Hell</a>
+			<a class="themeseg__item {{if eq .Theme "dark"}}is-on{{end}}" href="/theme?set=dark" data-theme-set="dark" {{if eq .Theme "dark"}}aria-current="true"{{end}}>Dunkel</a>
+			<a class="themeseg__item {{if eq .Theme "auto"}}is-on{{end}}" href="/theme?set=auto" data-theme-set="auto" {{if eq .Theme "auto"}}aria-current="true"{{end}}>Automatisch</a>
 		</div>
 	</div>
 
