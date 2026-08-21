@@ -1215,7 +1215,10 @@ span.paychip { cursor: default; }
 .beleg__gform { display: grid; grid-template-columns: minmax(8rem, 11rem) 1fr auto; gap: .5rem; align-items: center;
 	padding: .7rem .8rem; border: 1px solid var(--card-hairline); border-radius: 12px; background: var(--surface); }
 .beleg__gform-h { grid-column: 1 / -1; font-family: var(--font-mono); font-size: .62rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
-.beleg__gform-h span { color: var(--muted); opacity: .8; }
+/* No opacity here: muted at 80 % lands at 3.83:1 on the sheet surface and fails
+   WCAG AA — plain muted passes. (Latent violation, visible only with an issued
+   invoice; caught by the F-round validation seed.) */
+.beleg__gform-h span { color: var(--muted); }
 .beleg__gform .input { min-width: 0; }
 .beleg__gform .btn { white-space: nowrap; }
 @media (max-width: 34rem) { .beleg__gform { grid-template-columns: 1fr; } }
