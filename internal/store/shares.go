@@ -29,22 +29,27 @@ func (s *Store) CreateBelegShare(ctx context.Context, tokenHash string, neighbor
 
 // ResolveBelegShare validates a token hash and returns the Beleg it grants.
 // A missing, expired or deleted link yields ok=false (the public 404 path).
-// last_used_at is stamped at DAY granularity (the UI shows no finer), so the
-// unauthenticated route stays read-only except for the first hit of a day.
+// last_used_at is stamped at CALENDAR-DAY granularity (the UI shows no finer):
+// the day boundary is decided by the DATABASE (last_used_at::date vs
+// CURRENT_DATE, one timezone), not by a rolling Go duration — so a view just
+// before midnight and one just after count as two days, and the
+// unauthenticated route writes at most once per day per link.
 func (s *Store) ResolveBelegShare(ctx context.Context, tokenHash string) (neighborID, yearID int64, ok bool, err error) {
 	var id int64
-	var lastUsed *time.Time
+	var usedToday bool
 	err = s.db.QueryRowContext(ctx,
-		`SELECT id, neighbor_id, billing_year_id, last_used_at FROM beleg_shares
+		`SELECT id, neighbor_id, billing_year_id,
+		        (last_used_at IS NOT NULL AND last_used_at::date = CURRENT_DATE)
+		   FROM beleg_shares
 		  WHERE token_hash = $1 AND expires_at > now()`,
-		tokenHash).Scan(&id, &neighborID, &yearID, &lastUsed)
+		tokenHash).Scan(&id, &neighborID, &yearID, &usedToday)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, 0, false, nil
 	}
 	if err != nil {
 		return 0, 0, false, err
 	}
-	if lastUsed == nil || time.Since(*lastUsed) > 24*time.Hour {
+	if !usedToday {
 		_, _ = s.db.ExecContext(ctx, `UPDATE beleg_shares SET last_used_at = now() WHERE id = $1`, id) // best-effort
 	}
 	return neighborID, yearID, true, nil
@@ -74,14 +79,15 @@ func (s *Store) ListBelegShares(ctx context.Context, neighborID, yearID int64) (
 	return out, rows.Err()
 }
 
-// RevokeBelegShare deletes one link, scoped to its neighbor so a forged id in
-// the form can never touch another neighbor's links. A hard DELETE: the link
-// is dead instantly, the audit log keeps the history. Idempotent; reports
-// whether a link was actually deleted.
-func (s *Store) RevokeBelegShare(ctx context.Context, id, neighborID int64) (bool, error) {
+// RevokeBelegShare deletes one link, scoped to the neighbor AND billing year
+// the caller is acting on, so a forged id in the form can never touch another
+// neighbor's — or another year's — links. A hard DELETE: the link is dead
+// instantly, the audit log keeps the history. Idempotent; reports whether a
+// link was actually deleted.
+func (s *Store) RevokeBelegShare(ctx context.Context, id, neighborID, yearID int64) (bool, error) {
 	res, err := s.db.ExecContext(ctx,
-		`DELETE FROM beleg_shares WHERE id = $1 AND neighbor_id = $2`,
-		id, neighborID)
+		`DELETE FROM beleg_shares WHERE id = $1 AND neighbor_id = $2 AND billing_year_id = $3`,
+		id, neighborID, yearID)
 	if err != nil {
 		return false, err
 	}

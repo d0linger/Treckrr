@@ -439,9 +439,12 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["LastSend"], _ = s.store.LastBelegSend(r.Context(), year.ID, neighbor.ID) // best-effort marker
 	data["MailEnabled"] = s.cfg.MailEnabled()
 	data["NeighborEmail"] = neighbor.Email
-	if tok := strings.TrimSpace(r.URL.Query().Get("share")); tok != "" {
-		data["ShareToken"] = tok // echo a freshly generated link so the page can show/copy it
-		data["ShareURL"] = absoluteURL(r, "/s/beleg/"+tok)
+	// A freshly minted share link arrives via the one-time cookie (never a URL);
+	// read-and-clear so the raw token is shown exactly once.
+	if c, err := r.Cookie(shareOnceCookie); err == nil && c.Value != "" && len(c.Value) <= maxBelegShareTokenLen {
+		s.setCookie(w, r, &http.Cookie{Name: shareOnceCookie, Value: "", MaxAge: -1})
+		data["ShareToken"] = c.Value
+		data["ShareURL"] = absoluteURL(r, "/s/beleg/"+c.Value)
 	}
 	// Self-service: list the Beleg's active public links (manage/revoke).
 	if hasInv, _ := data["HasInvoice"].(bool); hasInv {
@@ -477,6 +480,12 @@ func belegShareDays(v string) int {
 // maxBelegShareTokenLen bounds the raw share token input so an oversized payload
 // cannot drive unnecessary memory allocations or HMAC hashing on the public route (DoS defense).
 const maxBelegShareTokenLen = 200
+
+// shareOnceCookie carries a freshly minted raw share token from the create
+// redirect to exactly one authenticated render — instead of a ?share= query
+// parameter, which would park a bearer credential in browser history and any
+// URL-shaped sink. Read-and-cleared on first use; short-lived either way.
+const shareOnceCookie = "treckrr_share_once"
 
 // verifyLegacyBelegShare validates a pre-0038 HMAC share token (signature +
 // baked-in expiry). Kept so links minted before the DB-backed scheme keep
@@ -555,7 +564,10 @@ func (s *Server) handleBelegShareCreate(w http.ResponseWriter, r *http.Request) 
 	}
 	s.audit(r, "beleg_share", "neighbor", neighbor.ID,
 		neighbor.Name+" · "+s.yearLabel(r, year.ID)+" · gültig "+itoa64(int64(days))+" Tage (bis "+expires.Format("02.01.2006")+")")
-	redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID)+"&share="+raw)
+	// One-time cookie, not a query parameter: the raw token must never enter a
+	// URL (browser history, Referer). setCookie enforces HttpOnly + Lax.
+	s.setCookie(w, r, &http.Cookie{Name: shareOnceCookie, Value: raw, MaxAge: 60})
+	redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID))
 }
 
 // handleBelegShareRevoke deletes (revokes) one public link — the self-service
@@ -575,7 +587,7 @@ func (s *Server) handleBelegShareRevoke(w http.ResponseWriter, r *http.Request) 
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
-	revoked, err := s.store.RevokeBelegShare(r.Context(), shareID, id)
+	revoked, err := s.store.RevokeBelegShare(r.Context(), shareID, id, year.ID)
 	if err != nil {
 		s.serverError(w, "share revoke", err)
 		return

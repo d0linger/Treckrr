@@ -102,7 +102,9 @@ func TestHandlePaymentAddValidation(t *testing.T) {
 	s := testPaymentServer(t)
 
 	t.Run("overly long paid_on rejected", func(t *testing.T) {
-		longDate := strings.Repeat("2026-01-01", 10) // 100 chars
+		// Exactly ONE char over the 50-char cap, so the boundary itself is
+		// pinned — a cap loosened to 51+ fails this test.
+		longDate := strings.Repeat("2026-01-01", 5) + "X" // 51 chars
 		form := url.Values{}
 		form.Set("year_id", "1")
 		form.Set("amount", "100.00")
