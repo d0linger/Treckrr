@@ -277,6 +277,12 @@ em { font-style: normal; color: var(--muted); }
    truncates instead of forcing the app bar wider than the screen (which caused
    a horizontal scroll and pushed the fixed tab bar below the fold). */
 .appbar__title { flex: 1; min-width: 0; text-align: center; font-size: 1.05rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Narrow phones: the brand WORD yields (the tractor mark stays tappable), so
+   the page title gets the width instead of truncating to "Übersic…". */
+@media (max-width: 480px) {
+	.appbar__brand > span { display: none; }
+	.appbar__title { font-size: .98rem; }
+}
 .appbar__icon {
 	flex: none;
 	width: 40px; height: 40px;
@@ -389,11 +395,19 @@ em { font-style: normal; color: var(--muted); }
 
 /* ---- Lists ------------------------------------------------------------ */
 .list { display: flex; flex-direction: column; gap: .6rem; }
-.list__row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; color: var(--text); }
-.list__main { display: flex; flex-direction: column; }
+/* flex-wrap: on narrow phones a wide status chip drops to its own line instead
+   of crushing the name/value columns into overlapping fragments. */
+.list__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem .75rem; color: var(--text); }
+.list__main { display: flex; flex-direction: column; min-width: 0; }
 .list__title { font-weight: 600; }
-.list__sub { font-size: .82rem; color: var(--muted); }
-.list__value { font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Sub line ellipsizes as a whole ("10 Buchungen · 20,91 h") instead of
+   word-wrapping character-by-character in a squeezed column. */
+.list__sub { font-size: .82rem; color: var(--muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Money never shrinks and never breaks before its € — the amount is the one
+   thing a row must always show intact. */
+.list__value { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; flex: 0 0 auto; }
+/* When the row wraps, the payment chip/toggle keeps right alignment on its own line. */
+.list__row > .paytoggle, .list__row > .paychip { margin-left: auto; }
 .list__actions { display: flex; gap: .4rem; align-items: center; }
 .list__actions form { margin: 0; }
 .list__main--link { text-decoration: none; color: inherit; flex: 1 1 auto; min-width: 0; }
@@ -411,7 +425,7 @@ em { font-style: normal; color: var(--muted); }
 /* ---- Entries ---------------------------------------------------------- */
 .entry { display: grid; grid-template-columns: 1fr auto; gap: .3rem .6rem; align-items: start; }
 .entry__head { grid-column: 1 / -1; display: flex; justify-content: space-between; font-weight: 600; }
-.entry__cost { color: var(--primary); font-variant-numeric: tabular-nums; }
+.entry__cost { color: var(--primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .entry__body { display: flex; flex-direction: column; gap: .15rem; }
 .entry__task { font-weight: 600; }
 .entry__detail { font-size: .85rem; }
@@ -831,7 +845,7 @@ button.paychip { min-height: var(--tap); padding: .35rem .8rem; }
 .paychip--static { cursor: default; }
 .paychip--static.paychip--open:hover { background: color-mix(in srgb, var(--accent) 13%, transparent); }
 span.paychip { cursor: default; }
-.carryover strong { display: block; }
+.carryover strong { display: block; white-space: nowrap; }
 .carryover .muted { font-size: .82rem; }
 
 /* ---- Data tables (Excel-like overview) -------------------------------- */
@@ -1605,7 +1619,7 @@ span.paychip { cursor: default; }
 .yearstat--sum { --sacc: var(--primary-strong); background: var(--surface-2); }
 .yearstat__head { display: flex; align-items: center; gap: .5rem; }
 .yearstat__yr { font-weight: 800; font-size: var(--fs-md); font-variant-numeric: tabular-nums; text-decoration: none; }
-.yearstat__net { margin-left: auto; font-weight: 800; font-size: var(--fs-lg); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.yearstat__net { margin-left: auto; font-weight: 800; font-size: var(--fs-lg); font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap; }
 .yearstat__sub { display: flex; gap: 1rem; flex-wrap: wrap; color: var(--muted); font-size: var(--fs-sm);
 	margin: .35rem 0 .55rem; font-variant-numeric: tabular-nums; }
 .yearstat__sub b { color: var(--text); font-weight: 700; }
@@ -1622,7 +1636,7 @@ span.paychip { cursor: default; }
 .cmprow { background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius); padding: .55rem .7rem; box-shadow: var(--card-shadow); transition: transform .14s ease, box-shadow .14s ease; }
 .cmprow__top { display: flex; align-items: baseline; gap: .5rem; }
 .cmprow__pos { font-weight: 700; font-size: var(--fs-sm); }
-.cmprow__new { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; }
+.cmprow__new { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cmprow__meta { display: flex; gap: .6rem; flex-wrap: wrap; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; margin-top: .15rem; }
 
 /* ---- Desktop: use the width -----------------------------------------------
