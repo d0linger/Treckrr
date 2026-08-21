@@ -72,6 +72,10 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
+	if s.tooLong(w, r, "Datum", r.FormValue("paid_on"), 50) {
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
 	note := strings.TrimSpace(r.FormValue("note"))
 	if s.tooLong(w, r, "Notiz", note, maxNoteLen) {
 		redirect(w, r, neighborURL(neighborID, yearID))
