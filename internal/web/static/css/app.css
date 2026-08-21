@@ -1,31 +1,37 @@
 /* Treckrr — mobile-first PWA styles. All assets served locally. */
 
 /* Self-hosted brand typefaces (served same-origin, allowed by the CSP).
-   Manrope = display/headings & KPI values, Hanken Grotesk = body text,
-   JetBrains Mono = caps labels & one-time codes. */
+   Werkblatt identity: JetBrains Mono LEADS (display/headings/KPIs/labels — the
+   machine-ledger voice), Hanken Grotesk stays on body duty. Manrope retired. */
 @font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:400;font-display:swap;src:url('/static/fonts/hanken-400.woff2') format('woff2');}
 @font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:500;font-display:swap;src:url('/static/fonts/hanken-500.woff2') format('woff2');}
 @font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:600;font-display:swap;src:url('/static/fonts/hanken-600.woff2') format('woff2');}
 @font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/hanken-700.woff2') format('woff2');}
-@font-face{font-family:'Manrope';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/manrope-700.woff2') format('woff2');}
-@font-face{font-family:'Manrope';font-style:normal;font-weight:800;font-display:swap;src:url('/static/fonts/manrope-800.woff2') format('woff2');}
 @font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:500;font-display:swap;src:url('/static/fonts/jetbrainsmono-500.woff2') format('woff2');}
 @font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/jetbrainsmono-700.woff2') format('woff2');}
 
 :root {
 	--font-body: 'Hanken Grotesk', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-	--font-display: 'Manrope', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--font-display: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-	--bg: #eef2ea;
-	--surface: #ffffff;
-	--surface-2: #f2f4ef;
-	--text: #191c1a;
-	--muted: #5b655d; /* Agro-Modernist on-surface-variant; passes 4.5:1 on the bg */
-	--border: #dfe4dd;
-	--primary: #115638;        /* Agro-Modernist deep "Treckrr green" */
-	--primary-strong: #2f6f4f; /* mid green — the lighter end of hero/button gradients */
+	/* Werkblatt (light): green-tinted technical paper, iron-green ink. */
+	--bg: #edf1ec;
+	--surface: #f9fbf9;
+	--surface-2: #eff2ef;
+	--text: #19211d;
+	--muted: #57645c; /* passes 4.5:1 on the bg */
+	--border: #ccd4ce;
+	--primary: #115638;        /* deep "Treckrr green" — links, nav, paid states */
+	--primary-strong: #2f6f4f; /* mid green — the lighter end of the hero gradients */
 	--primary-tint: #e3efe8;
 	--on-primary: #ffffff; /* text/icon on a solid primary surface (dark in Noir) */
+	/* Signal — safety orange, THE action colour (primary buttons, FAB, active
+	   pill). Ink-on-orange like a stamped machine warning label (~7:1 both
+	   themes); green machine, orange decals. */
+	--signal: #e05910;
+	--signal-press: #c74d0c;
+	--on-signal: #1c1006;
+	--signal-tint: #f9e6da;
 	--danger: #b4442f;
 	--danger-tint: #f7e3df;
 	--accent: #c8891f;
@@ -41,21 +47,33 @@
 	--data-track: #e8ece8;
 	--pay: #2f8457;
 	--owe: #c05635;
-	--radius: 14px;
-	--radius-sm: 11px;
+	/* Chassis — the machine frame: app bar + nav rail/tab bar stay this dark
+	   green-black in BOTH themes (a deliberate constant, like the white appbar
+	   icons); the orange marker is the only moving part. */
+	--chassis: #1f2823;
+	--chassis-2: #171f1a;
+	--chassis-text: #c9d4cd;
+	--chassis-muted: #9fb0a6;
+	--chassis-line: #33403a;
+	--chassis-active: #ff8142;
+	/* Blueprint grid on the page ground — part of the Werkblatt identity. */
+	--grid-line: rgba(20, 40, 30, .05);
+	--radius: 10px;
+	--radius-sm: 6px;
 	/* Modular type scale (theme-independent) — one system instead of ~15 ad-hoc sizes. */
 	--fs-xs: .75rem; --fs-sm: .8125rem; --fs-base: 1rem; --fs-md: 1.0625rem;
 	--fs-lg: 1.25rem; --fs-xl: 1.5rem; --fs-2xl: 1.9rem;
-	--shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 4px 16px rgba(0, 0, 0, .05);
-	/* Depth/modernization (light): gradient cards, ambient glow, gradient buttons, glass bars. */
-	--card-grad: var(--surface); /* flat card surface (was a subtle vertical gradient) */
-	--card-hairline: rgba(20, 40, 30, .07);
-	--card-shadow: 0 1px 2px rgba(24, 45, 35, .06), 0 12px 28px rgba(24, 45, 35, .09);
-	--glow: radial-gradient(120% 70% at 50% -8%, rgba(47, 111, 79, .09), transparent 60%);
-	--glass: rgba(238, 242, 234, .72);
-	--glass-border: rgba(20, 40, 30, .08);
-	--btn-glow: rgba(17, 86, 56, .22);
-	--brand-grad: linear-gradient(135deg, var(--primary), var(--primary-strong));
+	--shadow: 0 1px 2px rgba(0, 0, 0, .05);
+	/* Werkblatt depth: hairlines over shadows — cards are bordered sheets on the
+	   gridded paper; the pop-shadow is reserved for true overlays. */
+	--card-grad: var(--surface);
+	--card-hairline: rgba(20, 40, 30, .16);
+	--card-shadow: 0 1px 2px rgba(24, 45, 35, .05);
+	--glow: none;
+	--glass: rgba(31, 40, 35, .92);
+	--glass-border: var(--chassis-line);
+	--btn-glow: rgba(224, 89, 16, .22);
+	--brand-grad: linear-gradient(135deg, var(--signal), var(--signal-press));
 	--tap: 44px;
 	--maxw: 720px;
 	font-size: 16px;
@@ -72,9 +90,13 @@
 		--muted: #a2ada4;
 		--border: #2b332d;
 		--primary: #85d7a9;        /* Noir: vibrant mint accent */
-		--primary-strong: #63c192; /* mint gradient end (buttons/pills) */
+		--primary-strong: #63c192; /* mint gradient end (hero surfaces) */
 		--primary-tint: #1b2a22;
 		--on-primary: #04170e;     /* dark text/icon on the mint accent */
+		--signal: #ff8142;         /* Nachtschicht: signal orange glows brighter */
+		--signal-press: #e86f31;
+		--on-signal: #201005;
+		--signal-tint: rgba(255, 129, 66, .16);
 		--danger: #e06a52;
 		--danger-tint: #33201c;
 		--accent: #e0a640;
@@ -84,14 +106,21 @@
 		--data-track: #26302a;
 		--pay: #52b184;
 		--owe: #e0805f;
-		--shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .35);
-		--card-grad: var(--surface); /* flat card surface (was a subtle vertical gradient) */
-		--card-hairline: rgba(255, 255, 255, .06);
-		--card-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 30px rgba(0, 0, 0, .28);
-		--glow: radial-gradient(120% 70% at 50% -8%, rgba(76, 157, 115, .16), transparent 60%);
-		--glass: rgba(12, 21, 17, .62);
-		--glass-border: rgba(255, 255, 255, .08);
-		--btn-glow: rgba(76, 157, 115, .30);
+		--chassis: #16201b;
+		--chassis-2: #101a15;
+		--chassis-text: #c9d4cd;
+		--chassis-muted: #93a49a;
+		--chassis-line: #263329;
+		--chassis-active: #ff8142;
+		--grid-line: rgba(219, 229, 222, .035);
+		--shadow: 0 1px 2px rgba(0, 0, 0, .4);
+		--card-grad: var(--surface); /* flat card surface */
+		--card-hairline: rgba(255, 255, 255, .09);
+		--card-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+		--glow: none;
+		--glass: rgba(16, 26, 21, .94);
+		--glass-border: var(--chassis-line);
+		--btn-glow: rgba(255, 129, 66, .25);
 	}
 }
 :root[data-theme="dark"] {
@@ -102,22 +131,33 @@
 	--muted: #a2ada4;
 	--border: #2b332d;
 	--primary: #85d7a9;        /* Noir: vibrant mint accent */
-	--primary-strong: #63c192; /* mint gradient end (buttons/pills) */
+	--primary-strong: #63c192; /* mint gradient end (hero surfaces) */
 	--primary-tint: #1b2a22;
 	--on-primary: #04170e;     /* dark text/icon on the mint accent */
+	--signal: #ff8142;         /* Nachtschicht: signal orange glows brighter */
+	--signal-press: #e86f31;
+	--on-signal: #201005;
+	--signal-tint: rgba(255, 129, 66, .16);
 	--danger: #e06a52;
 	--danger-tint: #33201c;
 	--accent: #e0a640;
 	--accent-text: #e0a640;
 	--focus: #5b9bff;
-	--shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .35);
-	--card-grad: var(--surface); /* flat card surface (was a subtle vertical gradient) */
-	--card-hairline: rgba(255, 255, 255, .06);
-	--card-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 30px rgba(0, 0, 0, .28);
-	--glow: radial-gradient(120% 70% at 50% -8%, rgba(76, 157, 115, .16), transparent 60%);
-	--glass: rgba(12, 21, 17, .62);
-	--glass-border: rgba(255, 255, 255, .08);
-	--btn-glow: rgba(76, 157, 115, .30);
+	--chassis: #16201b;
+	--chassis-2: #101a15;
+	--chassis-text: #c9d4cd;
+	--chassis-muted: #93a49a;
+	--chassis-line: #263329;
+	--chassis-active: #ff8142;
+	--grid-line: rgba(219, 229, 222, .035);
+	--shadow: 0 1px 2px rgba(0, 0, 0, .4);
+	--card-grad: var(--surface); /* flat card surface */
+	--card-hairline: rgba(255, 255, 255, .09);
+	--card-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+	--glow: none;
+	--glass: rgba(16, 26, 21, .94);
+	--glass-border: var(--chassis-line);
+	--btn-glow: rgba(255, 129, 66, .25);
 	/* Chart-mark tokens must be redeclared here too: forcing dark via the theme
 	   toggle on a light system does not match the prefers-dark media query, so
 	   without these the bars/tracks/sparklines fall back to light values. */
@@ -139,10 +179,14 @@ html, body {
 	-webkit-text-size-adjust: 100%;
 }
 
+/* Blueprint grid on the page ground — the Werkblatt paper. Fixed so content
+   sheets slide over a stationary grid. */
 body {
 	min-height: 100dvh;
-	background-image: var(--glow);
-	background-repeat: no-repeat;
+	background-image:
+		linear-gradient(var(--grid-line) 1px, transparent 1px),
+		linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+	background-size: 26px 26px;
 	background-attachment: fixed;
 }
 /* Reserve space for the fixed bottom tab bar — only on pages that render it
@@ -196,14 +240,17 @@ h1, h2, h3, .section-title, .summary-card__value, .summary-card__label,
 em { font-style: normal; color: var(--muted); }
 
 /* ---- Sticky top stack (app bar + year bar move together) -------------- */
+/* The top stack rides on the chassis — dark green-black iron in BOTH themes
+   (the machine frame; a deliberate constant like the white appbar icons). */
 .topstack {
 	position: sticky;
 	top: 0;
 	z-index: 20;
-	background: var(--primary); /* opaque fallback where color-mix() is unsupported */
-	background: color-mix(in srgb, var(--primary) 86%, transparent);
+	background: var(--chassis); /* opaque fallback where color-mix() is unsupported */
+	background: color-mix(in srgb, var(--chassis) 94%, transparent);
 	-webkit-backdrop-filter: blur(14px) saturate(1.3);
 	backdrop-filter: blur(14px) saturate(1.3);
+	border-bottom: 1px solid var(--chassis-line);
 	box-shadow: 0 4px 20px rgba(0, 0, 0, .18);
 }
 
@@ -306,7 +353,8 @@ em { font-style: normal; color: var(--muted); }
    at the page bottom instead of pinning them to the viewport. */
 @keyframes page-in { from { opacity: 0; } }
 .stack { display: flex; flex-direction: column; gap: 1rem; }
-.section-title { font-size: var(--fs-lg); font-weight: 800; letter-spacing: -.01em; margin-top: .6rem; }
+/* Section titles as stamped plate labels: uppercase mono, technical spacing. */
+.section-title { font-size: var(--fs-md); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; margin-top: .6rem; }
 
 .card {
 	background: var(--card-grad);
@@ -387,7 +435,7 @@ em { font-style: normal; color: var(--muted); }
 	appearance: none;
 	transition: border-color .15s, box-shadow .15s;
 }
-.input:focus, .select:focus { outline: none; border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent); }
+.input:focus, .select:focus { outline: none; border-color: var(--signal); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal) 22%, transparent); }
 /* Visible keyboard focus for every interactive element (WCAG 2.4.7). Only shows
    on keyboard navigation — a mouse click does not trigger :focus-visible. Text
    inputs keep their box-shadow ring above (higher specificity wins). */
@@ -404,27 +452,32 @@ em { font-style: normal; color: var(--muted); }
 .fieldset legend { font-size: .8rem; font-weight: 600; color: var(--muted); padding: 0 .3rem; }
 
 /* ---- Buttons (modern) ------------------------------------------------- */
+/* Werkblatt buttons: industrial rectangles, uppercase mono labels, 1-px press
+   displacement. The primary action stamps INK on safety orange (like a machine
+   warning label), not white-on-colour. */
 .btn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	gap: .4rem;
 	min-height: var(--tap);
-	padding: .6rem 1.1rem;
-	font-size: 1rem;
+	padding: .6rem 1.05rem;
+	font-size: .82rem;
 	font-weight: 700;
 	font-family: var(--font-display);
+	letter-spacing: .04em;
+	text-transform: uppercase;
 	color: var(--text);
 	background: var(--surface-2);
 	border: 1px solid transparent;
-	border-radius: 999px;
+	border-radius: 8px;
 	cursor: pointer;
 	white-space: nowrap;
 	transition: transform .08s ease, filter .15s ease, background .15s ease;
 	-webkit-tap-highlight-color: transparent;
 }
-.btn:active { transform: translateY(1px) scale(.99); }
-.btn--primary { background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 6px 18px var(--btn-glow); }
+.btn:active { transform: translateY(1px); }
+.btn--primary { background: var(--brand-grad); color: var(--on-signal); box-shadow: 0 4px 14px var(--btn-glow); }
 .btn--primary:hover { filter: brightness(1.06); }
 .btn--danger { color: var(--danger); background: var(--danger-tint); }
 .btn--danger.btn--primary { background: var(--danger); color: #fff; box-shadow: var(--shadow); }
@@ -453,10 +506,10 @@ em { font-style: normal; color: var(--muted); }
 	width: 12px; height: 12px;
 	transform: scale(0);
 	transition: transform .12s ease-in-out;
-	box-shadow: inset 1em 1em #fff;
+	box-shadow: inset 1em 1em var(--on-signal);
 	clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
 }
-.check input[type="checkbox"]:checked { background: var(--primary); border-color: var(--primary); }
+.check input[type="checkbox"]:checked { background: var(--signal); border-color: var(--signal); }
 .check input[type="checkbox"]:checked::before { transform: scale(1); }
 .check input[type="checkbox"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
@@ -504,7 +557,7 @@ em { font-style: normal; color: var(--muted); }
 .listtools { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .2rem; }
 .listtools .input { flex: 1 1 12rem; }
 .switch { display: inline-flex; align-items: center; gap: .4rem; font-size: var(--fs-sm); color: var(--text-muted); cursor: pointer; white-space: nowrap; user-select: none; }
-.switch input { accent-color: var(--primary); width: 1.05rem; height: 1.05rem; }
+.switch input { accent-color: var(--signal); width: 1.05rem; height: 1.05rem; }
 
 /* ---- Chips ------------------------------------------------------------ */
 .ratechips { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .6rem; }
@@ -597,35 +650,38 @@ em { font-style: normal; color: var(--muted); }
 	padding-bottom: env(safe-area-inset-bottom);
 	box-shadow: 0 -6px 24px rgba(0, 0, 0, .22);
 }
+/* The tab bar rides on the chassis (dark in both themes); the orange marker is
+   the only moving part. */
 .tabbar__item {
 	flex: 1;
 	display: flex; flex-direction: column; align-items: center; gap: .12rem;
 	padding: .35rem 0 .5rem;
 	font-size: .68rem;
-	color: var(--muted);
+	font-family: var(--font-mono);
+	color: var(--chassis-muted);
 	min-height: var(--tap);
 	position: relative;
 }
 .tabbar__pill {
 	display: flex; align-items: center; justify-content: center;
-	width: 46px; height: 28px; border-radius: 999px;
+	width: 46px; height: 28px; border-radius: 8px;
 	transition: background .18s ease, box-shadow .18s ease;
 }
 .tabbar__icon { width: 22px; height: 22px; display: block; }
-.tabbar__item.is-active { color: var(--primary); font-weight: 700; }
-.tabbar__item.is-active .tabbar__pill { background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 5px 16px var(--btn-glow); }
+.tabbar__item.is-active { color: var(--chassis-active); font-weight: 700; }
+.tabbar__item.is-active .tabbar__pill { background: rgba(255, 129, 66, .14); color: var(--chassis-active); }
 .tabbar__item.is-active::before {
 	content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
 	width: 20px; height: 3px; border-radius: 3px;
-	background: linear-gradient(90deg, var(--primary), var(--accent));
+	background: var(--chassis-active);
 }
 
 .tabbar__item span:last-child { white-space: nowrap; }
 
 /* Fallback where backdrop-filter is unsupported: opaque bars keep text legible. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-	.tabbar { background: var(--surface); }
-	.topstack { background: var(--primary); }
+	.tabbar { background: var(--chassis); }
+	.topstack { background: var(--chassis); }
 }
 
 /* ---- Wider screens ---------------------------------------------------- */
@@ -641,14 +697,17 @@ em { font-style: normal; color: var(--muted); }
 	scrollbar-width: none;
 }
 .yearbar::-webkit-scrollbar { display: none; }
+/* Year segments on the chassis: mono, squared, paper-white active. The chassis
+   is dark in both themes, so one treatment serves both. */
 .yearpill {
-	flex: 0 0 auto; padding: .35rem .85rem; border-radius: 999px;
-	background: rgba(255, 255, 255, .14); color: rgba(255, 255, 255, .92); font-weight: 600;
-	font-variant-numeric: tabular-nums; text-decoration: none; border: 1px solid rgba(255, 255, 255, .16);
+	flex: 0 0 auto; padding: .35rem .85rem; border-radius: 7px;
+	background: rgba(255, 255, 255, .08); color: rgba(255, 255, 255, .88); font-weight: 600;
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums; text-decoration: none; border: 1px solid rgba(255, 255, 255, .14);
 	min-height: 2rem; display: inline-flex; align-items: center;
 }
-.yearpill.is-active { background: #fff; color: var(--primary-strong); border-color: #fff; }
-.yearpill--manage { font-weight: 700; color: rgba(255, 255, 255, .85); }
+.yearpill.is-active { background: #fff; color: var(--chassis); border-color: #fff; font-weight: 700; }
+.yearpill--manage { font-weight: 700; color: rgba(255, 255, 255, .8); }
 
 /* ---- Basis workspace header ------------------------------------------- */
 .workspace {
@@ -966,12 +1025,13 @@ span.paychip { cursor: default; }
 .bkdot__pop-link { font-size: .78rem; margin-top: .2rem; font-weight: 600; }
 
 /* ---- Floating action button (quick-book) ------------------------------ */
+/* Quick-book is THE action — it wears the signal orange. */
 .fab { position: fixed; right: 1rem; z-index: 25;
 	bottom: calc(1rem + 58px + env(safe-area-inset-bottom));
-	width: 52px; height: 52px; border-radius: 50%; background: var(--primary); color: var(--on-primary);
+	width: 52px; height: 52px; border-radius: 50%; background: var(--signal); color: var(--on-signal);
 	display: grid; place-items: center; font-size: 1.6rem; font-weight: 700; text-decoration: none;
-	box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 55%, transparent), 0 2px 6px rgba(0, 0, 0, .3); }
-.fab:hover { background: var(--primary-strong); }
+	box-shadow: 0 6px 18px color-mix(in srgb, var(--signal) 45%, transparent), 0 2px 6px rgba(0, 0, 0, .3); }
+.fab:hover { background: var(--signal-press); }
 
 /* ---- Beleg: shareable statement (Saldo first + compact table) --------- */
 .beleg { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
@@ -1369,7 +1429,7 @@ span.paychip { cursor: default; }
 .bkp__more .bkp__files li:first-child { border-top: 1px solid var(--card-hairline); }
 .bkp__auto { display: inline-flex; align-items: center; gap: .45rem; font-size: .82rem; font-weight: 600;
 	color: var(--muted); margin: .1rem 0 .55rem; cursor: pointer; user-select: none; }
-.bkp__auto input { width: 1rem; height: 1rem; accent-color: var(--primary); }
+.bkp__auto input { width: 1rem; height: 1rem; accent-color: var(--signal); }
 .bkp__off .bkp__seg,
 .bkp__off .bkp__cron-rows,
 .bkp__off .bkp__lbl,
@@ -1598,18 +1658,17 @@ span.paychip { cursor: default; }
 .rsum__tot .old { color: var(--muted); } .rsum__tot .arr { color: var(--muted); margin: 0 .15rem; }
 
 /* ============================================================================
-   Agro-Modernist finish — ported from the design artifacts.
+   Werkblatt finish — ported from the design artifacts.
    ========================================================================== */
-/* Noir dark: the app bar and hero cards stay deep obsidian-green with light
-   text; the vibrant mint --primary is reserved for buttons/links/accents. */
+/* Noir dark: the hero cards stay deep obsidian-green with light text; the
+   vibrant mint --primary is reserved for links/accents. (The top stack is
+   chassis-constant in both themes, so it needs no dark override anymore.) */
 @media (prefers-color-scheme: dark) {
-	:root:not([data-theme="light"]) .topstack { background: linear-gradient(180deg, #12241b, #0f1d15); }
 	:root:not([data-theme="light"]) .summary-card,
 	:root:not([data-theme="light"]) .rate-preview {
 		background: linear-gradient(135deg, #1e402d, #13251b); color: #fff; border: 1px solid rgba(133, 215, 169, .16);
 	}
 }
-:root[data-theme="dark"] .topstack { background: linear-gradient(180deg, #12241b, #0f1d15); }
 :root[data-theme="dark"] .summary-card,
 :root[data-theme="dark"] .rate-preview {
 	background: linear-gradient(135deg, #1e402d, #13251b); color: #fff; border: 1px solid rgba(133, 215, 169, .16);
@@ -1629,22 +1688,15 @@ span.paychip { cursor: default; }
 	font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .04em; font-weight: 700;
 }
 
-/* Noir year pills: muted inactive + mint active (not aggressive bright white). */
-@media (prefers-color-scheme: dark) {
-	:root:not([data-theme="light"]) .yearpill { color: color-mix(in srgb, var(--text) 82%, transparent); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.12); }
-	:root:not([data-theme="light"]) .yearpill.is-active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 800; }
-	:root:not([data-theme="light"]) .yearpill--manage { color: var(--muted); }
-}
-:root[data-theme="dark"] .yearpill { color: color-mix(in srgb, var(--text) 82%, transparent); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.12); }
-:root[data-theme="dark"] .yearpill.is-active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 800; }
-:root[data-theme="dark"] .yearpill--manage { color: var(--muted); }
+/* (Year pills need no dark override anymore: the chassis bar is dark in both
+   themes, so the single white-based treatment above serves both.) */
 
 /* Login — brand lockup above the card, gradient logo tile (rotating machine
    mark), mono kicker + field labels, and an "oder" divider before passkey. */
 .auth { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; }
 .auth__brand { margin-bottom: 1.4rem; }
-.auth__logo { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center;
-	background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 14px 30px -14px rgba(17,86,56,.7); margin-bottom: .4rem; }
+.auth__logo { width: 64px; height: 64px; border-radius: 14px; display: grid; place-items: center;
+	background: var(--brand-grad); color: var(--on-signal); box-shadow: 0 14px 30px -14px rgba(224,89,16,.6); margin-bottom: .4rem; }
 .auth__logo svg { width: 34px; height: 34px; display: block; }
 .auth__brand h1 { font-size: 1.9rem; color: var(--primary); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .auth__brand h1 { color: var(--text); } }
@@ -1753,3 +1805,50 @@ span.paychip { cursor: default; }
 	width: 1.7rem; height: 1.7rem; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .55);
 	color: #fff; cursor: pointer; }
 .photogrid__del svg { width: .95rem; height: .95rem; }
+
+/* ---- Desktop nav rail (Werkblatt, ≥1024px) ----------------------------- */
+/* The bottom tab bar docks LEFT as a chassis rail — a pure CSS repositioning
+   of the same DOM (same links, handlers, e2e selectors). It fuses with the
+   chassis app bar into one machine frame; items are numbered like the sections
+   of a Werkblatt sheet via CSS counters. Placed last to win the cascade. */
+@media (min-width: 1024px) {
+	body.has-nav { padding-left: 212px; padding-bottom: 0; }
+	.tabbar {
+		top: 0; right: auto; bottom: 0; left: 0; width: 212px;
+		flex-direction: column; justify-content: flex-start; gap: .15rem;
+		background: var(--chassis);
+		-webkit-backdrop-filter: none; backdrop-filter: none;
+		border-top: 0; border-right: 1px solid var(--chassis-line);
+		box-shadow: none;
+		padding: 4.6rem .55rem 1rem; /* below the sticky app-bar row */
+		counter-reset: navno;
+		z-index: 15; /* under the sticky topstack, over content */
+	}
+	.tabbar__item {
+		flex: 0 0 auto; flex-direction: row; justify-content: flex-start; gap: .55rem;
+		width: 100%; padding: .55rem .6rem; border-radius: 8px;
+		font-size: .85rem;
+		counter-increment: navno;
+		border-left: 3px solid transparent;
+	}
+	/* Sheet number replaces the mobile top-marker ::before. */
+	.tabbar__item::before,
+	.tabbar__item.is-active::before {
+		content: "0" counter(navno);
+		position: static; transform: none; width: auto; height: auto;
+		background: none; border-radius: 0;
+		font-size: .62rem; font-weight: 700; letter-spacing: .08em;
+		color: var(--chassis-muted);
+	}
+	.tabbar__item.is-active { background: rgba(255, 255, 255, .05); border-left-color: var(--chassis-active); color: #fff; }
+	.tabbar__item.is-active::before { color: var(--chassis-active); }
+	.tabbar__pill { width: auto; height: auto; }
+	.tabbar__item.is-active .tabbar__pill { background: none; box-shadow: none; }
+	/* No bottom bar on desktop: dock FAB and toasts to the viewport bottom. */
+	.fab { bottom: 1.25rem; }
+	.toast { left: calc(212px + .8rem); bottom: 1rem; }
+	.beleg-toast { bottom: 1.25rem; }
+}
+@media print {
+	body.has-nav { padding-left: 0; }
+}
