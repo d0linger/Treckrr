@@ -1206,10 +1206,21 @@ span.paychip { cursor: default; }
 	font-weight: 700;
 }
 .beleg__actrow .btn.is-sent .ic { color: var(--primary); }
-.sharebox { margin-top: .6rem; padding: .7rem .8rem; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--radius); }
-.sharebox p { margin: 0 0 .4rem; }
+/* Self-service public-link panel: plate heading, fresh-link row, active-link
+   list with delete, and the create form with a Linkdauer select. */
+.sharebox { margin-top: .6rem; padding: .7rem .8rem; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--radius); display: flex; flex-direction: column; gap: .55rem; }
+.sharebox p { margin: 0; }
+.sharebox__h { font-family: var(--font-mono); font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.sharebox__once { font-size: .74rem; color: var(--accent-text); font-weight: 600; }
 .sharebox__row { display: flex; gap: .4rem; }
 .sharebox__row .input { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); font-size: .8rem; }
+.sharerow { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; border-top: 1px solid var(--card-hairline); padding-top: .55rem; }
+.sharerow__meta { flex: 1 1 auto; min-width: 0; font-size: .8rem; color: var(--muted); }
+.sharerow__meta b { color: var(--text); font-variant-numeric: tabular-nums; }
+.sharerow__del { margin: 0; flex: 0 0 auto; }
+.sharerow--create { align-items: flex-end; }
+.sharebox__days { flex: 0 1 11rem; }
+.sharerow--create .btn { flex: 0 0 auto; }
 .recur__acts { display: flex; gap: .3rem; align-items: center; justify-content: flex-end; }
 .recur__acts form { display: inline; }
 .beleg__sent { display: flex; align-items: center; gap: .4rem; margin: .5rem 0 0; }

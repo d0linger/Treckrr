@@ -111,6 +111,19 @@ type BelegSend struct {
 	Channel       string
 }
 
+// BelegShare is a stored public link to one festgeschriebener Beleg. Only the
+// token's hash lives in the DB; the raw token is shown once at creation. The
+// stored row enables self-service: chosen validity and revocation at any time.
+type BelegShare struct {
+	ID            int64
+	NeighborID    int64
+	BillingYearID int64
+	ExpiresAt     time.Time
+	CreatedAt     time.Time
+	CreatedBy     string
+	LastUsedAt    *time.Time
+}
+
 // PriceBase is a pricing basis (Bemessungsgrundlage). It is published roughly
 // every few years and reused by several billing years. Year documents when the
 // basis becomes valid ("gültig ab"). Locking freezes its values.

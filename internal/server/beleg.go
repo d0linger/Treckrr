@@ -2,13 +2,16 @@ package server
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -441,27 +444,53 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		data["ShareToken"] = tok // echo a freshly generated link so the page can show/copy it
 		data["ShareURL"] = absoluteURL(r, "/s/beleg/"+tok)
 	}
+	// Self-service: list the Beleg's active public links (manage/revoke).
+	if data["HasInvoice"] == true {
+		data["Shares"], _ = s.store.ListBelegShares(r.Context(), neighbor.ID, year.ID) // best-effort
+	}
 	s.render(w, r, "beleg", data)
 }
 
-// signBelegShare mints an HMAC-signed, self-expiring token that grants read-only
-// access to exactly one neighbor's festgeschriebener Beleg — no DB row, revoked
-// simply by expiry (or by rotating SESSION_SECRET).
-func (s *Server) signBelegShare(neighborID, yearID int64, exp time.Time) string {
-	payload := fmt.Sprintf("%d:%d:%d", neighborID, yearID, exp.Unix())
-	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
-	mac.Write([]byte("belegshare:" + payload))
-	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." +
-		base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+// newBelegShareToken mints a random share credential (Parkrr portal-link
+// pattern): the RAW token goes into the link and is never stored; only its
+// SHA-256 hex lands in beleg_shares, so a DB leak exposes no usable links.
+// Raw tokens are dot-free by construction — the dot marks legacy HMAC tokens,
+// which verifyLegacyBelegShare keeps honoring until they expire.
+func newBelegShareToken() (raw, hash string, err error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", "", err
+	}
+	raw = base64.RawURLEncoding.EncodeToString(b)
+	return raw, hashBelegShareToken(raw), nil
+}
+
+func hashBelegShareToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+// belegShareDays whitelists the offered validities (Linkdauer); anything else
+// falls back to the 30-day default.
+func belegShareDays(v string) int {
+	switch v {
+	case "7":
+		return 7
+	case "90":
+		return 90
+	default:
+		return 30
+	}
 }
 
 // maxBelegShareTokenLen bounds the raw share token input so an oversized payload
 // cannot drive unnecessary memory allocations or HMAC hashing on the public route (DoS defense).
 const maxBelegShareTokenLen = 200
 
-// verifyBelegShare validates a share token (signature + expiry) and returns the
-// neighbor+year it grants. ok=false for anything tampered, malformed or expired.
-func (s *Server) verifyBelegShare(token string) (neighborID, yearID int64, ok bool) {
+// verifyLegacyBelegShare validates a pre-0038 HMAC share token (signature +
+// baked-in expiry). Kept so links minted before the DB-backed scheme keep
+// working until they expire; new tokens are dot-free and resolve via the DB.
+func (s *Server) verifyLegacyBelegShare(token string) (neighborID, yearID int64, ok bool) {
 	if len(token) > maxBelegShareTokenLen {
 		return 0, 0, false
 	}
@@ -515,16 +544,81 @@ func (s *Server) handleBelegShareCreate(w http.ResponseWriter, r *http.Request) 
 		s.serverError(w, "share create: invoice lookup", err)
 		return
 	}
-	tok := s.signBelegShare(neighbor.ID, year.ID, time.Now().Add(30*24*time.Hour))
-	s.audit(r, "beleg_share", "neighbor", neighbor.ID, neighbor.Name+" · "+s.yearLabel(r, year.ID))
-	redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID)+"&share="+tok)
+	// Self-service: the owner picks the validity; the raw token exists only in
+	// this redirect (the DB keeps just its hash).
+	days := belegShareDays(strings.TrimSpace(r.FormValue("days")))
+	raw, hash, err := newBelegShareToken()
+	if err != nil {
+		s.serverError(w, "share create: token", err)
+		return
+	}
+	expires := time.Now().Add(time.Duration(days) * 24 * time.Hour)
+	createdBy := ""
+	if u := s.currentUser(r); u != nil {
+		createdBy = u.Username
+	}
+	if _, err := s.store.CreateBelegShare(r.Context(), hash, neighbor.ID, year.ID, expires, createdBy); err != nil {
+		s.serverError(w, "share create: store", err)
+		return
+	}
+	s.audit(r, "beleg_share", "neighbor", neighbor.ID,
+		neighbor.Name+" · "+s.yearLabel(r, year.ID)+" · gültig "+itoa64(int64(days))+" Tage (bis "+expires.Format("02.01.2006")+")")
+	redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID)+"&share="+raw)
+}
+
+// handleBelegShareRevoke deletes (revokes) one public link — the self-service
+// counterpart to create. Idempotent; scoped to the neighbor in the path.
+func (s *Server) handleBelegShareRevoke(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	year, ok := s.resolveYear(w, r)
+	if !ok {
+		return
+	}
+	shareID, _ := strconv.ParseInt(strings.TrimSpace(r.FormValue("share_id")), 10, 64)
+	if shareID <= 0 {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	revoked, err := s.store.RevokeBelegShare(r.Context(), shareID, id)
+	if err != nil {
+		s.serverError(w, "share revoke", err)
+		return
+	}
+	if revoked {
+		s.audit(r, "beleg_share_revoke", "neighbor", id, s.neighborName(r, id)+" · "+s.yearLabel(r, year.ID)+" · Link gelöscht")
+		s.setFlash(w, r, "success", "Öffentlicher Link gelöscht — er ist ab sofort ungültig.")
+	} else {
+		s.setFlash(w, r, "info", "Der Link war bereits gelöscht oder abgelaufen.")
+	}
+	redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID))
 }
 
 // handleSharedBeleg renders the read-only public Beleg for a valid share token.
 // Unauthenticated (so the layout drops all chrome) and gated on a festgeschriebene
 // invoice; anything else 404s so a token can't probe live data.
 func (s *Server) handleSharedBeleg(w http.ResponseWriter, r *http.Request) {
-	nID, yID, ok := s.verifyBelegShare(r.PathValue("token"))
+	token := r.PathValue("token")
+	if len(token) > maxBelegShareTokenLen {
+		http.NotFound(w, r)
+		return
+	}
+	var nID, yID int64
+	var ok bool
+	if strings.Contains(token, ".") {
+		// legacy pre-0038 HMAC token — honored until it expires
+		nID, yID, ok = s.verifyLegacyBelegShare(token)
+	} else {
+		var err error
+		nID, yID, ok, err = s.store.ResolveBelegShare(r.Context(), hashBelegShareToken(token))
+		if err != nil {
+			s.serverError(w, "shared beleg: resolve", err)
+			return
+		}
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return

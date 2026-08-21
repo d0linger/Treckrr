@@ -206,11 +206,6 @@
 				<button type="submit" class="btn btn--ghost">{{template "ic-check"}} Versendet</button>
 				{{end}}
 			</form>
-			{{if .HasInvoice}}
-			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/share?year={{.Year.ID}}" class="beleg__markform">
-				<button type="submit" class="btn btn--ghost">{{template "ic-copy"}} Öffentlichen Link erzeugen</button>
-			</form>
-			{{end}}
 			{{end}}
 			{{if .CanBundle}}
 			<button type="button" class="btn btn--ghost" data-beleg-bundle aria-controls="beleg-items beleg-bundle" aria-pressed="{{if .Bundle}}true{{else}}false{{end}}">
@@ -228,13 +223,38 @@
 			</button>
 			{{end}}
 		</div>
-		{{if .ShareToken}}
+		{{/* Self-service public links (Parkrr portal-link pattern): create with a
+		     chosen validity, list the active links, delete any at any time. */}}
+		{{if and .HasInvoice (not .Shared)}}
 		<div class="sharebox no-print">
-			<p class="small muted">Öffentlicher Link (30 Tage gültig) — zeigt nur diesen festgeschriebenen Beleg:</p>
+			<p class="sharebox__h">Öffentlicher Link — zeigt nur diesen festgeschriebenen Beleg</p>
+			{{if .ShareToken}}
 			<div class="sharebox__row">
 				<input class="input" type="text" readonly value="{{.ShareURL}}" data-copy-src aria-label="Öffentlicher Beleg-Link">
 				<button type="button" class="btn btn--ghost btn--sm" data-copy-src-btn>Kopieren</button>
 			</div>
+			<p class="sharebox__once">Link jetzt kopieren — er wird aus Sicherheitsgründen nur einmal angezeigt.</p>
+			{{end}}
+			{{range .Shares}}
+			<div class="sharerow">
+				<span class="sharerow__meta">Gültig bis <b>{{.ExpiresAt.Format "02.01.2006"}}</b>{{with .LastUsedAt}} · zuletzt geöffnet {{.Format "02.01.2006"}}{{end}}{{if .CreatedBy}} · von {{.CreatedBy}}{{end}}</span>
+				<form method="post" action="/neighbors/{{$.Neighbor.ID}}/beleg/share/revoke?year={{$.Year.ID}}" class="sharerow__del"
+					data-confirm="Diesen öffentlichen Link löschen? Er wird sofort ungültig.">
+					<input type="hidden" name="share_id" value="{{.ID}}">
+					<button type="submit" class="btn btn--danger btn--sm">Löschen</button>
+				</form>
+			</div>
+			{{end}}
+			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/share?year={{.Year.ID}}" class="sharerow sharerow--create">
+				<label class="field sharebox__days"><span>Linkdauer</span>
+					<select class="select" name="days">
+						<option value="7">7 Tage</option>
+						<option value="30" selected>30 Tage</option>
+						<option value="90">90 Tage</option>
+					</select>
+				</label>
+				<button type="submit" class="btn btn--ghost">{{template "ic-copy"}} Link erzeugen</button>
+			</form>
 		</div>
 		{{end}}
 		{{with .LastSend}}
