@@ -222,41 +222,47 @@
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Rechnung
 			</button>
 			{{end}}
-		</div>
-		{{/* Self-service public links (Parkrr portal-link pattern): create with a
-		     chosen validity, list the active links, delete any at any time. */}}
-		{{if and .HasInvoice (not .Shared)}}
-		<div class="sharebox no-print">
-			<p class="sharebox__h">Öffentlicher Link — zeigt nur diesen festgeschriebenen Beleg</p>
-			{{if .ShareToken}}
-			<div class="sharebox__row">
-				<input class="input" type="text" readonly value="{{.ShareURL}}" data-copy-src aria-label="Öffentlicher Beleg-Link">
-				<button type="button" class="btn btn--ghost btn--sm" data-copy-src-btn>Kopieren</button>
-			</div>
-			<p class="sharebox__once">Link jetzt kopieren — er wird aus Sicherheitsgründen nur einmal angezeigt.</p>
+			{{/* Self-service public links (Parkrr portal-link pattern) live in a
+			     popup behind ONE compact button, so the page stays lean. Opens
+			     automatically when a fresh link was just minted (ShareToken). */}}
+			{{if and .HasInvoice (not .Shared)}}
+			<details class="sharemenu" {{if .ShareToken}}open{{end}} data-popmenu>
+				<summary class="btn btn--ghost sharemenu__btn">
+					<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Link
+				</summary>
+				<div class="sharemenu__pop">
+					<p class="sharebox__h">Öffentlicher Link — zeigt nur diesen festgeschriebenen Beleg</p>
+					{{if .ShareToken}}
+					<div class="sharebox__row">
+						<input class="input" type="text" readonly value="{{.ShareURL}}" data-copy-src aria-label="Öffentlicher Beleg-Link">
+						<button type="button" class="btn btn--ghost btn--sm" data-copy-src-btn>Kopieren</button>
+					</div>
+					<p class="sharebox__once">Link jetzt kopieren — er wird aus Sicherheitsgründen nur einmal angezeigt.</p>
+					{{end}}
+					{{range .Shares}}
+					<div class="sharerow">
+						<span class="sharerow__meta">Gültig bis <b>{{.ExpiresAt.Format "02.01.2006"}}</b>{{with .LastUsedAt}} · zuletzt geöffnet {{.Format "02.01.2006"}}{{end}}{{if .CreatedBy}} · von {{.CreatedBy}}{{end}}</span>
+						<form method="post" action="/neighbors/{{$.Neighbor.ID}}/beleg/share/revoke?year={{$.Year.ID}}" class="sharerow__del"
+							data-confirm="Diesen öffentlichen Link löschen? Er wird sofort ungültig.">
+							<input type="hidden" name="share_id" value="{{.ID}}">
+							<button type="submit" class="btn btn--danger btn--sm">Löschen</button>
+						</form>
+					</div>
+					{{end}}
+					<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/share?year={{.Year.ID}}" class="sharerow sharerow--create">
+						<label class="field sharebox__days"><span>Linkdauer</span>
+							<select class="select" name="days">
+								<option value="7">7 Tage</option>
+								<option value="30" selected>30 Tage</option>
+								<option value="90">90 Tage</option>
+							</select>
+						</label>
+						<button type="submit" class="btn btn--ghost">{{template "ic-copy"}} Link erzeugen</button>
+					</form>
+				</div>
+			</details>
 			{{end}}
-			{{range .Shares}}
-			<div class="sharerow">
-				<span class="sharerow__meta">Gültig bis <b>{{.ExpiresAt.Format "02.01.2006"}}</b>{{with .LastUsedAt}} · zuletzt geöffnet {{.Format "02.01.2006"}}{{end}}{{if .CreatedBy}} · von {{.CreatedBy}}{{end}}</span>
-				<form method="post" action="/neighbors/{{$.Neighbor.ID}}/beleg/share/revoke?year={{$.Year.ID}}" class="sharerow__del"
-					data-confirm="Diesen öffentlichen Link löschen? Er wird sofort ungültig.">
-					<input type="hidden" name="share_id" value="{{.ID}}">
-					<button type="submit" class="btn btn--danger btn--sm">Löschen</button>
-				</form>
-			</div>
-			{{end}}
-			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/share?year={{.Year.ID}}" class="sharerow sharerow--create">
-				<label class="field sharebox__days"><span>Linkdauer</span>
-					<select class="select" name="days">
-						<option value="7">7 Tage</option>
-						<option value="30" selected>30 Tage</option>
-						<option value="90">90 Tage</option>
-					</select>
-				</label>
-				<button type="submit" class="btn btn--ghost">{{template "ic-copy"}} Link erzeugen</button>
-			</form>
 		</div>
-		{{end}}
 		{{with .LastSend}}
 		<p class="beleg__sent muted small">{{template "ic-check"}} Zuletzt versendet am {{.SentAt.Format "02.01.2006, 15:04"}} Uhr ({{.Channel}})</p>
 		{{end}}
@@ -275,7 +281,9 @@
 			{{end}}
 		</div>
 		{{end}}
-		{{if .HasInvoice}}
+		{{/* Corrections are OWNER actions — never rendered on the public (Shared)
+		     read-only view, which must stay a pure document. */}}
+		{{if and .HasInvoice (not .Shared)}}
 		<div class="beleg__invacts stack">
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/gutschrift" class="beleg__gform">
 				<input type="hidden" name="year_id" value="{{.Year.ID}}">

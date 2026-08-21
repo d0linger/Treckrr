@@ -42,6 +42,19 @@
 		document.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
 	})();
 
+	// Popup menus built on native <details data-popmenu> (e.g. the Beleg "Link"
+	// panel): close on outside click or Escape — details alone only toggles on
+	// its summary. Presentation only.
+	(function () {
+		var menus = document.querySelectorAll("details[data-popmenu]");
+		if (!menus.length) return;
+		function closeAll() { menus.forEach(function (d) { d.removeAttribute("open"); }); }
+		document.addEventListener("click", function (e) {
+			menus.forEach(function (d) { if (!d.contains(e.target)) d.removeAttribute("open"); });
+		});
+		document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeAll(); });
+	})();
+
 	// Brand mark: pick one farm-machine symbol and keep it — stable across
 	// refreshes and in-app navigation. It only changes when the stored mark is
 	// missing (e.g. the browser cache / site data was cleared), where a fresh

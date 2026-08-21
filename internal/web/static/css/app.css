@@ -1206,10 +1206,31 @@ span.paychip { cursor: default; }
 	font-weight: 700;
 }
 .beleg__actrow .btn.is-sent .ic { color: var(--primary); }
-/* Self-service public-link panel: plate heading, fresh-link row, active-link
-   list with delete, and the create form with a Linkdauer select. */
-.sharebox { margin-top: .6rem; padding: .7rem .8rem; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--radius); display: flex; flex-direction: column; gap: .55rem; }
-.sharebox p { margin: 0; }
+/* Self-service public-link panel, tucked into a popup behind the "Link" action
+   button (native <details> — the house pattern, CSP-safe). The panel drops
+   below the button; on phones it docks as a fixed sheet above the tab bar. */
+.sharemenu { position: relative; }
+.sharemenu > summary { list-style: none; width: 100%; }
+.sharemenu > summary::-webkit-details-marker { display: none; }
+.sharemenu[open] > summary { background: var(--surface-2); color: var(--text); }
+.sharemenu__pop {
+	/* right-anchored to the button so it can never clip at the viewport edge
+	   (the action grid ends near the content edge; centring overflowed there) */
+	position: absolute; top: calc(100% + 6px); right: 0;
+	z-index: 45; width: min(92vw, 400px); text-align: left;
+	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+	box-shadow: 0 12px 36px rgba(0, 0, 0, .28);
+	padding: .7rem .8rem; display: flex; flex-direction: column; gap: .55rem;
+}
+/* Narrow screens: dock as a fixed sheet above the tab bar — anchor math can't
+   win against a 2-column action grid on a phone. */
+@media (max-width: 720px) {
+	.sharemenu__pop {
+		position: fixed; left: .8rem; right: .8rem; top: auto; width: auto;
+		bottom: calc(76px + env(safe-area-inset-bottom));
+	}
+}
+.sharemenu__pop p { margin: 0; }
 .sharebox__h { font-family: var(--font-mono); font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .sharebox__once { font-size: .74rem; color: var(--accent-text); font-weight: 600; }
 .sharebox__row { display: flex; gap: .4rem; }
