@@ -57,7 +57,7 @@
 	--chassis-text: #c9d4cd;
 	--chassis-muted: #9fb0a6;
 	--chassis-line: #33403a;
-	--chassis-active: #ff8142;
+	--chassis-active: #85d7a9; /* B: nav marker is a STATE -> mint */
 	/* Blueprint grid on the page ground — part of the Werkblatt identity. */
 	--grid-line: rgba(20, 40, 30, .05);
 	--radius: 10px;
@@ -113,7 +113,7 @@
 		--chassis-text: #c9d4cd;
 		--chassis-muted: #93a49a;
 		--chassis-line: #263329;
-		--chassis-active: #ff8142;
+		--chassis-active: #85d7a9; /* B: nav marker is a STATE -> mint */
 		--grid-line: rgba(219, 229, 222, .035);
 		--shadow: 0 1px 2px rgba(0, 0, 0, .4);
 		--card-grad: var(--surface); /* flat card surface */
@@ -150,7 +150,7 @@
 	--chassis-text: #c9d4cd;
 	--chassis-muted: #93a49a;
 	--chassis-line: #263329;
-	--chassis-active: #ff8142;
+	--chassis-active: #85d7a9; /* B: nav marker is a STATE -> mint */
 	--grid-line: rgba(219, 229, 222, .035);
 	--shadow: 0 1px 2px rgba(0, 0, 0, .4);
 	--card-grad: var(--surface); /* flat card surface */
@@ -530,10 +530,11 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 	width: 12px; height: 12px;
 	transform: scale(0);
 	transition: transform .12s ease-in-out;
-	box-shadow: inset 1em 1em var(--on-signal);
+	box-shadow: inset 1em 1em var(--on-primary);
 	clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
 }
-.check input[type="checkbox"]:checked { background: var(--signal); border-color: var(--signal); }
+/* B: a checked box is a selection STATE -> green, not signal. */
+.check input[type="checkbox"]:checked { background: var(--primary); border-color: var(--primary); }
 .check input[type="checkbox"]:checked::before { transform: scale(1); }
 .check input[type="checkbox"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
@@ -598,7 +599,7 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .listtools { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .2rem; }
 .listtools .input { flex: 1 1 12rem; }
 .switch { display: inline-flex; align-items: center; gap: .4rem; font-size: var(--fs-sm); color: var(--text-muted); cursor: pointer; white-space: nowrap; user-select: none; }
-.switch input { accent-color: var(--signal); width: 1.05rem; height: 1.05rem; }
+.switch input { accent-color: var(--primary); width: 1.05rem; height: 1.05rem; }
 
 /* ---- Chips ------------------------------------------------------------ */
 .ratechips { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .6rem; }
@@ -710,7 +711,7 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 }
 .tabbar__icon { width: 22px; height: 22px; display: block; }
 .tabbar__item.is-active { color: var(--chassis-active); font-weight: 700; }
-.tabbar__item.is-active .tabbar__pill { background: rgba(255, 129, 66, .14); color: var(--chassis-active); }
+.tabbar__item.is-active .tabbar__pill { background: rgba(133, 215, 169, .14); color: var(--chassis-active); }
 .tabbar__item.is-active::before {
 	content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
 	width: 20px; height: 3px; border-radius: 3px;
@@ -805,11 +806,14 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .paytoggle { margin: 0; }
 .paychip {
 	display: inline-flex; align-items: center; gap: .4rem;
-	border-radius: 999px; padding: .35rem .8rem;
+	border-radius: 999px; padding: .16rem .6rem;
 	font-family: var(--font-mono); font-weight: 700; font-size: .68rem;
 	letter-spacing: .06em; text-transform: uppercase; font-variant-numeric: tabular-nums;
-	cursor: pointer; min-height: var(--tap); border: 1px solid transparent; white-space: nowrap;
+	cursor: pointer; border: 1px solid transparent; white-space: nowrap;
 }
+/* Only the CLICKABLE toggle keeps the 44-px tap target; the read-only status
+   display is a compact chip like every other badge. */
+button.paychip { min-height: var(--tap); padding: .35rem .8rem; }
 .paychip--paid { background: var(--primary-tint); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 30%, transparent); }
 .paychip--open { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
 .paychip--open::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
@@ -1480,7 +1484,7 @@ span.paychip { cursor: default; }
 .bkp__more .bkp__files li:first-child { border-top: 1px solid var(--card-hairline); }
 .bkp__auto { display: inline-flex; align-items: center; gap: .45rem; font-size: .82rem; font-weight: 600;
 	color: var(--muted); margin: .1rem 0 .55rem; cursor: pointer; user-select: none; }
-.bkp__auto input { width: 1rem; height: 1rem; accent-color: var(--signal); }
+.bkp__auto input { width: 1rem; height: 1rem; accent-color: var(--primary); }
 .bkp__off .bkp__seg,
 .bkp__off .bkp__cron-rows,
 .bkp__off .bkp__lbl,
