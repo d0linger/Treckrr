@@ -2,10 +2,8 @@ package server
 
 import (
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +15,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/d0linger/treckrr/internal/auth"
 	"github.com/d0linger/treckrr/internal/calc"
 	"github.com/d0linger/treckrr/internal/mail"
 	"github.com/d0linger/treckrr/internal/models"
@@ -445,42 +444,34 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		data["ShareURL"] = absoluteURL(r, "/s/beleg/"+tok)
 	}
 	// Self-service: list the Beleg's active public links (manage/revoke).
-	if data["HasInvoice"] == true {
+	if hasInv, _ := data["HasInvoice"].(bool); hasInv {
 		data["Shares"], _ = s.store.ListBelegShares(r.Context(), neighbor.ID, year.ID) // best-effort
+		data["ShareDayOptions"] = belegShareDayOptions
+		data["ShareDefaultDays"] = belegShareDefaultDays
 	}
 	s.render(w, r, "beleg", data)
 }
 
-// newBelegShareToken mints a random share credential (Parkrr portal-link
-// pattern): the RAW token goes into the link and is never stored; only its
-// SHA-256 hex lands in beleg_shares, so a DB leak exposes no usable links.
-// Raw tokens are dot-free by construction — the dot marks legacy HMAC tokens,
-// which verifyLegacyBelegShare keeps honoring until they expire.
-func newBelegShareToken() (raw, hash string, err error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", "", err
-	}
-	raw = base64.RawURLEncoding.EncodeToString(b)
-	return raw, hashBelegShareToken(raw), nil
-}
+// Share tokens reuse the session-token primitives (Parkrr portal-link
+// pattern): auth.NewToken mints the random RAW credential (hex → dot-free by
+// construction; the dot marks legacy HMAC tokens) and store.HashToken puts
+// only its SHA-256 hex into beleg_shares — a DB leak exposes no usable links.
 
-func hashBelegShareToken(raw string) string {
-	sum := sha256.Sum256([]byte(raw))
-	return hex.EncodeToString(sum[:])
-}
+// belegShareDayOptions is the single source of truth for the offered
+// validities (Linkdauer): it renders the <select> AND validates the submitted
+// value, so template and handler can never diverge.
+var belegShareDayOptions = []int{7, 30, 90}
 
-// belegShareDays whitelists the offered validities (Linkdauer); anything else
-// falls back to the 30-day default.
+const belegShareDefaultDays = 30
+
 func belegShareDays(v string) int {
-	switch v {
-	case "7":
-		return 7
-	case "90":
-		return 90
-	default:
-		return 30
+	n, _ := strconv.Atoi(v)
+	for _, d := range belegShareDayOptions {
+		if n == d {
+			return d
+		}
 	}
+	return belegShareDefaultDays
 }
 
 // maxBelegShareTokenLen bounds the raw share token input so an oversized payload
@@ -547,11 +538,12 @@ func (s *Server) handleBelegShareCreate(w http.ResponseWriter, r *http.Request) 
 	// Self-service: the owner picks the validity; the raw token exists only in
 	// this redirect (the DB keeps just its hash).
 	days := belegShareDays(strings.TrimSpace(r.FormValue("days")))
-	raw, hash, err := newBelegShareToken()
+	raw, err := auth.NewToken()
 	if err != nil {
 		s.serverError(w, "share create: token", err)
 		return
 	}
+	hash := store.HashToken(raw)
 	expires := time.Now().Add(time.Duration(days) * 24 * time.Hour)
 	createdBy := ""
 	if u := s.currentUser(r); u != nil {
@@ -578,7 +570,7 @@ func (s *Server) handleBelegShareRevoke(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	shareID, _ := strconv.ParseInt(strings.TrimSpace(r.FormValue("share_id")), 10, 64)
+	shareID := formInt64(r, "share_id")
 	if shareID <= 0 {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
@@ -609,11 +601,15 @@ func (s *Server) handleSharedBeleg(w http.ResponseWriter, r *http.Request) {
 	var nID, yID int64
 	var ok bool
 	if strings.Contains(token, ".") {
-		// legacy pre-0038 HMAC token — honored until it expires
+		// Legacy pre-0038 HMAC token — honored until it expires. Every legacy
+		// token was minted with a fixed 30-day validity, so this branch is dead
+		// 30 days after 0038 reaches production.
+		// TODO: delete this branch, verifyLegacyBelegShare and its oversized-
+		// token test once all pre-0038 links have expired (deploy date + 30 d).
 		nID, yID, ok = s.verifyLegacyBelegShare(token)
 	} else {
 		var err error
-		nID, yID, ok, err = s.store.ResolveBelegShare(r.Context(), hashBelegShareToken(token))
+		nID, yID, ok, err = s.store.ResolveBelegShare(r.Context(), store.HashToken(token))
 		if err != nil {
 			s.serverError(w, "shared beleg: resolve", err)
 			return

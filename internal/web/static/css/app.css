@@ -32,6 +32,7 @@
 	--signal-press: #c74d0c;
 	--on-signal: #1c1006;
 	--signal-tint: #f9e6da;
+	--signal-text: #b04408; /* orange as TEXT/stroke on light surfaces (AA) */
 	/* danger = CRIMSON, deliberately pulled away from the signal orange so a
 	   destructive control can never be confused with the primary action. */
 	--danger: #a4262e;
@@ -99,6 +100,7 @@
 		--signal-press: #e86f31;
 		--on-signal: #201005;
 		--signal-tint: rgba(255, 129, 66, .16);
+		--signal-text: #ff9a68;
 		--danger: #e04b55; /* crimson — clearly apart from the #ff8142 signal */
 		--danger-tint: #341a1c;
 		--accent: #e0a640;
@@ -110,10 +112,10 @@
 		--owe: #e0805f;
 		--chassis: #16201b;
 		--chassis-2: #101a15;
-		--chassis-text: #c9d4cd;
 		--chassis-muted: #93a49a;
 		--chassis-line: #263329;
-		--chassis-active: #85d7a9; /* B: nav marker is a STATE -> mint */
+		/* --chassis-text / --chassis-active are theme-CONSTANT: declared once on
+		   bare :root, no dark override — identical copies would only drift. */
 		--grid-line: rgba(219, 229, 222, .035);
 		--shadow: 0 1px 2px rgba(0, 0, 0, .4);
 		--card-grad: var(--surface); /* flat card surface */
@@ -140,6 +142,7 @@
 	--signal-press: #e86f31;
 	--on-signal: #201005;
 	--signal-tint: rgba(255, 129, 66, .16);
+	--signal-text: #ff9a68;
 	--danger: #e04b55; /* crimson — clearly apart from the #ff8142 signal */
 	--danger-tint: #341a1c;
 	--accent: #e0a640;
@@ -147,10 +150,10 @@
 	--focus: #5b9bff;
 	--chassis: #16201b;
 	--chassis-2: #101a15;
-	--chassis-text: #c9d4cd;
 	--chassis-muted: #93a49a;
 	--chassis-line: #263329;
-	--chassis-active: #85d7a9; /* B: nav marker is a STATE -> mint */
+	/* --chassis-text / --chassis-active are theme-CONSTANT: declared once on
+	   bare :root, no dark override — identical copies would only drift. */
 	--grid-line: rgba(219, 229, 222, .035);
 	--shadow: 0 1px 2px rgba(0, 0, 0, .4);
 	--card-grad: var(--surface); /* flat card surface */
@@ -181,15 +184,17 @@ html, body {
 	-webkit-text-size-adjust: 100%;
 }
 
-/* Blueprint grid on the page ground — the Werkblatt paper. Fixed so content
-   sheets slide over a stationary grid. */
+/* Blueprint grid on the page ground — the Werkblatt paper. Scrolls WITH the
+   page: background-attachment:fixed would force a repaint every scroll frame
+   on mobile (and iOS Safari mishandles it on body) — a mobile-first PWA can't
+   afford that, and paper whose grid moves with the sheet is the truer metaphor
+   anyway. */
 body {
 	min-height: 100dvh;
 	background-image:
 		linear-gradient(var(--grid-line) 1px, transparent 1px),
 		linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
 	background-size: 26px 26px;
-	background-attachment: fixed;
 }
 /* Reserve space for the fixed bottom tab bar — only on pages that render it
    (authenticated). Without this scope, the login/offline pages (no tab bar) get
@@ -423,9 +428,12 @@ em { font-style: normal; color: var(--muted); }
    so fields inside them are spaced like direct form children. */
 [data-h-only], [data-qty-only] { display: flex; flex-direction: column; gap: .8rem; }
 .field { display: flex; flex-direction: column; gap: .3rem; font-size: .85rem; color: var(--muted); }
-/* Werkblatt F5: field labels are stamped plates app-wide — uppercase mono,
-   tracked (formerly only the login had this treatment). */
-.field > span {
+/* Werkblatt F5: field LABELS are stamped plates app-wide — uppercase mono,
+   tracked (formerly only the login had this treatment). Scoped to the FIRST
+   span: a .field may carry further direct spans (e.g. the live pw-match
+   feedback) that must stay body copy, not shouty plates. */
+.field > span { font-weight: 600; }
+.field > span:first-child {
 	font-family: var(--font-mono); font-size: .72rem; font-weight: 700;
 	letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
 }
@@ -506,7 +514,7 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .btn--danger:hover { background: var(--danger-tint); }
 .btn--danger.btn--primary { background: var(--danger); color: #fff; box-shadow: var(--shadow); }
 .btn--ghost { background: transparent; border-color: var(--border); color: var(--primary); }
-.btn--sm { min-height: 36px; padding: .35rem .8rem; font-size: .85rem; }
+.btn--sm { min-height: 36px; padding: .35rem .8rem; font-size: .75rem; } /* below the .82rem base — small stays small */
 .btn--block { width: 100%; }
 .btn--icon { padding: 0; width: var(--tap); min-height: var(--tap); border-radius: 50%; font-size: 1.1rem; }
 
@@ -1231,17 +1239,17 @@ span.paychip { cursor: default; }
 	}
 }
 .sharemenu__pop p { margin: 0; }
-.sharebox__h { font-family: var(--font-mono); font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-.sharebox__once { font-size: .74rem; color: var(--accent-text); font-weight: 600; }
-.sharebox__row { display: flex; gap: .4rem; }
-.sharebox__row .input { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); font-size: .8rem; }
-.sharerow { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; border-top: 1px solid var(--card-hairline); padding-top: .55rem; }
-.sharerow__meta { flex: 1 1 auto; min-width: 0; font-size: .8rem; color: var(--muted); }
-.sharerow__meta b { color: var(--text); font-variant-numeric: tabular-nums; }
-.sharerow__del { margin: 0; flex: 0 0 auto; }
-.sharerow--create { align-items: flex-end; }
-.sharebox__days { flex: 0 1 11rem; }
-.sharerow--create .btn { flex: 0 0 auto; }
+.sharemenu__h { font-family: var(--font-mono); font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.sharemenu__once { font-size: .74rem; color: var(--accent-text); font-weight: 600; }
+.sharemenu__row { display: flex; gap: .4rem; }
+.sharemenu__row .input { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); font-size: .8rem; }
+.sharemenu__item { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; border-top: 1px solid var(--card-hairline); padding-top: .55rem; }
+.sharemenu__meta { flex: 1 1 auto; min-width: 0; font-size: .8rem; color: var(--muted); }
+.sharemenu__meta b { color: var(--text); font-variant-numeric: tabular-nums; }
+.sharemenu__del { margin: 0; flex: 0 0 auto; }
+.sharemenu__item--create { align-items: flex-end; }
+.sharemenu__days { flex: 0 1 11rem; }
+.sharemenu__item--create .btn { flex: 0 0 auto; }
 .recur__acts { display: flex; gap: .3rem; align-items: center; justify-content: flex-end; }
 .recur__acts form { display: inline; }
 .beleg__sent { display: flex; align-items: center; gap: .4rem; margin: .5rem 0 0; }
