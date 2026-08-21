@@ -1,33 +1,42 @@
 /* Treckrr — mobile-first PWA styles. All assets served locally. */
 
 /* Self-hosted brand typefaces (served same-origin, allowed by the CSP).
-   Manrope = display/headings & KPI values, Hanken Grotesk = body text,
-   JetBrains Mono = caps labels & one-time codes. */
+   Werkblatt identity: JetBrains Mono LEADS (display/headings/KPIs/labels — the
+   machine-ledger voice), Hanken Grotesk stays on body duty. Manrope retired. */
 @font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:400;font-display:swap;src:url('/static/fonts/hanken-400.woff2') format('woff2');}
 @font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:500;font-display:swap;src:url('/static/fonts/hanken-500.woff2') format('woff2');}
 @font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:600;font-display:swap;src:url('/static/fonts/hanken-600.woff2') format('woff2');}
 @font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/hanken-700.woff2') format('woff2');}
-@font-face{font-family:'Manrope';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/manrope-700.woff2') format('woff2');}
-@font-face{font-family:'Manrope';font-style:normal;font-weight:800;font-display:swap;src:url('/static/fonts/manrope-800.woff2') format('woff2');}
 @font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:500;font-display:swap;src:url('/static/fonts/jetbrainsmono-500.woff2') format('woff2');}
 @font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/jetbrainsmono-700.woff2') format('woff2');}
 
 :root {
 	--font-body: 'Hanken Grotesk', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-	--font-display: 'Manrope', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--font-display: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-	--bg: #eef2ea;
-	--surface: #ffffff;
-	--surface-2: #f2f4ef;
-	--text: #191c1a;
-	--muted: #5b655d; /* Agro-Modernist on-surface-variant; passes 4.5:1 on the bg */
-	--border: #dfe4dd;
-	--primary: #115638;        /* Agro-Modernist deep "Treckrr green" */
-	--primary-strong: #2f6f4f; /* mid green — the lighter end of hero/button gradients */
+	/* Werkblatt (light): green-tinted technical paper, iron-green ink. */
+	--bg: #edf1ec;
+	--surface: #f9fbf9;
+	--surface-2: #eff2ef;
+	--text: #19211d;
+	--muted: #57645c; /* passes 4.5:1 on the bg */
+	--border: #ccd4ce;
+	--primary: #115638;        /* deep "Treckrr green" — links, nav, paid states */
+	--primary-strong: #2f6f4f; /* mid green — the lighter end of the hero gradients */
 	--primary-tint: #e3efe8;
 	--on-primary: #ffffff; /* text/icon on a solid primary surface (dark in Noir) */
-	--danger: #b4442f;
-	--danger-tint: #f7e3df;
+	/* Signal — safety orange, THE action colour (primary buttons, FAB, active
+	   pill). Ink-on-orange like a stamped machine warning label (~7:1 both
+	   themes); green machine, orange decals. */
+	--signal: #e05910;
+	--signal-press: #c74d0c;
+	--on-signal: #1c1006;
+	--signal-tint: #f9e6da;
+	--signal-text: #b04408; /* orange as TEXT/stroke on light surfaces (AA) */
+	/* danger = CRIMSON, deliberately pulled away from the signal orange so a
+	   destructive control can never be confused with the primary action. */
+	--danger: #a4262e;
+	--danger-tint: #f4dcdd;
 	--accent: #c8891f;
 	/* Darker amber used only where amber is TEXT (links, warn chips, status tags):
 	   passes 4.5:1 in light mode where the vivid --accent does not. In dark mode it
@@ -41,21 +50,33 @@
 	--data-track: #e8ece8;
 	--pay: #2f8457;
 	--owe: #c05635;
-	--radius: 14px;
-	--radius-sm: 11px;
+	/* Chassis — the machine frame: app bar + nav rail/tab bar stay this dark
+	   green-black in BOTH themes (a deliberate constant, like the white appbar
+	   icons); the orange marker is the only moving part. */
+	--chassis: #1f2823;
+	--chassis-2: #171f1a;
+	--chassis-text: #c9d4cd;
+	--chassis-muted: #9fb0a6;
+	--chassis-line: #33403a;
+	--chassis-active: #85d7a9; /* B: nav marker is a STATE -> mint */
+	/* Blueprint grid on the page ground — part of the Werkblatt identity. */
+	--grid-line: rgba(20, 40, 30, .05);
+	--radius: 10px;
+	--radius-sm: 6px;
 	/* Modular type scale (theme-independent) — one system instead of ~15 ad-hoc sizes. */
 	--fs-xs: .75rem; --fs-sm: .8125rem; --fs-base: 1rem; --fs-md: 1.0625rem;
 	--fs-lg: 1.25rem; --fs-xl: 1.5rem; --fs-2xl: 1.9rem;
-	--shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 4px 16px rgba(0, 0, 0, .05);
-	/* Depth/modernization (light): gradient cards, ambient glow, gradient buttons, glass bars. */
-	--card-grad: var(--surface); /* flat card surface (was a subtle vertical gradient) */
-	--card-hairline: rgba(20, 40, 30, .07);
-	--card-shadow: 0 1px 2px rgba(24, 45, 35, .06), 0 12px 28px rgba(24, 45, 35, .09);
-	--glow: radial-gradient(120% 70% at 50% -8%, rgba(47, 111, 79, .09), transparent 60%);
-	--glass: rgba(238, 242, 234, .72);
-	--glass-border: rgba(20, 40, 30, .08);
-	--btn-glow: rgba(17, 86, 56, .22);
-	--brand-grad: linear-gradient(135deg, var(--primary), var(--primary-strong));
+	--shadow: 0 1px 2px rgba(0, 0, 0, .05);
+	/* Werkblatt depth: hairlines over shadows — cards are bordered sheets on the
+	   gridded paper; the pop-shadow is reserved for true overlays. */
+	--card-grad: var(--surface);
+	--card-hairline: rgba(20, 40, 30, .16);
+	--card-shadow: 0 1px 2px rgba(24, 45, 35, .05);
+	--glow: none;
+	--glass: rgba(31, 40, 35, .92);
+	--glass-border: var(--chassis-line);
+	--btn-glow: rgba(224, 89, 16, .22);
+	--brand-grad: linear-gradient(135deg, var(--signal), var(--signal-press));
 	--tap: 44px;
 	--maxw: 720px;
 	font-size: 16px;
@@ -72,11 +93,16 @@
 		--muted: #a2ada4;
 		--border: #2b332d;
 		--primary: #85d7a9;        /* Noir: vibrant mint accent */
-		--primary-strong: #63c192; /* mint gradient end (buttons/pills) */
+		--primary-strong: #63c192; /* mint gradient end (hero surfaces) */
 		--primary-tint: #1b2a22;
 		--on-primary: #04170e;     /* dark text/icon on the mint accent */
-		--danger: #e06a52;
-		--danger-tint: #33201c;
+		--signal: #ff8142;         /* Nachtschicht: signal orange glows brighter */
+		--signal-press: #e86f31;
+		--on-signal: #201005;
+		--signal-tint: rgba(255, 129, 66, .16);
+		--signal-text: #ff9a68;
+		--danger: #e04b55; /* crimson — clearly apart from the #ff8142 signal */
+		--danger-tint: #341a1c;
 		--accent: #e0a640;
 		--accent-text: #e0a640;
 		--focus: #5b9bff;
@@ -84,14 +110,21 @@
 		--data-track: #26302a;
 		--pay: #52b184;
 		--owe: #e0805f;
-		--shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .35);
-		--card-grad: var(--surface); /* flat card surface (was a subtle vertical gradient) */
-		--card-hairline: rgba(255, 255, 255, .06);
-		--card-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 30px rgba(0, 0, 0, .28);
-		--glow: radial-gradient(120% 70% at 50% -8%, rgba(76, 157, 115, .16), transparent 60%);
-		--glass: rgba(12, 21, 17, .62);
-		--glass-border: rgba(255, 255, 255, .08);
-		--btn-glow: rgba(76, 157, 115, .30);
+		--chassis: #16201b;
+		--chassis-2: #101a15;
+		--chassis-muted: #93a49a;
+		--chassis-line: #263329;
+		/* --chassis-text / --chassis-active are theme-CONSTANT: declared once on
+		   bare :root, no dark override — identical copies would only drift. */
+		--grid-line: rgba(219, 229, 222, .035);
+		--shadow: 0 1px 2px rgba(0, 0, 0, .4);
+		--card-grad: var(--surface); /* flat card surface */
+		--card-hairline: rgba(255, 255, 255, .09);
+		--card-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+		--glow: none;
+		--glass: rgba(16, 26, 21, .94);
+		--glass-border: var(--chassis-line);
+		--btn-glow: rgba(255, 129, 66, .25);
 	}
 }
 :root[data-theme="dark"] {
@@ -102,22 +135,34 @@
 	--muted: #a2ada4;
 	--border: #2b332d;
 	--primary: #85d7a9;        /* Noir: vibrant mint accent */
-	--primary-strong: #63c192; /* mint gradient end (buttons/pills) */
+	--primary-strong: #63c192; /* mint gradient end (hero surfaces) */
 	--primary-tint: #1b2a22;
 	--on-primary: #04170e;     /* dark text/icon on the mint accent */
-	--danger: #e06a52;
-	--danger-tint: #33201c;
+	--signal: #ff8142;         /* Nachtschicht: signal orange glows brighter */
+	--signal-press: #e86f31;
+	--on-signal: #201005;
+	--signal-tint: rgba(255, 129, 66, .16);
+	--signal-text: #ff9a68;
+	--danger: #e04b55; /* crimson — clearly apart from the #ff8142 signal */
+	--danger-tint: #341a1c;
 	--accent: #e0a640;
 	--accent-text: #e0a640;
 	--focus: #5b9bff;
-	--shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .35);
-	--card-grad: var(--surface); /* flat card surface (was a subtle vertical gradient) */
-	--card-hairline: rgba(255, 255, 255, .06);
-	--card-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 30px rgba(0, 0, 0, .28);
-	--glow: radial-gradient(120% 70% at 50% -8%, rgba(76, 157, 115, .16), transparent 60%);
-	--glass: rgba(12, 21, 17, .62);
-	--glass-border: rgba(255, 255, 255, .08);
-	--btn-glow: rgba(76, 157, 115, .30);
+	--chassis: #16201b;
+	--chassis-2: #101a15;
+	--chassis-muted: #93a49a;
+	--chassis-line: #263329;
+	/* --chassis-text / --chassis-active are theme-CONSTANT: declared once on
+	   bare :root, no dark override — identical copies would only drift. */
+	--grid-line: rgba(219, 229, 222, .035);
+	--shadow: 0 1px 2px rgba(0, 0, 0, .4);
+	--card-grad: var(--surface); /* flat card surface */
+	--card-hairline: rgba(255, 255, 255, .09);
+	--card-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+	--glow: none;
+	--glass: rgba(16, 26, 21, .94);
+	--glass-border: var(--chassis-line);
+	--btn-glow: rgba(255, 129, 66, .25);
 	/* Chart-mark tokens must be redeclared here too: forcing dark via the theme
 	   toggle on a light system does not match the prefers-dark media query, so
 	   without these the bars/tracks/sparklines fall back to light values. */
@@ -139,11 +184,17 @@ html, body {
 	-webkit-text-size-adjust: 100%;
 }
 
+/* Blueprint grid on the page ground — the Werkblatt paper. Scrolls WITH the
+   page: background-attachment:fixed would force a repaint every scroll frame
+   on mobile (and iOS Safari mishandles it on body) — a mobile-first PWA can't
+   afford that, and paper whose grid moves with the sheet is the truer metaphor
+   anyway. */
 body {
 	min-height: 100dvh;
-	background-image: var(--glow);
-	background-repeat: no-repeat;
-	background-attachment: fixed;
+	background-image:
+		linear-gradient(var(--grid-line) 1px, transparent 1px),
+		linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+	background-size: 26px 26px;
 }
 /* Reserve space for the fixed bottom tab bar — only on pages that render it
    (authenticated). Without this scope, the login/offline pages (no tab bar) get
@@ -196,14 +247,17 @@ h1, h2, h3, .section-title, .summary-card__value, .summary-card__label,
 em { font-style: normal; color: var(--muted); }
 
 /* ---- Sticky top stack (app bar + year bar move together) -------------- */
+/* The top stack rides on the chassis — dark green-black iron in BOTH themes
+   (the machine frame; a deliberate constant like the white appbar icons). */
 .topstack {
 	position: sticky;
 	top: 0;
 	z-index: 20;
-	background: var(--primary); /* opaque fallback where color-mix() is unsupported */
-	background: color-mix(in srgb, var(--primary) 86%, transparent);
+	background: var(--chassis); /* opaque fallback where color-mix() is unsupported */
+	background: color-mix(in srgb, var(--chassis) 94%, transparent);
 	-webkit-backdrop-filter: blur(14px) saturate(1.3);
 	backdrop-filter: blur(14px) saturate(1.3);
+	border-bottom: 1px solid var(--chassis-line);
 	box-shadow: 0 4px 20px rgba(0, 0, 0, .18);
 }
 
@@ -306,7 +360,8 @@ em { font-style: normal; color: var(--muted); }
    at the page bottom instead of pinning them to the viewport. */
 @keyframes page-in { from { opacity: 0; } }
 .stack { display: flex; flex-direction: column; gap: 1rem; }
-.section-title { font-size: var(--fs-lg); font-weight: 800; letter-spacing: -.01em; margin-top: .6rem; }
+/* Section titles as stamped plate labels: uppercase mono, technical spacing. */
+.section-title { font-size: var(--fs-md); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; margin-top: .6rem; }
 
 .card {
 	background: var(--card-grad);
@@ -373,7 +428,15 @@ em { font-style: normal; color: var(--muted); }
    so fields inside them are spaced like direct form children. */
 [data-h-only], [data-qty-only] { display: flex; flex-direction: column; gap: .8rem; }
 .field { display: flex; flex-direction: column; gap: .3rem; font-size: .85rem; color: var(--muted); }
+/* Werkblatt F5: field LABELS are stamped plates app-wide — uppercase mono,
+   tracked (formerly only the login had this treatment). Scoped to the FIRST
+   span: a .field may carry further direct spans (e.g. the live pw-match
+   feedback) that must stay body copy, not shouty plates. */
 .field > span { font-weight: 600; }
+.field > span:first-child {
+	font-family: var(--font-mono); font-size: .72rem; font-weight: 700;
+	letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
+}
 
 .input, .select {
 	width: 100%;
@@ -387,7 +450,7 @@ em { font-style: normal; color: var(--muted); }
 	appearance: none;
 	transition: border-color .15s, box-shadow .15s;
 }
-.input:focus, .select:focus { outline: none; border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent); }
+.input:focus, .select:focus { outline: none; border-color: var(--signal); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal) 22%, transparent); }
 /* Visible keyboard focus for every interactive element (WCAG 2.4.7). Only shows
    on keyboard navigation — a mouse click does not trigger :focus-visible. Text
    inputs keep their box-shadow ring above (higher specificity wins). */
@@ -400,36 +463,58 @@ em { font-style: normal; color: var(--muted); }
 	padding-right: 2rem;
 }
 
+/* Werkblatt F5: the native file input joins the system — the picker button
+   renders as a small stamped Werkblatt button instead of raw browser chrome. */
+input[type="file"].input { padding: .45rem .55rem; font-size: .85rem; color: var(--muted); }
+input[type="file"].input::file-selector-button {
+	font-family: var(--font-display); font-size: .72rem; font-weight: 700;
+	letter-spacing: .04em; text-transform: uppercase;
+	color: var(--text); background: var(--surface-2);
+	border: 1px solid var(--line-strong, var(--border)); border-radius: 7px;
+	padding: .38rem .75rem; margin-right: .7rem; cursor: pointer;
+	transition: background .15s ease;
+}
+input[type="file"].input::file-selector-button:hover { background: var(--surface); }
+
 .fieldset { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .7rem; margin: 0; }
 .fieldset legend { font-size: .8rem; font-weight: 600; color: var(--muted); padding: 0 .3rem; }
 
 /* ---- Buttons (modern) ------------------------------------------------- */
+/* Werkblatt buttons: industrial rectangles, uppercase mono labels, 1-px press
+   displacement. The primary action stamps INK on safety orange (like a machine
+   warning label), not white-on-colour. */
 .btn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	gap: .4rem;
 	min-height: var(--tap);
-	padding: .6rem 1.1rem;
-	font-size: 1rem;
+	padding: .6rem 1.05rem;
+	font-size: .82rem;
 	font-weight: 700;
 	font-family: var(--font-display);
+	letter-spacing: .04em;
+	text-transform: uppercase;
 	color: var(--text);
 	background: var(--surface-2);
 	border: 1px solid transparent;
-	border-radius: 999px;
+	border-radius: 8px;
 	cursor: pointer;
 	white-space: nowrap;
 	transition: transform .08s ease, filter .15s ease, background .15s ease;
 	-webkit-tap-highlight-color: transparent;
 }
-.btn:active { transform: translateY(1px) scale(.99); }
-.btn--primary { background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 6px 18px var(--btn-glow); }
+.btn:active { transform: translateY(1px); }
+.btn--primary { background: var(--brand-grad); color: var(--on-signal); box-shadow: 0 4px 14px var(--btn-glow); }
 .btn--primary:hover { filter: brightness(1.06); }
-.btn--danger { color: var(--danger); background: var(--danger-tint); }
+/* Werkblatt danger: crimson OUTLINE by default — a destructive action must never
+   read like the page's signal action. The filled crimson is reserved for the
+   final confirmation step (btn--danger.btn--primary). */
+.btn--danger { color: var(--danger); background: transparent; border-color: var(--danger); }
+.btn--danger:hover { background: var(--danger-tint); }
 .btn--danger.btn--primary { background: var(--danger); color: #fff; box-shadow: var(--shadow); }
 .btn--ghost { background: transparent; border-color: var(--border); color: var(--primary); }
-.btn--sm { min-height: 36px; padding: .35rem .8rem; font-size: .85rem; }
+.btn--sm { min-height: 36px; padding: .35rem .8rem; font-size: .75rem; } /* below the .82rem base — small stays small */
 .btn--block { width: 100%; }
 .btn--icon { padding: 0; width: var(--tap); min-height: var(--tap); border-radius: 50%; font-size: 1.1rem; }
 
@@ -453,12 +538,30 @@ em { font-style: normal; color: var(--muted); }
 	width: 12px; height: 12px;
 	transform: scale(0);
 	transition: transform .12s ease-in-out;
-	box-shadow: inset 1em 1em #fff;
+	box-shadow: inset 1em 1em var(--on-primary);
 	clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
 }
+/* B: a checked box is a selection STATE -> green, not signal. */
 .check input[type="checkbox"]:checked { background: var(--primary); border-color: var(--primary); }
 .check input[type="checkbox"]:checked::before { transform: scale(1); }
 .check input[type="checkbox"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* Werkblatt F2: theme picker as a true segmented control. The active option is
+   a selection STATE → green ink on brand tint with a green base edge (the same
+   selection language as subtabs), never the orange signal. */
+.themeseg { display: flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
+.themeseg__item {
+	flex: 1; text-align: center; min-height: var(--tap);
+	display: inline-flex; align-items: center; justify-content: center;
+	font-family: var(--font-display); font-size: .78rem; font-weight: 700;
+	letter-spacing: .04em; text-transform: uppercase;
+	color: var(--muted); text-decoration: none;
+	border-right: 1px solid var(--border); padding: .5rem .4rem;
+	transition: background .15s ease, color .15s ease;
+}
+.themeseg__item:last-child { border-right: 0; }
+.themeseg__item:hover { background: var(--surface-2); color: var(--text); }
+.themeseg__item.is-on { background: var(--primary-tint); color: var(--primary); box-shadow: inset 0 -2px 0 var(--primary); }
 
 /* ---- Segmented control ------------------------------------------------ */
 .segmented { display: flex; background: var(--surface-2); border-radius: 999px; padding: 4px; gap: 4px; }
@@ -597,35 +700,38 @@ em { font-style: normal; color: var(--muted); }
 	padding-bottom: env(safe-area-inset-bottom);
 	box-shadow: 0 -6px 24px rgba(0, 0, 0, .22);
 }
+/* The tab bar rides on the chassis (dark in both themes); the orange marker is
+   the only moving part. */
 .tabbar__item {
 	flex: 1;
 	display: flex; flex-direction: column; align-items: center; gap: .12rem;
 	padding: .35rem 0 .5rem;
 	font-size: .68rem;
-	color: var(--muted);
+	font-family: var(--font-mono);
+	color: var(--chassis-muted);
 	min-height: var(--tap);
 	position: relative;
 }
 .tabbar__pill {
 	display: flex; align-items: center; justify-content: center;
-	width: 46px; height: 28px; border-radius: 999px;
+	width: 46px; height: 28px; border-radius: 8px;
 	transition: background .18s ease, box-shadow .18s ease;
 }
 .tabbar__icon { width: 22px; height: 22px; display: block; }
-.tabbar__item.is-active { color: var(--primary); font-weight: 700; }
-.tabbar__item.is-active .tabbar__pill { background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 5px 16px var(--btn-glow); }
+.tabbar__item.is-active { color: var(--chassis-active); font-weight: 700; }
+.tabbar__item.is-active .tabbar__pill { background: rgba(133, 215, 169, .14); color: var(--chassis-active); }
 .tabbar__item.is-active::before {
 	content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
 	width: 20px; height: 3px; border-radius: 3px;
-	background: linear-gradient(90deg, var(--primary), var(--accent));
+	background: var(--chassis-active);
 }
 
 .tabbar__item span:last-child { white-space: nowrap; }
 
 /* Fallback where backdrop-filter is unsupported: opaque bars keep text legible. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-	.tabbar { background: var(--surface); }
-	.topstack { background: var(--primary); }
+	.tabbar { background: var(--chassis); }
+	.topstack { background: var(--chassis); }
 }
 
 /* ---- Wider screens ---------------------------------------------------- */
@@ -641,14 +747,17 @@ em { font-style: normal; color: var(--muted); }
 	scrollbar-width: none;
 }
 .yearbar::-webkit-scrollbar { display: none; }
+/* Year segments on the chassis: mono, squared, paper-white active. The chassis
+   is dark in both themes, so one treatment serves both. */
 .yearpill {
-	flex: 0 0 auto; padding: .35rem .85rem; border-radius: 999px;
-	background: rgba(255, 255, 255, .14); color: rgba(255, 255, 255, .92); font-weight: 600;
-	font-variant-numeric: tabular-nums; text-decoration: none; border: 1px solid rgba(255, 255, 255, .16);
+	flex: 0 0 auto; padding: .35rem .85rem; border-radius: 7px;
+	background: rgba(255, 255, 255, .08); color: rgba(255, 255, 255, .88); font-weight: 600;
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums; text-decoration: none; border: 1px solid rgba(255, 255, 255, .14);
 	min-height: 2rem; display: inline-flex; align-items: center;
 }
-.yearpill.is-active { background: #fff; color: var(--primary-strong); border-color: #fff; }
-.yearpill--manage { font-weight: 700; color: rgba(255, 255, 255, .85); }
+.yearpill.is-active { background: #fff; color: var(--chassis); border-color: #fff; font-weight: 700; }
+.yearpill--manage { font-weight: 700; color: rgba(255, 255, 255, .8); }
 
 /* ---- Basis workspace header ------------------------------------------- */
 .workspace {
@@ -698,19 +807,29 @@ em { font-style: normal; color: var(--muted); }
 	font-size: 1rem; letter-spacing: .05em; user-select: all; }
 @media (max-width: 380px) { .codes { grid-template-columns: 1fr; } }
 
-/* Single clickable payment chip showing the current status (click to toggle). */
+/* Single clickable payment chip showing the current status (click to toggle).
+   Werkblatt badge language: status dot + uppercase mono + semantic TINT surface —
+   a round tinted plate reads as STATE, a rectangle as action, so the warn amber
+   can never be mistaken for the signal orange by form alone. */
 .paytoggle { margin: 0; }
 .paychip {
-	display: inline-flex; align-items: center; gap: .3rem;
-	border-radius: 999px; padding: .35rem .8rem; font-weight: 700; font-size: .82rem;
-	cursor: pointer; min-height: var(--tap); border: 1.5px solid transparent; white-space: nowrap;
+	display: inline-flex; align-items: center; gap: .4rem;
+	border-radius: 999px; padding: .16rem .6rem;
+	font-family: var(--font-mono); font-weight: 700; font-size: .68rem;
+	letter-spacing: .06em; text-transform: uppercase; font-variant-numeric: tabular-nums;
+	cursor: pointer; border: 1px solid transparent; white-space: nowrap;
 }
-.paychip--paid { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
-.paychip--open { background: transparent; color: var(--accent-text); border-color: color-mix(in srgb, #d89b00 55%, transparent); }
-.paychip--open:hover { background: color-mix(in srgb, #d89b00 12%, transparent); }
-/* Read-only status chip (running year): not a button, so no pointer/hover. */
+/* Only the CLICKABLE toggle keeps the 44-px tap target; the read-only status
+   display is a compact chip like every other badge. */
+button.paychip { min-height: var(--tap); padding: .35rem .8rem; }
+.paychip--paid { background: var(--primary-tint); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 30%, transparent); }
+.paychip--open { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
+.paychip--open::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.paychip--open:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* Read-only status chip (running year): not a button, so no pointer/hover —
+   the hover keeps the base tint (it must not strip the status surface). */
 .paychip--static { cursor: default; }
-.paychip--static:hover { background: transparent; }
+.paychip--static.paychip--open:hover { background: color-mix(in srgb, var(--accent) 13%, transparent); }
 span.paychip { cursor: default; }
 .carryover strong { display: block; }
 .carryover .muted { font-size: .82rem; }
@@ -966,12 +1085,13 @@ span.paychip { cursor: default; }
 .bkdot__pop-link { font-size: .78rem; margin-top: .2rem; font-weight: 600; }
 
 /* ---- Floating action button (quick-book) ------------------------------ */
+/* Quick-book is THE action — it wears the signal orange. */
 .fab { position: fixed; right: 1rem; z-index: 25;
 	bottom: calc(1rem + 58px + env(safe-area-inset-bottom));
-	width: 52px; height: 52px; border-radius: 50%; background: var(--primary); color: var(--on-primary);
+	width: 52px; height: 52px; border-radius: 50%; background: var(--signal); color: var(--on-signal);
 	display: grid; place-items: center; font-size: 1.6rem; font-weight: 700; text-decoration: none;
-	box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 55%, transparent), 0 2px 6px rgba(0, 0, 0, .3); }
-.fab:hover { background: var(--primary-strong); }
+	box-shadow: 0 6px 18px color-mix(in srgb, var(--signal) 45%, transparent), 0 2px 6px rgba(0, 0, 0, .3); }
+.fab:hover { background: var(--signal-press); }
 
 /* ---- Beleg: shareable statement (Saldo first + compact table) --------- */
 .beleg { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
@@ -1094,10 +1214,42 @@ span.paychip { cursor: default; }
 	font-weight: 700;
 }
 .beleg__actrow .btn.is-sent .ic { color: var(--primary); }
-.sharebox { margin-top: .6rem; padding: .7rem .8rem; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--radius); }
-.sharebox p { margin: 0 0 .4rem; }
-.sharebox__row { display: flex; gap: .4rem; }
-.sharebox__row .input { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); font-size: .8rem; }
+/* Self-service public-link panel, tucked into a popup behind the "Link" action
+   button (native <details> — the house pattern, CSP-safe). The panel drops
+   below the button; on phones it docks as a fixed sheet above the tab bar. */
+.sharemenu { position: relative; }
+.sharemenu > summary { list-style: none; width: 100%; }
+.sharemenu > summary::-webkit-details-marker { display: none; }
+.sharemenu[open] > summary { background: var(--surface-2); color: var(--text); }
+.sharemenu__pop {
+	/* right-anchored to the button so it can never clip at the viewport edge
+	   (the action grid ends near the content edge; centring overflowed there) */
+	position: absolute; top: calc(100% + 6px); right: 0;
+	z-index: 45; width: min(92vw, 400px); text-align: left;
+	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+	box-shadow: 0 12px 36px rgba(0, 0, 0, .28);
+	padding: .7rem .8rem; display: flex; flex-direction: column; gap: .55rem;
+}
+/* Narrow screens: dock as a fixed sheet above the tab bar — anchor math can't
+   win against a 2-column action grid on a phone. */
+@media (max-width: 720px) {
+	.sharemenu__pop {
+		position: fixed; left: .8rem; right: .8rem; top: auto; width: auto;
+		bottom: calc(76px + env(safe-area-inset-bottom));
+	}
+}
+.sharemenu__pop p { margin: 0; }
+.sharemenu__h { font-family: var(--font-mono); font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.sharemenu__once { font-size: .74rem; color: var(--accent-text); font-weight: 600; }
+.sharemenu__row { display: flex; gap: .4rem; }
+.sharemenu__row .input { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); font-size: .8rem; }
+.sharemenu__item { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; border-top: 1px solid var(--card-hairline); padding-top: .55rem; }
+.sharemenu__meta { flex: 1 1 auto; min-width: 0; font-size: .8rem; color: var(--muted); }
+.sharemenu__meta b { color: var(--text); font-variant-numeric: tabular-nums; }
+.sharemenu__del { margin: 0; flex: 0 0 auto; }
+.sharemenu__item--create { align-items: flex-end; }
+.sharemenu__days { flex: 0 1 11rem; }
+.sharemenu__item--create .btn { flex: 0 0 auto; }
 .recur__acts { display: flex; gap: .3rem; align-items: center; justify-content: flex-end; }
 .recur__acts form { display: inline; }
 .beleg__sent { display: flex; align-items: center; gap: .4rem; margin: .5rem 0 0; }
@@ -1114,7 +1266,10 @@ span.paychip { cursor: default; }
 .beleg__gform { display: grid; grid-template-columns: minmax(8rem, 11rem) 1fr auto; gap: .5rem; align-items: center;
 	padding: .7rem .8rem; border: 1px solid var(--card-hairline); border-radius: 12px; background: var(--surface); }
 .beleg__gform-h { grid-column: 1 / -1; font-family: var(--font-mono); font-size: .62rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
-.beleg__gform-h span { color: var(--muted); opacity: .8; }
+/* No opacity here: muted at 80 % lands at 3.83:1 on the sheet surface and fails
+   WCAG AA — plain muted passes. (Latent violation, visible only with an issued
+   invoice; caught by the F-round validation seed.) */
+.beleg__gform-h span { color: var(--muted); }
 .beleg__gform .input { min-width: 0; }
 .beleg__gform .btn { white-space: nowrap; }
 @media (max-width: 34rem) { .beleg__gform { grid-template-columns: 1fr; } }
@@ -1394,8 +1549,9 @@ span.paychip { cursor: default; }
 .bkp__danger .bkp__btnrow { margin-top: 0; }
 .bkp__danger { margin-top: 1rem; padding: .9rem; border: 1px solid color-mix(in srgb, var(--owe) 40%, var(--border));
 	border-radius: 11px; background: color-mix(in srgb, var(--owe) 7%, transparent); }
-.btn--danger { background: var(--owe); color: #fff; border-color: var(--owe); }
-.btn--danger:hover { filter: brightness(1.05); }
+/* (The former owe-filled .btn--danger override lived here and silently made
+   EVERY danger button a filled orange — removed; the canonical crimson outline
+   in the Buttons section now applies app-wide, including the backup danger zone.) */
 .bkp__sched { display: grid; grid-template-columns: 1fr; gap: .8rem; }
 @media (min-width: 560px) { .bkp__sched { grid-template-columns: 1fr 1fr; } }
 .bkp__sched-col { border: 1px solid var(--border); border-radius: 10px; padding: .7rem .8rem; background: var(--surface-2); }
@@ -1598,18 +1754,17 @@ span.paychip { cursor: default; }
 .rsum__tot .old { color: var(--muted); } .rsum__tot .arr { color: var(--muted); margin: 0 .15rem; }
 
 /* ============================================================================
-   Agro-Modernist finish — ported from the design artifacts.
+   Werkblatt finish — ported from the design artifacts.
    ========================================================================== */
-/* Noir dark: the app bar and hero cards stay deep obsidian-green with light
-   text; the vibrant mint --primary is reserved for buttons/links/accents. */
+/* Noir dark: the hero cards stay deep obsidian-green with light text; the
+   vibrant mint --primary is reserved for links/accents. (The top stack is
+   chassis-constant in both themes, so it needs no dark override anymore.) */
 @media (prefers-color-scheme: dark) {
-	:root:not([data-theme="light"]) .topstack { background: linear-gradient(180deg, #12241b, #0f1d15); }
 	:root:not([data-theme="light"]) .summary-card,
 	:root:not([data-theme="light"]) .rate-preview {
 		background: linear-gradient(135deg, #1e402d, #13251b); color: #fff; border: 1px solid rgba(133, 215, 169, .16);
 	}
 }
-:root[data-theme="dark"] .topstack { background: linear-gradient(180deg, #12241b, #0f1d15); }
 :root[data-theme="dark"] .summary-card,
 :root[data-theme="dark"] .rate-preview {
 	background: linear-gradient(135deg, #1e402d, #13251b); color: #fff; border: 1px solid rgba(133, 215, 169, .16);
@@ -1629,22 +1784,15 @@ span.paychip { cursor: default; }
 	font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .04em; font-weight: 700;
 }
 
-/* Noir year pills: muted inactive + mint active (not aggressive bright white). */
-@media (prefers-color-scheme: dark) {
-	:root:not([data-theme="light"]) .yearpill { color: color-mix(in srgb, var(--text) 82%, transparent); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.12); }
-	:root:not([data-theme="light"]) .yearpill.is-active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 800; }
-	:root:not([data-theme="light"]) .yearpill--manage { color: var(--muted); }
-}
-:root[data-theme="dark"] .yearpill { color: color-mix(in srgb, var(--text) 82%, transparent); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.12); }
-:root[data-theme="dark"] .yearpill.is-active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 800; }
-:root[data-theme="dark"] .yearpill--manage { color: var(--muted); }
+/* (Year pills need no dark override anymore: the chassis bar is dark in both
+   themes, so the single white-based treatment above serves both.) */
 
 /* Login — brand lockup above the card, gradient logo tile (rotating machine
    mark), mono kicker + field labels, and an "oder" divider before passkey. */
 .auth { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; }
 .auth__brand { margin-bottom: 1.4rem; }
-.auth__logo { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center;
-	background: var(--brand-grad); color: var(--on-primary); box-shadow: 0 14px 30px -14px rgba(17,86,56,.7); margin-bottom: .4rem; }
+.auth__logo { width: 64px; height: 64px; border-radius: 14px; display: grid; place-items: center;
+	background: var(--brand-grad); color: var(--on-signal); box-shadow: 0 14px 30px -14px rgba(224,89,16,.6); margin-bottom: .4rem; }
 .auth__logo svg { width: 34px; height: 34px; display: block; }
 .auth__brand h1 { font-size: 1.9rem; color: var(--primary); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .auth__brand h1 { color: var(--text); } }
@@ -1653,7 +1801,7 @@ span.paychip { cursor: default; }
 .auth__head { margin-bottom: .2rem; }
 .auth__head h2 { font-size: 1.55rem; letter-spacing: -.01em; }
 .auth__head p { margin: .3rem 0 0; font-size: .9rem; }
-.auth .field > span { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .04em; font-size: .72rem; font-weight: 700; color: var(--muted); }
+/* (.auth .field > span dropped — the plate-label treatment is app-wide now.) */
 .auth__or { display: flex; align-items: center; gap: 12px; margin: .2rem 0 -.2rem; color: var(--muted);
 	font-family: var(--font-mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; }
 .auth__or::before, .auth__or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
@@ -1729,7 +1877,18 @@ span.paychip { cursor: default; }
 .cmdk__item { display: flex; align-items: center; gap: .7rem; padding: .5rem .6rem; border-radius: var(--radius-sm);
 	cursor: pointer; }
 .cmdk__item.is-sel { background: var(--surface-2); }
-.cmdk__ic { flex: 0 0 auto; font-size: 1.05rem; }
+/* Werkblatt F4: result-kind type stamps — green ink plates; nav jumps are the
+   one orange margin note. */
+.cmdk__ic {
+	flex: 0 0 auto; width: 34px; height: 22px;
+	display: inline-grid; place-items: center;
+	font-family: var(--font-mono); font-size: .6rem; font-weight: 700; letter-spacing: .06em;
+	color: var(--primary); background: var(--surface);
+	border: 1px solid var(--line-strong, var(--border)); border-radius: 4px;
+}
+.cmdk__ic--nav { color: var(--signal-text); border-color: var(--signal-text); }
+/* Hide the raw WebKit search-clear chrome inside the palette input. */
+.cmdk__input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .cmdk__tx { display: flex; flex-direction: column; min-width: 0; }
 .cmdk__lb { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cmdk__sub { color: var(--muted); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1753,3 +1912,50 @@ span.paychip { cursor: default; }
 	width: 1.7rem; height: 1.7rem; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .55);
 	color: #fff; cursor: pointer; }
 .photogrid__del svg { width: .95rem; height: .95rem; }
+
+/* ---- Desktop nav rail (Werkblatt, ≥1024px) ----------------------------- */
+/* The bottom tab bar docks LEFT as a chassis rail — a pure CSS repositioning
+   of the same DOM (same links, handlers, e2e selectors). It fuses with the
+   chassis app bar into one machine frame; items are numbered like the sections
+   of a Werkblatt sheet via CSS counters. Placed last to win the cascade. */
+@media (min-width: 1024px) {
+	body.has-nav { padding-left: 212px; padding-bottom: 0; }
+	.tabbar {
+		top: 0; right: auto; bottom: 0; left: 0; width: 212px;
+		flex-direction: column; justify-content: flex-start; gap: .15rem;
+		background: var(--chassis);
+		-webkit-backdrop-filter: none; backdrop-filter: none;
+		border-top: 0; border-right: 1px solid var(--chassis-line);
+		box-shadow: none;
+		padding: 4.6rem .55rem 1rem; /* below the sticky app-bar row */
+		counter-reset: navno;
+		z-index: 15; /* under the sticky topstack, over content */
+	}
+	.tabbar__item {
+		flex: 0 0 auto; flex-direction: row; justify-content: flex-start; gap: .55rem;
+		width: 100%; padding: .55rem .6rem; border-radius: 8px;
+		font-size: .85rem;
+		counter-increment: navno;
+		border-left: 3px solid transparent;
+	}
+	/* Sheet number replaces the mobile top-marker ::before. */
+	.tabbar__item::before,
+	.tabbar__item.is-active::before {
+		content: "0" counter(navno);
+		position: static; transform: none; width: auto; height: auto;
+		background: none; border-radius: 0;
+		font-size: .62rem; font-weight: 700; letter-spacing: .08em;
+		color: var(--chassis-muted);
+	}
+	.tabbar__item.is-active { background: rgba(255, 255, 255, .05); border-left-color: var(--chassis-active); color: #fff; }
+	.tabbar__item.is-active::before { color: var(--chassis-active); }
+	.tabbar__pill { width: auto; height: auto; }
+	.tabbar__item.is-active .tabbar__pill { background: none; box-shadow: none; }
+	/* No bottom bar on desktop: dock FAB and toasts to the viewport bottom. */
+	.fab { bottom: 1.25rem; }
+	.toast { left: calc(212px + .8rem); bottom: 1rem; }
+	.beleg-toast { bottom: 1.25rem; }
+}
+@media print {
+	body.has-nav { padding-left: 0; }
+}

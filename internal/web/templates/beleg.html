@@ -171,12 +171,14 @@
 		<div class="beleg__foot">Stand {{.Today}} · Treckrr</div>
 	</div>
 
+	{{/* Werkblatt F1: print/export/share are equal-rank secondary plates — the ONE
+	     signal action of the page stays the business action (ausstellen/Gutschrift). */}}
 	<div class="beleg__actions no-print">
-		<button type="button" class="btn btn--primary btn--block" data-beleg-print>
-			<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.6"/><path d="M7 17h10v4H7z"/></svg>
-			Drucken / Als PDF speichern
-		</button>
 		<div class="beleg__actrow">
+			<button type="button" class="btn btn--ghost" data-beleg-print>
+				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.6"/><path d="M7 17h10v4H7z"/></svg>
+				Drucken / PDF
+			</button>
 			<button type="button" class="btn btn--ghost" data-beleg-copy>{{template "ic-copy"}} Text kopieren</button>
 			<button type="button" class="btn btn--ghost" data-beleg-image>
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m4 17 5-5 4 4 3-3 4 4"/></svg>Bild
@@ -204,11 +206,6 @@
 				<button type="submit" class="btn btn--ghost">{{template "ic-check"}} Versendet</button>
 				{{end}}
 			</form>
-			{{if .HasInvoice}}
-			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/share?year={{.Year.ID}}" class="beleg__markform">
-				<button type="submit" class="btn btn--ghost">{{template "ic-copy"}} Öffentlichen Link erzeugen</button>
-			</form>
-			{{end}}
 			{{end}}
 			{{if .CanBundle}}
 			<button type="button" class="btn btn--ghost" data-beleg-bundle aria-controls="beleg-items beleg-bundle" aria-pressed="{{if .Bundle}}true{{else}}false{{end}}">
@@ -225,16 +222,47 @@
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Rechnung
 			</button>
 			{{end}}
+			{{/* Self-service public links (Parkrr portal-link pattern) live in a
+			     popup behind ONE compact button, so the page stays lean. Opens
+			     automatically when a fresh link was just minted (ShareToken). */}}
+			{{if and .HasInvoice (not .Shared)}}
+			<details class="sharemenu" {{if .ShareToken}}open{{end}} data-popmenu>
+				<summary class="btn btn--ghost sharemenu__btn">
+					<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Link
+				</summary>
+				<div class="sharemenu__pop">
+					<p class="sharemenu__h">Öffentlicher Link — zeigt nur diesen festgeschriebenen Beleg</p>
+					{{if .ShareToken}}
+					<div class="sharemenu__row">
+						<input class="input" type="text" readonly value="{{.ShareURL}}" data-copy-src aria-label="Öffentlicher Beleg-Link">
+						<button type="button" class="btn btn--ghost btn--sm" data-copy-src-btn>Kopieren</button>
+					</div>
+					<p class="sharemenu__once">Link jetzt kopieren — er wird aus Sicherheitsgründen nur einmal angezeigt.</p>
+					{{end}}
+					{{range .Shares}}
+					<div class="sharemenu__item">
+						<span class="sharemenu__meta">Gültig bis <b>{{date .ExpiresAt}}</b>{{if .LastUsedAt}} · zuletzt geöffnet {{pdate .LastUsedAt}}{{end}}{{if .CreatedBy}} · von {{.CreatedBy}}{{end}}</span>
+						<form method="post" action="/neighbors/{{$.Neighbor.ID}}/beleg/share/revoke?year={{$.Year.ID}}" class="sharemenu__del"
+							data-confirm="Diesen öffentlichen Link löschen? Er wird sofort ungültig.">
+							<input type="hidden" name="share_id" value="{{.ID}}">
+							<button type="submit" class="btn btn--danger btn--sm">Löschen</button>
+						</form>
+					</div>
+					{{end}}
+					<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/share?year={{.Year.ID}}" class="sharemenu__item sharemenu__item--create">
+						<label class="field sharemenu__days"><span>Linkdauer</span>
+							<select class="select" name="days">
+								{{range .ShareDayOptions}}
+								<option value="{{.}}" {{if eq . $.ShareDefaultDays}}selected{{end}}>{{.}} Tage</option>
+								{{end}}
+							</select>
+						</label>
+						<button type="submit" class="btn btn--ghost">{{template "ic-copy"}} Link erzeugen</button>
+					</form>
+				</div>
+			</details>
+			{{end}}
 		</div>
-		{{if .ShareToken}}
-		<div class="sharebox no-print">
-			<p class="small muted">Öffentlicher Link (30 Tage gültig) — zeigt nur diesen festgeschriebenen Beleg:</p>
-			<div class="sharebox__row">
-				<input class="input" type="text" readonly value="{{.ShareURL}}" data-copy-src aria-label="Öffentlicher Beleg-Link">
-				<button type="button" class="btn btn--ghost btn--sm" data-copy-src-btn>Kopieren</button>
-			</div>
-		</div>
-		{{end}}
 		{{with .LastSend}}
 		<p class="beleg__sent muted small">{{template "ic-check"}} Zuletzt versendet am {{.SentAt.Format "02.01.2006, 15:04"}} Uhr ({{.Channel}})</p>
 		{{end}}
@@ -253,7 +281,9 @@
 			{{end}}
 		</div>
 		{{end}}
-		{{if .HasInvoice}}
+		{{/* Corrections are OWNER actions — never rendered on the public (Shared)
+		     read-only view, which must stay a pure document. */}}
+		{{if and .HasInvoice (not .Shared)}}
 		<div class="beleg__invacts stack">
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/gutschrift" class="beleg__gform">
 				<input type="hidden" name="year_id" value="{{.Year.ID}}">

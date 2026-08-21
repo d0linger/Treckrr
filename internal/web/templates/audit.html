@@ -18,8 +18,10 @@
 					{{range .Actions}}<option value="{{.}}" {{if eq . $a}}selected{{end}}>{{.}}</option>{{end}}
 				</select></label>
 		</div>
+		{{/* Werkblatt F3: filtering is a display operation, not the page's action —
+		     secondary green outline; the log itself is the hero. */}}
 		<div class="btnrow">
-			<button class="btn btn--primary btn--sm" type="submit">Filtern</button>
+			<button class="btn btn--ghost btn--sm" type="submit">Filtern</button>
 			<a class="btn btn--ghost btn--sm" href="/admin/audit/export?q={{.Q}}&action={{.Action}}">CSV Export</a>
 		</div>
 	</form>

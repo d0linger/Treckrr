@@ -42,6 +42,19 @@
 		document.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
 	})();
 
+	// Popup menus built on native <details data-popmenu> (e.g. the Beleg "Link"
+	// panel): close on outside click or Escape — details alone only toggles on
+	// its summary. Presentation only.
+	(function () {
+		var menus = document.querySelectorAll("details[data-popmenu]");
+		if (!menus.length) return;
+		function closeAll() { menus.forEach(function (d) { d.removeAttribute("open"); }); }
+		document.addEventListener("click", function (e) {
+			menus.forEach(function (d) { if (!d.contains(e.target)) d.removeAttribute("open"); });
+		});
+		document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeAll(); });
+	})();
+
 	// Brand mark: pick one farm-machine symbol and keep it — stable across
 	// refreshes and in-app navigation. It only changes when the stored mark is
 	// missing (e.g. the browser cache / site data was cleared), where a fresh
@@ -624,8 +637,9 @@
 			return btoa(s);
 		}
 		function inlineFonts() {
+			// Werkblatt: Manrope is retired — headings render in JetBrains Mono,
+			// so the export inlines only the faces the page actually uses.
 			var faces = [
-				["Manrope", 800, "/static/fonts/manrope-800.woff2"],
 				["Hanken Grotesk", 400, "/static/fonts/hanken-400.woff2"],
 				["Hanken Grotesk", 600, "/static/fonts/hanken-600.woff2"],
 				["JetBrains Mono", 500, "/static/fonts/jetbrainsmono-500.woff2"],
@@ -990,7 +1004,9 @@
 	// targets, via the /api/search endpoint. Debounced; keyboard-navigable.
 	(function () {
 		var ov = null, input = null, list = null, items = [], sel = -1, timer = null, seq = 0;
-		var ICON = { neighbor: "👤", invoice: "📄", base: "📋", tractor: "🚜", machine: "⚙️", load: "🏋️", gespann: "🔗", nav: "➡️" };
+		// Werkblatt F4: stamped mono type plates per result kind instead of emoji —
+		// the palette speaks the same machine-ledger voice as the rest of the app.
+		var ICON = { neighbor: "NB", invoice: "RE", base: "GL", tractor: "TR", machine: "MA", load: "ST", gespann: "GE", nav: "NAV" };
 
 		// Static navigation targets: category/section names ("Grundlagen", "Jahre") are
 		// not data rows, so they can't come from /api/search — offer them as jump
@@ -1033,7 +1049,9 @@
 				var li = document.createElement("li");
 				li.className = "cmdk__item" + (i === sel ? " is-sel" : "");
 				li.setAttribute("role", "option");
-				var ic = document.createElement("span"); ic.className = "cmdk__ic"; ic.textContent = ICON[r.kind] || "•";
+				var ic = document.createElement("span");
+				ic.className = "cmdk__ic" + (r.kind === "nav" ? " cmdk__ic--nav" : "");
+				ic.textContent = ICON[r.kind] || "··";
 				var tx = document.createElement("span"); tx.className = "cmdk__tx";
 				var lb = document.createElement("span"); lb.className = "cmdk__lb"; lb.textContent = r.label;
 				tx.appendChild(lb);
