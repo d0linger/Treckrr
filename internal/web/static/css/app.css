@@ -798,19 +798,26 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 	font-size: 1rem; letter-spacing: .05em; user-select: all; }
 @media (max-width: 380px) { .codes { grid-template-columns: 1fr; } }
 
-/* Single clickable payment chip showing the current status (click to toggle). */
+/* Single clickable payment chip showing the current status (click to toggle).
+   Werkblatt badge language: status dot + uppercase mono + semantic TINT surface —
+   a round tinted plate reads as STATE, a rectangle as action, so the warn amber
+   can never be mistaken for the signal orange by form alone. */
 .paytoggle { margin: 0; }
 .paychip {
-	display: inline-flex; align-items: center; gap: .3rem;
-	border-radius: 999px; padding: .35rem .8rem; font-weight: 700; font-size: .82rem;
-	cursor: pointer; min-height: var(--tap); border: 1.5px solid transparent; white-space: nowrap;
+	display: inline-flex; align-items: center; gap: .4rem;
+	border-radius: 999px; padding: .35rem .8rem;
+	font-family: var(--font-mono); font-weight: 700; font-size: .68rem;
+	letter-spacing: .06em; text-transform: uppercase; font-variant-numeric: tabular-nums;
+	cursor: pointer; min-height: var(--tap); border: 1px solid transparent; white-space: nowrap;
 }
-.paychip--paid { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
-.paychip--open { background: transparent; color: var(--accent-text); border-color: color-mix(in srgb, #d89b00 55%, transparent); }
-.paychip--open:hover { background: color-mix(in srgb, #d89b00 12%, transparent); }
-/* Read-only status chip (running year): not a button, so no pointer/hover. */
+.paychip--paid { background: var(--primary-tint); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 30%, transparent); }
+.paychip--open { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
+.paychip--open::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.paychip--open:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* Read-only status chip (running year): not a button, so no pointer/hover —
+   the hover keeps the base tint (it must not strip the status surface). */
 .paychip--static { cursor: default; }
-.paychip--static:hover { background: transparent; }
+.paychip--static.paychip--open:hover { background: color-mix(in srgb, var(--accent) 13%, transparent); }
 span.paychip { cursor: default; }
 .carryover strong { display: block; }
 .carryover .muted { font-size: .82rem; }
