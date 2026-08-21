@@ -1823,7 +1823,18 @@ span.paychip { cursor: default; }
 .cmdk__item { display: flex; align-items: center; gap: .7rem; padding: .5rem .6rem; border-radius: var(--radius-sm);
 	cursor: pointer; }
 .cmdk__item.is-sel { background: var(--surface-2); }
-.cmdk__ic { flex: 0 0 auto; font-size: 1.05rem; }
+/* Werkblatt F4: result-kind type stamps — green ink plates; nav jumps are the
+   one orange margin note. */
+.cmdk__ic {
+	flex: 0 0 auto; width: 34px; height: 22px;
+	display: inline-grid; place-items: center;
+	font-family: var(--font-mono); font-size: .6rem; font-weight: 700; letter-spacing: .06em;
+	color: var(--primary); background: var(--surface);
+	border: 1px solid var(--line-strong, var(--border)); border-radius: 4px;
+}
+.cmdk__ic--nav { color: var(--signal-text); border-color: var(--signal-text); }
+/* Hide the raw WebKit search-clear chrome inside the palette input. */
+.cmdk__input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .cmdk__tx { display: flex; flex-direction: column; min-width: 0; }
 .cmdk__lb { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cmdk__sub { color: var(--muted); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
