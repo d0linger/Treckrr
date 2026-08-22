@@ -45,7 +45,7 @@
 					{{end}}
 					{{if not .InUse}}
 					<form method="post" action="/bases/{{$b.ID}}/delete"
-						data-confirm="Grundlage {{$b.Name}} endgültig löschen?">
+						data-confirm-danger data-confirm="Grundlage {{$b.Name}} endgültig löschen?">
 						<button class="btn btn--danger btn--sm" type="submit">Löschen</button>
 					</form>
 					{{end}}

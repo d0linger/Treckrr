@@ -57,7 +57,7 @@
 					<input class="input" type="number" name="sort_order" value="{{.Gespann.SortOrder}}"></label>
 				<div class="form__row"><button class="btn btn--primary btn--sm" type="submit">Speichern</button></div>
 			</form>
-			<form method="post" action="/gespanne/{{.Gespann.ID}}/delete" data-confirm="Gespann löschen?">
+			<form method="post" action="/gespanne/{{.Gespann.ID}}/delete" data-confirm-danger data-confirm="Gespann löschen?">
 				<input type="hidden" name="base_id" value="{{$.Base.ID}}">
 				<button class="btn btn--danger btn--sm" type="submit">Löschen</button>
 			</form>

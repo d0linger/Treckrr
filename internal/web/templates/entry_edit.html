@@ -115,7 +115,7 @@
 				<a href="/entries/{{$.Entry.ID}}/photos/{{.ID}}" target="_blank" rel="noopener">
 					<img src="/entries/{{$.Entry.ID}}/photos/{{.ID}}" alt="Foto zur Buchung" loading="lazy">
 				</a>
-				<form method="post" action="/entries/{{$.Entry.ID}}/photos/{{.ID}}/delete" data-confirm="Foto entfernen?">
+				<form method="post" action="/entries/{{$.Entry.ID}}/photos/{{.ID}}/delete" data-confirm-danger data-confirm="Foto entfernen?">
 					<button class="photogrid__del" type="submit" aria-label="Foto entfernen">{{template "ic-trash"}}</button>
 				</form>
 			</figure>

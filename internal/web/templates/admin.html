@@ -52,7 +52,7 @@
 						<button class="btn btn--ghost btn--sm" type="submit">2FA zurücksetzen</button>
 					</form>
 					{{end}}
-					<form method="post" action="/admin/users/{{.ID}}/delete" data-confirm="Benutzer {{.Username}} löschen?">
+					<form method="post" action="/admin/users/{{.ID}}/delete" data-confirm-danger data-confirm="Benutzer {{.Username}} löschen?">
 						<button class="btn btn--danger btn--sm" type="submit">Benutzer löschen</button>
 					</form>
 				</div>

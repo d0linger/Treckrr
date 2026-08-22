@@ -243,13 +243,18 @@
 			e.preventDefault();
 			pendingForm = form;
 			if (msgEl) msgEl.textContent = message;
-			// Colour the confirm button by intent: irreversible deletes get red,
-			// everything else keeps the primary colour.
+			// Colour the confirm button by intent: destructive forms declare
+			// data-confirm-danger explicitly (a word heuristic proved fragile —
+			// it missed "stornieren" and hit "endgültig festschreiben", turning
+			// a business action red). Filled crimson stays reserved for the
+			// final confirmation of destructive actions (design rule F1).
 			var okBtn = modal.querySelector("[data-modal-ok]");
 			if (okBtn) {
-				var danger = /löschen|entfernen|endgültig/i.test(message);
+				var danger = form.hasAttribute("data-confirm-danger");
+				// btn--primary stays on: the .btn--danger.btn--primary combo is
+				// the FILLED crimson (outline-only danger is for page buttons).
 				okBtn.classList.toggle("btn--danger", danger);
-				okBtn.classList.toggle("btn--primary", !danger);
+				okBtn.classList.add("btn--primary");
 			}
 			if (inputEl) {
 				if (reasonLabel !== null) {

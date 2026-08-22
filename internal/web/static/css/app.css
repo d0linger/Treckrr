@@ -327,7 +327,10 @@ em { font-style: normal; color: var(--muted); }
 	width: 100%; min-height: var(--tap);
 	padding: .7rem .85rem; border: 0; border-radius: 10px;
 	background: transparent; color: var(--text);
-	font: inherit; text-align: left; cursor: pointer;
+	/* one navigation voice app-wide: the drawer matches the rail's mono
+	   (audit F-R3-05) */
+	font: inherit; font-family: var(--font-mono); font-size: .85rem;
+	text-align: left; cursor: pointer;
 }
 .drawer__item:hover { background: var(--surface-2); }
 .drawer__item.is-active { background: var(--primary-tint); color: var(--primary-strong); font-weight: 600; }
@@ -491,7 +494,8 @@ input[type="file"].input::file-selector-button {
 input[type="file"].input::file-selector-button:hover { background: var(--surface); }
 
 .fieldset { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .7rem; margin: 0; }
-.fieldset legend { font-size: .8rem; font-weight: 600; color: var(--muted); padding: 0 .3rem; }
+/* Legends speak the same plate voice as .field labels (audit F-R2-03). */
+.fieldset legend { font-family: var(--font-mono); font-size: .68rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding: 0 .3rem; }
 
 /* ---- Buttons (modern) ------------------------------------------------- */
 /* Werkblatt buttons: industrial rectangles, uppercase mono labels, 1-px press
@@ -868,9 +872,11 @@ span.paychip { cursor: default; }
 /* Inline validation error (created by app.js; wired via aria-describedby). */
 .field__err { display: block; font-size: var(--fs-xs); color: var(--danger); font-weight: 600; margin-top: .15rem; }
 /* Required-field marker — CSS-only via :has, no per-template change. */
-.field:has(input[required]) > span::after,
-.field:has(select[required]) > span::after,
-.field:has(textarea[required]) > span::after { content: " *"; color: var(--danger); font-weight: 800; }
+/* Scoped to the FIRST span (the label by convention): further spans like the
+   pw-match live region must not grow a stray asterisk (audit F-R3-03). */
+.field:has(input[required]) > span:first-child::after,
+.field:has(select[required]) > span:first-child::after,
+.field:has(textarea[required]) > span:first-child::after { content: " *"; color: var(--danger); font-weight: 800; }
 /* Submit "saving" state: keeps the label, adds a spinner. currentColor matches
    the button text (white on a primary button). */
 .btn.is-submitting { opacity: .85; pointer-events: none; }

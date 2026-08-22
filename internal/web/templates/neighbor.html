@@ -231,7 +231,7 @@
 						<input type="hidden" name="reason" value="">
 						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">{{template "ic-void"}}</button>
 					</form>
-					<form method="post" action="/entries/{{.ID}}/delete" data-confirm="Buchung endgültig löschen?">
+					<form method="post" action="/entries/{{.ID}}/delete" data-confirm-danger data-confirm="Buchung endgültig löschen?">
 						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
 					{{end}}
@@ -290,7 +290,7 @@
 						<input type="hidden" name="reason" value="">
 						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">{{template "ic-void"}}</button>
 					</form>
-					<form method="post" action="/ledger/{{.ID}}/delete" data-confirm="{{if .TransferID}}Übertrag rückgängig machen? Die Gegenbuchung im anderen Jahr wird ebenfalls entfernt — der Rest ist dort wieder offen.{{else}}Position endgültig löschen?{{end}}">
+					<form method="post" action="/ledger/{{.ID}}/delete" data-confirm-danger data-confirm="{{if .TransferID}}Übertrag rückgängig machen? Die Gegenbuchung im anderen Jahr wird ebenfalls entfernt — der Rest ist dort wieder offen.{{else}}Position endgültig löschen?{{end}}">
 						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
 					{{end}}
@@ -351,7 +351,7 @@
 			<div class="bcard__foot">
 				<span class="bcard__detail">{{if .Note}}{{.Note}}{{else}}—{{end}}</span>
 				<span class="bcard__acts">
-					<form method="post" action="/payments/{{.ID}}/delete" data-confirm="Zahlung löschen?">
+					<form method="post" action="/payments/{{.ID}}/delete" data-confirm-danger data-confirm="Zahlung löschen?">
 						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
 				</span>

@@ -15,12 +15,12 @@
 					<td>{{.NeighborName}}</td>
 					<td>{{.Template.Summary}}</td>
 					<td>{{if eq .IntervalKind "monthly"}}monatlich{{else}}wöchentlich{{end}}</td>
-					<td>{{.NextRun.Format "02.01.2006"}}</td>
+					<td class="num">{{.NextRun.Format "02.01.2006"}}</td>
 					<td>{{if .Active}}<span class="tag tag--paid">aktiv</span>{{else}}<span class="tag tag--open">pausiert</span>{{end}}</td>
 					<td>
 						<div class="recur__acts">
 							<form method="post" action="/recurring/{{.ID}}/toggle"><button class="btn btn--ghost btn--sm" type="submit">{{if .Active}}Pausieren{{else}}Fortsetzen{{end}}</button></form>
-							<form method="post" action="/recurring/{{.ID}}/delete" data-confirm="Serie entfernen? Bereits erstellte Buchungen bleiben erhalten."><button class="btn btn--ghost btn--icon" type="submit" aria-label="Serie entfernen">{{template "ic-trash"}}</button></form>
+							<form method="post" action="/recurring/{{.ID}}/delete" data-confirm-danger data-confirm="Serie entfernen? Bereits erstellte Buchungen bleiben erhalten."><button class="btn btn--ghost btn--icon" type="submit" aria-label="Serie entfernen">{{template "ic-trash"}}</button></form>
 						</div>
 					</td>
 				</tr>

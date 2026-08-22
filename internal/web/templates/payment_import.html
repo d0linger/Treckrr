@@ -10,7 +10,7 @@
 	<form method="post" action="/payments/import/preview" enctype="multipart/form-data" class="card form">
 		<label class="field"><span>Datei (CSV oder camt.053-XML)</span>
 			<input class="input" type="file" name="file" accept=".csv,.xml,text/csv,application/xml,text/xml" required></label>
-		<div class="btnrow"><button class="btn btn--primary btn--sm" type="submit">Vorschau</button></div>
+		<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit">Vorschau</button></div>
 	</form>
 	{{else}}
 	<p class="muted small">{{.Importable}} von {{.Total}} Eingängen werden zugeordnet und verbucht.</p>
