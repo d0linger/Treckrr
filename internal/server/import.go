@@ -312,6 +312,10 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 	// (double-click, browser retry) a no-op via CreateEntry's ON CONFLICT, without
 	// deduping two genuinely identical rows in the same file (distinct lines).
 	token := trimmed(r, "import_token")
+	if s.tooLong(w, r, "Import-Token", token, maxNameLen) {
+		redirect(w, r, "/entries/import?year="+itoa64(yearID))
+		return
+	}
 	created := 0
 	for _, row := range rows {
 		if !row.OK() {

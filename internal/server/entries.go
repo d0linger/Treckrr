@@ -407,9 +407,14 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		reject(http.StatusUnprocessableEntity, msg, neighborURL(neighborID, yearID))
 		return
 	}
+	idempotencyKey := trimmed(r, "idempotency_key") // set only for offline replays
+	if s.tooLong(w, r, "Idempotency-Key", idempotencyKey, maxNameLen) {
+		reject(http.StatusUnprocessableEntity, "Idempotency-Key darf höchstens 100 Zeichen lang sein.", neighborURL(neighborID, yearID))
+		return
+	}
 	entry.NeighborID = neighborID
 	entry.BillingYearID = year.ID
-	entry.IdempotencyKey = trimmed(r, "idempotency_key") // set only for offline replays
+	entry.IdempotencyKey = idempotencyKey
 
 	newID, err := s.store.CreateEntry(r.Context(), entry, machineIDs)
 	if err != nil {
