@@ -38,7 +38,7 @@
 				<div class="arow__body">
 					{{if lt .RecoveryRemaining 3}}<p class="muted small">Nur noch wenige Codes übrig – bitte bald neu erstellen.</p>{{end}}
 					<form method="post" action="/account/2fa/recovery" class="form"
-						data-confirm="Neue Codes erstellen? Die alten werden ungültig.">
+						data-confirm-danger data-confirm="Neue Codes erstellen? Die alten werden ungültig.">
 						<label class="field"><span>Passwort bestätigen</span>
 							<input class="input" type="password" name="password" autocomplete="current-password" required></label>
 						<button class="btn btn--primary btn--sm" type="submit">Neue Codes erstellen</button>
@@ -60,7 +60,7 @@
 				</summary>
 				<div class="arow__body">
 					<form method="post" action="/account/2fa/disable" class="form"
-						data-confirm="Zwei‑Faktor wirklich deaktivieren?">
+						data-confirm-danger data-confirm="Zwei‑Faktor wirklich deaktivieren?">
 						<label class="field"><span>Passwort bestätigen</span>
 							<input class="input" type="password" name="password" autocomplete="current-password" required></label>
 						<button class="btn btn--danger btn--sm" type="submit">2FA deaktivieren</button>
@@ -86,7 +86,7 @@
 					<span class="pkrow__s">seit {{date .Created}}{{if .LastUsed}} · zuletzt {{pdate .LastUsed}}{{end}}</span>
 				</span>
 				<form method="post" action="/account/passkeys/{{.ID}}/delete"
-					data-confirm="Diesen Passkey entfernen?">
+					data-confirm-danger data-confirm="Diesen Passkey entfernen?">
 					<button class="btn btn--danger btn--sm" type="submit">Entfernen</button>
 				</form>
 			</div>

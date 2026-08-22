@@ -15,7 +15,7 @@
 					<td>{{.NeighborName}}</td>
 					<td>{{.Template.Summary}}</td>
 					<td>{{if eq .IntervalKind "monthly"}}monatlich{{else}}wöchentlich{{end}}</td>
-					<td class="num">{{.NextRun.Format "02.01.2006"}}</td>
+					<td>{{.NextRun.Format "02.01.2006"}}</td>
 					<td>{{if .Active}}<span class="tag tag--paid">aktiv</span>{{else}}<span class="tag tag--open">pausiert</span>{{end}}</td>
 					<td>
 						<div class="recur__acts">

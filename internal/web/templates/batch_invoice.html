@@ -12,13 +12,13 @@
 
 	<div class="tablewrap">
 		<table class="dtable">
-			<thead><tr><th>Nachbar</th><th class="dtable__num">Buchungen</th><th class="dtable__num">Brutto</th><th>Status</th></tr></thead>
+			<thead><tr><th>Nachbar</th><th class="num">Buchungen</th><th class="num">Brutto</th><th>Status</th></tr></thead>
 			<tbody>
 				{{range .Rows}}
 				<tr>
 					<td>{{.Neighbor.Name}}</td>
-					<td class="dtable__num">{{.Bookings}}</td>
-					<td class="dtable__num">{{if .AlreadyInvoiced}}–{{else}}{{money .Gross}}{{end}}</td>
+					<td class="num">{{.Bookings}}</td>
+					<td class="num">{{if .AlreadyInvoiced}}–{{else}}{{money .Gross}}{{end}}</td>
 					<td>
 						{{if .AlreadyInvoiced}}<span class="tag">bereits berechnet</span>
 						{{else if .Issuable}}<span class="tag tag--paid">wird festgeschrieben</span>
