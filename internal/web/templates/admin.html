@@ -48,7 +48,7 @@
 				<div class="btnrow">
 					{{if .TotpEnabled}}
 					<form method="post" action="/admin/users/{{.ID}}/reset-2fa"
-						data-confirm="2FA für {{.Username}} zurücksetzen? Der Benutzer muss es neu einrichten.">
+						data-confirm-danger data-confirm="2FA für {{.Username}} zurücksetzen? Der Benutzer muss es neu einrichten.">
 						<button class="btn btn--ghost btn--sm" type="submit">2FA zurücksetzen</button>
 					</form>
 					{{end}}
