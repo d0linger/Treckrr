@@ -327,10 +327,13 @@ em { font-style: normal; color: var(--muted); }
 	width: 100%; min-height: var(--tap);
 	padding: .7rem .85rem; border: 0; border-radius: 10px;
 	background: transparent; color: var(--text);
-	font: inherit; text-align: left; cursor: pointer;
+	/* mono nav voice (audit F-R3-05); weights pinned to the two faces
+	   JetBrains Mono actually ships (500/700) so declared == rendered */
+	font: inherit; font-family: var(--font-mono); font-size: .85rem; font-weight: 500;
+	text-align: left; cursor: pointer;
 }
 .drawer__item:hover { background: var(--surface-2); }
-.drawer__item.is-active { background: var(--primary-tint); color: var(--primary-strong); font-weight: 600; }
+.drawer__item.is-active { background: var(--primary-tint); color: var(--primary-strong); font-weight: 700; }
 .drawer__item--danger { color: var(--danger); }
 .drawer__ico { width: 1.4rem; display: grid; place-items: center; }
 .drawer__ico svg { width: 20px; height: 20px; display: block; color: var(--muted); }
@@ -491,7 +494,10 @@ input[type="file"].input::file-selector-button {
 input[type="file"].input::file-selector-button:hover { background: var(--surface); }
 
 .fieldset { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .7rem; margin: 0; }
-.fieldset legend { font-size: .8rem; font-weight: 600; color: var(--muted); padding: 0 .3rem; }
+/* Legends join the mono plate family (audit F-R2-03) — deliberately one step
+   quieter than .field labels (smaller/lighter/wider-tracked), since a legend
+   captions a GROUP of fields rather than a single input. */
+.fieldset legend { font-family: var(--font-mono); font-size: .68rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding: 0 .3rem; }
 
 /* ---- Buttons (modern) ------------------------------------------------- */
 /* Werkblatt buttons: industrial rectangles, uppercase mono labels, 1-px press
@@ -868,9 +874,10 @@ span.paychip { cursor: default; }
 /* Inline validation error (created by app.js; wired via aria-describedby). */
 .field__err { display: block; font-size: var(--fs-xs); color: var(--danger); font-weight: 600; margin-top: .15rem; }
 /* Required-field marker — CSS-only via :has, no per-template change. */
-.field:has(input[required]) > span::after,
-.field:has(select[required]) > span::after,
-.field:has(textarea[required]) > span::after { content: " *"; color: var(--danger); font-weight: 800; }
+/* :required covers input/select/textarea in one selector; scoped to the FIRST
+   span (the label by convention, see .field > span:first-child above) so the
+   pw-match live region cannot grow a stray asterisk. */
+.field:has(:required) > span:first-child::after { content: " *"; color: var(--danger); font-weight: 800; }
 /* Submit "saving" state: keeps the label, adds a spinner. currentColor matches
    the button text (white on a primary button). */
 .btn.is-submitting { opacity: .85; pointer-events: none; }
@@ -1589,6 +1596,9 @@ span.paychip { cursor: default; }
    MUST live in a class) and no glow that would bleed into the element above. */
 .bkp__btnrow { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-top: 1.3rem; }
 .bkp__btnrow .btn { flex: 0 0 auto; box-shadow: none; }
+/* "Jetzt sichern" RUNS a backup — push it away from the save button so two
+   same-styled neighbours can't be confused into an accidental run. */
+.bkp__btnrow .bkp__runnow { margin-left: auto; }
 .bkp__seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); margin-bottom: .6rem; }
 .bkp__seg button { font-family: var(--font-body); font-size: .72rem; font-weight: 600; padding: .34rem .55rem; border: 0;
 	border-right: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }

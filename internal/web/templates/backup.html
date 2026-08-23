@@ -73,8 +73,8 @@
 				</div>
 			</div>
 			<div class="bkp__btnrow" style="margin-top:1.4rem">
-				<button class="btn btn--primary" type="submit">Zeitplan speichern</button>
-				<button class="btn btn--ghost" type="submit" formaction="/admin/backup/run-scheduled">Jetzt sichern (Volume)</button>
+				<button class="btn btn--ghost" type="submit">Zeitplan speichern</button>
+				<button class="btn btn--ghost bkp__runnow" type="submit" formaction="/admin/backup/run-scheduled" title="Startet sofort einen Volume-Backup-Lauf">Jetzt sichern (Volume)</button>
 			</div>
 			<p class="bkp__note" style="margin:.5rem .1rem 0">Modus wählen oder eigenen Cron eintippen — gespeichert wird immer ein Standard-Cron (<code>Minute Stunde Tag Monat Wochentag</code>). Leer = Ziel aus.</p>
 		</form>

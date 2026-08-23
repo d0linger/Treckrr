@@ -13,7 +13,7 @@
 				{{$aid := 0}}{{with .Against}}{{$aid = .ID}}{{end}}
 				{{range .Bases}}{{if ne .ID $.Base.ID}}<option value="{{.ID}}" {{if eq .ID $aid}}selected{{end}}>{{.Year}} — {{.Name}}</option>{{end}}{{end}}
 			</select></label>
-		<button class="btn btn--primary btn--sm" type="submit">Vergleichen</button>
+		<button class="btn btn--ghost btn--sm" type="submit">Vergleichen</button>
 	</form>
 
 	{{if .Against}}

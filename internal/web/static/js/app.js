@@ -198,7 +198,12 @@
 			// first POST is in flight — the server redirects, so this navigates away.
 			if (form.dataset.submitting === "1") { e.preventDefault(); return; }
 			form.dataset.submitting = "1";
-			var btn = form.querySelector("button.btn--primary[type='submit'], button[type='submit'].btn--primary");
+			// The CLICKED submit gets the busy state (e.submitter also covers
+			// formaction siblings and ghost-styled submits — selecting by the
+			// btn--primary class coupled behavior to styling).
+			var btn = (e.submitter && e.submitter.tagName === "BUTTON")
+				? e.submitter
+				: form.querySelector("button[type='submit']");
 			if (btn) { btn.classList.add("is-submitting"); btn.setAttribute("aria-busy", "true"); btn.disabled = true; }
 		});
 	});
@@ -208,6 +213,7 @@
 	var modal = document.getElementById("confirmModal");
 	var msgEl = modal ? modal.querySelector("[data-modal-msg]") : null;
 	var inputEl = modal ? modal.querySelector("[data-modal-input]") : null;
+	var okBtn = modal ? modal.querySelector("[data-modal-ok]") : null;
 	var pendingForm = null;
 
 	if (modal && typeof modal.showModal === "function") {
@@ -221,10 +227,49 @@
 					if (target) target.value = inputEl.value.trim();
 				}
 				form.dataset.confirmed = "1";
+				// form.submit() fires no submit event, so the double-submit lock
+				// below never arms for confirmed POSTs — arm it here and give the
+				// triggering button the same busy feedback as plain forms, or a
+				// second click would fire a SECOND, unconfirmed POST.
+				form.dataset.submitting = "1";
+				var sb = form.querySelector("button[type='submit'], button:not([type])");
+				if (sb) { sb.classList.add("is-submitting"); sb.setAttribute("aria-busy", "true"); sb.disabled = true; }
 				form.submit(); // does not re-trigger the submit listener
 			}
+			// Never leak a typed reason (or its label) into the next modal.
+			if (inputEl) inputEl.value = "";
 		});
+		// Enter inside the reason field must CONFIRM: the dialog's implicit
+		// submission picks its FIRST submit button, which is "Abbrechen" — the
+		// user would type a reason, hit Enter, and silently cancel.
+		if (inputEl && okBtn) {
+			inputEl.addEventListener("keydown", function (e) {
+				// Ignore the Enter that COMMITS an IME composition (isComposing /
+				// legacy keyCode 229) — otherwise finishing a German word by
+				// pressing Enter would confirm the storno before the reason is done.
+				if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) {
+					e.preventDefault();
+					okBtn.click();
+				}
+			});
+		}
 	}
+
+	// bfcache: a Back-restored page keeps dataset flags and button locks from
+	// the previous visit — confirmed forms would bypass the modal and locked
+	// forms would swallow every submit. Re-arm on restore.
+	window.addEventListener("pageshow", function (e) {
+		if (!e.persisted) return;
+		document.querySelectorAll("form").forEach(function (f) {
+			delete f.dataset.confirmed;
+			delete f.dataset.submitting;
+		});
+		document.querySelectorAll("button.is-submitting").forEach(function (b) {
+			b.classList.remove("is-submitting");
+			b.disabled = false;
+			b.removeAttribute("aria-busy");
+		});
+	});
 
 	document.querySelectorAll("form[data-confirm]").forEach(function (form) {
 		form.addEventListener("submit", function (e) {
@@ -233,28 +278,34 @@
 			var reasonLabel = form.getAttribute("data-confirm-reason");
 			if (!modal || typeof modal.showModal !== "function") {
 				if (!window.confirm(message)) { e.preventDefault(); return; }
-				// Native fallback: prompt for the reason if one was requested.
+				// Native fallback: prompt for the reason if one was requested;
+				// cancelling the prompt aborts the whole action (parity with
+				// Abbrechen/ESC in the modal path).
 				if (reasonLabel !== null) {
+					var v = window.prompt(reasonLabel);
+					if (v === null) { e.preventDefault(); return; }
 					var target = form.querySelector("input[name='reason']");
-					if (target) target.value = (window.prompt(reasonLabel) || "").trim();
+					if (target) target.value = v.trim();
 				}
 				return;
 			}
 			e.preventDefault();
 			pendingForm = form;
 			if (msgEl) msgEl.textContent = message;
-			// Colour the confirm button by intent: irreversible deletes get red,
-			// everything else keeps the primary colour.
-			var okBtn = modal.querySelector("[data-modal-ok]");
 			if (okBtn) {
-				var danger = /löschen|entfernen|endgültig/i.test(message);
+				// Destructive intent: declared per form (data-confirm-danger) or
+				// derived from a danger-styled button inside it, so a forgotten
+				// tag cannot silently soften a delete. The OK button's static
+				// btn--primary plus this toggle yields the filled crimson (F1).
+				var danger = form.hasAttribute("data-confirm-danger") ||
+					!!form.querySelector(".btn--danger, .iconact--danger");
 				okBtn.classList.toggle("btn--danger", danger);
-				okBtn.classList.toggle("btn--primary", !danger);
 			}
 			if (inputEl) {
 				if (reasonLabel !== null) {
 					inputEl.hidden = false;
 					inputEl.placeholder = reasonLabel;
+					inputEl.setAttribute("aria-label", reasonLabel);
 					inputEl.value = "";
 				} else {
 					inputEl.hidden = true;

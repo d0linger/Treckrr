@@ -10,18 +10,18 @@
 	<form method="post" action="/payments/import/preview" enctype="multipart/form-data" class="card form">
 		<label class="field"><span>Datei (CSV oder camt.053-XML)</span>
 			<input class="input" type="file" name="file" accept=".csv,.xml,text/csv,application/xml,text/xml" required></label>
-		<div class="btnrow"><button class="btn btn--primary btn--sm" type="submit">Vorschau</button></div>
+		<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit">Vorschau</button></div>
 	</form>
 	{{else}}
 	<p class="muted small">{{.Importable}} von {{.Total}} Eingängen werden zugeordnet und verbucht.</p>
 	<div class="tablewrap">
 		<table class="dtable">
-			<thead><tr><th>Datum</th><th class="dtable__num">Betrag</th><th>Verwendungszweck</th><th>Zuordnung</th></tr></thead>
+			<thead><tr><th>Datum</th><th class="num">Betrag</th><th>Verwendungszweck</th><th>Zuordnung</th></tr></thead>
 			<tbody>
 				{{range .Rows}}
 				<tr class="{{if not .Importable}}dtable__row--bad{{end}}">
 					<td>{{.Txn.Date.Format "02.01.2006"}}</td>
-					<td class="dtable__num">{{money .Txn.Amount}}</td>
+					<td class="num">{{money .Txn.Amount}}</td>
 					<td>{{.Txn.Reference}}</td>
 					<td>
 						{{if .AlreadyImported}}<span class="tag">bereits importiert</span>
@@ -35,9 +35,9 @@
 	</div>
 	<div class="btnrow">
 		{{if .Importable}}
-		<form method="post" action="/payments/import">
+		<form method="post" action="/payments/import" data-confirm="{{.Importable}} Zahlung(en) verbuchen?">
 			<input type="hidden" name="raw" value="{{.Raw}}">
-			<button class="btn btn--primary btn--sm" type="submit" data-confirm="{{.Importable}} Zahlung(en) verbuchen?">{{.Importable}} verbuchen</button>
+			<button class="btn btn--primary btn--sm" type="submit">{{.Importable}} verbuchen</button>
 		</form>
 		{{end}}
 		<a class="btn btn--ghost btn--sm" href="/payments/import">Abbrechen</a>

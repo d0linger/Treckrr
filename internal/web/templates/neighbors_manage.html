@@ -52,13 +52,13 @@
 						title="DSGVO Art. 15 Datenauskunft als JSON">Datenauskunft</a>
 					{{if eq .Entries 0}}
 					<form method="post" action="/neighbors/{{.Neighbor.ID}}/delete"
-						data-confirm="{{.Neighbor.Name}} löschen?">
+						data-confirm-danger data-confirm="{{.Neighbor.Name}} löschen?">
 						<input type="hidden" name="origin" value="manage">
 						<button class="btn btn--danger btn--sm" type="submit">Löschen</button>
 					</form>
 					{{else}}
 					<form method="post" action="/neighbors/{{.Neighbor.ID}}/anonymize"
-						data-confirm="{{.Neighbor.Name}} anonymisieren? Personenbezogene Daten werden unwiderruflich gelöscht. Buchungen und Rechnungen bleiben erhalten.">
+						data-confirm-danger data-confirm="{{.Neighbor.Name}} anonymisieren? Personenbezogene Daten werden unwiderruflich gelöscht. Buchungen und Rechnungen bleiben erhalten.">
 						<button class="btn btn--danger btn--sm" type="submit">Anonymisieren</button>
 					</form>
 					{{end}}

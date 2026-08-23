@@ -243,7 +243,7 @@
 					<div class="sharemenu__item">
 						<span class="sharemenu__meta">Gültig bis <b>{{date .ExpiresAt}}</b>{{if .LastUsedAt}} · zuletzt geöffnet {{pdate .LastUsedAt}}{{end}}{{if .CreatedBy}} · von {{.CreatedBy}}{{end}}</span>
 						<form method="post" action="/neighbors/{{$.Neighbor.ID}}/beleg/share/revoke?year={{$.Year.ID}}" class="sharemenu__del"
-							data-confirm="Diesen öffentlichen Link löschen? Er wird sofort ungültig.">
+							data-confirm-danger data-confirm="Diesen öffentlichen Link löschen? Er wird sofort ungültig.">
 							<input type="hidden" name="share_id" value="{{.ID}}">
 							<button type="submit" class="btn btn--danger btn--sm">Löschen</button>
 						</form>
@@ -293,7 +293,7 @@
 				<button type="submit" class="btn btn--primary">Gutschrift erstellen</button>
 			</form>
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/storno"
-				data-confirm="Rechnung {{.Invoice.Number}} stornieren? Es wird ein Storno-Beleg erstellt und die Buchungen werden wieder freigegeben."
+				data-confirm-danger data-confirm="Rechnung {{.Invoice.Number}} stornieren? Es wird ein Storno-Beleg erstellt und die Buchungen werden wieder freigegeben."
 				data-confirm-reason="Storno-Grund (optional, protokolliert)">
 				<input type="hidden" name="year_id" value="{{.Year.ID}}">
 				<input type="hidden" name="reason" value="">

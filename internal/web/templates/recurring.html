@@ -20,7 +20,7 @@
 					<td>
 						<div class="recur__acts">
 							<form method="post" action="/recurring/{{.ID}}/toggle"><button class="btn btn--ghost btn--sm" type="submit">{{if .Active}}Pausieren{{else}}Fortsetzen{{end}}</button></form>
-							<form method="post" action="/recurring/{{.ID}}/delete" data-confirm="Serie entfernen? Bereits erstellte Buchungen bleiben erhalten."><button class="btn btn--ghost btn--icon" type="submit" aria-label="Serie entfernen">{{template "ic-trash"}}</button></form>
+							<form method="post" action="/recurring/{{.ID}}/delete" data-confirm-danger data-confirm="Serie entfernen? Bereits erstellte Buchungen bleiben erhalten."><button class="btn btn--ghost btn--icon" type="submit" aria-label="Serie entfernen">{{template "ic-trash"}}</button></form>
 						</div>
 					</td>
 				</tr>

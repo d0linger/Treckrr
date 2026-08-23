@@ -33,7 +33,7 @@
 		</div>
 	</div>
 
-	<form method="post" action="{{.ApplyURL}}" data-confirm="{{.Count}} Buchungen mit der aktuellen Grundlage neu berechnen? Die eingefrorenen Preise dieser Buchungen werden überschrieben.">
+	<form method="post" action="{{.ApplyURL}}" data-confirm-danger data-confirm="{{.Count}} Buchungen mit der aktuellen Grundlage neu berechnen? Die eingefrorenen Preise dieser Buchungen werden überschrieben.">
 		{{if not .YearScope}}<input type="hidden" name="year_id" value="{{.YearID}}">{{end}}
 		<div class="btnrow btnrow--split">
 			<a class="btn btn--ghost btn--sm" href="{{.BackURL}}">Abbrechen</a>

@@ -283,6 +283,12 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	yearID := formInt64(r, "year_id")
+	rawCSV := r.FormValue("csv")
+	if len(rawCSV) > maxImportPayloadLen {
+		s.setFlash(w, r, "error", "Importdaten zu groß.")
+		redirect(w, r, "/entries/import?year="+itoa64(yearID))
+		return
+	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
 		http.NotFound(w, r)
@@ -298,7 +304,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	rows, perr := parseImportCSV(r.FormValue("csv"), members)
+	rows, perr := parseImportCSV(rawCSV, members)
 	if perr != nil {
 		s.setFlash(w, r, "error", "CSV konnte nicht gelesen werden.")
 		redirect(w, r, "/entries/import?year="+itoa64(yearID))
@@ -312,6 +318,10 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 	// (double-click, browser retry) a no-op via CreateEntry's ON CONFLICT, without
 	// deduping two genuinely identical rows in the same file (distinct lines).
 	token := trimmed(r, "import_token")
+	if s.tooLong(w, r, "Import-Token", token, maxNameLen) {
+		redirect(w, r, "/entries/import?year="+itoa64(yearID))
+		return
+	}
 	created := 0
 	for _, row := range rows {
 		if !row.OK() {
