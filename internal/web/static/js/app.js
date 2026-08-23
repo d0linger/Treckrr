@@ -244,7 +244,13 @@
 		// user would type a reason, hit Enter, and silently cancel.
 		if (inputEl && okBtn) {
 			inputEl.addEventListener("keydown", function (e) {
-				if (e.key === "Enter") { e.preventDefault(); okBtn.click(); }
+				// Ignore the Enter that COMMITS an IME composition (isComposing /
+				// legacy keyCode 229) — otherwise finishing a German word by
+				// pressing Enter would confirm the storno before the reason is done.
+				if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) {
+					e.preventDefault();
+					okBtn.click();
+				}
 			});
 		}
 	}
