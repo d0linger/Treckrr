@@ -283,6 +283,12 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	yearID := formInt64(r, "year_id")
+	rawCSV := r.FormValue("csv")
+	if len(rawCSV) > maxImportPayloadLen {
+		s.setFlash(w, r, "error", "Importdaten zu groß.")
+		redirect(w, r, "/entries/import?year="+itoa64(yearID))
+		return
+	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
 		http.NotFound(w, r)
@@ -298,7 +304,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	rows, perr := parseImportCSV(r.FormValue("csv"), members)
+	rows, perr := parseImportCSV(rawCSV, members)
 	if perr != nil {
 		s.setFlash(w, r, "error", "CSV konnte nicht gelesen werden.")
 		redirect(w, r, "/entries/import?year="+itoa64(yearID))
