@@ -12,8 +12,9 @@ import (
 // columns. They guard against oversized-payload abuse on new writes; existing
 // rows are unaffected.
 const (
-	maxNameLen = 100 // short names, labels, identifiers, categories
-	maxNoteLen = 500 // notes, descriptions, cancellation reasons
+	maxNameLen          = 100     // short names, labels, identifiers, categories
+	maxNoteLen          = 500     // notes, descriptions, cancellation reasons
+	maxImportPayloadLen = 4 << 20 // 4MB ceiling for import file/form payloads
 )
 
 // lenError returns a German over-limit message when value exceeds max code

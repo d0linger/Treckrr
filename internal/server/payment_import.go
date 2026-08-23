@@ -106,7 +106,13 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
-	txns, perr := bankimport.Parse([]byte(r.FormValue("raw")))
+	raw := r.FormValue("raw")
+	if len(raw) > maxImportPayloadLen {
+		s.setFlash(w, r, "error", "Importdaten zu groß.")
+		redirect(w, r, "/payments/import")
+		return
+	}
+	txns, perr := bankimport.Parse([]byte(raw))
 	if perr != nil {
 		s.setFlash(w, r, "error", perr.Error())
 		redirect(w, r, "/payments/import")

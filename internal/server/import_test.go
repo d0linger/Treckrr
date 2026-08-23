@@ -1,6 +1,9 @@
 package server
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -125,4 +128,28 @@ func errOf(rows []importRow) string {
 		return "(no rows)"
 	}
 	return rows[0].Err
+}
+
+// TestImportCommit_PayloadTooLarge asserts that posting a CSV payload larger
+// than maxImportPayloadLen (4MB) to handleImportCommit is rejected with a 303 redirect.
+func TestImportCommit_PayloadTooLarge(t *testing.T) {
+	s := testServer()
+
+	form := url.Values{}
+	form.Set("year_id", "1")
+	form.Set("csv", strings.Repeat("a", maxImportPayloadLen+1))
+
+	req := httptest.NewRequest(http.MethodPost, "/entries/import/commit", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	rr := httptest.NewRecorder()
+	s.handleImportCommit(rr, req)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect, got %d", rr.Code)
+	}
+	loc := rr.Header().Get("Location")
+	if !strings.Contains(loc, "/entries/import?year=1") {
+		t.Errorf("expected redirect to /entries/import?year=1, got %q", loc)
+	}
 }
