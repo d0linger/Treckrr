@@ -10,6 +10,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -309,12 +310,26 @@ func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request)
 	// create ceremony rows without bound. The ceremony limiter below charges every
 	// begin — successful ones included — because the row is created either way.
 	ip := s.clientIP(r)
-	if s.logins.blocked(r.Context(), ip) || s.logins.ceremonyBlocked(r.Context(), ip) {
+	if s.logins.blocked(r.Context(), ip) {
+		s.auditLogin(r, "", "login_passkey_failed", "Rate-Limit: zu viele Fehlversuche")
+		http.Error(w, "Zu viele Fehlversuche. Bitte später erneut versuchen.", http.StatusTooManyRequests)
+		return
+	}
+	allowed, err := s.logins.allowCeremonyBegin(r.Context(), ip)
+	if err != nil {
+		// Fail closed: the next step needs the same database, so there is nothing
+		// to gain by letting this through — and everything to lose, since this is
+		// the unauthenticated path that persists a row.
+		slog.Error("passkey begin limiter unavailable", "ip", sanitizeLog(ip), "err", sanitizeLog(err.Error()))
+		http.Error(w, "Dienst vorübergehend nicht verfügbar.", http.StatusServiceUnavailable)
+		return
+	}
+	if !allowed {
 		s.auditLogin(r, "", "login_passkey_failed", "Rate-Limit: zu viele Anfragen")
+		w.Header().Set("Retry-After", strconv.Itoa(int(ceremonyWindow.Seconds())))
 		http.Error(w, "Zu viele Anfragen. Bitte später erneut versuchen.", http.StatusTooManyRequests)
 		return
 	}
-	s.logins.ceremonyBegin(r.Context(), ip)
 	assertion, sd, err := s.wa.BeginDiscoverableLogin(
 		webauthn.WithUserVerification(protocol.VerificationRequired), // T-03
 	)

@@ -139,23 +139,39 @@ const (
 
 func ceremonyKey(ip string) string { return "wabegin:" + ip }
 
-// ceremonyBlocked reports whether this IP has created too many ceremonies.
-func (l *loginLimiter) ceremonyBlocked(ctx context.Context, ip string) bool {
-	b, err := l.store.RateLimitBlocked(ctx, ceremonyKey(ip), ceremonyMaxBegins, ceremonyWindow)
+// allowCeremonyBegin consumes one begin permit and reports whether the caller may
+// proceed.
+//
+// It charges BEFORE deciding, rather than checking and then charging: the charge
+// is a single atomic upsert returning the in-window count, so concurrent callers
+// each get a distinct number and only the first ceremonyMaxBegins of them are
+// admitted. A check-then-charge sequence would let a simultaneous burst all pass
+// the read before any of them incremented — precisely the flood being bounded.
+// The cheap blocked() read stays in front so an already-blocked client is turned
+// away without a write.
+//
+// Unlike the login limiter this counts SUCCESSFUL requests, because the resource
+// being protected is the ceremony row itself, which a begin creates either way.
+//
+// It fails CLOSED, against the fail-open convention used elsewhere. That costs
+// nothing here: the very next step, CreateWebauthnCeremony, needs the same
+// database, so a limiter error means the request could not have succeeded anyway
+// — and failing open on this particular endpoint would hand back the unbounded
+// creation path the limiter exists to close.
+func (l *loginLimiter) allowCeremonyBegin(ctx context.Context, ip string) (bool, error) {
+	key := ceremonyKey(ip)
+	blocked, err := l.store.RateLimitBlocked(ctx, key, ceremonyMaxBegins, ceremonyWindow)
 	if err != nil {
-		slog.Warn("ratelimit degraded (ceremony)", "err", sanitizeLog(err.Error()))
-		return false // fail open, but visibly
+		return false, err
 	}
-	return b
-}
-
-// ceremonyBegin charges one ceremony creation to the IP. Unlike the login
-// limiter this counts SUCCESSFUL requests — the resource being protected is the
-// ceremony row itself, which a begin creates whether or not a login follows.
-func (l *loginLimiter) ceremonyBegin(ctx context.Context, ip string) {
-	if _, err := l.store.RateLimitFail(ctx, ceremonyKey(ip), ceremonyWindow); err != nil {
-		slog.Warn("ratelimit charge failed (ceremony)", "err", sanitizeLog(err.Error()))
+	if blocked {
+		return false, nil
 	}
+	n, err := l.store.RateLimitFail(ctx, key, ceremonyWindow)
+	if err != nil {
+		return false, err
+	}
+	return n <= ceremonyMaxBegins, nil
 }
 
 // ceremonyReset clears the counter after a passkey login actually succeeds, so a
