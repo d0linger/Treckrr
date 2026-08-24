@@ -156,16 +156,17 @@
 
 	/* ---- driver ---------------------------------------------------------- */
 	var DPR = Math.min(1.75, window.devicePixelRatio || 1);
-	// One sheet per browser session: stable across reloads / in-app navigation
-	// within a tab (never changes on F5), a fresh one when the login is opened
-	// anew. sessionStorage marks the session; localStorage keeps the current pick
-	// plus the exclude-last, so a new session lands on the other sheet.
+	// Keep the sheet stable on F5 / in-app navigation and re-roll it to the other
+	// one only on a hard reload — which bypasses the service worker, so the page
+	// loads uncontrolled (the one signal that separates it from an F5). Without a
+	// SW (plain-HTTP IP origin) fall back to once-per-session. Excludes the last
+	// pick so a change always lands on the other sheet.
 	function pickVariant(store, keys) {
-		var fresh;
-		try { fresh = !sessionStorage.getItem(store + "-s"); if (fresh) sessionStorage.setItem(store + "-s", "1"); }
-		catch (x) { fresh = true; }
+		var hard;
+		if ("serviceWorker" in navigator) { try { hard = !navigator.serviceWorker.controller; } catch (x) { hard = true; } }
+		else { try { hard = !sessionStorage.getItem(store + "-s"); sessionStorage.setItem(store + "-s", "1"); } catch (x) { hard = true; } }
 		var last = null; try { last = localStorage.getItem(store); } catch (e) { }
-		if (last && keys.indexOf(last) >= 0 && !fresh) return last;
+		if (last && keys.indexOf(last) >= 0 && !hard) return last;
 		var pool = keys.filter(function (k) { return k !== last; }); if (!pool.length) pool = keys;
 		var k = pool[Math.floor(Math.random() * pool.length)];
 		try { localStorage.setItem(store, k); } catch (e) { }

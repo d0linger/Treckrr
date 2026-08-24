@@ -196,6 +196,14 @@ body {
 		linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
 	background-size: 26px 26px;
 }
+/* When app-bg.js has a live canvas it paints the paper itself (grid, seed dots or
+   daylight). That canvas is fixed at z-index:-1, and per CSS painting order a
+   negative-z-index child paints BEFORE its parent's background — so body's own
+   opaque fill AND this grid would cover it entirely. Hand the ground over: html
+   keeps --bg as the base colour, body goes transparent, and the canvas shows
+   through. Without JS (or without a 2D context) the class is never set and the
+   static grid above stays as the fallback. */
+html.has-appbg body { background: transparent; }
 /* Reserve space for the fixed bottom tab bar — only on pages that render it
    (authenticated). Without this scope, the login/offline pages (no tab bar) get
    an extra 72px below a 100dvh container and show a phantom vertical scrollbar. */

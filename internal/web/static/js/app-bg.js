@@ -114,22 +114,18 @@
 			};
 		})()
 	};
-	// Pick a surface on every full page reload (F5 or hard reload) and keep it
-	// across in-app navigation, so it visibly cycles when you reload but doesn't
-	// flip while you click around. Excludes the previous pick so a reload always
-	// lands on a different surface, cycling through the three. Reload vs navigation
-	// is told apart via the Navigation Timing API.
-	function isReload() {
-		try {
-			var n = performance.getEntriesByType && performance.getEntriesByType("navigation");
-			if (n && n.length) return n[0].type === "reload";
-			if (performance.navigation) return performance.navigation.type === 1;
-		} catch (x) { }
-		return true;
-	}
+	// Keep the surface stable on F5 / in-app navigation and re-roll it only on a
+	// hard reload — which bypasses the service worker, so the page loads with no
+	// controller (the one signal that separates it from an F5). Without a SW
+	// (plain-HTTP IP origin) fall back to once-per-session. Excludes the previous
+	// pick so a hard reload always lands on a different surface, cycling through
+	// the three over successive hard reloads.
 	function pickVariant(store, keys) {
+		var hard;
+		if ("serviceWorker" in navigator) { try { hard = !navigator.serviceWorker.controller; } catch (x) { hard = true; } }
+		else { try { hard = !sessionStorage.getItem(store + "-s"); sessionStorage.setItem(store + "-s", "1"); } catch (x) { hard = true; } }
 		var last = null; try { last = localStorage.getItem(store); } catch (e) { }
-		if (last && keys.indexOf(last) >= 0 && !isReload()) return last;
+		if (last && keys.indexOf(last) >= 0 && !hard) return last;
 		var pool = keys.filter(function (k) { return k !== last; }); if (!pool.length) pool = keys;
 		var k = pool[Math.floor(Math.random() * pool.length)];
 		try { localStorage.setItem(store, k); } catch (e) { }
@@ -144,6 +140,13 @@
 	var reduce = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
 	var W = 0, H = 0, pal = palette(), t = Math.random() * 8, prev = 0, running = false, raf = 0;
 
+	// The canvas sits at z-index:-1, which paints BELOW body's own background — so
+	// body's opaque --bg fill and its blueprint grid would hide it completely.
+	// Hand the paper over to the canvas only once we can actually paint: this
+	// class makes body transparent (see .has-appbg in app.css), while no-JS and
+	// no-2d-context keep the static CSS grid as the fallback.
+	function markActive() { try { document.documentElement.classList.add("has-appbg"); } catch (e) { } }
+
 	function size() {
 		var r = canvas.getBoundingClientRect();
 		if (!r.width || !r.height) return false;
@@ -152,6 +155,7 @@
 		canvas.height = stat.height = Math.round(H * DPR);
 		sctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 		v.build(sctx, W, H, pal);
+		markActive();
 		return true;
 	}
 	function compose(dt) {
