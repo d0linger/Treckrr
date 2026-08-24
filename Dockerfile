@@ -5,15 +5,23 @@ FROM golang:1.27.0-alpine3.24 AS build
 
 WORKDIR /src
 
-# Resolve dependencies. go.sum is generated here so the repo need not ship it.
-ENV GOFLAGS=-mod=mod
-COPY go.mod ./
+# Dependencies in their own layer, from the COMMITTED go.mod/go.sum. Two reasons
+# this is not `go mod tidy` over the full source tree:
+#   - Integrity: tidy rewrites go.mod/go.sum, so a missing or wrong checksum is
+#     silently added rather than failing the build. -mod=readonly (Go's default,
+#     stated here so it cannot be lost to a stray GOFLAGS) makes the committed
+#     checksums an enforced gate; `go mod verify` re-checks the downloaded
+#     module cache against them.
+#   - Caching: only go.mod/go.sum invalidate this layer, so a source-only change
+#     no longer re-resolves and re-downloads the whole module graph.
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
 COPY . .
-RUN go mod tidy
 
 # Build a static binary. CGO is off so the resulting binary is self-contained.
 ENV CGO_ENABLED=0 GOOS=linux
-RUN go build -trimpath -ldflags="-s -w" -o /out/treckrr ./cmd/treckrr
+RUN go build -trimpath -mod=readonly -ldflags="-s -w" -o /out/treckrr ./cmd/treckrr
 
 # ---------- Runtime stage ----------
 FROM alpine:3.24
