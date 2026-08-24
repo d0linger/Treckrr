@@ -116,14 +116,29 @@
 	};
 	// Keep the surface stable on F5 / in-app navigation and re-roll it only on a
 	// hard reload — which bypasses the service worker, so the page loads with no
-	// controller (the one signal that separates it from an F5). Without a SW
-	// (plain-HTTP IP origin) fall back to once-per-session. Excludes the previous
-	// pick so a hard reload always lands on a different surface, cycling through
-	// the three over successive hard reloads.
+	// controller. A missing controller alone is NOT proof of that: on a first visit,
+	// and whenever registration is blocked (private window, blocked site data,
+	// policy), there is never a controller and every plain F5 would look "hard". So
+	// only trust the signal once the worker has actually controlled this browser at
+	// least once, and otherwise degrade to once-per-session — the same rule used
+	// when the browser has no service worker at all. Excludes the previous pick so
+	// a hard reload always lands on a different surface.
+	var HARD = (function () {
+		var SEEN = "treckrr-sw-ctrl", SESS = "treckrr-appbg-s";
+		if ("serviceWorker" in navigator) {
+			var controlled = false;
+			try { controlled = !!navigator.serviceWorker.controller; } catch (x) { }
+			if (controlled) { try { localStorage.setItem(SEEN, "1"); } catch (e) { } return false; }
+			try { if (localStorage.getItem(SEEN) === "1") return true; } catch (e) { }
+		}
+		try {
+			var fresh = !sessionStorage.getItem(SESS);
+			if (fresh) sessionStorage.setItem(SESS, "1");
+			return fresh;
+		} catch (x) { return true; }
+	})();
 	function pickVariant(store, keys) {
-		var hard;
-		if ("serviceWorker" in navigator) { try { hard = !navigator.serviceWorker.controller; } catch (x) { hard = true; } }
-		else { try { hard = !sessionStorage.getItem(store + "-s"); sessionStorage.setItem(store + "-s", "1"); } catch (x) { hard = true; } }
+		var hard = HARD;
 		var last = null; try { last = localStorage.getItem(store); } catch (e) { }
 		if (last && keys.indexOf(last) >= 0 && !hard) return last;
 		var pool = keys.filter(function (k) { return k !== last; }); if (!pool.length) pool = keys;
@@ -138,7 +153,10 @@
 	var DPR = Math.min(1.5, window.devicePixelRatio || 1);
 	var stat = document.createElement("canvas"), sctx = stat.getContext("2d", { alpha: false });
 	var reduce = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
-	var W = 0, H = 0, pal = palette(), t = Math.random() * 8, prev = 0, running = false, raf = 0;
+	// t is read off the wall clock rather than a random phase, so the travelling
+	// light / sun / drill picks up where the previous page left it instead of
+	// jumping on a reload that deliberately kept the same surface.
+	var W = 0, H = 0, pal = palette(), t = Date.now() / 1000, prev = 0, running = false, raf = 0;
 	// Whether the visible canvas has ever been composed. The ground is only handed
 	// over to it (see markActive) once this is true.
 	var painted = false;

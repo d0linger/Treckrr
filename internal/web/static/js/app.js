@@ -69,12 +69,27 @@
 		];
 		var LKEY = "treckrr-mark";
 		// A hard reload bypasses the service worker → the page loads with no
-		// controller, whereas F5 and navigation stay controlled. Without a SW
-		// (e.g. a plain-HTTP IP origin) that signal is gone, so fall back to
-		// once-per-session — either way it never changes on a plain F5.
-		var hard;
-		if ("serviceWorker" in navigator) { try { hard = !navigator.serviceWorker.controller; } catch (x) { hard = true; } }
-		else { try { hard = !sessionStorage.getItem(LKEY + "-s"); sessionStorage.setItem(LKEY + "-s", "1"); } catch (x) { hard = true; } }
+		// controller, whereas F5 and navigation stay controlled. A missing
+		// controller alone is NOT proof of that: on a first visit, and whenever
+		// registration is blocked (private window, blocked site data, policy),
+		// there is never a controller and every plain F5 would look "hard". So only
+		// trust the signal once the worker has actually controlled this browser at
+		// least once, and otherwise degrade to once-per-session — the same rule
+		// used when the browser has no service worker at all.
+		var hard = (function () {
+			var SEEN = "treckrr-sw-ctrl", SESS = LKEY + "-s";
+			if ("serviceWorker" in navigator) {
+				var controlled = false;
+				try { controlled = !!navigator.serviceWorker.controller; } catch (x) {}
+				if (controlled) { try { localStorage.setItem(SEEN, "1"); } catch (e) {} return false; }
+				try { if (localStorage.getItem(SEEN) === "1") return true; } catch (e) {}
+			}
+			try {
+				var fresh = !sessionStorage.getItem(SESS);
+				if (fresh) sessionStorage.setItem(SESS, "1");
+				return fresh;
+			} catch (x) { return true; }
+		})();
 		var last = null;
 		try { last = localStorage.getItem(LKEY); } catch (e) { /* storage unavailable */ }
 		var pick;
