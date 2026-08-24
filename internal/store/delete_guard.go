@@ -8,7 +8,7 @@ import "context"
 // Both neighbors and billing_years are referenced ON DELETE CASCADE by eight
 // tables (entries, billing_year_neighbors, neighbor_ledger, payments, invoices,
 // beleg_sends, recurring_entries, beleg_shares). Guarding on bookings alone let a
-// neighbour with no bookings but a carry-forward, a payment or an issued invoice
+// neighbor with no bookings but a carry-forward, a payment or an issued invoice
 // be deleted, taking that history with it silently — exactly the records § 132 BAO
 // requires to be kept for seven years, and the ones the Festschreibung is meant to
 // freeze. The four counted here are the ones that represent money or a tax
@@ -26,7 +26,7 @@ func (b DeleteBlockers) Any() bool {
 	return b.Entries > 0 || b.Payments > 0 || b.Ledger > 0 || b.Invoices > 0
 }
 
-// NeighborDeleteBlockers counts what a DELETE of the neighbour would cascade into,
+// NeighborDeleteBlockers counts what a DELETE of the neighbor would cascade into,
 // across every billing year. Soft-deleted payments are excluded: the operator has
 // already removed those, so they should not block. One round trip.
 func (s *Store) NeighborDeleteBlockers(ctx context.Context, neighborID int64) (DeleteBlockers, error) {

@@ -39,7 +39,7 @@ const (
 )
 
 // acquirePhotoSlot blocks until a decode slot is free, the caller's request is
-// cancelled, or photoSlotWait elapses. Release with releasePhotoSlot.
+// canceled, or photoSlotWait elapses. Release with releasePhotoSlot.
 //
 // Only New() sizes the channel; a Server built literally (as tests do) has a nil
 // one and runs unbounded rather than blocking forever on a nil-channel send.

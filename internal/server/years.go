@@ -236,7 +236,7 @@ func (s *Server) handleYearDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// Same cascade as the neighbour delete: billing_years is the FK parent of
+	// Same cascade as the neighbor delete: billing_years is the FK parent of
 	// entries, payments, neighbor_ledger and invoices, so bookings alone are not a
 	// sufficient guard — a year holding only carry-forwards or payments would be
 	// erased with them.

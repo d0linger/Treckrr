@@ -298,7 +298,7 @@ func (s *Server) handleNeighborDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// A neighbour carrying ANY financial or tax-relevant history must not be
+	// A neighbor carrying ANY financial or tax-relevant history must not be
 	// deleted — the row is referenced ON DELETE CASCADE by entries, payments,
 	// neighbor_ledger and invoices alike, so a delete that only checked bookings
 	// silently destroyed carry-forwards, payments and festgeschriebene Rechnungen

@@ -15,7 +15,7 @@ import (
 
 // TestDeleteBlockersIntegration pins the regression that guarding deletion on
 // bookings alone allowed: neighbors and billing_years are referenced ON DELETE
-// CASCADE by payments, neighbor_ledger and invoices too, so a neighbour with no
+// CASCADE by payments, neighbor_ledger and invoices too, so a neighbor with no
 // bookings but a payment or a carry-forward used to pass the guard and take that
 // financial history with it.
 func TestDeleteBlockersIntegration(t *testing.T) {
@@ -39,7 +39,7 @@ func TestDeleteBlockersIntegration(t *testing.T) {
 	baseID, _ := st.CreateEmptyBase(ctx, yr, "DG-Basis")
 	yearID, _ := st.CreateBillingYear(ctx, yr, baseID, "DG-Jahr")
 
-	// A neighbour with nothing attached is deletable â€” the guard must not become
+	// A neighbor with nothing attached is deletable â€” the guard must not become
 	// a blanket refusal.
 	cleanID, err := st.CreateNeighbor(ctx, fmt.Sprintf("DG Sauber %d", pid), "")
 	if err != nil {
@@ -51,7 +51,7 @@ func TestDeleteBlockersIntegration(t *testing.T) {
 		t.Fatalf("clean neighbor reports blockers %+v, want none", b)
 	}
 
-	// A neighbour with a PAYMENT and no bookings: the case the old guard missed.
+	// A neighbor with a PAYMENT and no bookings: the case the old guard missed.
 	payID, err := st.CreateNeighbor(ctx, fmt.Sprintf("DG Zahler %d", pid), "")
 	if err != nil {
 		t.Fatalf("create paying neighbor: %v", err)
@@ -67,7 +67,7 @@ func TestDeleteBlockersIntegration(t *testing.T) {
 		t.Fatalf("blockers(payment): %v", err)
 	}
 	if b.Entries != 0 {
-		t.Fatalf("Entries = %d, want 0 (this neighbour has no bookings)", b.Entries)
+		t.Fatalf("Entries = %d, want 0 (this neighbor has no bookings)", b.Entries)
 	}
 	if b.Payments != 1 || !b.Any() {
 		t.Fatalf("blockers = %+v, want Payments=1 and Any()=true", b)
