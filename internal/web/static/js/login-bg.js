@@ -161,11 +161,23 @@
 	// origin) fall back to once-per-session. Computed ONCE: the sheet and the icon
 	// scatter have to agree on what counts as a hard load, and the sessionStorage
 	// fallback is a one-shot marker a second caller would already find set.
+	// A missing controller alone is NOT proof of a hard reload: on a first visit,
+	// and whenever registration is blocked (private window, blocked site data,
+	// enterprise policy), there is never a controller and every plain F5 would look
+	// "hard". Only trust the signal once the worker has actually controlled this
+	// browser at least once; otherwise degrade to once-per-session, the same rule
+	// used when the browser has no service worker at all.
 	var HARD = (function () {
-		if ("serviceWorker" in navigator) { try { return !navigator.serviceWorker.controller; } catch (x) { return true; } }
+		var SEEN = "treckrr-sw-ctrl", SESS = "treckrr-loginbg-s";
+		if ("serviceWorker" in navigator) {
+			var controlled = false;
+			try { controlled = !!navigator.serviceWorker.controller; } catch (x) { }
+			if (controlled) { try { localStorage.setItem(SEEN, "1"); } catch (e) { } return false; }
+			try { if (localStorage.getItem(SEEN) === "1") return true; } catch (e) { }
+		}
 		try {
-			var fresh = !sessionStorage.getItem("treckrr-loginbg-s");
-			if (fresh) sessionStorage.setItem("treckrr-loginbg-s", "1");
+			var fresh = !sessionStorage.getItem(SESS);
+			if (fresh) sessionStorage.setItem(SESS, "1");
 			return fresh;
 		} catch (x) { return true; }
 	})();
