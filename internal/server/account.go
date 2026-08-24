@@ -281,8 +281,13 @@ func (s *Server) handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
+	token := r.FormValue("token")
+	if s.tooLong(w, r, "Token", token, maxNameLen) {
+		redirect(w, r, "/profile")
+		return
+	}
 	user := userFromCtx(r)
-	if err := s.store.DeleteSessionForUser(r.Context(), user.ID, r.FormValue("token")); err != nil {
+	if err := s.store.DeleteSessionForUser(r.Context(), user.ID, token); err != nil {
 		s.setFlash(w, r, "error", "Sitzung konnte nicht beendet werden.")
 	} else {
 		s.audit(r, "session_revoke", "user", user.ID, "")
