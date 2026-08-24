@@ -139,6 +139,9 @@
 	var stat = document.createElement("canvas"), sctx = stat.getContext("2d", { alpha: false });
 	var reduce = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
 	var W = 0, H = 0, pal = palette(), t = Math.random() * 8, prev = 0, running = false, raf = 0;
+	// Whether the visible canvas has ever been composed. The ground is only handed
+	// over to it (see markActive) once this is true.
+	var painted = false;
 
 	// The canvas sits at z-index:-1, which paints BELOW body's own background — so
 	// body's opaque --bg fill and its blueprint grid would hide it completely.
@@ -155,16 +158,24 @@
 		// Assigning canvas.width/height runs "set bitmap dimensions", which clears
 		// the bitmap — and for an {alpha:false} context it clears to OPAQUE BLACK —
 		// even when the value is unchanged. So only touch it on a real size change
-		// (that also skips a full rebuild per ResizeObserver tick), and repaint the
-		// visible canvas right away so the black reset never reaches the screen.
-		if (cw !== canvas.width || ch !== canvas.height) {
+		// (that also skips a full rebuild per ResizeObserver tick).
+		var resized = cw !== canvas.width || ch !== canvas.height;
+		if (resized) {
 			canvas.width = stat.width = cw;
 			canvas.height = stat.height = ch;
+		}
+		// Repaint whenever the bitmap was just cleared, and also when nothing has
+		// ever been painted: a first layout of exactly the default bitmap size
+		// (300x150 at DPR 1) leaves `resized` false, and skipping the paint there
+		// would hand the ground over to a canvas still in its opaque-black
+		// initial state.
+		if (resized || !painted) {
 			sctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 			v.build(sctx, W, H, pal);
 			compose(0);
+			painted = true;
 		}
-		markActive(); // hand the ground over only once something has been painted
+		markActive(); // unreachable until painted === true
 		return true;
 	}
 	function compose(dt) {
