@@ -45,6 +45,28 @@ updates:
           - "minor"
           - "patch"
 
+  # Playwright end-to-end suite (e2e/package.json). Its own ecosystem because the
+  # e2e harness has no Go module and would otherwise go unwatched entirely.
+  - package-ecosystem: "npm"
+    directory: "/e2e"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Vienna"
+    labels:
+      - "dependencies"
+      - "e2e"
+    commit-message:
+      prefix: "e2e"
+    groups:
+      e2e-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
   # Docker base image (Dockerfile)
   - package-ecosystem: "docker"
     directory: "/"
