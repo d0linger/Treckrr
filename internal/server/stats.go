@@ -270,14 +270,18 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 	for _, t := range totals {
 		totalByID[t.YearID] = t
 	}
+	// Same one-query-for-all-years treatment as YearlyTotals above; this used to
+	// be a YearPaymentTotals call per year inside the loop below.
+	payByID, err := s.store.AllYearPaymentTotals(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	for _, y := range years {
 		t := totalByID[y.ID]
 		cost, hours, led := t.Cost, t.Hours, t.Ledger
-		paid, open, credit, err := s.store.YearPaymentTotals(r.Context(), y.ID)
-		if err != nil {
-			s.serverError(w, r.URL.Path, err)
-			return
-		}
+		p := payByID[y.ID]
+		paid, open, credit := p.Paid, p.Open, p.Credit
 		if !led.IsZero() {
 			hasLedger = true
 		}

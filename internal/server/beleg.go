@@ -444,7 +444,7 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	if c, err := s.cookie(r, shareOnceCookie); err == nil && c.Value != "" && len(c.Value) <= maxBelegShareTokenLen {
 		s.setCookie(w, r, &http.Cookie{Name: shareOnceCookie, Value: "", MaxAge: -1})
 		data["ShareToken"] = c.Value
-		data["ShareURL"] = absoluteURL(r, "/s/beleg/"+c.Value)
+		data["ShareURL"] = s.absoluteURL(r, "/s/beleg/"+c.Value)
 	}
 	// Self-service: list the Beleg's active public links (manage/revoke).
 	if hasInv, _ := data["HasInvoice"].(bool); hasInv {
@@ -610,6 +610,16 @@ func (s *Server) handleSharedBeleg(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// The only unauthenticated route that touches the database, and it runs
+	// several queries per hit. Throttle by counting misses (see shareMaxMisses):
+	// a visitor with a working link is never counted, a scanner is cut off after a
+	// handful of dead tokens. The response is the same 404 either way, so being
+	// throttled is not distinguishable from a bad token.
+	clientIP := s.clientIP(r)
+	if s.logins.shareBlocked(r.Context(), clientIP) {
+		http.NotFound(w, r)
+		return
+	}
 	var nID, yID int64
 	var ok bool
 	if strings.Contains(token, ".") {
@@ -628,6 +638,7 @@ func (s *Server) handleSharedBeleg(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !ok {
+		s.logins.shareMiss(r.Context(), clientIP)
 		http.NotFound(w, r)
 		return
 	}
@@ -691,9 +702,13 @@ func (s *Server) handleBelegPDF(w http.ResponseWriter, r *http.Request) {
 }
 
 // absoluteURL builds a full URL for path from the request, honoring a TLS proxy.
-func absoluteURL(r *http.Request, path string) string {
+// The scheme comes from cookieSecure, which only believes X-Forwarded-Proto when
+// TRUST_PROXY is on AND the direct peer is inside TRUSTED_PROXIES — the same gate
+// the Secure cookie flag uses. It previously read the header unconditionally, so
+// any client could flip the scheme of a rendered link by sending it.
+func (s *Server) absoluteURL(r *http.Request, path string) string {
 	scheme := "http"
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+	if r.TLS != nil || s.cookieSecure(r) {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host + path

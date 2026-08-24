@@ -310,9 +310,23 @@ func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open
 	// multiply rows. "open" clamps each neighbor's remainder at 0 (GREATEST) so a
 	// credit does not silently cancel another neighbor's genuine debt; the netted
 	// credit is returned separately as "credit".
-	err = s.db.QueryRowContext(ctx, `
-		WITH per_neighbor AS (
-		  SELECT
+	err = s.db.QueryRowContext(ctx,
+		`WITH per_neighbor AS (`+perNeighborNetPaid+`
+		  WHERE byn.billing_year_id = $1
+		)
+		SELECT COALESCE(SUM(paid), 0),
+		       COALESCE(SUM(GREATEST(net - paid, 0)), 0),
+		       COALESCE(SUM(GREATEST(paid - net, 0)), 0)
+		FROM per_neighbor`, yearID).Scan(&paid, &open, &credit)
+	return
+}
+
+// perNeighborNetPaid yields one row per (billing year, neighbor) with the net
+// amount owed and the amount actually paid. Shared verbatim by the single-year
+// and all-years roll-ups so the two can never drift apart — it is a compile-time
+// constant, never built from input.
+const perNeighborNetPaid = `
+		  SELECT byn.billing_year_id AS year_id,
 		    COALESCE((SELECT SUM(e.cost) FROM entries e
 		               WHERE e.neighbor_id = byn.neighbor_id
 		                 AND e.billing_year_id = byn.billing_year_id
@@ -324,14 +338,43 @@ func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open
 		    COALESCE((SELECT SUM(p.amount) FROM payments p
 		               WHERE p.neighbor_id = byn.neighbor_id
 		                 AND p.billing_year_id = byn.billing_year_id AND p.deleted_at IS NULL), 0) AS paid
-		  FROM billing_year_neighbors byn
-		  WHERE byn.billing_year_id = $1
+		  FROM billing_year_neighbors byn`
+
+// YearPaymentTotal is one billing year's payment roll-up.
+type YearPaymentTotal struct {
+	YearID             int64
+	Paid, Open, Credit decimal.Decimal
+}
+
+// AllYearPaymentTotals returns the payment roll-up for EVERY billing year in one
+// round trip, keyed by year id. The all-years statistics page needs one per year;
+// calling YearPaymentTotals in a loop made that page's cost grow with the number
+// of billing years, which is the same N+1 YearlyTotals already removed for the
+// bookings/ledger side. Years with no members simply have no entry in the map —
+// the zero value is the correct answer for them.
+func (s *Store) AllYearPaymentTotals(ctx context.Context) (map[int64]YearPaymentTotal, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`WITH per_neighbor AS (`+perNeighborNetPaid+`
 		)
-		SELECT COALESCE(SUM(paid), 0),
+		SELECT year_id,
+		       COALESCE(SUM(paid), 0),
 		       COALESCE(SUM(GREATEST(net - paid, 0)), 0),
 		       COALESCE(SUM(GREATEST(paid - net, 0)), 0)
-		FROM per_neighbor`, yearID).Scan(&paid, &open, &credit)
-	return
+		FROM per_neighbor
+		GROUP BY year_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64]YearPaymentTotal)
+	for rows.Next() {
+		var t YearPaymentTotal
+		if err := rows.Scan(&t.YearID, &t.Paid, &t.Open, &t.Credit); err != nil {
+			return nil, err
+		}
+		out[t.YearID] = t
+	}
+	return out, rows.Err()
 }
 
 // YearNeighborSummary is one dashboard row for a neighbor in a billing year:

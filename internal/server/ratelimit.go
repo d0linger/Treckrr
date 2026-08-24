@@ -21,6 +21,16 @@ const (
 	// is far above any legitimate user's failure rate.
 	accountMaxFails = 30
 	accountWindow   = time.Hour
+
+	// Public share-link throttle. /s/beleg/{token} is the one unauthenticated
+	// route that reaches the database, and it runs several queries per hit, so an
+	// unthrottled scanner is free DB load even though the 256-bit token makes
+	// guessing hopeless. Only MISSES are counted, so a visitor holding a working
+	// link never approaches the threshold — it is a scanner signal, not a request
+	// budget. Set well above the handful of retries a human with a stale or
+	// revoked link will produce before giving up.
+	shareMaxMisses = 20
+	shareWindow    = 15 * time.Minute
 )
 
 // loginLimiter is a Postgres-backed sliding-window limiter for login and other
@@ -79,6 +89,30 @@ func (l *loginLimiter) accountBlocked(ctx context.Context, username string) bool
 func (l *loginLimiter) accountFail(ctx context.Context, username string) {
 	if _, err := l.store.RateLimitFail(ctx, accountKey(username), accountWindow); err != nil {
 		slog.Warn("ratelimit fail-record failed (account)", "err", sanitizeLog(err.Error()))
+	}
+}
+
+// shareKey namespaces the public share-link miss counter by client IP, keeping it
+// clear of the login buckets so a blocked scanner cannot also lock out a login.
+func shareKey(ip string) string { return "share:" + ip }
+
+// shareBlocked reports whether this client has produced enough share-token misses
+// to look like it is scanning.
+func (l *loginLimiter) shareBlocked(ctx context.Context, ip string) bool {
+	b, err := l.store.RateLimitBlocked(ctx, shareKey(ip), shareMaxMisses, shareWindow)
+	if err != nil {
+		slog.Warn("ratelimit degraded (share)", "err", sanitizeLog(err.Error()))
+		return false // fail open, but visibly
+	}
+	return b
+}
+
+// shareMiss records one unresolvable share token. There is deliberately no reset
+// counterpart: a hit on a valid link must not clear a scanner's tally, and the
+// sliding window ages the count out on its own.
+func (l *loginLimiter) shareMiss(ctx context.Context, ip string) {
+	if _, err := l.store.RateLimitFail(ctx, shareKey(ip), shareWindow); err != nil {
+		slog.Warn("ratelimit fail-record failed (share)", "err", sanitizeLog(err.Error()))
 	}
 }
 

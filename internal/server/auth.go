@@ -25,6 +25,11 @@ const (
 )
 
 func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
+	// auth()/admin() mark every authenticated page no-store, but the login page is
+	// public and so was getting no Cache-Control at all — while carrying a CSRF
+	// token, a Set-Cookie and, at the second step, the fact that a valid password
+	// was just accepted. Nothing here may sit in a shared or on-disk cache.
+	w.Header().Set("Cache-Control", "no-store")
 	if s.currentUser(r) != nil {
 		redirect(w, r, "/")
 		return

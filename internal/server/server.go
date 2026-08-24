@@ -477,11 +477,6 @@ func (s *Server) cookie(r *http.Request, base string) (*http.Cookie, error) {
 	return r.Cookie(s.cookieName(r, base))
 }
 
-// sessionCookieName returns the session cookie's wire name.
-func (s *Server) sessionCookieName(r *http.Request) string {
-	return s.cookieName(r, sessionCookie)
-}
-
 // currentUser resolves the session cookie to a user, or nil. The result is
 // memoized on the request context: auth/admin resolves the session, and accessLog
 // resolves it again after the handler — without memoization every authenticated
