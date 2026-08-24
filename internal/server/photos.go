@@ -2,10 +2,12 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/jpeg"
 	"io"
 	"net/http"
+	"time"
 
 	// Register decoders for the formats a phone camera produces. Decoding into a
 	// plain image.Image and re-encoding as JPEG drops all EXIF metadata (the
@@ -22,7 +24,60 @@ const (
 	// crafted header can't drive a huge allocation (a 12 MiB JPEG can otherwise
 	// decode to hundreds of MB). 40 MP covers any real phone camera.
 	maxPhotoPixels = 40_000_000
+	// maxConcurrentPhotoDecodes bounds how many uploads may be decoding at once.
+	// The per-pixel cap above limits ONE decode, not the sum of them: at 40 MP a
+	// JPEG decodes to ~60 MB (YCbCr 4:2:0) and a PNG to ~160 MB (RGBA), so a
+	// handful of simultaneous uploads can exceed the container's 768 MB memory
+	// limit and get the process OOM-killed — taking every other request with it.
+	// Two slots keep the worst case near 320 MB, leaving room for the ~15 MB
+	// baseline and everything else in flight.
+	maxConcurrentPhotoDecodes = 2
+	// photoSlotWait is how long an upload waits for a free decode slot before
+	// giving up. Long enough to queue behind a slow decode, short enough that the
+	// user gets an answer rather than a hung request.
+	photoSlotWait = 30 * time.Second
 )
+
+// acquirePhotoSlot blocks until a decode slot is free, the caller's request is
+// cancelled, or photoSlotWait elapses. Release with releasePhotoSlot.
+//
+// Only New() sizes the channel; a Server built literally (as tests do) has a nil
+// one and runs unbounded rather than blocking forever on a nil-channel send.
+func (s *Server) acquirePhotoSlot(ctx context.Context) error {
+	if s.photoSlots == nil {
+		return nil
+	}
+	t := time.NewTimer(photoSlotWait)
+	defer t.Stop()
+	select {
+	case s.photoSlots <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return errPhotoBusy
+	}
+}
+
+func (s *Server) releasePhotoSlot() {
+	if s.photoSlots == nil {
+		return
+	}
+	<-s.photoSlots
+}
+
+// decodePhoto runs processPhoto while holding a decode slot, releasing it via
+// defer so a panic inside an image decoder cannot leak the slot and slowly
+// starve every later upload.
+func (s *Server) decodePhoto(ctx context.Context, raw []byte) ([]byte, error) {
+	if err := s.acquirePhotoSlot(ctx); err != nil {
+		return nil, err
+	}
+	defer s.releasePhotoSlot()
+	return processPhoto(raw)
+}
+
+var errPhotoBusy = &photoError{"Gerade werden zu viele Bilder verarbeitet. Bitte in einem Moment erneut versuchen."}
 
 // processPhoto decodes an uploaded image and re-encodes it as a JPEG, stripping
 // EXIF (orientation/GPS/etc.) in the process. It rejects non-images and images
@@ -87,7 +142,9 @@ func (s *Server) handleEntryPhotoUpload(w http.ResponseWriter, r *http.Request) 
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	img, perr := processPhoto(raw)
+	// Bound concurrent decodes: this is the one request path that can allocate
+	// hundreds of MB, and nothing else caps how many run at once.
+	img, perr := s.decodePhoto(r.Context(), raw)
 	if perr != nil {
 		msg := "Kein gültiges Bild."
 		if pe, ok := perr.(*photoError); ok {

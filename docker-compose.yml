@@ -5,6 +5,19 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    # Drop every capability, then hand back only what the postgres:alpine entrypoint
+    # genuinely needs: it starts as root to fix ownership on the data directory and
+    # then drops to uid 70 via su-exec. CHOWN/DAC_OVERRIDE/FOWNER cover the initial
+    # `chown -R postgres` on the volume, SETGID/SETUID cover the drop itself. A bare
+    # `cap_drop: ALL` without these fails at startup — verified by running it.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     # Bounds, not tuning. Without them a runaway query or a fork storm is a HOST
     # incident, not a container one — on a single-box deployment that takes the
     # app and the reverse proxy down with it. Measured idle footprint is ~31 MiB

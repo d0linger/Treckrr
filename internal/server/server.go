@@ -42,6 +42,8 @@ type Server struct {
 	wa          *webauthn.WebAuthn
 	started     time.Time
 	maintenance atomic.Bool // set during a restore: the gate serves 503 for normal traffic
+	// photoSlots bounds concurrent image decodes; see maxConcurrentPhotoDecodes.
+	photoSlots chan struct{}
 }
 
 // New constructs a Server and parses templates.
@@ -65,7 +67,11 @@ func New(cfg *config.Config, st *store.Store, bk *backup.Service) (*Server, erro
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, store: st, backup: bk, templates: tpl, logins: newLoginLimiter(st), wa: wa, started: time.Now()}, nil
+	return &Server{
+		cfg: cfg, store: st, backup: bk, templates: tpl,
+		logins: newLoginLimiter(st), wa: wa, started: time.Now(),
+		photoSlots: make(chan struct{}, maxConcurrentPhotoDecodes),
+	}, nil
 }
 
 type ctxKey string
