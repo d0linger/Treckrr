@@ -202,8 +202,16 @@ body {
    opaque fill AND this grid would cover it entirely. Hand the ground over: html
    keeps --bg as the base colour, body goes transparent, and the canvas shows
    through. Without JS (or without a 2D context) the class is never set and the
-   static grid above stays as the fallback. */
-html.has-appbg body { background: transparent; }
+   static grid above stays as the fallback.
+
+   Scoped to `screen` on purpose: this selector is more specific than the plain
+   `body { background: #fff }` in the print blocks below, and media queries add no
+   specificity — unscoped it would silently win there and print a Beleg on the
+   dark --bg ground instead of white paper. On paper the canvas is hidden anyway,
+   so the handover has nothing to do. */
+@media screen {
+	html.has-appbg body { background: transparent; }
+}
 /* Reserve space for the fixed bottom tab bar — only on pages that render it
    (authenticated). Without this scope, the login/offline pages (no tab bar) get
    an extra 72px below a 100dvh container and show a phantom vertical scrollbar. */
