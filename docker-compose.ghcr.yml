@@ -8,6 +8,16 @@ services:
     image: postgres:16-alpine
     container_name: treckrr-db
     restart: unless-stopped
+    # Kept in step with docker-compose.yml — this file is the DOCUMENTED
+    # production path, so it must not be the less-hardened one. See the comments
+    # there for why each of these is set.
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          pids: 256
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-treckrr}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-treckrr-db-password-change-me}
@@ -25,6 +35,22 @@ services:
     pull_policy: always
     container_name: treckrr-app
     restart: unless-stopped
+    # Same hardening as docker-compose.yml, and it is the same image, so this is
+    # proven to work: the app writes nothing to disk (state is in Postgres, logs
+    # go to stdout). See docker-compose.yml for the reasoning behind the /tmp size
+    # cap and the memory ceiling.
+    read_only: true
+    tmpfs:
+      - /tmp:size=320m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          pids: 128
     depends_on:
       db:
         condition: service_healthy

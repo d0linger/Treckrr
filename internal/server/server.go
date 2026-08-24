@@ -315,7 +315,26 @@ func isMaintenanceExempt(p string) bool {
 const maxRequestBody = 1 << 20 // 1 MiB
 // maxBackupUpload is the ceiling for restore uploads (a full encrypted dump);
 // the 1 MiB cap applies to every other route.
-const maxBackupUpload = 512 << 20 // 512 MiB
+//
+// Sizing note — an uploaded restore costs roughly FOUR times the file, all of it
+// in RAM on this deployment, so this number is not free:
+//  1. multipart spills the part past its in-memory threshold to /tmp, which is a
+//     tmpfs — i.e. RAM charged to the container;
+//  2. backupUpload io.ReadAll's it into one contiguous []byte;
+//  3. DecryptWith returns the plaintext archive as a second []byte — AES-GCM
+//     authenticates the whole ciphertext before releasing any plaintext, so this
+//     copy cannot be streamed away without changing the stored format to a
+//     framed/chunked one;
+//  4. the restore then writes that plaintext back to a temp file, again on tmpfs.
+//
+// The old 512 MiB ceiling therefore implied a ~2 GiB peak on a container with no
+// memory limit at all. 128 MiB keeps the peak around 550 MiB, matching the bounds
+// docker-compose.yml now sets (/tmp size-capped, container memory limited), and
+// still leaves orders of magnitude over a real dump of this single-tenant
+// database including its bytea receipt photos. It is not a hard ceiling on what
+// can be restored either way: `treckrr restore <file>` reads from BACKUP_DIR and
+// never passes through this path.
+const maxBackupUpload = 128 << 20 // 128 MiB
 
 // limitBody wraps the request body in an http.MaxBytesReader so a client cannot
 // stream an unbounded payload into ParseForm (and onward into bcrypt, decoding,

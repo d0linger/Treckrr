@@ -5,6 +5,18 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    # Bounds, not tuning. Without them a runaway query or a fork storm is a HOST
+    # incident, not a container one — on a single-box deployment that takes the
+    # app and the reverse proxy down with it. Measured idle footprint is ~31 MiB
+    # / 7 processes, so these are ~30x headroom; raise them if you give Postgres a
+    # bigger shared_buffers. No CPU limit on purpose: the core count of the target
+    # host is unknown here, and CPU starvation is recoverable while an OOM during
+    # a write is not. Add `cpus: '2.0'` under limits if you want one.
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          pids: 256
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-treckrr}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-treckrr-db-password-change-me}
@@ -29,10 +41,30 @@ services:
     # nothing to disk (state is in Postgres, logs go to stdout), so the root
     # filesystem is read-only with a small tmpfs for /tmp.
     read_only: true
+    # SIZE-CAPPED on purpose. /tmp is where net/http spills a multipart upload
+    # past its in-memory threshold, and where the restore re-materializes the
+    # decrypted archive — and a tmpfs is RAM. Uncapped, an upload writes its way
+    # into host memory; capped, it fails with a clean ENOSPC instead. 320m holds
+    # two copies of a maxBackupUpload-sized dump (2 x 128 MiB) plus slack.
     tmpfs:
-      - /tmp
+      - /tmp:size=320m,mode=1777
     security_opt:
       - no-new-privileges:true
+    # A static Go binary running as uid 10001 and binding 8080 (>1024) needs no
+    # capabilities at all; neither do the pg_dump/pg_restore it shells out to.
+    cap_drop:
+      - ALL
+    # See the note on the db service. Idle footprint is ~15 MiB; the ceiling is
+    # set by the restore path, whose worst case is ~4x the uploaded dump (tmpfs
+    # spill + ReadAll + decrypted copy + tmpfs rewrite) — with maxBackupUpload at
+    # 128 MiB that peaks near 550 MiB, so 768M leaves real headroom. Note the
+    # tmpfs above is charged to THIS limit, which is why the two are sized
+    # together.
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          pids: 128
     depends_on:
       db:
         condition: service_healthy
