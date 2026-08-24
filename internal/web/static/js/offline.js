@@ -52,13 +52,29 @@
 	function uuid() { return crypto.randomUUID ? crypto.randomUUID() : (Date.now() + "-" + Math.random().toString(16).slice(2)); }
 	function csrf() { var i = document.querySelector('input[name="csrf_token"]'); return i ? i.value : ""; }
 
+	// The queue lives in origin-wide IndexedDB, not per user. On a shared browser
+	// profile that meant a booking queued offline by one user was replayed — and
+	// audited — under whoever happened to be logged in next. Stamping the owner at
+	// queue time and matching it at flush time keeps each queue with its author.
+	function currentUser() {
+		var m = document.querySelector('meta[name="user-id"]');
+		return m && m.content ? m.content : "";
+	}
+	// Items queued before this existed carry no owner; the current user flushes
+	// them, as before. The window is small — the queue only survives while offline.
+	function ownedByCurrentUser(item) {
+		return !item.user || item.user === currentUser();
+	}
+
 	function badge(n) {
 		var el = document.querySelector("[data-offline-badge]");
 		if (!el) return;
 		el.textContent = n ? (n + " offline") : "";
 		el.hidden = !n;
 	}
-	function refreshBadge() { all().then(function (a) { badge(a.length); }); }
+	function refreshBadge() {
+		all().then(function (a) { badge(a.filter(ownedByCurrentUser).length); });
+	}
 
 	function toast(msg) {
 		var t = document.createElement("div");
@@ -73,7 +89,8 @@
 	function flush() {
 		if (flushing || !navigator.onLine) return;
 		flushing = true;
-		all().then(function (items) {
+		all().then(function (all_items) {
+			var items = all_items.filter(ownedByCurrentUser);
 			if (!items.length) return;
 			var token = csrf();
 			return items.reduce(function (p, item) {
@@ -120,7 +137,7 @@
 			var data = {};
 			new FormData(form).forEach(function (v, key) { if (key !== "csrf_token") data[String(key)] = v; });
 			var id = data.idempotency_key || uuid();
-			put({ id: id, data: data }).then(function () {
+			put({ id: id, data: data, user: currentUser() }).then(function () {
 				var kf = form.querySelector('[name="idempotency_key"]');
 				if (kf) kf.value = uuid();
 				refreshBadge();
