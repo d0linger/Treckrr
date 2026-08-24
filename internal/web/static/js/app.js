@@ -55,10 +55,10 @@
 		document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeAll(); });
 	})();
 
-	// Brand mark: keep a farm-machine symbol stable during normal use — F5 and
-	// in-app navigation reuse the stored pick — and re-roll it to a different one
-	// only on a hard reload (Ctrl+Shift+R), which bypasses the service worker so
-	// the page loads uncontrolled. The tab favicon is kept in sync below.
+	// Brand mark: one farm-machine symbol per browser session. It stays stable
+	// across reloads and in-app navigation within a tab (F5 never changes it), and
+	// a fresh one is chosen when the app is opened anew (new tab / reopened). The
+	// tab favicon is kept in sync below.
 	(function () {
 		var uses = document.querySelectorAll(".appbar__brand use, .auth__logo use");
 		var MARKS = [
@@ -68,18 +68,17 @@
 			"m-teleskoplader", "m-kreiselschwader"
 		];
 		var LKEY = "treckrr-mark";
-		// A hard reload bypasses the service worker → the page loads with no
-		// controller, whereas F5 and navigation stay controlled. Without a SW
-		// (e.g. a plain-HTTP IP origin) that signal is gone, so fall back to
-		// once-per-session — either way it never changes on a plain F5.
-		var hard;
-		if ("serviceWorker" in navigator) { try { hard = !navigator.serviceWorker.controller; } catch (x) { hard = true; } }
-		else { try { hard = !sessionStorage.getItem(LKEY + "-s"); sessionStorage.setItem(LKEY + "-s", "1"); } catch (x) { hard = true; } }
+		// A browsing session is marked in sessionStorage (survives F5 / navigation,
+		// cleared when the tab closes); localStorage holds the current pick plus the
+		// exclude-last, so a fresh session lands on a different mark than before.
+		var fresh;
+		try { fresh = !sessionStorage.getItem(LKEY + "-s"); if (fresh) sessionStorage.setItem(LKEY + "-s", "1"); }
+		catch (x) { fresh = true; }
 		var last = null;
 		try { last = localStorage.getItem(LKEY); } catch (e) { /* storage unavailable */ }
 		var pick;
-		if (last && MARKS.indexOf(last) >= 0 && !hard) {
-			pick = last; // controlled load (F5 / navigation): keep the stored mark
+		if (last && MARKS.indexOf(last) >= 0 && !fresh) {
+			pick = last; // same session: keep the stored mark (stable on F5 / navigation)
 		} else {
 			var pool = MARKS.filter(function (m) { return m !== last; });
 			pick = pool[Math.floor(Math.random() * pool.length)];

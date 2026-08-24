@@ -114,18 +114,17 @@
 			};
 		})()
 	};
-	// Keep the surface stable on F5 / in-app navigation and re-roll it only on a
-	// hard reload — which bypasses the service worker, so the page loads with no
-	// controller (the one signal that separates it from an F5). Without a SW
-	// (plain-HTTP IP origin) fall back to once-per-session. Excludes the previous
-	// pick so a hard reload always lands on a different surface, cycling through
-	// the three over successive hard reloads.
+	// One surface per browser session: stable across reloads / in-app navigation
+	// within a tab (never changes on F5), a fresh one when the app is opened anew
+	// (new tab / reopened). sessionStorage marks the session; localStorage keeps
+	// the current pick plus the exclude-last, so each new session lands on a
+	// different surface, cycling through the three.
 	function pickVariant(store, keys) {
-		var hard;
-		if ("serviceWorker" in navigator) { try { hard = !navigator.serviceWorker.controller; } catch (x) { hard = true; } }
-		else { try { hard = !sessionStorage.getItem(store + "-s"); sessionStorage.setItem(store + "-s", "1"); } catch (x) { hard = true; } }
+		var fresh;
+		try { fresh = !sessionStorage.getItem(store + "-s"); if (fresh) sessionStorage.setItem(store + "-s", "1"); }
+		catch (x) { fresh = true; }
 		var last = null; try { last = localStorage.getItem(store); } catch (e) { }
-		if (last && keys.indexOf(last) >= 0 && !hard) return last;
+		if (last && keys.indexOf(last) >= 0 && !fresh) return last;
 		var pool = keys.filter(function (k) { return k !== last; }); if (!pool.length) pool = keys;
 		var k = pool[Math.floor(Math.random() * pool.length)];
 		try { localStorage.setItem(store, k); } catch (e) { }
