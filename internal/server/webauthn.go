@@ -225,11 +225,23 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 		Password string `json:"password"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
+	// This is a password-verification endpoint like the 2FA and change-password
+	// steps, and it must be throttled like them: unbounded, a hijacked session
+	// could brute-force the account password here (and drive one bcrypt hash per
+	// request while doing it). Same per-user limiter, JSON-shaped response.
+	if s.logins.blocked(r.Context(), acctLimitKey(user.ID)) {
+		s.audit(r, "rate_limited", "user", user.ID, "zu viele Versuche bei sensibler Aktion")
+		http.Error(w, "Zu viele Versuche. Bitte in einigen Minuten erneut versuchen.",
+			http.StatusTooManyRequests)
+		return
+	}
 	if _, err := s.store.AuthenticateUser(r.Context(), user.Username, body.Password); err != nil {
+		s.sensitiveFail(r, user.ID)
 		s.audit(r, "passkey_add_denied", "user", user.ID, "Passwort falsch")
 		http.Error(w, "Passwort falsch.", http.StatusForbidden)
 		return
 	}
+	s.sensitiveReset(r, user.ID)
 	wu, err := s.webauthnUserFor(r, user)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
@@ -289,24 +301,31 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 // ---- login ceremony (discoverable / usernameless, public) ---------------
 
 func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {
-	// Rate-limit begin too: it now persists a server-side ceremony row (SH-03), so a
+	// Rate-limit begin too: it persists a server-side ceremony row (SH-03), so a
 	// blocked IP must not be able to spam ceremony creation.
-	if s.logins.blocked(r.Context(), s.clientIP(r)) {
-		s.auditLogin(r, "", "login_passkey_failed", "Rate-Limit: zu viele Fehlversuche")
-		http.Error(w, "Zu viele Fehlversuche. Bitte später erneut versuchen.", http.StatusTooManyRequests)
+	//
+	// Checking the login limiter alone was not enough: that counter only rises on
+	// FAILED logins, so a client that never attempts one never trips it and could
+	// create ceremony rows without bound. The ceremony limiter below charges every
+	// begin — successful ones included — because the row is created either way.
+	ip := s.clientIP(r)
+	if s.logins.blocked(r.Context(), ip) || s.logins.ceremonyBlocked(r.Context(), ip) {
+		s.auditLogin(r, "", "login_passkey_failed", "Rate-Limit: zu viele Anfragen")
+		http.Error(w, "Zu viele Anfragen. Bitte später erneut versuchen.", http.StatusTooManyRequests)
 		return
 	}
+	s.logins.ceremonyBegin(r.Context(), ip)
 	assertion, sd, err := s.wa.BeginDiscoverableLogin(
 		webauthn.WithUserVerification(protocol.VerificationRequired), // T-03
 	)
 	if err != nil {
 		slog.Warn("passkey login begin failed",
-			"ip", sanitizeLog(s.clientIP(r)), "reason", sanitizeLog(webauthnErrReason(err)))
+			"ip", sanitizeLog(ip), "reason", sanitizeLog(webauthnErrReason(err)))
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
 	if err := s.saveWASession(w, r, sd); err != nil {
-		slog.Error("passkey login begin: save ceremony failed", "ip", sanitizeLog(s.clientIP(r)), "err", sanitizeLog(err.Error()))
+		slog.Error("passkey login begin: save ceremony failed", "ip", sanitizeLog(ip), "err", sanitizeLog(err.Error()))
 		http.Error(w, "Interner Fehler", http.StatusInternalServerError)
 		return
 	}
@@ -366,6 +385,9 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.logins.reset(r.Context(), rlKey)
+	// A completed login clears the ceremony budget too, so a user who retried a
+	// few times doesn't carry the count into their next login.
+	s.logins.ceremonyReset(r.Context(), rlKey)
 	// Clone detection: go-webauthn flags a regressed signature counter (never
 	// for counter-less synced authenticators, which stay at 0). Surface it —
 	// login still proceeds, but an admin can see the signal in the trail.

@@ -124,3 +124,44 @@ func (l *loginLimiter) accountReset(ctx context.Context, username string) {
 		slog.Warn("ratelimit account reset failed", "err", sanitizeLog(err.Error()))
 	}
 }
+
+// Ceremony-creation throttle for the PUBLIC passkey login-begin route. It needs
+// its own key and threshold rather than reusing the per-IP login counter: that
+// counter is fed by failed password logins, so charging a *successful* begin to
+// it would let a handful of legitimate passkey clicks lock the user out of
+// password login entirely. This one only bounds how many server-side ceremony
+// rows an unauthenticated client can create — 30 in 15 minutes is far above any
+// real use (a login needs one) and far below a useful flood.
+const (
+	ceremonyMaxBegins = 30
+	ceremonyWindow    = 15 * time.Minute
+)
+
+func ceremonyKey(ip string) string { return "wabegin:" + ip }
+
+// ceremonyBlocked reports whether this IP has created too many ceremonies.
+func (l *loginLimiter) ceremonyBlocked(ctx context.Context, ip string) bool {
+	b, err := l.store.RateLimitBlocked(ctx, ceremonyKey(ip), ceremonyMaxBegins, ceremonyWindow)
+	if err != nil {
+		slog.Warn("ratelimit degraded (ceremony)", "err", sanitizeLog(err.Error()))
+		return false // fail open, but visibly
+	}
+	return b
+}
+
+// ceremonyBegin charges one ceremony creation to the IP. Unlike the login
+// limiter this counts SUCCESSFUL requests — the resource being protected is the
+// ceremony row itself, which a begin creates whether or not a login follows.
+func (l *loginLimiter) ceremonyBegin(ctx context.Context, ip string) {
+	if _, err := l.store.RateLimitFail(ctx, ceremonyKey(ip), ceremonyWindow); err != nil {
+		slog.Warn("ratelimit charge failed (ceremony)", "err", sanitizeLog(err.Error()))
+	}
+}
+
+// ceremonyReset clears the counter after a passkey login actually succeeds, so a
+// legitimate user who retried a few times doesn't carry the count forward.
+func (l *loginLimiter) ceremonyReset(ctx context.Context, ip string) {
+	if err := l.store.RateLimitReset(ctx, ceremonyKey(ip)); err != nil {
+		slog.Warn("ratelimit reset failed (ceremony)", "err", sanitizeLog(err.Error()))
+	}
+}
