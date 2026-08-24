@@ -1,4 +1,9 @@
 {{define "content"}}
+{{/* Decorative worksheet backdrop, painted by login-bg.js: the machine set
+     scattered as a favicon-like field, one of two sheets chosen at random per
+     load. Purely cosmetic — aria-hidden, pointer-inert, pinned behind the card.
+     Absent gracefully without JS (stays transparent, page background shows). */}}
+<canvas id="login-bg" class="login-bg" aria-hidden="true"></canvas>
 <div class="auth">
 	<div class="auth__brand">
 		<span class="auth__logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#m-traktor"/></svg></span>
@@ -56,3 +61,4 @@
 	</div>
 </div>
 {{end}}
+{{define "scripts"}}<script src="/static/js/login-bg.js?v={{.AssetVersion}}" defer></script>{{end}}
