@@ -313,7 +313,12 @@ func (s *Server) handleNeighborDelete(w http.ResponseWriter, r *http.Request) {
 			" und kann nicht gelöscht werden. Bitte stattdessen deaktivieren.")
 	} else {
 		before, _ := s.store.GetNeighbor(r.Context(), id)
-		if err := s.store.DeleteNeighbor(r.Context(), id); err != nil {
+		if err := s.store.DeleteNeighbor(r.Context(), id); errors.Is(err, store.ErrHasHistory) {
+			// The database refused: a record landed between the check above and the
+			// delete. Same message as the precheck, so the race is invisible.
+			s.setFlash(w, r, "error", "Nachbar hat inzwischen Buchungen oder Zahlungen "+
+				"und kann nicht gelöscht werden. Bitte stattdessen deaktivieren.")
+		} else if err != nil {
 			s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 		} else {
 			detail := ""

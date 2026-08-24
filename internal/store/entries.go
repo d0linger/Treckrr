@@ -119,6 +119,11 @@ func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note, addres
 // DeleteNeighbor removes a neighbor and their entries.
 func (s *Store) DeleteNeighbor(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM neighbors WHERE id=$1`, id)
+	// The handler's precheck and this delete are two statements; a row inserted
+	// between them is caught here instead, by the 0039 RESTRICT constraints.
+	if isForeignKeyViolation(err) {
+		return ErrHasHistory
+	}
 	return err
 }
 

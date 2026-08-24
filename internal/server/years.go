@@ -1,10 +1,12 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 func (s *Server) handleYears(w http.ResponseWriter, r *http.Request) {
@@ -252,7 +254,10 @@ func (s *Server) handleYearDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	label := s.yearLabel(r, id) // resolve before the row is gone
-	if err := s.store.DeleteBillingYear(r.Context(), id); err != nil {
+	if err := s.store.DeleteBillingYear(r.Context(), id); errors.Is(err, store.ErrHasHistory) {
+		s.setFlash(w, r, "error", "Jahr enthält inzwischen Buchungen oder Zahlungen "+
+			"und kann nicht gelöscht werden.")
+	} else if err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
 		s.audit(r, "delete", "year", id, "Jahr "+label)

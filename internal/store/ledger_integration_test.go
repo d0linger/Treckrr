@@ -44,12 +44,9 @@ func TestLedgerNetIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("neighbor: %v", err)
 	}
-	// defer runs before pool.Close(); deleting the year cascades to entries/ledger.
-	defer func() {
-		_, _ = pool.ExecContext(ctx, `DELETE FROM billing_years WHERE id=$1`, yearID)
-		_, _ = pool.ExecContext(ctx, `DELETE FROM price_bases WHERE id=$1`, baseID)
-		_, _ = pool.ExecContext(ctx, `DELETE FROM neighbors WHERE id=$1`, nid)
-	}()
+	// defer runs before pool.Close(). Children first: since 0039 the year no longer
+	// cascades to entries/ledger.
+	defer purgeRootsByID(t, ctx, pool, []int64{yearID}, []int64{nid}, []int64{baseID})
 	if err := st.AddNeighborToYear(ctx, yearID, nid); err != nil {
 		t.Fatalf("add neighbor: %v", err)
 	}

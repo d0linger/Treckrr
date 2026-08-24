@@ -48,11 +48,7 @@ func TestCarryForwardCascadeIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("neighbor: %v", err)
 	}
-	defer func() {
-		_, _ = pool.ExecContext(ctx, `DELETE FROM billing_years WHERE id IN ($1,$2)`, fromYear, toYear)
-		_, _ = pool.ExecContext(ctx, `DELETE FROM price_bases WHERE id=$1`, baseID)
-		_, _ = pool.ExecContext(ctx, `DELETE FROM neighbors WHERE id=$1`, nid)
-	}()
+	defer purgeRootsByID(t, ctx, pool, []int64{fromYear, toYear}, []int64{nid}, []int64{baseID})
 	for _, y := range []int64{fromYear, toYear} {
 		if err := st.AddNeighborToYear(ctx, y, nid); err != nil {
 			t.Fatalf("add neighbor to %d: %v", y, err)

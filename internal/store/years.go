@@ -88,6 +88,11 @@ func (s *Store) UpdateBillingYear(ctx context.Context, id, baseID int64, label s
 // DeleteBillingYear removes a billing year and its entries/memberships.
 func (s *Store) DeleteBillingYear(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM billing_years WHERE id=$1`, id)
+	// See DeleteNeighbor: the 0039 RESTRICT constraints close the window between
+	// the handler's precheck and this statement.
+	if isForeignKeyViolation(err) {
+		return ErrHasHistory
+	}
 	return err
 }
 
