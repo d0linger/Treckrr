@@ -707,6 +707,10 @@ type gzipResponseWriter struct {
 
 func (w *gzipResponseWriter) Write(b []byte) (int, error) { return w.gz.Write(b) }
 
+// Unwrap keeps the http.ResponseController chain intact through the gzip wrapper
+// (see statusRecorder.Unwrap).
+func (w *gzipResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 // setCookie wraps http.SetCookie to apply consistent security defaults (Secure,
 // HttpOnly, SameSite).
 func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, c *http.Cookie) { //nosec G124
@@ -729,6 +733,21 @@ func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, c *http.Cooki
 	}
 	c.Secure = s.cookieSecure(r)
 	http.SetCookie(w, c) //nosec G124 -- attributes are set dynamically or by caller
+}
+
+// extendWriteDeadline pushes this response's write deadline out so a long
+// download, dump or restore is not cut off by the server's global WriteTimeout
+// (30s). Call it BEFORE starting the slow work, not just before writing the body —
+// the deadline is absolute and the timeout clock is already running.
+//
+// It depends on every ResponseWriter wrapper in the chain implementing Unwrap();
+// a failure means one lost the chain, which would silently reinstate the global
+// timeout, so it is logged rather than discarded.
+func extendWriteDeadline(w http.ResponseWriter, d time.Duration) {
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d)); err != nil {
+		slog.Warn("could not extend the write deadline; the global WriteTimeout applies",
+			"err", sanitizeLog(err.Error()))
+	}
 }
 
 // sanitizeLog replaces control characters in request-derived values with a

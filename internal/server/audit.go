@@ -288,6 +288,14 @@ func (sr *statusRecorder) WriteHeader(code int) {
 	sr.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap exposes the wrapped writer to http.ResponseController, which walks the
+// chain via Unwrap() to reach the underlying *http.response. Without it every
+// SetWriteDeadline/Flush call made by a handler returns ErrNotSupported — silently,
+// where the error is discarded — and the server's short global WriteTimeout stays
+// in force. accessLog wraps EVERY request, so omitting this disabled the deadline
+// extensions in the backup handlers entirely.
+func (sr *statusRecorder) Unwrap() http.ResponseWriter { return sr.ResponseWriter }
+
 // noisyPath reports low-value requests that should not clutter the access log
 // (static assets, PWA plumbing, health checks, browser probes).
 func noisyPath(p string) bool {
