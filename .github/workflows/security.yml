@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.26.6"
+  GO_VERSION: "1.27.0"
 
 jobs:
   gosec:
@@ -31,7 +31,9 @@ jobs:
         env:
           # The gosec container bundles its own Go with GOTOOLCHAIN=local,
           # which can lag behind the go.mod requirement (e.g. 1.26.2 vs
-          # 1.26.6). Let it download the exact toolchain instead.
+          # 1.26.6). Let it download the exact toolchain instead. Track the
+          # go.mod language floor here, NOT the build toolchain — forcing a
+          # newer Go makes it emit export data this gosec build cannot read.
           GOTOOLCHAIN: go1.26.6
         with:
           # Excluded rules (all reviewed and intentional):

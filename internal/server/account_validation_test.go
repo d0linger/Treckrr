@@ -169,3 +169,33 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 		}
 	})
 }
+
+func TestHandleSessionRevokeValidation(t *testing.T) {
+	s := testAccountServer(t)
+
+	t.Run("oversized session token is rejected", func(t *testing.T) {
+		form := url.Values{}
+		form.Set("token", strings.Repeat("a", maxNameLen+1))
+
+		req := httptest.NewRequest(http.MethodPost, "/account/sessions/revoke", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rr := httptest.NewRecorder()
+
+		ctx := context.WithValue(req.Context(), userCtxKey, &models.User{
+			ID:       123,
+			Username: "testuser",
+			Role:     "editor",
+		})
+		req = req.WithContext(ctx)
+
+		s.handleSessionRevoke(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := rr.Header().Get("Set-Cookie")
+		if !strings.Contains(flashCookie, url.QueryEscape("Token darf höchstens 100 Zeichen lang sein.")) {
+			t.Errorf("expected over-limit token warning, got cookie: %q", flashCookie)
+		}
+	})
+}

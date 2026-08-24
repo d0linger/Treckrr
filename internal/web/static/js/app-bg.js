@@ -139,15 +139,43 @@
 	var stat = document.createElement("canvas"), sctx = stat.getContext("2d", { alpha: false });
 	var reduce = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
 	var W = 0, H = 0, pal = palette(), t = Math.random() * 8, prev = 0, running = false, raf = 0;
+	// Whether the visible canvas has ever been composed. The ground is only handed
+	// over to it (see markActive) once this is true.
+	var painted = false;
+
+	// The canvas sits at z-index:-1, which paints BELOW body's own background — so
+	// body's opaque --bg fill and its blueprint grid would hide it completely.
+	// Hand the paper over to the canvas only once we can actually paint: this
+	// class makes body transparent (see .has-appbg in app.css), while no-JS and
+	// no-2d-context keep the static CSS grid as the fallback.
+	function markActive() { try { document.documentElement.classList.add("has-appbg"); } catch (e) { } }
 
 	function size() {
 		var r = canvas.getBoundingClientRect();
 		if (!r.width || !r.height) return false;
 		W = r.width; H = r.height;
-		canvas.width = stat.width = Math.round(W * DPR);
-		canvas.height = stat.height = Math.round(H * DPR);
-		sctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-		v.build(sctx, W, H, pal);
+		var cw = Math.round(W * DPR), ch = Math.round(H * DPR);
+		// Assigning canvas.width/height runs "set bitmap dimensions", which clears
+		// the bitmap — and for an {alpha:false} context it clears to OPAQUE BLACK —
+		// even when the value is unchanged. So only touch it on a real size change
+		// (that also skips a full rebuild per ResizeObserver tick).
+		var resized = cw !== canvas.width || ch !== canvas.height;
+		if (resized) {
+			canvas.width = stat.width = cw;
+			canvas.height = stat.height = ch;
+		}
+		// Repaint whenever the bitmap was just cleared, and also when nothing has
+		// ever been painted: a first layout of exactly the default bitmap size
+		// (300x150 at DPR 1) leaves `resized` false, and skipping the paint there
+		// would hand the ground over to a canvas still in its opaque-black
+		// initial state.
+		if (resized || !painted) {
+			sctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+			v.build(sctx, W, H, pal);
+			compose(0);
+			painted = true;
+		}
+		markActive(); // unreachable until painted === true
 		return true;
 	}
 	function compose(dt) {
@@ -165,10 +193,14 @@
 	function retheme() { pal = palette(); if (W) { v.build(sctx, W, H, pal); if (!running) compose(0); } }
 
 	v.reset();
-	if (size()) { if (reduce.matches) compose(0); else start(); }
+	// size() paints the first frame itself, so a hidden load (background tab,
+	// session restore, prerender) never sits on an unpainted canvas. start() is
+	// idempotent, and the resize paths call it too so a first size() that failed
+	// (canvas not laid out yet) still gets the loop going once it succeeds.
+	if (size() && !reduce.matches) start();
 
-	if (window.ResizeObserver) new ResizeObserver(function () { if (size() && !running) compose(0); }).observe(canvas);
-	else window.addEventListener("resize", function () { if (size() && !running) compose(0); });
+	if (window.ResizeObserver) new ResizeObserver(function () { if (size() && !reduce.matches) start(); }).observe(canvas);
+	else window.addEventListener("resize", function () { if (size() && !reduce.matches) start(); });
 	document.addEventListener("visibilitychange", function () { if (document.hidden) stop(); else start(); });
 	if (reduce.addEventListener) reduce.addEventListener("change", function () { if (reduce.matches) { stop(); compose(0); } else start(); });
 	var dark = window.matchMedia ? matchMedia("(prefers-color-scheme: dark)") : null;

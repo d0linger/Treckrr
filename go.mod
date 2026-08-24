@@ -1,11 +1,16 @@
 module github.com/d0linger/treckrr
 
+// The LANGUAGE floor, not the toolchain. Keep it at the oldest Go the code
+// actually needs: prebuilt analyzers (CodeQL's autobuilder, gosec, golangci-lint)
+// ship their own Go with GOTOOLCHAIN=local and cannot download a newer one, so
+// raising this floor breaks them for no benefit. The toolchain that builds,
+// tests and ships is pinned separately (Dockerfile, Makefile, CI GO_VERSION).
 go 1.26.6
 
 require (
 	github.com/go-webauthn/webauthn v0.17.4
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/minio/minio-go/v7 v7.2.1
+	github.com/minio/minio-go/v7 v7.3.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shopspring/decimal v1.4.0
 	github.com/signintech/gopdf v0.38.0

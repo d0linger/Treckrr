@@ -770,8 +770,15 @@
 						cv.width = w * scale; cv.height = h * scale;
 						var ctx = cv.getContext("2d");
 						ctx.scale(scale, scale);
+						// Ground for the exported PNG. On authenticated pages the backdrop
+						// canvas owns the ground and body is transparent (.has-appbg in
+						// app.css), so fall through to <html>, which still carries --bg —
+						// otherwise a Nachtschicht Beleg would export on white. Plain
+						// white stays the last resort.
+						var opaqueBg = function (c) { return c && c !== "transparent" && !/rgba?\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/.test(c); };
 						var bg = getComputedStyle(document.body).backgroundColor;
-						if (!bg || bg === "transparent" || /rgba?\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/.test(bg)) bg = "#fff";
+						if (!opaqueBg(bg)) bg = getComputedStyle(document.documentElement).backgroundColor;
+						if (!opaqueBg(bg)) bg = "#fff";
 						ctx.fillStyle = bg;
 						ctx.fillRect(0, 0, w, h);
 						ctx.drawImage(img, 0, 0);

@@ -281,10 +281,21 @@ func (s *Server) handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
+	token := r.FormValue("token")
+	if s.tooLong(w, r, "Token", token, maxNameLen) {
+		redirect(w, r, "/profile")
+		return
+	}
 	user := userFromCtx(r)
-	if err := s.store.DeleteSessionForUser(r.Context(), user.ID, r.FormValue("token")); err != nil {
+	// A DELETE that matches nothing is not an error, so distinguish it explicitly:
+	// reporting "beendet" (and writing an append-only audit record) for a session
+	// that was already gone would misstate what happened.
+	switch deleted, err := s.store.DeleteSessionForUser(r.Context(), user.ID, token); {
+	case err != nil:
 		s.setFlash(w, r, "error", "Sitzung konnte nicht beendet werden.")
-	} else {
+	case !deleted:
+		s.setFlash(w, r, "info", "Diese Sitzung ist bereits beendet.")
+	default:
 		s.audit(r, "session_revoke", "user", user.ID, "")
 		s.setFlash(w, r, "success", "Sitzung beendet.")
 	}
