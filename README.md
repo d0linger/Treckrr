@@ -12,7 +12,7 @@ receipt.
 
 [![CI](https://github.com/d0linger/Treckrr/actions/workflows/ci.yml/badge.svg)](https://github.com/d0linger/Treckrr/actions/workflows/ci.yml)
 [![Security](https://github.com/d0linger/Treckrr/actions/workflows/security.yml/badge.svg)](https://github.com/d0linger/Treckrr/actions/workflows/security.yml)
-![Go](https://img.shields.io/badge/Go-1.27%2B-00ADD8?logo=go&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)
 ![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -451,7 +451,7 @@ Thirty-six ordered, embedded migrations run automatically on startup.
 
 ## Development
 
-With local Go ≥ 1.27 and a reachable PostgreSQL:
+With local Go ≥ 1.26 and a reachable PostgreSQL:
 
 ```bash
 export DATABASE_URL="postgres://treckrr:treckrr@localhost:5432/treckrr?sslmode=disable"
