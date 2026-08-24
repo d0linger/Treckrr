@@ -55,10 +55,10 @@
 		document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeAll(); });
 	})();
 
-	// Brand mark: pick one farm-machine symbol and keep it — stable across
-	// refreshes and in-app navigation. It only changes when the stored mark is
-	// missing (e.g. the browser cache / site data was cleared), where a fresh
-	// random machine is chosen. The browser-tab favicon is kept in sync with it.
+	// Brand mark: keep a farm-machine symbol stable while navigating the app, and
+	// re-roll it to a different one on every page reload — so the mark and the tab
+	// favicon (kept in sync below) refresh on F5 / hard reload without flickering
+	// on every in-app click. The stored value is the current pick.
 	(function () {
 		var uses = document.querySelectorAll(".appbar__brand use, .auth__logo use");
 		var MARKS = [
@@ -68,10 +68,22 @@
 			"m-teleskoplader", "m-kreiselschwader"
 		];
 		var LKEY = "treckrr-mark";
-		var pick = null;
-		try { pick = localStorage.getItem(LKEY); } catch (e) { /* storage unavailable */ }
-		if (!pick || MARKS.indexOf(pick) < 0) {
-			pick = MARKS[Math.floor(Math.random() * MARKS.length)];
+		function isReload() {
+			try {
+				var n = performance.getEntriesByType && performance.getEntriesByType("navigation");
+				if (n && n.length) return n[0].type === "reload";
+				if (performance.navigation) return performance.navigation.type === 1;
+			} catch (x) {}
+			return true; // unknown → treat as reload so the mark still refreshes
+		}
+		var last = null;
+		try { last = localStorage.getItem(LKEY); } catch (e) { /* storage unavailable */ }
+		var pick;
+		if (last && MARKS.indexOf(last) >= 0 && !isReload()) {
+			pick = last; // stable across in-app navigation; only a reload re-rolls
+		} else {
+			var pool = MARKS.filter(function (m) { return m !== last; });
+			pick = pool[Math.floor(Math.random() * pool.length)];
 			try { localStorage.setItem(LKEY, pick); } catch (e) {}
 		}
 		uses.forEach(function (u) { u.setAttribute("href", "#" + pick); });

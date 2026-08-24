@@ -114,8 +114,27 @@
 			};
 		})()
 	};
+	// Keep the surface stable while navigating the app and re-roll it on a reload,
+	// so it refreshes on F5 / hard reload but not on every in-app click. Excludes
+	// the previous pick so the reload always lands on a different surface.
+	function isReload() {
+		try {
+			var n = performance.getEntriesByType && performance.getEntriesByType("navigation");
+			if (n && n.length) return n[0].type === "reload";
+			if (performance.navigation) return performance.navigation.type === 1;
+		} catch (x) { }
+		return true;
+	}
+	function pickVariant(store, keys) {
+		var last = null; try { last = localStorage.getItem(store); } catch (e) { }
+		if (last && keys.indexOf(last) >= 0 && !isReload()) return last;
+		var pool = keys.filter(function (k) { return k !== last; }); if (!pool.length) pool = keys;
+		var k = pool[Math.floor(Math.random() * pool.length)];
+		try { localStorage.setItem(store, k); } catch (e) { }
+		return k;
+	}
 	var KEYS = ["werkraster", "taglicht", "saatraster"];
-	var v = VARIANTS[KEYS[Math.floor(Math.random() * KEYS.length)]];
+	var v = VARIANTS[pickVariant("treckrr-appbg", KEYS)];
 
 	/* ---- driver: cached static layer + animated overlay ------------------ */
 	var DPR = Math.min(1.5, window.devicePixelRatio || 1);

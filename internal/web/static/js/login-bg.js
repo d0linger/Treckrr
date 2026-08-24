@@ -156,7 +156,26 @@
 
 	/* ---- driver ---------------------------------------------------------- */
 	var DPR = Math.min(1.75, window.devicePixelRatio || 1);
-	var draw = Math.random() < 0.5 ? graph : hatch; // one of two, chosen per load
+	// Keep the sheet stable while navigating (e.g. into the 2FA step) and re-roll
+	// it to the other one on a reload, so it refreshes on F5 / hard reload but not
+	// on every in-app navigation. Excludes the previous pick to guarantee a change.
+	function isReload() {
+		try {
+			var n = performance.getEntriesByType && performance.getEntriesByType("navigation");
+			if (n && n.length) return n[0].type === "reload";
+			if (performance.navigation) return performance.navigation.type === 1;
+		} catch (x) { }
+		return true;
+	}
+	function pickVariant(store, keys) {
+		var last = null; try { last = localStorage.getItem(store); } catch (e) { }
+		if (last && keys.indexOf(last) >= 0 && !isReload()) return last;
+		var pool = keys.filter(function (k) { return k !== last; }); if (!pool.length) pool = keys;
+		var k = pool[Math.floor(Math.random() * pool.length)];
+		try { localStorage.setItem(store, k); } catch (e) { }
+		return k;
+	}
+	var draw = pickVariant("treckrr-loginbg", ["graph", "hatch"]) === "graph" ? graph : hatch;
 	var seed = (Math.random() * 1e9) | 0;
 	var reduce = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
 	var W = 0, H = 0, items = [], pal = palette(), t = Math.random() * 4, prev = 0, running = false, raf = 0;
