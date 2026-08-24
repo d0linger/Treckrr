@@ -249,6 +249,13 @@ em { font-style: normal; color: var(--muted); }
 /* ---- Sticky top stack (app bar + year bar move together) -------------- */
 /* The top stack rides on the chassis — dark green-black iron in BOTH themes
    (the machine frame; a deliberate constant like the white appbar icons). */
+/* App-wide worksheet backdrop (app-bg.js paints it): opaque canvas pinned behind
+   all authenticated chrome. .main is transparent so it shows through in the
+   content gutters; the frosted topstack, the drawer and the opaque cards sit
+   above it. z-index:-1 keeps it above the body's own --bg — the safe fallback
+   shown when JS is off or the canvas context is unavailable. */
+.app-bg { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+
 .topstack {
 	position: sticky;
 	top: 0;
