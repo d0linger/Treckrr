@@ -254,7 +254,7 @@ em { font-style: normal; color: var(--muted); }
    content gutters; the frosted topstack, the drawer and the opaque cards sit
    above it. z-index:-1 keeps it above the body's own --bg — the safe fallback
    shown when JS is off or the canvas context is unavailable. */
-.app-bg { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+.app-bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
 
 .topstack {
 	position: sticky;
