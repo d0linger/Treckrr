@@ -156,20 +156,17 @@
 
 	/* ---- driver ---------------------------------------------------------- */
 	var DPR = Math.min(1.75, window.devicePixelRatio || 1);
-	// Keep the sheet stable while navigating (e.g. into the 2FA step) and re-roll
-	// it to the other one on a reload, so it refreshes on F5 / hard reload but not
-	// on every in-app navigation. Excludes the previous pick to guarantee a change.
-	function isReload() {
-		try {
-			var n = performance.getEntriesByType && performance.getEntriesByType("navigation");
-			if (n && n.length) return n[0].type === "reload";
-			if (performance.navigation) return performance.navigation.type === 1;
-		} catch (x) { }
-		return true;
-	}
+	// Keep the sheet stable on F5 / in-app navigation and re-roll it to the other
+	// one only on a hard reload — which bypasses the service worker, so the page
+	// loads uncontrolled (the one signal that separates it from an F5). Without a
+	// SW (plain-HTTP IP origin) fall back to once-per-session. Excludes the last
+	// pick so a change always lands on the other sheet.
 	function pickVariant(store, keys) {
+		var hard;
+		if ("serviceWorker" in navigator) { try { hard = !navigator.serviceWorker.controller; } catch (x) { hard = true; } }
+		else { try { hard = !sessionStorage.getItem(store + "-s"); sessionStorage.setItem(store + "-s", "1"); } catch (x) { hard = true; } }
 		var last = null; try { last = localStorage.getItem(store); } catch (e) { }
-		if (last && keys.indexOf(last) >= 0 && !isReload()) return last;
+		if (last && keys.indexOf(last) >= 0 && !hard) return last;
 		var pool = keys.filter(function (k) { return k !== last; }); if (!pool.length) pool = keys;
 		var k = pool[Math.floor(Math.random() * pool.length)];
 		try { localStorage.setItem(store, k); } catch (e) { }

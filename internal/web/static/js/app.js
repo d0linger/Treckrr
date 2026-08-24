@@ -55,10 +55,10 @@
 		document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeAll(); });
 	})();
 
-	// Brand mark: keep a farm-machine symbol stable while navigating the app, and
-	// re-roll it to a different one on every page reload — so the mark and the tab
-	// favicon (kept in sync below) refresh on F5 / hard reload without flickering
-	// on every in-app click. The stored value is the current pick.
+	// Brand mark: keep a farm-machine symbol stable during normal use — F5 and
+	// in-app navigation reuse the stored pick — and re-roll it to a different one
+	// only on a hard reload (Ctrl+Shift+R), which bypasses the service worker so
+	// the page loads uncontrolled. The tab favicon is kept in sync below.
 	(function () {
 		var uses = document.querySelectorAll(".appbar__brand use, .auth__logo use");
 		var MARKS = [
@@ -68,19 +68,18 @@
 			"m-teleskoplader", "m-kreiselschwader"
 		];
 		var LKEY = "treckrr-mark";
-		function isReload() {
-			try {
-				var n = performance.getEntriesByType && performance.getEntriesByType("navigation");
-				if (n && n.length) return n[0].type === "reload";
-				if (performance.navigation) return performance.navigation.type === 1;
-			} catch (x) {}
-			return true; // unknown → treat as reload so the mark still refreshes
-		}
+		// A hard reload bypasses the service worker → the page loads with no
+		// controller, whereas F5 and navigation stay controlled. Without a SW
+		// (e.g. a plain-HTTP IP origin) that signal is gone, so fall back to
+		// once-per-session — either way it never changes on a plain F5.
+		var hard;
+		if ("serviceWorker" in navigator) { try { hard = !navigator.serviceWorker.controller; } catch (x) { hard = true; } }
+		else { try { hard = !sessionStorage.getItem(LKEY + "-s"); sessionStorage.setItem(LKEY + "-s", "1"); } catch (x) { hard = true; } }
 		var last = null;
 		try { last = localStorage.getItem(LKEY); } catch (e) { /* storage unavailable */ }
 		var pick;
-		if (last && MARKS.indexOf(last) >= 0 && !isReload()) {
-			pick = last; // stable across in-app navigation; only a reload re-rolls
+		if (last && MARKS.indexOf(last) >= 0 && !hard) {
+			pick = last; // controlled load (F5 / navigation): keep the stored mark
 		} else {
 			var pool = MARKS.filter(function (m) { return m !== last; });
 			pick = pool[Math.floor(Math.random() * pool.length)];
