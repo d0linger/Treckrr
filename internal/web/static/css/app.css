@@ -260,8 +260,9 @@ em { font-style: normal; color: var(--muted); }
 /* App-wide worksheet backdrop (app-bg.js paints it): opaque canvas pinned behind
    all authenticated chrome. .main is transparent so it shows through in the
    content gutters; the frosted topstack, the drawer and the opaque cards sit
-   above it. z-index:-1 keeps it above the body's own --bg — the safe fallback
-   shown when JS is off or the canvas context is unavailable. */
+   above it. z-index:-1 puts it BELOW body's own background — see the .has-appbg
+   rule further up, which is what makes the canvas visible at all; without JS the
+   class is never set and the static CSS grid stays as the ground. */
 .app-bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
 
 .topstack {
@@ -1505,6 +1506,10 @@ span.paychip { cursor: default; }
 /* ---- Print: drop the app chrome so a page (e.g. recovery codes, a Beleg)
    prints as a clean document. ------------------------------------------- */
 @media print {
+	/* The backdrop canvas is replaced CONTENT, not a CSS background, so it prints
+	   even with "background graphics" off — a full-bleed --bg rectangle behind the
+	   document. Paper is the ground when printing. */
+	.app-bg, .login-bg { display: none !important; }
 	.appbar, .yearbar, .tabbar, .drawer, .drawer__scrim, .toast, .fab, .skip { display: none !important; }
 	.no-print { display: none !important; }
 	.main { max-width: none; padding: 0; }
@@ -1870,6 +1875,7 @@ span.paychip { cursor: default; }
 .statement-head { margin-bottom: .3rem; }
 .statement-head__meta { color: var(--muted); font-size: .82rem; }
 @media print {
+	.app-bg, .login-bg { display: none !important; } /* see the print block above */
 	.appbar, .tabbar, .drawer, .drawer__scrim, .no-print { display: none !important; }
 	.print-only { display: block; }
 	body { background: #fff; }

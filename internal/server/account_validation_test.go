@@ -177,7 +177,7 @@ func TestHandleSessionRevokeValidation(t *testing.T) {
 		form := url.Values{}
 		form.Set("token", strings.Repeat("a", maxNameLen+1))
 
-		req := httptest.NewRequest(http.MethodPost, "/account/session/revoke", strings.NewReader(form.Encode()))
+		req := httptest.NewRequest(http.MethodPost, "/account/sessions/revoke", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rr := httptest.NewRecorder()
 

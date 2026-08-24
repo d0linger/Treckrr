@@ -496,10 +496,22 @@ func (s *Store) DeleteUserSessionsExcept(ctx context.Context, userID int64, keep
 // identifier is the stored token hash (as surfaced by ListSessionsForUser and
 // posted back from the profile page), so it is matched as-is — never a raw
 // token. Scoped by userID, so a user can only revoke their own sessions.
-func (s *Store) DeleteSessionForUser(ctx context.Context, userID int64, tokenHash string) error {
-	_, err := s.db.ExecContext(ctx,
+//
+// Reports whether a row was actually deleted: a stale profile tab can post the
+// hash of a session that already expired or was revoked elsewhere, and a DELETE
+// matching nothing is not an error. Callers must not report success (or write an
+// audit record) on a no-op.
+func (s *Store) DeleteSessionForUser(ctx context.Context, userID int64, tokenHash string) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
 		`DELETE FROM sessions WHERE user_id=$1 AND token=$2`, userID, tokenHash)
-	return err
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // DeleteSession removes a session (logout). token is the raw cookie value.
