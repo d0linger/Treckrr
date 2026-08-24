@@ -138,7 +138,10 @@
 	var DPR = Math.min(1.5, window.devicePixelRatio || 1);
 	var stat = document.createElement("canvas"), sctx = stat.getContext("2d", { alpha: false });
 	var reduce = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
-	var W = 0, H = 0, pal = palette(), t = Math.random() * 8, prev = 0, running = false, raf = 0;
+	// t is read off the wall clock rather than a random phase, so the travelling
+	// light / sun / drill picks up where the previous page left it instead of
+	// jumping on a reload that deliberately kept the same surface.
+	var W = 0, H = 0, pal = palette(), t = Date.now() / 1000, prev = 0, running = false, raf = 0;
 	// Whether the visible canvas has ever been composed. The ground is only handed
 	// over to it (see markActive) once this is true.
 	var painted = false;

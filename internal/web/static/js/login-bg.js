@@ -156,26 +156,46 @@
 
 	/* ---- driver ---------------------------------------------------------- */
 	var DPR = Math.min(1.75, window.devicePixelRatio || 1);
-	// Keep the sheet stable on F5 / in-app navigation and re-roll it to the other
-	// one only on a hard reload — which bypasses the service worker, so the page
-	// loads uncontrolled (the one signal that separates it from an F5). Without a
-	// SW (plain-HTTP IP origin) fall back to once-per-session. Excludes the last
-	// pick so a change always lands on the other sheet.
+	// A hard reload bypasses the service worker, so the page loads uncontrolled —
+	// the one signal that separates it from an F5. Without a SW (plain-HTTP IP
+	// origin) fall back to once-per-session. Computed ONCE: the sheet and the icon
+	// scatter have to agree on what counts as a hard load, and the sessionStorage
+	// fallback is a one-shot marker a second caller would already find set.
+	var HARD = (function () {
+		if ("serviceWorker" in navigator) { try { return !navigator.serviceWorker.controller; } catch (x) { return true; } }
+		try {
+			var fresh = !sessionStorage.getItem("treckrr-loginbg-s");
+			if (fresh) sessionStorage.setItem("treckrr-loginbg-s", "1");
+			return fresh;
+		} catch (x) { return true; }
+	})();
+	// Sheet: stable on F5 / in-app navigation, re-rolled on a hard reload. Excludes
+	// the last pick so a change always lands on the other sheet.
 	function pickVariant(store, keys) {
-		var hard;
-		if ("serviceWorker" in navigator) { try { hard = !navigator.serviceWorker.controller; } catch (x) { hard = true; } }
-		else { try { hard = !sessionStorage.getItem(store + "-s"); sessionStorage.setItem(store + "-s", "1"); } catch (x) { hard = true; } }
 		var last = null; try { last = localStorage.getItem(store); } catch (e) { }
-		if (last && keys.indexOf(last) >= 0 && !hard) return last;
+		if (last && keys.indexOf(last) >= 0 && !HARD) return last;
 		var pool = keys.filter(function (k) { return k !== last; }); if (!pool.length) pool = keys;
 		var k = pool[Math.floor(Math.random() * pool.length)];
 		try { localStorage.setItem(store, k); } catch (e) { }
 		return k;
 	}
+	// Scatter seed: decides which glyph lands where, at what size and angle. It has
+	// to follow the same rule as the sheet — a fresh seed per load would rearrange
+	// every icon on a plain F5 while the sheet itself stayed put.
+	function pickSeed(store) {
+		var s = null; try { s = localStorage.getItem(store); } catch (e) { }
+		if (!HARD && s && /^\d+$/.test(s)) return +s;
+		var n = (Math.random() * 1e9) | 0;
+		try { localStorage.setItem(store, String(n)); } catch (e) { }
+		return n;
+	}
 	var draw = pickVariant("treckrr-loginbg", ["graph", "hatch"]) === "graph" ? graph : hatch;
-	var seed = (Math.random() * 1e9) | 0;
+	var seed = pickSeed("treckrr-loginbg-seed");
 	var reduce = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
-	var W = 0, H = 0, items = [], pal = palette(), t = Math.random() * 4, prev = 0, running = false, raf = 0;
+	// The light band is a pure function of t, so read t off the wall clock instead
+	// of a random phase: a reload then picks the sweep up where the previous page
+	// left it, rather than jumping the bar to a new position.
+	var W = 0, H = 0, items = [], pal = palette(), t = Date.now() / 1000, prev = 0, running = false, raf = 0;
 
 	function resize() {
 		var r = canvas.getBoundingClientRect();
