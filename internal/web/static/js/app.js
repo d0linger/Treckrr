@@ -55,10 +55,10 @@
 		document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeAll(); });
 	})();
 
-	// Brand mark: pick one farm-machine symbol and keep it — stable across
-	// refreshes and in-app navigation. It only changes when the stored mark is
-	// missing (e.g. the browser cache / site data was cleared), where a fresh
-	// random machine is chosen. The browser-tab favicon is kept in sync with it.
+	// Brand mark: keep a farm-machine symbol stable during normal use — F5 and
+	// in-app navigation reuse the stored pick — and re-roll it to a different one
+	// only on a hard reload (Ctrl+Shift+R), which bypasses the service worker so
+	// the page loads uncontrolled. The tab favicon is kept in sync below.
 	(function () {
 		var uses = document.querySelectorAll(".appbar__brand use, .auth__logo use");
 		var MARKS = [
@@ -68,10 +68,21 @@
 			"m-teleskoplader", "m-kreiselschwader"
 		];
 		var LKEY = "treckrr-mark";
-		var pick = null;
-		try { pick = localStorage.getItem(LKEY); } catch (e) { /* storage unavailable */ }
-		if (!pick || MARKS.indexOf(pick) < 0) {
-			pick = MARKS[Math.floor(Math.random() * MARKS.length)];
+		// A hard reload bypasses the service worker → the page loads with no
+		// controller, whereas F5 and navigation stay controlled. Without a SW
+		// (e.g. a plain-HTTP IP origin) that signal is gone, so fall back to
+		// once-per-session — either way it never changes on a plain F5.
+		var hard;
+		if ("serviceWorker" in navigator) { try { hard = !navigator.serviceWorker.controller; } catch (x) { hard = true; } }
+		else { try { hard = !sessionStorage.getItem(LKEY + "-s"); sessionStorage.setItem(LKEY + "-s", "1"); } catch (x) { hard = true; } }
+		var last = null;
+		try { last = localStorage.getItem(LKEY); } catch (e) { /* storage unavailable */ }
+		var pick;
+		if (last && MARKS.indexOf(last) >= 0 && !hard) {
+			pick = last; // controlled load (F5 / navigation): keep the stored mark
+		} else {
+			var pool = MARKS.filter(function (m) { return m !== last; });
+			pick = pool[Math.floor(Math.random() * pool.length)];
 			try { localStorage.setItem(LKEY, pick); } catch (e) {}
 		}
 		uses.forEach(function (u) { u.setAttribute("href", "#" + pick); });
