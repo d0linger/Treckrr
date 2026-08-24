@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.26.6"
+  GO_VERSION: "1.27.0"
 
 jobs:
   gosec:
@@ -30,9 +30,9 @@ jobs:
         uses: securego/gosec@9e75c0576c9878035d4221392108d458abe10fc3 # v2.28.0
         env:
           # The gosec container bundles its own Go with GOTOOLCHAIN=local,
-          # which can lag behind the go.mod requirement (e.g. 1.26.2 vs
-          # 1.26.6). Let it download the exact toolchain instead.
-          GOTOOLCHAIN: go1.26.6
+          # which can lag behind the go.mod requirement (e.g. an older
+          # bundled Go vs 1.27.0). Let it download the exact toolchain instead.
+          GOTOOLCHAIN: go1.27.0
         with:
           # Excluded rules (all reviewed and intentional):
           #   G115 – int64→uint64 of a non-negative Unix time (TOTP counter); safe.
