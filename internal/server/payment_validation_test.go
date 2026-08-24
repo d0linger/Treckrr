@@ -121,8 +121,8 @@ func TestHandlePaymentAddValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Datum darf höchstens 50 Zeichen lang sein.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Datum darf höchstens 50 Zeichen lang sein.") {
 			t.Errorf("expected long date flash message, got cookie: %q", flashCookie)
 		}
 	})
@@ -144,8 +144,8 @@ func TestHandlePaymentAddValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Zahlung erfasst.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Zahlung erfasst.") {
 			t.Errorf("expected success flash message, got cookie: %q", flashCookie)
 		}
 	})

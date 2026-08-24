@@ -150,7 +150,7 @@ func (s *Server) saveWASession(w http.ResponseWriter, r *http.Request, sd *webau
 // server-side ceremony (single-use, server-expiring). A replayed or expired
 // ceremony returns false.
 func (s *Server) loadWASession(r *http.Request) (*webauthn.SessionData, bool) {
-	c, err := r.Cookie(waCookie)
+	c, err := s.cookie(r, waCookie)
 	if err != nil {
 		return nil, false
 	}

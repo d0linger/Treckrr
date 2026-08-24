@@ -193,8 +193,8 @@ func TestEmailSendFailureDoesNotLeakInternalErrors(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Versand fehlgeschlagen.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Versand fehlgeschlagen.") {
 			t.Errorf("expected generic error flash, got cookie: %q", flashCookie)
 		}
 		if strings.Contains(flashCookie, "connection") || strings.Contains(flashCookie, "refused") || strings.Contains(flashCookie, "dial") {
@@ -217,8 +217,8 @@ func TestEmailSendFailureDoesNotLeakInternalErrors(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Versand fehlgeschlagen.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Versand fehlgeschlagen.") {
 			t.Errorf("expected generic error flash, got cookie: %q", flashCookie)
 		}
 		if strings.Contains(flashCookie, "connection") || strings.Contains(flashCookie, "refused") || strings.Contains(flashCookie, "dial") {

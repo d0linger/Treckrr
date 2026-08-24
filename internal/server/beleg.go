@@ -441,7 +441,7 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["NeighborEmail"] = neighbor.Email
 	// A freshly minted share link arrives via the one-time cookie (never a URL);
 	// read-and-clear so the raw token is shown exactly once.
-	if c, err := r.Cookie(shareOnceCookie); err == nil && c.Value != "" && len(c.Value) <= maxBelegShareTokenLen {
+	if c, err := s.cookie(r, shareOnceCookie); err == nil && c.Value != "" && len(c.Value) <= maxBelegShareTokenLen {
 		s.setCookie(w, r, &http.Cookie{Name: shareOnceCookie, Value: "", MaxAge: -1})
 		data["ShareToken"] = c.Value
 		data["ShareURL"] = absoluteURL(r, "/s/beleg/"+c.Value)
@@ -555,7 +555,7 @@ func (s *Server) handleBelegShareCreate(w http.ResponseWriter, r *http.Request) 
 	hash := store.HashToken(raw)
 	expires := time.Now().Add(time.Duration(days) * 24 * time.Hour)
 	createdBy := ""
-	if u := s.currentUser(r); u != nil {
+	if u := userFromCtx(r); u != nil { // behind s.auth — no need to re-resolve the session
 		createdBy = u.Username
 	}
 	if _, err := s.store.CreateBelegShare(r.Context(), hash, neighbor.ID, year.ID, expires, createdBy); err != nil {
