@@ -236,13 +236,18 @@ func (s *Server) handleYearDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	count, err := s.store.CountEntriesForYear(r.Context(), id)
+	// Same cascade as the neighbour delete: billing_years is the FK parent of
+	// entries, payments, neighbor_ledger and invoices, so bookings alone are not a
+	// sufficient guard — a year holding only carry-forwards or payments would be
+	// erased with them.
+	blockers, err := s.store.YearDeleteBlockers(r.Context(), id)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	if count > 0 {
-		s.setFlash(w, r, "error", "Jahr enthält Buchungen und kann nicht gelöscht werden.")
+	if blockers.Any() {
+		s.setFlash(w, r, "error", "Jahr enthält "+describeDeleteBlockers(blockers)+
+			" und kann nicht gelöscht werden.")
 		redirect(w, r, "/years")
 		return
 	}

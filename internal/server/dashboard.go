@@ -298,15 +298,19 @@ func (s *Server) handleNeighborDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// Neighbors with bookings must not be deleted (would change history).
-	// They can be deactivated instead.
-	count, err := s.store.CountEntriesForNeighbor(r.Context(), id)
+	// A neighbour carrying ANY financial or tax-relevant history must not be
+	// deleted — the row is referenced ON DELETE CASCADE by entries, payments,
+	// neighbor_ledger and invoices alike, so a delete that only checked bookings
+	// silently destroyed carry-forwards, payments and festgeschriebene Rechnungen
+	// (§ 132 BAO keeps those for seven years). Deactivating is the way out.
+	blockers, err := s.store.NeighborDeleteBlockers(r.Context(), id)
 	if err != nil {
-		s.serverError(w, "neighbor delete: count entries", err)
+		s.serverError(w, "neighbor delete: count references", err)
 		return
 	}
-	if count > 0 {
-		s.setFlash(w, r, "error", "Nachbar hat Buchungen und kann nicht gelöscht werden. Bitte stattdessen deaktivieren.")
+	if blockers.Any() {
+		s.setFlash(w, r, "error", "Nachbar hat "+describeDeleteBlockers(blockers)+
+			" und kann nicht gelöscht werden. Bitte stattdessen deaktivieren.")
 	} else {
 		before, _ := s.store.GetNeighbor(r.Context(), id)
 		if err := s.store.DeleteNeighbor(r.Context(), id); err != nil {
