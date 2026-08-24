@@ -114,17 +114,22 @@
 			};
 		})()
 	};
-	// One surface per browser session: stable across reloads / in-app navigation
-	// within a tab (never changes on F5), a fresh one when the app is opened anew
-	// (new tab / reopened). sessionStorage marks the session; localStorage keeps
-	// the current pick plus the exclude-last, so each new session lands on a
-	// different surface, cycling through the three.
+	// Pick a surface on every full page reload (F5 or hard reload) and keep it
+	// across in-app navigation, so it visibly cycles when you reload but doesn't
+	// flip while you click around. Excludes the previous pick so a reload always
+	// lands on a different surface, cycling through the three. Reload vs navigation
+	// is told apart via the Navigation Timing API.
+	function isReload() {
+		try {
+			var n = performance.getEntriesByType && performance.getEntriesByType("navigation");
+			if (n && n.length) return n[0].type === "reload";
+			if (performance.navigation) return performance.navigation.type === 1;
+		} catch (x) { }
+		return true;
+	}
 	function pickVariant(store, keys) {
-		var fresh;
-		try { fresh = !sessionStorage.getItem(store + "-s"); if (fresh) sessionStorage.setItem(store + "-s", "1"); }
-		catch (x) { fresh = true; }
 		var last = null; try { last = localStorage.getItem(store); } catch (e) { }
-		if (last && keys.indexOf(last) >= 0 && !fresh) return last;
+		if (last && keys.indexOf(last) >= 0 && !isReload()) return last;
 		var pool = keys.filter(function (k) { return k !== last; }); if (!pool.length) pool = keys;
 		var k = pool[Math.floor(Math.random() * pool.length)];
 		try { localStorage.setItem(store, k); } catch (e) { }
