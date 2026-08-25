@@ -100,7 +100,7 @@ func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int
 		}
 		entries = kept
 	}
-	emMap, err := s.entryMachineIDs(ctx, yearID)
+	emMap, err := s.entryMachineIDs(ctx, yearID, neighborID)
 	if err != nil {
 		return nil, err
 	}
@@ -149,14 +149,25 @@ func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int
 	return out, nil
 }
 
-// entryMachineIDs returns machine ids per entry for a year (deterministic order).
-func (s *Store) entryMachineIDs(ctx context.Context, yearID int64) (map[int64][]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `
+// entryMachineIDs returns machine ids per entry (deterministic order), for a
+// whole year or for a single neighbor within it.
+//
+// The neighbor filter matters: RecalcPreview is called per-neighbor on every
+// neighbor-detail render, and without it this loaded the machine map for the
+// ENTIRE year to price one neighbor's bookings.
+func (s *Store) entryMachineIDs(ctx context.Context, yearID int64, neighborID *int64) (map[int64][]int64, error) {
+	query := `
 		SELECT em.entry_id, em.machine_id
 		  FROM entry_machines em
 		  JOIN entries e ON e.id = em.entry_id
-		 WHERE e.billing_year_id = $1 AND em.machine_id IS NOT NULL
-		 ORDER BY em.entry_id, em.machine_id`, yearID)
+		 WHERE e.billing_year_id = $1 AND em.machine_id IS NOT NULL`
+	args := []any{yearID}
+	if neighborID != nil {
+		query += ` AND e.neighbor_id = $2`
+		args = append(args, *neighborID)
+	}
+	query += ` ORDER BY em.entry_id, em.machine_id`
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +217,8 @@ func (s *Store) ApplyRecalc(ctx context.Context, yearID int64, neighborID *int64
 		// since then, abort rather than clobber the newer data.
 		res, e := tx.ExecContext(ctx, `
 			UPDATE entries SET hourly_rate=$1, cost=$2, tractor_label=$3, load_label=$4, machine_labels=$5,
-			       unit_price = CASE WHEN unit='h' THEN $1 ELSE unit_price END
+			       unit_price = CASE WHEN unit='h' THEN $1 ELSE unit_price END,
+			       priced_at = now()
 			 WHERE id=$6 AND hourly_rate=$7 AND cost=$8`,
 			r.NewRate, r.NewCost, r.TractorLabel, r.LoadLabel, r.MachineLabels, r.EntryID, r.OldRate, r.OldCost)
 		if e != nil {
@@ -227,4 +239,38 @@ func (s *Store) ApplyRecalc(ctx context.Context, yearID int64, neighborID *int64
 		return 0, oldTotal, newTotal, err
 	}
 	return updated, oldTotal, newTotal, nil
+}
+
+// CountPotentiallyStale reports how many non-voided bookings were priced BEFORE
+// the last change to their year's basis — an exact-negative gate for the
+// repricing badge (0040).
+//
+// Zero means nothing can be stale, so the caller may skip RecalcPreview entirely.
+// A non-zero result is an upper bound, not the answer: a basis edit to an unused
+// tractor marks bookings that would reprice to the same amount. Callers must run
+// the full preview to get the number they display — this only decides whether
+// that work is worth doing.
+func (s *Store) CountPotentiallyStale(ctx context.Context, yearID int64, neighborID *int64) (int, error) {
+	var n int
+	var err error
+	if neighborID != nil {
+		err = s.db.QueryRowContext(ctx, `
+			SELECT count(*)
+			  FROM entries e
+			  JOIN billing_years y ON y.id = e.billing_year_id
+			  JOIN price_bases  b ON b.id = y.base_id
+			 WHERE e.billing_year_id = $1 AND e.neighbor_id = $2
+			   AND NOT e.voided AND e.priced_at < b.items_updated_at`,
+			yearID, *neighborID).Scan(&n)
+	} else {
+		err = s.db.QueryRowContext(ctx, `
+			SELECT count(*)
+			  FROM entries e
+			  JOIN billing_years y ON y.id = e.billing_year_id
+			  JOIN price_bases  b ON b.id = y.base_id
+			 WHERE e.billing_year_id = $1
+			   AND NOT e.voided AND e.priced_at < b.items_updated_at`,
+			yearID).Scan(&n)
+	}
+	return n, err
 }

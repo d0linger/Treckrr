@@ -99,12 +99,19 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	data["OpenCost"] = openCost
 	data["OpenCount"] = openCount
 	// How many bookings are out of sync with the current basis (open years only).
+	// Gate first (0040): one indexed count answers "could anything be stale?".
+	// When it says no — the normal case, since the basis is rarely edited — the
+	// full repricing simulation is skipped entirely instead of running on every
+	// dashboard render. Only when it fires does the exact preview decide the
+	// number shown, so the displayed count keeps its meaning.
 	staleCount := 0
 	if !year.Completed() {
-		if rows, err := s.store.RecalcPreview(r.Context(), year.ID, nil); err == nil {
-			for _, ro := range rows {
-				if ro.Changed {
-					staleCount++
+		if maybe, err := s.store.CountPotentiallyStale(r.Context(), year.ID, nil); err == nil && maybe > 0 {
+			if rows, err := s.store.RecalcPreview(r.Context(), year.ID, nil); err == nil {
+				for _, ro := range rows {
+					if ro.Changed {
+						staleCount++
+					}
 				}
 			}
 		}
