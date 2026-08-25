@@ -280,6 +280,25 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 	} else if !errors.Is(err, ErrNotFound) {
 		return models.Invoice{}, err
 	}
+	// Build and validate the snapshot BEFORE opening the transaction. It reads
+	// through the pool (GetCompany/GetNeighbor/NeighborTotal/ListEntries all do),
+	// and doing that while already holding a transaction's connection means each
+	// in-flight issuance occupies two of the pool's ten — enough concurrent
+	// issuances would then all wait on a connection none of them will release.
+	//
+	// Nothing is lost by moving it out: the reads are not part of the transaction
+	// either way, so under READ COMMITTED they see the same committed rows. The
+	// § 11 backstop still validates the exact content that gets persisted, and the
+	// re-check under the lock below still prevents double issuance. The only cost
+	// is that a request which loses that race has built a snapshot it discards.
+	content, err := s.BuildInvoiceContent(ctx, yearID, neighborID)
+	if err != nil {
+		return models.Invoice{}, err
+	}
+	if len(content.MissingMandatory()) > 0 {
+		return models.Invoice{}, ErrInvoiceIncomplete
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return models.Invoice{}, err
@@ -297,16 +316,6 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 		return iv, tx.Commit()
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return models.Invoice{}, err
-	}
-	// Build the snapshot under the lock and validate the exact content we are about
-	// to persist against § 11 — a store-side backstop, so incomplete content can
-	// never be frozen even if a caller bypasses the handler's checklist gate.
-	content, err := s.BuildInvoiceContent(ctx, yearID, neighborID)
-	if err != nil {
-		return models.Invoice{}, err
-	}
-	if len(content.MissingMandatory()) > 0 {
-		return models.Invoice{}, ErrInvoiceIncomplete
 	}
 	// Next sequence = highest existing invoice suffix + 1 (robust to gaps). Only
 	// numeric suffixes of kind='invoice' are counted, so storno/gutschrift

@@ -20,6 +20,8 @@ const (
 	// DATABASE_URL rather than as its own variable, which is why it slipped past
 	// the placeholder checks above — but a publicly known database password is
 	// the same class of problem as a known admin password.
+	// #nosec G101 -- this is the published placeholder the check below REJECTS,
+	// not a credential the application ever uses.
 	placeholderDBPassword = "treckrr-db-password-change-me"
 )
 

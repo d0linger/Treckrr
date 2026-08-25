@@ -14,29 +14,29 @@ func TestWithTimeouts(t *testing.T) {
 	}{
 		{
 			name: "adds both guards to a plain URL DSN",
-			in:   "postgres://u:p@db:5432/treckrr?sslmode=disable",
+			in:   "postgres://db:5432/treckrr?sslmode=disable",
 			want: []string{"statement_timeout=30s", "idle_in_transaction_session_timeout=60s", "sslmode=disable"},
 		},
 		{
 			name: "keeps an operator's own statement_timeout",
-			in:   "postgres://u:p@db:5432/treckrr?statement_timeout=5s",
+			in:   "postgres://db:5432/treckrr?statement_timeout=5s",
 			want: []string{"statement_timeout=5s"},
 		},
 		{
 			name: "postgresql:// scheme is handled too",
-			in:   "postgresql://u:p@db:5432/treckrr",
+			in:   "postgresql://db:5432/treckrr",
 			want: []string{"statement_timeout=30s"},
 		},
 		{
 			// libpq keyword/value form: not a URL, so leave it alone rather than
 			// mangling a DSN that works.
 			name: "keyword/value DSN passes through untouched",
-			in:   "host=db user=treckrr password=x dbname=treckrr sslmode=disable",
+			in:   "host=db user=treckrr dbname=treckrr sslmode=disable",
 			same: true,
 		},
 		{
 			name: "unknown scheme passes through untouched",
-			in:   "mysql://u:p@db:3306/treckrr",
+			in:   "mysql://db:3306/treckrr",
 			same: true,
 		},
 	}

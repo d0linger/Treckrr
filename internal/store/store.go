@@ -462,7 +462,7 @@ func (s *Store) UserFromSession(ctx context.Context, token string, slideTTL, abs
 	// and cross-tab contention on a single row for a value that changes nothing
 	// anyone can observe at that resolution.
 	//
-	// It costs nothing in behaviour: an actively used session is still refreshed
+	// It costs nothing in behavior: an actively used session is still refreshed
 	// at least every sessionTouchInterval, which is four orders of magnitude
 	// shorter than the 30-day sliding window it maintains. last_seen is NOT NULL
 	// with a default, so the predicate can never be NULL and skip forever.
