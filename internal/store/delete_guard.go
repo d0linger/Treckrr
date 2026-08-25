@@ -41,11 +41,19 @@ type DeleteBlockers struct {
 	Payments int
 	Ledger   int
 	Invoices int
+	// Sends counts beleg_sends rows. It needs its own entry rather than folding
+	// into Invoices because the two are not equivalent: handleBelegMarkSent
+	// records a send with no invoice check at all, so a "manuell versendet" mark
+	// can exist for a neighbor that was never invoiced. 0039 makes beleg_sends
+	// RESTRICT, so without counting it the database would refuse a delete the
+	// precheck had just declared fine — the unexplained failure this type exists
+	// to prevent.
+	Sends int
 }
 
 // Any reports whether anything at all would be destroyed.
 func (b DeleteBlockers) Any() bool {
-	return b.Entries > 0 || b.Payments > 0 || b.Ledger > 0 || b.Invoices > 0
+	return b.Entries > 0 || b.Payments > 0 || b.Ledger > 0 || b.Invoices > 0 || b.Sends > 0
 }
 
 // NeighborDeleteBlockers counts what a DELETE of the neighbor would hit, across
@@ -63,8 +71,9 @@ func (s *Store) NeighborDeleteBlockers(ctx context.Context, neighborID int64) (D
 		SELECT (SELECT count(*) FROM entries         WHERE neighbor_id = $1),
 		       (SELECT count(*) FROM payments        WHERE neighbor_id = $1),
 		       (SELECT count(*) FROM neighbor_ledger WHERE neighbor_id = $1),
-		       (SELECT count(*) FROM invoices        WHERE neighbor_id = $1)`,
-		neighborID).Scan(&b.Entries, &b.Payments, &b.Ledger, &b.Invoices)
+		       (SELECT count(*) FROM invoices        WHERE neighbor_id = $1),
+		       (SELECT count(*) FROM beleg_sends     WHERE neighbor_id = $1)`,
+		neighborID).Scan(&b.Entries, &b.Payments, &b.Ledger, &b.Invoices, &b.Sends)
 	return b, err
 }
 
@@ -75,7 +84,8 @@ func (s *Store) YearDeleteBlockers(ctx context.Context, yearID int64) (DeleteBlo
 		SELECT (SELECT count(*) FROM entries         WHERE billing_year_id = $1),
 		       (SELECT count(*) FROM payments        WHERE billing_year_id = $1),
 		       (SELECT count(*) FROM neighbor_ledger WHERE billing_year_id = $1),
-		       (SELECT count(*) FROM invoices        WHERE billing_year_id = $1)`,
-		yearID).Scan(&b.Entries, &b.Payments, &b.Ledger, &b.Invoices)
+		       (SELECT count(*) FROM invoices        WHERE billing_year_id = $1),
+		       (SELECT count(*) FROM beleg_sends     WHERE billing_year_id = $1)`,
+		yearID).Scan(&b.Entries, &b.Payments, &b.Ledger, &b.Invoices, &b.Sends)
 	return b, err
 }

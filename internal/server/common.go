@@ -96,5 +96,6 @@ func describeDeleteBlockers(b store.DeleteBlockers) string {
 	add(b.Payments, "Zahlung", "Zahlungen")
 	add(b.Ledger, "Ledger-Position", "Ledger-Positionen")
 	add(b.Invoices, "Rechnung", "Rechnungen")
+	add(b.Sends, "Versandvermerk", "Versandvermerke")
 	return strings.Join(parts, ", ")
 }

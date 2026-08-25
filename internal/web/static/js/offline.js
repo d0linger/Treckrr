@@ -60,10 +60,15 @@
 		var m = document.querySelector('meta[name="user-id"]');
 		return m && m.content ? m.content : "";
 	}
-	// Items queued before this existed carry no owner; the current user flushes
-	// them, as before. The window is small — the queue only survives while offline.
+	// Strict ownership. An item with no owner stamp is QUARANTINED: it stays in the
+	// queue but is never replayed and never counted, because there is no honest way
+	// to decide whose booking it is. Letting the current user flush it — the earlier
+	// transitional behaviour — reintroduces exactly the misattribution this owner
+	// stamp exists to prevent, and the window is not as small as it looks: an item
+	// that keeps failing to send (401, 5xx) lingers indefinitely, not just while the
+	// device is offline. Quarantining keeps the data rather than dropping it.
 	function ownedByCurrentUser(item) {
-		return !item.user || item.user === currentUser();
+		return !!item.user && item.user === currentUser();
 	}
 
 	function badge(n) {
@@ -91,6 +96,11 @@
 		flushing = true;
 		all().then(function (all_items) {
 			var items = all_items.filter(ownedByCurrentUser);
+			var orphans = all_items.length - items.length;
+			if (orphans > 0 && window.console && console.warn) {
+				console.warn("treckrr: " + orphans + " offline booking(s) without an owner are " +
+					"held back and will not be sent automatically.");
+			}
 			if (!items.length) return;
 			var token = csrf();
 			return items.reduce(function (p, item) {

@@ -28,10 +28,23 @@ func TestWithTimeouts(t *testing.T) {
 			want: []string{"statement_timeout=30s"},
 		},
 		{
-			// libpq keyword/value form: not a URL, so leave it alone rather than
-			// mangling a DSN that works.
-			name: "keyword/value DSN passes through untouched",
+			name: "keyword/value DSN gets both defaults",
 			in:   "host=db user=treckrr dbname=treckrr sslmode=disable",
+			want: []string{
+				"host=db", "user=treckrr", "sslmode=disable",
+				"statement_timeout=30s", "idle_in_transaction_session_timeout=60s",
+			},
+		},
+		{
+			name: "keyword/value DSN keeps an operator's own value",
+			in:   "host=db user=treckrr statement_timeout=5s",
+			want: []string{"statement_timeout=5s", "idle_in_transaction_session_timeout=60s"},
+		},
+		{
+			// Unparseable by either route: pass it through rather than mangling a
+			// DSN the driver might still accept.
+			name: "garbage passes through untouched",
+			in:   "=not a dsn=",
 			same: true,
 		},
 		{

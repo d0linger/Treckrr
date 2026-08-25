@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver
 )
 
@@ -39,24 +40,47 @@ const (
 	idleInTransactionTimeout = "60s"
 )
 
-// withTimeouts adds the server-side timeouts to a URL-form DSN unless the
-// operator already set them. Anything it cannot parse is passed through
-// untouched rather than rejected — a working deployment must not fail to boot
-// because of a hardening default.
+// withTimeouts adds the server-side timeouts unless the operator already set
+// them, for BOTH DSN forms libpq accepts: the URL form used everywhere in this
+// repository, and the keyword/value form ("host=… user=…") an operator may
+// legitimately supply. Handling only the first left the hardening silently
+// inactive for the second, which is the worst kind of default — one that looks
+// applied and is not.
+//
+// Anything it cannot parse is passed through untouched rather than rejected: a
+// hardening default must never stop a working deployment from booting.
 func withTimeouts(dsn string) string {
-	u, err := url.Parse(dsn)
-	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
+	if u, err := url.Parse(dsn); err == nil && u.Scheme != "" {
+		if u.Scheme != "postgres" && u.Scheme != "postgresql" {
+			return dsn // not a Postgres URL; leave it alone
+		}
+		q := u.Query()
+		if q.Get("statement_timeout") == "" {
+			q.Set("statement_timeout", statementTimeout)
+		}
+		if q.Get("idle_in_transaction_session_timeout") == "" {
+			q.Set("idle_in_transaction_session_timeout", idleInTransactionTimeout)
+		}
+		u.RawQuery = q.Encode()
+		return u.String()
+	}
+
+	// Keyword/value form. pgconn's own parser decides what is already set —
+	// scanning the string by hand would mis-read quoted values. Unknown keys land
+	// in RuntimeParams, which is exactly where these two belong, so appending them
+	// produces a DSN the driver accepts unchanged.
+	cfg, err := pgconn.ParseConfig(dsn)
+	if err != nil {
 		return dsn
 	}
-	q := u.Query()
-	if q.Get("statement_timeout") == "" {
-		q.Set("statement_timeout", statementTimeout)
+	out := dsn
+	if cfg.RuntimeParams["statement_timeout"] == "" {
+		out += " statement_timeout=" + statementTimeout
 	}
-	if q.Get("idle_in_transaction_session_timeout") == "" {
-		q.Set("idle_in_transaction_session_timeout", idleInTransactionTimeout)
+	if cfg.RuntimeParams["idle_in_transaction_session_timeout"] == "" {
+		out += " idle_in_transaction_session_timeout=" + idleInTransactionTimeout
 	}
-	u.RawQuery = q.Encode()
-	return u.String()
+	return out
 }
 
 // Connect opens a connection pool and waits until the database is reachable.

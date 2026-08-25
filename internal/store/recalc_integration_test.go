@@ -32,6 +32,9 @@ func TestRecalcIntegration(t *testing.T) {
 	}
 	st := store.New(pool, "test-encryption-secret")
 
+	// See carry_integration_test: static purge first, id-based purge on the way out.
+	purgeFixtures(t, ctx, pool, fixtures{Years: []int{2096}, NeighborNames: []string{"Recalc-Nachbar"}})
+
 	baseID, err := st.CreateEmptyBase(ctx, 2096, "Recalc-Basis")
 	if err != nil {
 		t.Fatalf("base: %v", err)

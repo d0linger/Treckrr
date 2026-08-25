@@ -97,30 +97,43 @@ func TestCeremonyLimiterIsAtomicUnderConcurrency(t *testing.T) {
 	const burst = 60 // twice the threshold, all at once
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	admitted := 0
+	admitted, failed := 0, 0
+	var firstErr error
 	for range burst {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			ok, err := lim.allowCeremonyBegin(ctx, ip)
+			mu.Lock()
+			defer mu.Unlock()
 			if err != nil {
-				return // a pool-contention error is a refusal, not an admission
+				// Recorded, not swallowed: silently counting an error as a refusal
+				// would let a run where every call failed still satisfy the upper
+				// bound below, so the assertion would pass while proving nothing.
+				failed++
+				if firstErr == nil {
+					firstErr = err
+				}
+				return
 			}
 			if ok {
-				mu.Lock()
 				admitted++
-				mu.Unlock()
 			}
 		}()
 	}
 	wg.Wait()
 
-	if admitted > ceremonyMaxBegins {
-		t.Fatalf("%d of %d concurrent begins admitted, threshold is %d — "+
-			"the limiter is not atomic", admitted, burst, ceremonyMaxBegins)
+	if failed > 0 {
+		t.Fatalf("%d of %d concurrent calls returned an error (first: %v); the "+
+			"admission count cannot be trusted", failed, burst, firstErr)
 	}
-	if admitted == 0 {
-		t.Fatalf("no request was admitted out of %d; the limiter is refusing everything", burst)
+
+	// With every call reaching the database, the count is not merely bounded — it
+	// is exact: the atomic upsert hands out distinct numbers, so precisely the
+	// first ceremonyMaxBegins are admitted.
+	if admitted != ceremonyMaxBegins {
+		t.Fatalf("%d of %d concurrent begins admitted, want exactly %d — "+
+			"the limiter is not atomic", admitted, burst, ceremonyMaxBegins)
 	}
 	t.Logf("admitted %d of %d concurrent begins (threshold %d)", admitted, burst, ceremonyMaxBegins)
 }

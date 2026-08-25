@@ -77,6 +77,22 @@ func TestPricingFreshnessGateIntegration(t *testing.T) {
 		t.Fatalf("entry: %v", err)
 	}
 
+	// A SECOND booking the coming basis edit does not touch: priced per unit, so it
+	// does not depend on the load level being changed. Without it this test had a
+	// single always-changing row and could not see that ApplyRecalc skipped
+	// unchanged rows entirely, leaving their priced_at stale forever.
+	if _, err := st.CreateEntry(ctx, &models.Entry{
+		NeighborID: nid, BillingYearID: yearID, Date: time.Now(), TaskLabel: "Pauschale",
+		Unit:       "pauschal",
+		Quantity:   decimal.RequireFromString("1"),
+		UnitPrice:  decimal.RequireFromString("50"),
+		Hours:      decimal.RequireFromString("0"),
+		HourlyRate: decimal.RequireFromString("0"),
+		Cost:       decimal.RequireFromString("50"),
+	}, nil); err != nil {
+		t.Fatalf("second entry: %v", err)
+	}
+
 	gate := func(who string) int {
 		t.Helper()
 		n, err := st.CountPotentiallyStale(ctx, yearID, nil)
@@ -96,12 +112,14 @@ func TestPricingFreshnessGateIntegration(t *testing.T) {
 	if err := st.UpdateLoadLevel(ctx, loadID, "mittel", decimal.RequireFromString("0.40"), 1); err != nil {
 		t.Fatalf("update load: %v", err)
 	}
-	if got := gate("after basis edit"); got != 1 {
+	// BOTH bookings were priced before the edit, so both count — the gate is an
+	// upper bound, not the answer.
+	if got := gate("after basis edit"); got != 2 {
 		t.Fatalf("gate = %d after editing the basis, want 1 — a wrongly-zero gate "+
 			"silently hides bookings that need recalculating", got)
 	}
-	if n, err := st.CountPotentiallyStale(ctx, yearID, &nid); err != nil || n != 1 {
-		t.Fatalf("per-neighbor gate = %d (err %v), want 1", n, err)
+	if n, err := st.CountPotentiallyStale(ctx, yearID, &nid); err != nil || n != 2 {
+		t.Fatalf("per-neighbor gate = %d (err %v), want 2", n, err)
 	}
 
 	// The exact simulation must agree, so the gate is not firing on noise.
@@ -126,6 +144,6 @@ func TestPricingFreshnessGateIntegration(t *testing.T) {
 	}
 	if got := gate("after recalc"); got != 0 {
 		t.Fatalf("gate = %d after applying the recalc, want 0 — priced_at was not "+
-			"restamped", got)
+			"restamped for the rows whose price did NOT change", got)
 	}
 }
