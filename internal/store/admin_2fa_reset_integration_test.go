@@ -17,7 +17,7 @@ import (
 //
 // The handler previously reset TOTP and cleared the recovery codes but left every
 // session alive. The usual reason to press that button is a compromised account
-// or a lost authenticator — and in the compromised case the old behaviour was
+// or a lost authenticator — and in the compromised case the old behavior was
 // worse than doing nothing: the attacker keeps the session AND the second factor
 // is now off.
 func TestResetTotpRevokesSessionsIntegration(t *testing.T) {
