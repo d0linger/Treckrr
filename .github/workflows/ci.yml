@@ -16,6 +16,25 @@ jobs:
   build-test:
     name: Build & Test
     runs-on: ubuntu-latest
+    # A Postgres service, because 27 test files skip themselves without
+    # TEST_DATABASE_URL. Without it the DB-backed suite — migrations, the
+    # append-only audit guard, the 0039 deletion constraints, money integrity,
+    # invoice numbering, the rate limiters — was green by OMISSION: those tests
+    # ran only when someone remembered to start a database by hand.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: treckrr
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: treckrr_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U treckrr"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://treckrr:test@localhost:5432/treckrr_test?sslmode=disable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -30,6 +49,16 @@ jobs:
         run: go mod verify
       - name: Vet
         run: go vet ./...
+      # Fails loudly if the service or the variable ever disappears again, rather
+      # than letting the DB-backed tests quietly skip.
+      - name: Verify the integration database is reachable
+        run: |
+          test -n "$TEST_DATABASE_URL" || { echo "TEST_DATABASE_URL is unset — DB tests would silently skip"; exit 1; }
+          for i in $(seq 1 30); do
+            pg_isready -h localhost -p 5432 -U treckrr && break
+            sleep 1
+          done
+          pg_isready -h localhost -p 5432 -U treckrr
       - name: Test
         run: go test -race -coverprofile=coverage.out ./...
       - name: Build
