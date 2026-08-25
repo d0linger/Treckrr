@@ -60,13 +60,18 @@ func TestResetTotpRevokesSessionsIntegration(t *testing.T) {
 		t.Fatalf("expected 2 live sessions, got %d (err %v)", len(sessions), err)
 	}
 
-	// What the handler does: disable the factor, clear recovery codes, revoke.
-	if err := st.SetTotp(ctx, uid, false, ""); err != nil {
+	// Exactly what the handler calls: one transactional operation.
+	if err := st.ResetTotpForUser(ctx, uid); err != nil {
 		t.Fatalf("reset totp: %v", err)
 	}
-	_ = st.ClearRecoveryCodes(ctx, uid)
-	if err := st.DeleteUserSessionsExcept(ctx, uid, ""); err != nil {
-		t.Fatalf("revoke sessions: %v", err)
+
+	// The factor really is off, not just the sessions gone.
+	u, err := st.GetUser(ctx, uid)
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if u.TotpEnabled {
+		t.Fatal("TOTP still enabled after the reset")
 	}
 
 	left, err := st.ListSessionsForUser(ctx, uid)

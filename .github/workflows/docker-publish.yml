@@ -54,10 +54,24 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Resolve dependencies
-        run: go mod tidy
+      - name: Download dependencies
+        run: go mod download
+      - name: Verify modules
+        run: go mod verify
       - name: Vet
         run: go vet ./...
+      # The same guard ci.yml carries, and it matters more here: this job decides
+      # whether an image is published. Without it, a Postgres service that failed
+      # to start would let every DB-backed test skip, the job would report green,
+      # and the image would ship on a verification that never ran.
+      - name: Verify the integration database is reachable
+        run: |
+          test -n "$TEST_DATABASE_URL" || { echo "TEST_DATABASE_URL is unset — DB tests would silently skip"; exit 1; }
+          for _ in $(seq 1 30); do
+            pg_isready -h localhost -p 5432 -U treckrr && break
+            sleep 1
+          done
+          pg_isready -h localhost -p 5432 -U treckrr
       - name: Test
         run: go test -race ./...
       - name: Build

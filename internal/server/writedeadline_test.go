@@ -30,9 +30,12 @@ var (
 func TestExtendWriteDeadlineThroughMiddleware(t *testing.T) {
 	s := &Server{cfg: &config.Config{SessionSecret: "test-secret-at-least-16"}}
 
-	var deadlineErr error
+	// Buffered channel rather than a shared variable: the handler runs on the
+	// server's goroutine, and relying on the HTTP round-trip to order the write
+	// against the test's read leaves the guarantee incidental rather than stated.
+	deadlineErrCh := make(chan error, 1)
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		deadlineErr = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
+		deadlineErrCh <- http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
 		_, _ = w.Write([]byte("ok"))
 	})
 
@@ -49,6 +52,12 @@ func TestExtendWriteDeadlineThroughMiddleware(t *testing.T) {
 		t.Fatalf("read body: %v", err)
 	}
 
+	var deadlineErr error
+	select {
+	case deadlineErr = <-deadlineErrCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler never reported a deadline result")
+	}
 	if deadlineErr != nil {
 		t.Fatalf("SetWriteDeadline through the middleware chain failed: %v "+
 			"(a ResponseWriter wrapper is missing Unwrap; the global WriteTimeout "+

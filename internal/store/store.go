@@ -543,3 +543,34 @@ func (s *Store) PurgeExpiredSessions(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= now()`)
 	return err
 }
+
+// ResetTotpForUser disables TOTP, discards the recovery codes and revokes every
+// session of the user — in ONE transaction.
+//
+// The three writes have to succeed or fail together. Done separately, a failure
+// after the first left the account in a state strictly worse than before the
+// admin pressed the button: the second factor switched off while the sessions it
+// was protecting stay alive. Since that button exists mainly for a compromised
+// account or a lost authenticator, a half-applied reset is the one outcome it
+// must never produce.
+func (s *Store) ResetTotpForUser(ctx context.Context, userID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE users SET totp_enabled=false, totp_secret='' WHERE id=$1`, userID); err != nil {
+		return fmt.Errorf("reset totp: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM totp_recovery_codes WHERE user_id=$1`, userID); err != nil {
+		return fmt.Errorf("reset totp: clear recovery codes: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM sessions WHERE user_id=$1`, userID); err != nil {
+		return fmt.Errorf("reset totp: revoke sessions: %w", err)
+	}
+	return tx.Commit()
+}

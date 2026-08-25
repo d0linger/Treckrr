@@ -43,10 +43,19 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Resolve dependencies
-        run: go mod tidy
+      # download, not tidy: `go mod tidy` REWRITES go.mod/go.sum, so a missing or
+      # wrong checksum is silently repaired instead of failing — the committed
+      # files would never actually be validated. Same reasoning as the Dockerfile.
+      - name: Download dependencies
+        run: go mod download
       - name: Verify modules
         run: go mod verify
+      # And prove the committed files are already tidy, rather than letting drift
+      # accumulate unnoticed. GO_VERSION is pinned exactly, so this is deterministic.
+      - name: Check go.mod/go.sum are tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
       - name: Vet
         run: go vet ./...
       # Fails loudly if the service or the variable ever disappears again, rather
@@ -54,7 +63,7 @@ jobs:
       - name: Verify the integration database is reachable
         run: |
           test -n "$TEST_DATABASE_URL" || { echo "TEST_DATABASE_URL is unset — DB tests would silently skip"; exit 1; }
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             pg_isready -h localhost -p 5432 -U treckrr && break
             sleep 1
           done
@@ -74,8 +83,8 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: ${{ env.GO_VERSION }}
-      - name: Ensure go.sum
-        run: go mod tidy
+      - name: Download dependencies
+        run: go mod download
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:

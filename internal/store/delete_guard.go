@@ -3,7 +3,8 @@ package store
 import (
 	"context"
 	"errors"
-	"strings"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // ErrHasHistory is returned when the database itself refuses to delete a row
@@ -12,11 +13,15 @@ import (
 // precheck produces, so the race between the two reads the same to the user.
 var ErrHasHistory = errors.New("record still referenced by financial history")
 
-// isForeignKeyViolation reports whether err is Postgres SQLSTATE 23503. It
-// matches on the code text rather than importing pgconn for one check, which
-// keeps the store free of a driver-specific dependency it otherwise avoids.
+// isForeignKeyViolation reports whether err is a Postgres foreign-key violation
+// (SQLSTATE 23503). It inspects the typed driver error rather than searching the
+// message text: a substring match would also fire on an unrelated error that
+// happens to contain those five digits, and would stop working if the wrapper
+// ever reformatted the message. pgconn ships inside the pgx module the driver
+// already comes from, so this adds no new dependency.
 func isForeignKeyViolation(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "23503")
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }
 
 // DeleteBlockers counts the money- and tax-relevant records that a cascading
