@@ -7,18 +7,69 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege by default. packages: write is granted ONLY to the job that
+# pushes — at workflow level it also applied to pull_request runs, which never
+# push and therefore never need it.
 permissions:
   contents: read
-  packages: write
 
 env:
+  # Kept in step with ci.yml's GO_VERSION.
+  GO_VERSION: "1.27.0"
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # Publication gate. This workflow is independent of ci.yml, so a push to main
+  # published an image whether or not the tests passed — the registry could end up
+  # ahead of anything that was ever verified, with only branch protection (a
+  # setting outside this repository) standing in the way.
+  #
+  # It re-runs the checks here rather than chaining on ci.yml via workflow_run, so
+  # a tag push and a manual dispatch are gated too, not only pushes to main. The
+  # Postgres service mirrors ci.yml so the DB-backed tests actually run instead of
+  # skipping themselves.
+  verify:
+    name: Verify (build, vet, test)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: treckrr
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: treckrr_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U treckrr"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://treckrr:test@localhost:5432/treckrr_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Resolve dependencies
+        run: go mod tidy
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race ./...
+      - name: Build
+        run: go build ./...
+
   build-push:
     name: Build & Push (linux/amd64, linux/arm64)
     runs-on: ubuntu-latest
+    needs: verify
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
