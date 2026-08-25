@@ -281,8 +281,19 @@ func (s *Server) handleUserResetTotp(w http.ResponseWriter, r *http.Request) {
 	}
 	// Best-effort: with the user's TOTP now reset, leftover recovery codes are inert.
 	_ = s.store.ClearRecoveryCodes(r.Context(), id)
-	s.audit(r, "2fa_reset", "user", id, "durch Admin ("+target.Username+")")
-	s.setFlash(w, r, "success", "2FA für "+target.Username+" zurückgesetzt. Der Benutzer kann es neu einrichten.")
+	// Terminate the target's sessions, exactly as the admin password reset does.
+	// The reason an admin resets someone's 2FA is usually that the account is
+	// compromised or the authenticator is lost — and leaving live sessions running
+	// makes the first case WORSE than before the reset: the attacker keeps the
+	// session and the second factor is now switched off. Auth is by session token,
+	// not by the second factor, so this is load-bearing and a failure must surface
+	// rather than be reported to the admin as success.
+	if err := s.store.DeleteUserSessionsExcept(r.Context(), id, ""); err != nil {
+		s.serverError(w, "2fa reset: revoke sessions", err)
+		return
+	}
+	s.audit(r, "2fa_reset", "user", id, "durch Admin ("+target.Username+"); Sitzungen beendet")
+	s.setFlash(w, r, "success", "2FA für "+target.Username+" zurückgesetzt und bestehende Sitzungen beendet. Der Benutzer kann es neu einrichten.")
 	redirect(w, r, "/admin/users")
 }
 
