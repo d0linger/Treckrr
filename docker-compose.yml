@@ -86,6 +86,19 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://treckrr:treckrr-db-password-change-me@db:5432/treckrr?sslmode=disable}
       SESSION_SECRET: ${SESSION_SECRET:-change-me-please-generate-a-random-value}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Reverse proxy. These were documented in .env.example but never projected
+      # into the container, so setting them had NO effect: the app fell back to
+      # TRUST_PROXY=false and ignored X-Forwarded-Proto (insecure cookies behind a
+      # TLS proxy), or — once enabled — trusted forwarded headers from any peer.
+      # With TRUST_PROXY=true, set TRUSTED_PROXIES to your proxy's address so a
+      # client that reaches the published port directly cannot forge its IP into
+      # the audit log and past the per-IP rate limits.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      # Data-at-rest key for TOTP secrets. Defaults to SESSION_SECRET; set it
+      # explicitly (to the OLD session secret) before rotating SESSION_SECRET,
+      # otherwise stored TOTP secrets become undecryptable.
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:-}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-admin-password}
       # Passkeys (WebAuthn). Must match the URL the browser uses. For production
@@ -125,8 +138,13 @@ services:
     # protects is not a backup (e.g. the S3 destination below).
     volumes:
       - backups:/backups
+    # HOST_BIND stays 0.0.0.0 so a proxy on ANOTHER host keeps working — changing
+    # the default would break exactly that deployment. Set HOST_BIND=127.0.0.1
+    # when the reverse proxy runs on this same host: the backend port is then
+    # unreachable from the network and forwarded-header spoofing is impossible by
+    # construction, rather than only bounded by TRUSTED_PROXIES.
     ports:
-      - "${HOST_PORT:-8080}:${APP_PORT:-8080}"
+      - "${HOST_BIND:-0.0.0.0}:${HOST_PORT:-8080}:${APP_PORT:-8080}"
 
   # Backups are now produced by the app itself (encrypted, AES-256-GCM):
   # on-demand from the admin Backup panel and on a schedule (cron, set in the panel).
