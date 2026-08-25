@@ -203,6 +203,13 @@ func (s *Store) CloneBase(ctx context.Context, srcBaseID int64, newYear int, nam
 		}
 		gs = append(gs, g)
 	}
+	// A driver error mid-iteration makes Next() return false, so the loop exits
+	// normally and the copy would commit a SILENTLY TRUNCATED set of gespanne.
+	// rows.Err() is the only way to tell "done" from "broke".
+	if err := grows.Err(); err != nil {
+		_ = grows.Close()
+		return 0, fmt.Errorf("copy gespanne: %w", err)
+	}
 	_ = grows.Close()
 
 	for _, g := range gs {
@@ -237,6 +244,12 @@ func (s *Store) CloneBase(ctx context.Context, srcBaseID int64, newYear int, nam
 				return 0, err
 			}
 			oldMachineIDs = append(oldMachineIDs, mid)
+		}
+		// Same reason as above: without this, a broken read silently drops machine
+		// assignments from the copied rig.
+		if err := mrows.Err(); err != nil {
+			_ = mrows.Close()
+			return 0, fmt.Errorf("copy gespann machines: %w", err)
 		}
 		_ = mrows.Close()
 		for _, oldM := range oldMachineIDs {
