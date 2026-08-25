@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
@@ -77,4 +78,24 @@ func (s *Server) baseIDFromForm(r *http.Request) int64 {
 // yearIDFromForm resolves the billing year id submitted with a form.
 func (s *Server) yearIDFromForm(r *http.Request) int64 {
 	return formInt64(r, "year_id")
+}
+
+// describeDeleteBlockers renders the blocking record counts as a German list for
+// the refusal message, so the operator learns WHAT stands in the way ("2
+// Zahlungen, 1 Rechnung") instead of only that deletion failed.
+func describeDeleteBlockers(b store.DeleteBlockers) string {
+	var parts []string
+	add := func(n int, one, many string) {
+		if n == 1 {
+			parts = append(parts, "1 "+one)
+		} else if n > 1 {
+			parts = append(parts, strconv.Itoa(n)+" "+many)
+		}
+	}
+	add(b.Entries, "Buchung", "Buchungen")
+	add(b.Payments, "Zahlung", "Zahlungen")
+	add(b.Ledger, "Ledger-Position", "Ledger-Positionen")
+	add(b.Invoices, "Rechnung", "Rechnungen")
+	add(b.Sends, "Versandvermerk", "Versandvermerke")
+	return strings.Join(parts, ", ")
 }

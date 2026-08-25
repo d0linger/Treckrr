@@ -73,10 +73,12 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	// was edited after they were booked). Marked in the table; offered for
 	// recalculation. Best-effort — a failure just omits the markers.
 	stale := map[int64]bool{}
-	if rows, err := s.store.RecalcPreview(r.Context(), year.ID, &neighbor.ID); err == nil {
-		for _, ro := range rows {
-			if ro.Changed {
-				stale[ro.EntryID] = true
+	if maybe, err := s.store.CountPotentiallyStale(r.Context(), year.ID, &neighbor.ID); err == nil && maybe > 0 {
+		if rows, err := s.store.RecalcPreview(r.Context(), year.ID, &neighbor.ID); err == nil {
+			for _, ro := range rows {
+				if ro.Changed {
+					stale[ro.EntryID] = true
+				}
 			}
 		}
 	}

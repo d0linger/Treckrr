@@ -231,6 +231,7 @@ func (s *Server) handleBackupRunScheduled(w http.ResponseWriter, r *http.Request
 		redirect(w, r, "/admin/backup")
 		return
 	}
+	extendWriteDeadline(w, 15*time.Minute)
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 	if err := s.backup.ManualVolume(ctx); err != nil {
@@ -257,9 +258,7 @@ func (s *Server) handleBackupS3Run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The upload can take a while; extend the write deadline for this response.
-	if rc := http.NewResponseController(w); rc != nil {
-		_ = rc.SetWriteDeadline(time.Now().Add(15 * time.Minute))
-	}
+	extendWriteDeadline(w, 15*time.Minute)
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
 	defer cancel()
 	name, err := s.backup.ManualS3(ctx)
@@ -379,6 +378,7 @@ func (s *Server) handleBackupS3File(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
+	extendWriteDeadline(w, 10*time.Minute)
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 	data, err := s.backup.S3Get(ctx, name)
@@ -408,6 +408,7 @@ func (s *Server) handleBackupFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
+	extendWriteDeadline(w, 10*time.Minute)
 	data, err := s.backup.Open(name)
 	if err != nil {
 		http.NotFound(w, r)
@@ -493,6 +494,9 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 		redirect(w, r, "/admin/backup")
 		return
 	}
+	// Reading a large upload, decrypting it and running pg_restore all happen
+	// inside this one response, well past the global 30s WriteTimeout.
+	extendWriteDeadline(w, 20*time.Minute)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		s.setFlash(w, r, "error", "Upload fehlgeschlagen (Datei zu groß?).")
 		redirect(w, r, "/admin/backup")
@@ -595,6 +599,10 @@ func (s *Server) handleBackupRun(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/backup")
 		return
 	}
+	// Before the dump, not after it: WriteTimeout is measured from the start of the
+	// request, so a 5-minute CreateEncrypted would already have blown it by the time
+	// a later extension ran.
+	extendWriteDeadline(w, 10*time.Minute)
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 	data, filename, err := s.backup.CreateEncrypted(ctx)
@@ -605,11 +613,6 @@ func (s *Server) handleBackupRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "backup_download", "backup", 0, filename+" · "+humanSize(int64(len(data))))
-	// The default server WriteTimeout is short; extend it for this one response so
-	// a larger dump can finish streaming.
-	if rc := http.NewResponseController(w); rc != nil {
-		_ = rc.SetWriteDeadline(time.Now().Add(5 * time.Minute))
-	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))

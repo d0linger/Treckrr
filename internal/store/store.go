@@ -17,6 +17,12 @@ import (
 	"github.com/d0linger/treckrr/internal/models"
 )
 
+// sessionTouchInterval is how stale a session row may get before a request
+// refreshes it. See UserFromSession for why this is throttled rather than done on
+// every request; the profile page shows last activity at a coarser resolution
+// than this anyway.
+const sessionTouchInterval = 5 * time.Minute
+
 // ErrNotFound is returned when a requested row does not exist.
 var ErrNotFound = errors.New("not found")
 
@@ -450,9 +456,21 @@ func (s *Store) UserFromSession(ctx context.Context, token string, slideTTL, abs
 	if err != nil {
 		return nil, err
 	}
+	// Throttled slide: only touch the row when it has not been touched recently.
+	// Refreshing on EVERY authenticated request meant one UPDATE per page view on
+	// the same hot row — WAL volume, a dead tuple each time for vacuum to collect,
+	// and cross-tab contention on a single row for a value that changes nothing
+	// anyone can observe at that resolution.
+	//
+	// It costs nothing in behavior: an actively used session is still refreshed
+	// at least every sessionTouchInterval, which is four orders of magnitude
+	// shorter than the 30-day sliding window it maintains. last_seen is NOT NULL
+	// with a default, so the predicate can never be NULL and skip forever.
 	_, _ = s.db.ExecContext(ctx,
-		`UPDATE sessions SET last_seen=now(), expires_at=now() + make_interval(secs => $2) WHERE token=$1`,
-		th, slideTTL.Seconds())
+		`UPDATE sessions
+		    SET last_seen=now(), expires_at=now() + make_interval(secs => $2)
+		  WHERE token=$1 AND last_seen < now() - make_interval(secs => $3)`,
+		th, slideTTL.Seconds(), sessionTouchInterval.Seconds())
 	return &u, nil
 }
 
@@ -524,4 +542,35 @@ func (s *Store) DeleteSession(ctx context.Context, token string) error {
 func (s *Store) PurgeExpiredSessions(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= now()`)
 	return err
+}
+
+// ResetTotpForUser disables TOTP, discards the recovery codes and revokes every
+// session of the user — in ONE transaction.
+//
+// The three writes have to succeed or fail together. Done separately, a failure
+// after the first left the account in a state strictly worse than before the
+// admin pressed the button: the second factor switched off while the sessions it
+// was protecting stay alive. Since that button exists mainly for a compromised
+// account or a lost authenticator, a half-applied reset is the one outcome it
+// must never produce.
+func (s *Store) ResetTotpForUser(ctx context.Context, userID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE users SET totp_enabled=false, totp_secret='' WHERE id=$1`, userID); err != nil {
+		return fmt.Errorf("reset totp: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM totp_recovery_codes WHERE user_id=$1`, userID); err != nil {
+		return fmt.Errorf("reset totp: clear recovery codes: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM sessions WHERE user_id=$1`, userID); err != nil {
+		return fmt.Errorf("reset totp: revoke sessions: %w", err)
+	}
+	return tx.Commit()
 }

@@ -137,8 +137,8 @@ func TestHandleNeighborCreateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Name darf nicht leer sein.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Name darf nicht leer sein.") {
 			t.Errorf("expected empty name flash message, got cookie: %q", flashCookie)
 		}
 	})
@@ -158,8 +158,8 @@ func TestHandleNeighborCreateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Name darf höchstens 100 Zeichen lang sein.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Name darf höchstens 100 Zeichen lang sein.") {
 			t.Errorf("expected long name flash message, got cookie: %q", flashCookie)
 		}
 	})
@@ -179,8 +179,8 @@ func TestHandleNeighborCreateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Notiz darf höchstens 500 Zeichen lang sein.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Notiz darf höchstens 500 Zeichen lang sein.") {
 			t.Errorf("expected long note flash message, got cookie: %q", flashCookie)
 		}
 	})
@@ -201,8 +201,8 @@ func TestHandleNeighborCreateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Nachbar angelegt.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Nachbar angelegt.") {
 			t.Errorf("expected success flash for boundary values, got cookie: %q", flashCookie)
 		}
 	})
@@ -221,8 +221,8 @@ func TestHandleNeighborCreateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Nachbar angelegt.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Nachbar angelegt.") {
 			t.Errorf("expected success flash message, got cookie: %q", flashCookie)
 		}
 	})
@@ -246,8 +246,8 @@ func TestHandleNeighborUpdateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Name darf nicht leer sein.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Name darf nicht leer sein.") {
 			t.Errorf("expected empty name flash message, got cookie: %q", flashCookie)
 		}
 	})
@@ -268,8 +268,8 @@ func TestHandleNeighborUpdateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Name darf höchstens 100 Zeichen lang sein.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Name darf höchstens 100 Zeichen lang sein.") {
 			t.Errorf("expected long name flash message, got cookie: %q", flashCookie)
 		}
 	})
@@ -290,8 +290,8 @@ func TestHandleNeighborUpdateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Notiz darf höchstens 500 Zeichen lang sein.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Notiz darf höchstens 500 Zeichen lang sein.") {
 			t.Errorf("expected long note flash message, got cookie: %q", flashCookie)
 		}
 	})
@@ -313,8 +313,8 @@ func TestHandleNeighborUpdateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Nachbar aktualisiert.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Nachbar aktualisiert.") {
 			t.Errorf("expected success flash for boundary values, got cookie: %q", flashCookie)
 		}
 	})
@@ -334,8 +334,8 @@ func TestHandleNeighborUpdateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Nachbar aktualisiert.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Nachbar aktualisiert.") {
 			t.Errorf("expected success flash message, got cookie: %q", flashCookie)
 		}
 	})

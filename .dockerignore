@@ -21,3 +21,8 @@ docker-compose.yml
 # node_modules also carries symlinks (e.g. .bin/*) that break the context transfer.
 node_modules/
 /e2e/
+
+# Local backup artifacts: never part of the image build context. They are
+# encrypted today, but an unencrypted dump dropped here would otherwise land in a
+# build-stage layer via `COPY . .` and sit in the build cache.
+/backups/

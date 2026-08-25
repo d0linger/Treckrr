@@ -42,6 +42,8 @@ type Server struct {
 	wa          *webauthn.WebAuthn
 	started     time.Time
 	maintenance atomic.Bool // set during a restore: the gate serves 503 for normal traffic
+	// photoSlots bounds concurrent image decodes; see maxConcurrentPhotoDecodes.
+	photoSlots chan struct{}
 }
 
 // New constructs a Server and parses templates.
@@ -65,7 +67,11 @@ func New(cfg *config.Config, st *store.Store, bk *backup.Service) (*Server, erro
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, store: st, backup: bk, templates: tpl, logins: newLoginLimiter(st), wa: wa, started: time.Now()}, nil
+	return &Server{
+		cfg: cfg, store: st, backup: bk, templates: tpl,
+		logins: newLoginLimiter(st), wa: wa, started: time.Now(),
+		photoSlots: make(chan struct{}, maxConcurrentPhotoDecodes),
+	}, nil
 }
 
 type ctxKey string
@@ -261,7 +267,16 @@ func (s *Server) Handler() http.Handler {
 
 	// securityHeaders wraps maintenanceGate so even the 503 maintenance page carries
 	// the nosniff/frame/CSP headers (the gate returns before inner handlers run).
-	return s.limitBody(s.accessLog(s.securityHeaders(s.maintenanceGate(s.csrf(mux)))))
+	// userCache is outermost so limitBody, auth/admin, the handler and accessLog all
+	// share ONE session resolution instead of repeating the SELECT+UPDATE.
+	return s.userCacheMW(s.limitBody(s.accessLog(s.securityHeaders(s.maintenanceGate(s.csrf(mux))))))
+}
+
+// userCacheMW installs the per-request session memo (see currentUser).
+func (s *Server) userCacheMW(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, withUserCache(r))
+	})
 }
 
 // setMaintenance toggles maintenance mode. While on, maintenanceGate serves 503
@@ -306,7 +321,26 @@ func isMaintenanceExempt(p string) bool {
 const maxRequestBody = 1 << 20 // 1 MiB
 // maxBackupUpload is the ceiling for restore uploads (a full encrypted dump);
 // the 1 MiB cap applies to every other route.
-const maxBackupUpload = 512 << 20 // 512 MiB
+//
+// Sizing note — an uploaded restore costs roughly FOUR times the file, all of it
+// in RAM on this deployment, so this number is not free:
+//  1. multipart spills the part past its in-memory threshold to /tmp, which is a
+//     tmpfs — i.e. RAM charged to the container;
+//  2. backupUpload io.ReadAll's it into one contiguous []byte;
+//  3. DecryptWith returns the plaintext archive as a second []byte — AES-GCM
+//     authenticates the whole ciphertext before releasing any plaintext, so this
+//     copy cannot be streamed away without changing the stored format to a
+//     framed/chunked one;
+//  4. the restore then writes that plaintext back to a temp file, again on tmpfs.
+//
+// The old 512 MiB ceiling therefore implied a ~2 GiB peak on a container with no
+// memory limit at all. 128 MiB keeps the peak around 550 MiB, matching the bounds
+// docker-compose.yml now sets (/tmp size-capped, container memory limited), and
+// still leaves orders of magnitude over a real dump of this single-tenant
+// database including its bytea receipt photos. It is not a hard ceiling on what
+// can be restored either way: `treckrr restore <file>` reads from BACKUP_DIR and
+// never passes through this path.
+const maxBackupUpload = 128 << 20 // 128 MiB
 
 // limitBody wraps the request body in an http.MaxBytesReader so a client cannot
 // stream an unbounded payload into ParseForm (and onward into bcrypt, decoding,
@@ -424,20 +458,63 @@ func (s *Server) admin(h http.HandlerFunc) http.Handler {
 	})
 }
 
-// currentUser resolves the session cookie to a user, or nil.
-// sessionCookieName returns the session cookie name, prefixed with __Host- when
-// the cookie is Secure (HTTPS). The prefix binds the cookie to Secure + Path=/ +
-// no Domain (browser-enforced), hardening it against subdomain injection. It is
-// omitted over plain HTTP (local dev), where browsers reject __Host- cookies.
-func (s *Server) sessionCookieName(r *http.Request) string {
-	if s.cookieSecure(r) {
-		return "__Host-" + sessionCookie
+// hostCookiePrefix binds a cookie to Secure + Path=/ + no Domain, enforced by the
+// browser. Its point here is that a sibling host under the same registrable domain
+// (e.g. another app on *.example.org) cannot overwrite the cookie — "cookie
+// tossing". Every Treckrr cookie already satisfies the prefix's requirements, so it
+// is applied to all of them, not just the session.
+const hostCookiePrefix = "__Host-"
+
+// cookieName returns a cookie's wire name: the base name prefixed with __Host-
+// when the cookie will be Secure (HTTPS). The prefix is omitted over plain HTTP
+// (local dev), where browsers reject __Host- cookies outright. Idempotent, so a
+// name that already carries the prefix is returned unchanged.
+func (s *Server) cookieName(r *http.Request, base string) string {
+	if s.cookieSecure(r) && !strings.HasPrefix(base, hostCookiePrefix) {
+		return hostCookiePrefix + base
 	}
-	return sessionCookie
+	return base
 }
 
+// cookie reads a request cookie by its BASE name, resolving the __Host- prefix the
+// same way setCookie applies it. Read cookies through this, never r.Cookie, so a
+// read can't miss a prefixed cookie (or vice versa).
+func (s *Server) cookie(r *http.Request, base string) (*http.Cookie, error) {
+	return r.Cookie(s.cookieName(r, base))
+}
+
+// currentUser resolves the session cookie to a user, or nil. The result is
+// memoized on the request context: auth/admin resolves the session, and accessLog
+// resolves it again after the handler — without memoization every authenticated
+// request would run the session SELECT *and* its sliding-expiry UPDATE twice.
 func (s *Server) currentUser(r *http.Request) *models.User {
-	c, err := r.Cookie(s.sessionCookieName(r))
+	if cached, ok := r.Context().Value(userCacheKey).(*userCache); ok {
+		if !cached.done {
+			cached.user, cached.done = s.resolveUser(r), true
+		}
+		return cached.user
+	}
+	return s.resolveUser(r)
+}
+
+// userCache memoizes one session resolution for the lifetime of a request. A nil
+// user is cached too (done), so an anonymous request doesn't re-query either.
+type userCache struct {
+	user *models.User
+	done bool
+}
+
+const userCacheKey ctxKey = "usercache"
+
+// withUserCache installs the per-request memo. It sits outermost so every later
+// currentUser call — limitBody, auth/admin, the handler, accessLog — shares one
+// resolution.
+func withUserCache(r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), userCacheKey, &userCache{}))
+}
+
+func (s *Server) resolveUser(r *http.Request) *models.User {
+	c, err := s.cookie(r, sessionCookie)
 	if err != nil || c.Value == "" {
 		return nil
 	}
@@ -452,10 +529,9 @@ func (s *Server) currentUser(r *http.Request) *models.User {
 // actively-used session keeps a live browser cookie in step with the rolling
 // server-side expiry (slid in UserFromSession).
 func (s *Server) refreshSessionCookie(w http.ResponseWriter, r *http.Request) {
-	name := s.sessionCookieName(r)
-	if c, err := r.Cookie(name); err == nil && c.Value != "" {
+	if c, err := s.cookie(r, sessionCookie); err == nil && c.Value != "" {
 		s.setCookie(w, r, &http.Cookie{
-			Name:   name,
+			Name:   sessionCookie,
 			Value:  c.Value,
 			MaxAge: int(sessionTTL.Seconds()),
 		})
@@ -637,12 +713,20 @@ type gzipResponseWriter struct {
 
 func (w *gzipResponseWriter) Write(b []byte) (int, error) { return w.gz.Write(b) }
 
+// Unwrap keeps the http.ResponseController chain intact through the gzip wrapper
+// (see statusRecorder.Unwrap).
+func (w *gzipResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 // setCookie wraps http.SetCookie to apply consistent security defaults (Secure,
 // HttpOnly, SameSite).
 func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, c *http.Cookie) { //nosec G124
 	if c.Path == "" {
 		c.Path = "/"
 	}
+	// Apply the __Host- prefix centrally (callers pass the base name), so a cookie
+	// cannot be added later that forgets it. Path=/ above and the absent Domain
+	// below satisfy the prefix's other two requirements.
+	c.Name = s.cookieName(r, c.Name)
 	// Default every cookie to HttpOnly; no client-side script reads a cookie
 	// (theme uses localStorage, CSRF a meta tag, the rest are server-side), so
 	// enforcing it centrally means a future cookie cannot accidentally omit it.
@@ -655,6 +739,21 @@ func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, c *http.Cooki
 	}
 	c.Secure = s.cookieSecure(r)
 	http.SetCookie(w, c) //nosec G124 -- attributes are set dynamically or by caller
+}
+
+// extendWriteDeadline pushes this response's write deadline out so a long
+// download, dump or restore is not cut off by the server's global WriteTimeout
+// (30s). Call it BEFORE starting the slow work, not just before writing the body —
+// the deadline is absolute and the timeout clock is already running.
+//
+// It depends on every ResponseWriter wrapper in the chain implementing Unwrap();
+// a failure means one lost the chain, which would silently reinstate the global
+// timeout, so it is logged rather than discarded.
+func extendWriteDeadline(w http.ResponseWriter, d time.Duration) {
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d)); err != nil {
+		slog.Warn("could not extend the write deadline; the global WriteTimeout applies",
+			"err", sanitizeLog(err.Error()))
+	}
 }
 
 // sanitizeLog replaces control characters in request-derived values with a

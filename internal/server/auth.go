@@ -25,6 +25,11 @@ const (
 )
 
 func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
+	// auth()/admin() mark every authenticated page no-store, but the login page is
+	// public and so was getting no Cache-Control at all — while carrying a CSRF
+	// token, a Set-Cookie and, at the second step, the fact that a valid password
+	// was just accepted. Nothing here may sit in a shared or on-disk cache.
+	w.Header().Set("Cache-Control", "no-store")
 	if s.currentUser(r) != nil {
 		redirect(w, r, "/")
 		return
@@ -35,9 +40,9 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
-	data := pageData{"Title": "Anmelden", "Theme": themeFromCookie(r), "CSRF": s.loginCSRFToken(w, r)}
+	data := pageData{"Title": "Anmelden", "Theme": s.themeFromCookie(r), "CSRF": s.loginCSRFToken(w, r)}
 	// If a valid pending-2FA cookie is present, show the second step instead.
-	if c, err := r.Cookie(pending2FACookie); err == nil {
+	if c, err := s.cookie(r, pending2FACookie); err == nil {
 		if _, ok := s.verifyPending2FA(c.Value); ok {
 			data["ShowTotp"] = true
 		}
@@ -133,7 +138,7 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
-	c, err := r.Cookie(pending2FACookie)
+	c, err := s.cookie(r, pending2FACookie)
 	if err != nil {
 		s.setFlash(w, r, "error", "Anmeldung abgelaufen. Bitte erneut anmelden.")
 		redirect(w, r, "/login")
@@ -226,7 +231,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 		return false
 	}
 	s.setCookie(w, r, &http.Cookie{
-		Name:   s.sessionCookieName(r),
+		Name:   sessionCookie,
 		Value:  token,
 		MaxAge: int(sessionTTL.Seconds()),
 	})
@@ -285,14 +290,14 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if u := s.currentUser(r); u != nil {
 		_ = s.store.AddAudit(r.Context(), &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r)) // best-effort audit line
 	}
-	if c, err := r.Cookie(s.sessionCookieName(r)); err == nil && c.Value != "" {
+	if c, err := s.cookie(r, sessionCookie); err == nil && c.Value != "" {
 		// Invalidate the server-side session, not just the cookie: if this fails the
 		// token stays valid server-side, so a captured token would still authenticate.
 		if err := s.store.DeleteSession(r.Context(), c.Value); err != nil {
 			slog.Error("logout: delete session failed", "err", sanitizeLog(err.Error()))
 		}
 	}
-	s.setCookie(w, r, &http.Cookie{Name: s.sessionCookieName(r), Value: "", MaxAge: -1})
+	s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
 	redirect(w, r, "/login")
 }
 
@@ -305,7 +310,7 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	// Sessions carry the stored token *hash*; hash the current cookie to match.
 	currentHash := ""
-	if c, err := r.Cookie(s.sessionCookieName(r)); err == nil {
+	if c, err := s.cookie(r, sessionCookie); err == nil {
 		currentHash = store.HashToken(c.Value)
 	}
 	for i := range sessions {

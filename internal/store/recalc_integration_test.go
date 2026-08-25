@@ -32,6 +32,9 @@ func TestRecalcIntegration(t *testing.T) {
 	}
 	st := store.New(pool, "test-encryption-secret")
 
+	// See carry_integration_test: static purge first, id-based purge on the way out.
+	purgeFixtures(t, ctx, pool, fixtures{Years: []int{2096}, NeighborNames: []string{"Recalc-Nachbar"}})
+
 	baseID, err := st.CreateEmptyBase(ctx, 2096, "Recalc-Basis")
 	if err != nil {
 		t.Fatalf("base: %v", err)
@@ -44,20 +47,7 @@ func TestRecalcIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("neighbor: %v", err)
 	}
-	defer func() {
-		for _, del := range []struct {
-			sql string
-			id  int64
-		}{
-			{`DELETE FROM billing_years WHERE id=$1`, yearID}, // cascades to entries
-			{`DELETE FROM price_bases WHERE id=$1`, baseID},
-			{`DELETE FROM neighbors WHERE id=$1`, nid},
-		} {
-			if _, err := pool.ExecContext(ctx, del.sql, del.id); err != nil {
-				t.Errorf("cleanup %q: %v", del.sql, err)
-			}
-		}
-	}()
+	defer purgeRootsByID(t, ctx, pool, []int64{yearID}, []int64{nid}, []int64{baseID})
 	if err := st.AddNeighborToYear(ctx, yearID, nid); err != nil {
 		t.Fatalf("add neighbor: %v", err)
 	}

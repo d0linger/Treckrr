@@ -47,6 +47,13 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 	}
 	st := store.New(pool, "test-encryption-secret")
 
+	f := fixtures{
+		Years:         []int{2085, 2086, 2087, 2088, 2091, 2092, 2093, 2094, 2095},
+		NeighborNames: []string{"Florian 2085", "Florian 2086", "Florian 2087", "Florian 2088", "Florian 2091", "Florian 2092", "Florian 2093", "Florian 2094", "Florian 2095", "Bernd 2095"},
+	}
+	purgeFixtures(t, ctx, pool, f)
+	defer purgeFixtures(t, ctx, pool, f)
+
 	setup := func(t *testing.T, yr int, taxMode string, rate string) (yearID, nid int64, name string) {
 		t.Helper()
 		baseID, err := st.CreateEmptyBase(ctx, yr, "Rechnungs-Basis")

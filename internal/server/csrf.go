@@ -23,7 +23,7 @@ const (
 // seeded double-submit token closes the login-CSRF gap (an attacker can't read
 // the HttpOnly seed cookie, so can't forge a matching token).
 func (s *Server) loginCSRFToken(w http.ResponseWriter, r *http.Request) string {
-	if c, err := r.Cookie(loginCSRFCookie); err == nil && c.Value != "" {
+	if c, err := s.cookie(r, loginCSRFCookie); err == nil && c.Value != "" {
 		return s.signLoginCSRF(c.Value)
 	}
 	b := make([]byte, 32)
@@ -43,7 +43,7 @@ func (s *Server) signLoginCSRF(seed string) string {
 
 // verifyLoginCSRF checks the submitted login-form token against the seed cookie.
 func (s *Server) verifyLoginCSRF(r *http.Request) bool {
-	c, err := r.Cookie(loginCSRFCookie)
+	c, err := s.cookie(r, loginCSRFCookie)
 	if err != nil || c.Value == "" {
 		return false
 	}
@@ -62,13 +62,13 @@ var formOpenTag = regexp.MustCompile(`(?i)<form\b[^>]*\bmethod\s*=\s*["']post["'
 // cross-site request. Returns "" when no qualifying cookie is present.
 func (s *Server) csrfToken(r *http.Request) string {
 	// Priority 1: established session.
-	if c, err := r.Cookie(s.sessionCookieName(r)); err == nil && c.Value != "" {
+	if c, err := s.cookie(r, sessionCookie); err == nil && c.Value != "" {
 		mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
 		mac.Write([]byte("csrf:" + c.Value))
 		return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	}
 	// Priority 2: pending 2FA step.
-	if c, err := r.Cookie(pending2FACookie); err == nil && c.Value != "" {
+	if c, err := s.cookie(r, pending2FACookie); err == nil && c.Value != "" {
 		mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
 		mac.Write([]byte("csrf2fa:" + c.Value))
 		return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))

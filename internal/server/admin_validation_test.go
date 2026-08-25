@@ -129,8 +129,8 @@ func TestHandleUserCreateValidation(t *testing.T) {
 		if loc := rr.Header().Get("Location"); loc != "/admin/users" {
 			t.Errorf("expected Location /admin/users, got %q", loc)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Benutzername darf höchstens 100 Zeichen lang sein.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Benutzername darf höchstens 100 Zeichen lang sein.") {
 			t.Errorf("expected long username flash message, got cookie: %q", flashCookie)
 		}
 	})
@@ -150,8 +150,8 @@ func TestHandleUserCreateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Benutzername ist erforderlich.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Benutzername ist erforderlich.") {
 			t.Errorf("expected empty username flash message, got cookie: %q", flashCookie)
 		}
 	})
@@ -171,8 +171,8 @@ func TestHandleUserCreateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Benutzer angelegt.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Benutzer angelegt.") {
 			t.Errorf("expected success flash for 100-char username, got cookie: %q", flashCookie)
 		}
 	})
@@ -192,8 +192,8 @@ func TestHandleUserCreateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Benutzer angelegt.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Benutzer angelegt.") {
 			t.Errorf("expected success flash message, got cookie: %q", flashCookie)
 		}
 	})
@@ -218,8 +218,8 @@ func TestHandleUserUpdateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Benutzername darf höchstens 100 Zeichen lang sein.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Benutzername darf höchstens 100 Zeichen lang sein.") {
 			t.Errorf("expected long username flash message, got cookie: %q", flashCookie)
 		}
 	})
@@ -240,8 +240,8 @@ func TestHandleUserUpdateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("E‑Mail‑Adresse darf höchstens 254 Zeichen lang sein.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "E‑Mail‑Adresse darf höchstens 254 Zeichen lang sein.") {
 			t.Errorf("expected long email flash message, got cookie: %q", flashCookie)
 		}
 	})
@@ -262,8 +262,8 @@ func TestHandleUserUpdateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Zugangsdaten aktualisiert.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Zugangsdaten aktualisiert.") {
 			t.Errorf("expected success flash for boundary input, got cookie: %q", flashCookie)
 		}
 	})
@@ -283,8 +283,8 @@ func TestHandleUserUpdateValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Zugangsdaten aktualisiert.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Zugangsdaten aktualisiert.") {
 			t.Errorf("expected success flash message, got cookie: %q", flashCookie)
 		}
 	})

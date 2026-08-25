@@ -274,15 +274,17 @@ func (s *Server) handleUserResetTotp(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.SetTotp(r.Context(), id, false, ""); err != nil {
-		s.setFlash(w, r, "error", "Zurücksetzen fehlgeschlagen.")
-		redirect(w, r, "/admin/users")
+	// One transaction: disable the factor, discard the recovery codes, revoke every
+	// session. An admin presses this because an account is compromised or an
+	// authenticator is lost, and a partial result is the worst possible outcome —
+	// the second factor off while the sessions it protected keep running. All three
+	// therefore apply together or not at all.
+	if err := s.store.ResetTotpForUser(r.Context(), id); err != nil {
+		s.serverError(w, "2fa reset", err)
 		return
 	}
-	// Best-effort: with the user's TOTP now reset, leftover recovery codes are inert.
-	_ = s.store.ClearRecoveryCodes(r.Context(), id)
-	s.audit(r, "2fa_reset", "user", id, "durch Admin ("+target.Username+")")
-	s.setFlash(w, r, "success", "2FA für "+target.Username+" zurückgesetzt. Der Benutzer kann es neu einrichten.")
+	s.audit(r, "2fa_reset", "user", id, "durch Admin ("+target.Username+"); Sitzungen beendet")
+	s.setFlash(w, r, "success", "2FA für "+target.Username+" zurückgesetzt und bestehende Sitzungen beendet. Der Benutzer kann es neu einrichten.")
 	redirect(w, r, "/admin/users")
 }
 

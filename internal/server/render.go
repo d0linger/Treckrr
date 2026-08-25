@@ -2,12 +2,17 @@ package server
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"html/template"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -25,7 +30,7 @@ func (s *Server) newPage(w http.ResponseWriter, r *http.Request, title, active s
 		"Active":   active,
 		"User":     u,
 		"BasePath": r.URL.Path,
-		"Theme":    themeFromCookie(r),
+		"Theme":    s.themeFromCookie(r),
 		"CSRF":     s.csrfToken(r),
 	}
 	// Backup-health dot in the header, for everyone who can act on it (admins +
@@ -132,6 +137,29 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 
 // ---- Flash messages (cookie based) --------------------------------------
 
+// The flash cookie is HMAC-signed, because its contents are rendered into the
+// page AND can arm an action. layout.html turns FlashUndo into a POST form, and
+// injectCSRFField then stamps a VALID CSRF token into that form — so an
+// attacker-written flash cookie would be a one-click, CSRF-valid state change to
+// any same-origin path, plus an attacker-chosen message to talk the user into
+// clicking it. Signing means only this server can mint one; the __Host- prefix
+// (setCookie) additionally stops a sibling host under the same registrable domain
+// from writing the cookie at all. The baked-in expiry bounds replay of a captured
+// cookie, since MaxAge is enforced by the client and an attacker holds the jar.
+const flashTTL = 30 * time.Second
+
+// signFlash returns "base64url(payload).hex(hmac)". The "flash:" context prefix
+// binds the MAC to this use, mirroring the "csrf:" / "2fa:" prefixes elsewhere.
+func (s *Server) signFlash(payload string) string {
+	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
+	mac.Write([]byte("flash:" + payload))
+	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + hex.EncodeToString(mac.Sum(nil))
+}
+
+// maxFlashCookieLen bounds the raw cookie input so an oversized value cannot
+// drive needless base64 decoding and HMAC work on every page render.
+const maxFlashCookieLen = 2048
+
 func (s *Server) setFlash(w http.ResponseWriter, r *http.Request, kind, msg string) {
 	s.setFlashUndo(w, r, kind, msg, "")
 }
@@ -139,37 +167,74 @@ func (s *Server) setFlash(w http.ResponseWriter, r *http.Request, kind, msg stri
 // setFlashUndo is setFlash with an optional undo action: the toast renders a
 // "Rückgängig" POST button targeting undoURL (only same-origin absolute paths).
 func (s *Server) setFlashUndo(w http.ResponseWriter, r *http.Request, kind, msg, undoURL string) {
-	val := kind + "|" + url.QueryEscape(msg)
+	payload := strconv.FormatInt(time.Now().Add(flashTTL).Unix(), 10) +
+		"|" + kind + "|" + url.QueryEscape(msg)
 	if undoURL != "" {
-		val += "|" + url.QueryEscape(undoURL)
+		payload += "|" + url.QueryEscape(undoURL)
 	}
-	s.setCookie(w, r, &http.Cookie{Name: flashCookie, Value: val, MaxAge: 30})
+	s.setCookie(w, r, &http.Cookie{
+		Name:   flashCookie,
+		Value:  s.signFlash(payload),
+		MaxAge: int(flashTTL.Seconds()),
+	})
 }
 
 // readFlash returns the flash message, kind and optional undo URL, clearing the
-// cookie. The undo URL is only honored when it is a same-origin absolute path.
+// cookie. A missing, oversized, unsigned, forged or expired cookie yields no
+// flash at all. The undo URL is additionally only honored when it is a
+// same-origin absolute path.
 func (s *Server) readFlash(w http.ResponseWriter, r *http.Request) (msg, kind, undoURL string) {
-	c, err := r.Cookie(flashCookie)
+	c, err := s.cookie(r, flashCookie)
 	if err != nil || c.Value == "" {
 		return "", "", ""
 	}
 	s.setCookie(w, r, &http.Cookie{Name: flashCookie, Value: "", MaxAge: -1})
-	parts := strings.SplitN(c.Value, "|", 3)
-	if len(parts) < 2 {
+	payload, ok := s.verifyFlash(c.Value)
+	if !ok {
 		return "", "", ""
 	}
-	decoded, err := url.QueryUnescape(parts[1])
+	// exp | kind | msg [| undoURL]
+	parts := strings.SplitN(payload, "|", 4)
+	if len(parts) < 3 {
+		return "", "", ""
+	}
+	exp, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || time.Now().Unix() > exp {
+		return "", "", ""
+	}
+	decoded, err := url.QueryUnescape(parts[2])
 	if err != nil {
 		return "", "", ""
 	}
-	if len(parts) == 3 {
-		if u, err := url.QueryUnescape(parts[2]); err == nil &&
+	if len(parts) == 4 {
+		if u, err := url.QueryUnescape(parts[3]); err == nil &&
 			strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") &&
 			!strings.Contains(u, "\\") { // "/\\evil.com" is read as "//evil.com" by browsers
 			undoURL = u
 		}
 	}
-	return decoded, parts[0], undoURL
+	return decoded, parts[1], undoURL
+}
+
+// verifyFlash checks the signature and returns the raw payload.
+func (s *Server) verifyFlash(value string) (string, bool) {
+	if len(value) > maxFlashCookieLen {
+		return "", false
+	}
+	enc, sig, ok := strings.Cut(value, ".")
+	if !ok {
+		return "", false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(enc)
+	if err != nil {
+		return "", false
+	}
+	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
+	mac.Write([]byte("flash:" + string(raw)))
+	if !hmac.Equal([]byte(hex.EncodeToString(mac.Sum(nil))), []byte(sig)) {
+		return "", false
+	}
+	return string(raw), true
 }
 
 // ---- Form helpers -------------------------------------------------------

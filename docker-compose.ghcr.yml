@@ -8,6 +8,24 @@ services:
     image: postgres:16-alpine
     container_name: treckrr-db
     restart: unless-stopped
+    # Kept in step with docker-compose.yml — this file is the DOCUMENTED
+    # production path, so it must not be the less-hardened one. See the comments
+    # there for why each of these is set.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          pids: 256
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-treckrr}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-treckrr-db-password-change-me}
@@ -25,6 +43,22 @@ services:
     pull_policy: always
     container_name: treckrr-app
     restart: unless-stopped
+    # Same hardening as docker-compose.yml, and it is the same image, so this is
+    # proven to work: the app writes nothing to disk (state is in Postgres, logs
+    # go to stdout). See docker-compose.yml for the reasoning behind the /tmp size
+    # cap and the memory ceiling.
+    read_only: true
+    tmpfs:
+      - /tmp:size=320m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          pids: 128
     depends_on:
       db:
         condition: service_healthy
@@ -37,13 +71,41 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-admin-password}
       # Passkeys (WebAuthn): set to your public host / origin behind a proxy.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:-}
       RP_ID: ${RP_ID:-localhost}
       RP_ORIGIN: ${RP_ORIGIN:-http://localhost:8080}
+      ADMIN_PASSWORD_RESET: ${ADMIN_PASSWORD_RESET:-false}
+      # Encrypted backups (AES-256-GCM). This file previously carried NONE of the
+      # BACKUP_*/S3_* variables and no backups volume, so anyone following the
+      # documented "no local build needed" path ran with backups silently
+      # DISABLED — the app just logs "backups disabled" and moves on. Kept in step
+      # with docker-compose.yml from here on.
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
+      BACKUP_DIR: ${BACKUP_DIR:-/backups}
+      BACKUP_STATUS_FILE: ${BACKUP_STATUS_FILE:-/backups/status.json}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_PREFIX: ${S3_PREFIX:-}
+      S3_USE_SSL: ${S3_USE_SSL:-true}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
       LOG_FORMAT: ${LOG_FORMAT:-text}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
+    # See docker-compose.yml: set HOST_BIND=127.0.0.1 when the proxy is local.
     ports:
-      - "${HOST_PORT:-8080}:${APP_PORT:-8080}"
+      - "${HOST_BIND:-0.0.0.0}:${HOST_PORT:-8080}:${APP_PORT:-8080}"
+    volumes:
+      - backups:/backups
 
 volumes:
   pgdata:
+  backups:

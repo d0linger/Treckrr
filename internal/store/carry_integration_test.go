@@ -32,6 +32,11 @@ func TestCarryForwardCascadeIntegration(t *testing.T) {
 	}
 	st := store.New(pool, "test-encryption-secret")
 
+	// Purge by the STATIC values first: purgeRootsByID below needs ids that do not
+	// exist yet, so a run that crashed before its deferred cleanup would otherwise
+	// collide with its own leftovers on the unique year/name.
+	purgeFixtures(t, ctx, pool, fixtures{Years: []int{2100, 2101}, NeighborNames: []string{"Carry-Nachbar"}})
+
 	baseID, err := st.CreateEmptyBase(ctx, 2100, "Carry-Basis")
 	if err != nil {
 		t.Fatalf("base: %v", err)
@@ -48,11 +53,7 @@ func TestCarryForwardCascadeIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("neighbor: %v", err)
 	}
-	defer func() {
-		_, _ = pool.ExecContext(ctx, `DELETE FROM billing_years WHERE id IN ($1,$2)`, fromYear, toYear)
-		_, _ = pool.ExecContext(ctx, `DELETE FROM price_bases WHERE id=$1`, baseID)
-		_, _ = pool.ExecContext(ctx, `DELETE FROM neighbors WHERE id=$1`, nid)
-	}()
+	defer purgeRootsByID(t, ctx, pool, []int64{fromYear, toYear}, []int64{nid}, []int64{baseID})
 	for _, y := range []int64{fromYear, toYear} {
 		if err := st.AddNeighborToYear(ctx, y, nid); err != nil {
 			t.Fatalf("add neighbor to %d: %v", y, err)

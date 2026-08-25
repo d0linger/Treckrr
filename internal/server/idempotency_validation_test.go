@@ -149,8 +149,8 @@ func TestOversizedIdempotencyKeyRejected(t *testing.T) {
 	if rr.Code != http.StatusSeeOther {
 		t.Errorf("expected status SeeOther, got %d", rr.Code)
 	}
-	flashCookie := rr.Header().Get("Set-Cookie")
-	if !strings.Contains(flashCookie, url.QueryEscape("Idempotency-Key darf höchstens 100 Zeichen lang sein.")) {
+	flashCookie := flashText(t, s, rr)
+	if !strings.Contains(flashCookie, "Idempotency-Key darf höchstens 100 Zeichen lang sein.") {
 		t.Errorf("expected oversized idempotency_key warning, got cookie: %q", flashCookie)
 	}
 }
@@ -173,8 +173,8 @@ func TestOversizedImportTokenRejected(t *testing.T) {
 	if rr.Code != http.StatusSeeOther {
 		t.Errorf("expected status SeeOther, got %d", rr.Code)
 	}
-	flashCookie := rr.Header().Get("Set-Cookie")
-	if !strings.Contains(flashCookie, url.QueryEscape("Import-Token darf höchstens 100 Zeichen lang sein.")) {
+	flashCookie := flashText(t, s, rr)
+	if !strings.Contains(flashCookie, "Import-Token darf höchstens 100 Zeichen lang sein.") {
 		t.Errorf("expected oversized import_token warning, got cookie: %q", flashCookie)
 	}
 }

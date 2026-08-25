@@ -5,6 +5,31 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    # Drop every capability, then hand back only what the postgres:alpine entrypoint
+    # genuinely needs: it starts as root to fix ownership on the data directory and
+    # then drops to uid 70 via su-exec. CHOWN/DAC_OVERRIDE/FOWNER cover the initial
+    # `chown -R postgres` on the volume, SETGID/SETUID cover the drop itself. A bare
+    # `cap_drop: ALL` without these fails at startup — verified by running it.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    # Bounds, not tuning. Without them a runaway query or a fork storm is a HOST
+    # incident, not a container one — on a single-box deployment that takes the
+    # app and the reverse proxy down with it. Measured idle footprint is ~31 MiB
+    # / 7 processes, so these are ~30x headroom; raise them if you give Postgres a
+    # bigger shared_buffers. No CPU limit on purpose: the core count of the target
+    # host is unknown here, and CPU starvation is recoverable while an OOM during
+    # a write is not. Add `cpus: '2.0'` under limits if you want one.
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          pids: 256
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-treckrr}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-treckrr-db-password-change-me}
@@ -29,10 +54,30 @@ services:
     # nothing to disk (state is in Postgres, logs go to stdout), so the root
     # filesystem is read-only with a small tmpfs for /tmp.
     read_only: true
+    # SIZE-CAPPED on purpose. /tmp is where net/http spills a multipart upload
+    # past its in-memory threshold, and where the restore re-materializes the
+    # decrypted archive — and a tmpfs is RAM. Uncapped, an upload writes its way
+    # into host memory; capped, it fails with a clean ENOSPC instead. 320m holds
+    # two copies of a maxBackupUpload-sized dump (2 x 128 MiB) plus slack.
     tmpfs:
-      - /tmp
+      - /tmp:size=320m,mode=1777
     security_opt:
       - no-new-privileges:true
+    # A static Go binary running as uid 10001 and binding 8080 (>1024) needs no
+    # capabilities at all; neither do the pg_dump/pg_restore it shells out to.
+    cap_drop:
+      - ALL
+    # See the note on the db service. Idle footprint is ~15 MiB; the ceiling is
+    # set by the restore path, whose worst case is ~4x the uploaded dump (tmpfs
+    # spill + ReadAll + decrypted copy + tmpfs rewrite) — with maxBackupUpload at
+    # 128 MiB that peaks near 550 MiB, so 768M leaves real headroom. Note the
+    # tmpfs above is charged to THIS limit, which is why the two are sized
+    # together.
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          pids: 128
     depends_on:
       db:
         condition: service_healthy
@@ -41,6 +86,19 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://treckrr:treckrr-db-password-change-me@db:5432/treckrr?sslmode=disable}
       SESSION_SECRET: ${SESSION_SECRET:-change-me-please-generate-a-random-value}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Reverse proxy. These were documented in .env.example but never projected
+      # into the container, so setting them had NO effect: the app fell back to
+      # TRUST_PROXY=false and ignored X-Forwarded-Proto (insecure cookies behind a
+      # TLS proxy), or — once enabled — trusted forwarded headers from any peer.
+      # With TRUST_PROXY=true, set TRUSTED_PROXIES to your proxy's address so a
+      # client that reaches the published port directly cannot forge its IP into
+      # the audit log and past the per-IP rate limits.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      # Data-at-rest key for TOTP secrets. Defaults to SESSION_SECRET; set it
+      # explicitly (to the OLD session secret) before rotating SESSION_SECRET,
+      # otherwise stored TOTP secrets become undecryptable.
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:-}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-admin-password}
       # Passkeys (WebAuthn). Must match the URL the browser uses. For production
@@ -80,8 +138,13 @@ services:
     # protects is not a backup (e.g. the S3 destination below).
     volumes:
       - backups:/backups
+    # HOST_BIND stays 0.0.0.0 so a proxy on ANOTHER host keeps working — changing
+    # the default would break exactly that deployment. Set HOST_BIND=127.0.0.1
+    # when the reverse proxy runs on this same host: the backend port is then
+    # unreachable from the network and forwarded-header spoofing is impossible by
+    # construction, rather than only bounded by TRUSTED_PROXIES.
     ports:
-      - "${HOST_PORT:-8080}:${APP_PORT:-8080}"
+      - "${HOST_BIND:-0.0.0.0}:${HOST_PORT:-8080}:${APP_PORT:-8080}"
 
   # Backups are now produced by the app itself (encrypted, AES-256-GCM):
   # on-demand from the admin Backup panel and on a schedule (cron, set in the panel).

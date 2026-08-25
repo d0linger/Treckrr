@@ -9,8 +9,8 @@ import (
 const themeCookie = "treckrr_theme"
 
 // themeFromCookie returns the persisted color theme ("light", "dark" or "auto").
-func themeFromCookie(r *http.Request) string {
-	if c, err := r.Cookie(themeCookie); err == nil {
+func (s *Server) themeFromCookie(r *http.Request) string {
+	if c, err := s.cookie(r, themeCookie); err == nil {
 		switch c.Value {
 		case "light", "dark", "auto":
 			return c.Value

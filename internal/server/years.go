@@ -1,10 +1,12 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 func (s *Server) handleYears(w http.ResponseWriter, r *http.Request) {
@@ -236,18 +238,26 @@ func (s *Server) handleYearDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	count, err := s.store.CountEntriesForYear(r.Context(), id)
+	// Same cascade as the neighbor delete: billing_years is the FK parent of
+	// entries, payments, neighbor_ledger and invoices, so bookings alone are not a
+	// sufficient guard — a year holding only carry-forwards or payments would be
+	// erased with them.
+	blockers, err := s.store.YearDeleteBlockers(r.Context(), id)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	if count > 0 {
-		s.setFlash(w, r, "error", "Jahr enthält Buchungen und kann nicht gelöscht werden.")
+	if blockers.Any() {
+		s.setFlash(w, r, "error", "Jahr enthält "+describeDeleteBlockers(blockers)+
+			" und kann nicht gelöscht werden.")
 		redirect(w, r, "/years")
 		return
 	}
 	label := s.yearLabel(r, id) // resolve before the row is gone
-	if err := s.store.DeleteBillingYear(r.Context(), id); err != nil {
+	if err := s.store.DeleteBillingYear(r.Context(), id); errors.Is(err, store.ErrHasHistory) {
+		s.setFlash(w, r, "error", "Jahr enthält inzwischen Buchungen oder Zahlungen "+
+			"und kann nicht gelöscht werden.")
+	} else if err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
 		s.audit(r, "delete", "year", id, "Jahr "+label)

@@ -65,6 +65,65 @@ func TestSetCookieAppliesDefaults(t *testing.T) {
 	}
 }
 
+// TestHostPrefixAppliedToEveryCookie locks the cookie-tossing defense: over HTTPS
+// every cookie carries __Host-, so a sibling host under the same registrable
+// domain cannot overwrite one (it would have to set Domain, which the prefix
+// forbids). Over plain HTTP the prefix must be absent — browsers reject __Host-
+// cookies without Secure, which would break local dev entirely.
+func TestHostPrefixAppliedToEveryCookie(t *testing.T) {
+	names := []string{sessionCookie, flashCookie, loginCSRFCookie, pending2FACookie, shareOnceCookie, waCookie, themeCookie}
+
+	secure := testServer()
+	secure.cfg.CookieSecure = true
+	for _, name := range names {
+		rr := httptest.NewRecorder()
+		secure.setCookie(rr, httptest.NewRequest(http.MethodGet, "/", nil), &http.Cookie{Name: name, Value: "v"})
+		sc := rr.Header().Get("Set-Cookie")
+		if !strings.HasPrefix(sc, hostCookiePrefix+name+"=") {
+			t.Errorf("%s over HTTPS: want %s prefix, got %q", name, hostCookiePrefix, sc)
+		}
+		// __Host- is only honored with Secure + Path=/ + no Domain.
+		if !strings.Contains(sc, "Secure") || !strings.Contains(sc, "Path=/") || strings.Contains(sc, "Domain=") {
+			t.Errorf("%s: __Host- requirements not met: %q", name, sc)
+		}
+	}
+
+	plain := testServer() // CookieSecure=false, TrustProxy=false
+	for _, name := range names {
+		rr := httptest.NewRecorder()
+		plain.setCookie(rr, httptest.NewRequest(http.MethodGet, "/", nil), &http.Cookie{Name: name, Value: "v"})
+		if sc := rr.Header().Get("Set-Cookie"); !strings.HasPrefix(sc, name+"=") {
+			t.Errorf("%s over plain HTTP: prefix must be absent, got %q", name, sc)
+		}
+	}
+}
+
+// A cookie written with the prefix must be found by the matching read helper —
+// the two halves have to agree or every cookie silently stops round-tripping.
+func TestCookieReadMatchesWrittenName(t *testing.T) {
+	for _, cookieSecure := range []bool{false, true} {
+		s := testServer()
+		s.cfg.CookieSecure = cookieSecure
+
+		rr := httptest.NewRecorder()
+		s.setCookie(rr, httptest.NewRequest(http.MethodGet, "/", nil), &http.Cookie{Name: flashCookie, Value: "abc"})
+		c, err := http.ParseSetCookie(rr.Header().Get("Set-Cookie"))
+		if err != nil {
+			t.Fatalf("parse Set-Cookie: %v", err)
+		}
+
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.AddCookie(&http.Cookie{Name: c.Name, Value: c.Value})
+		got, err := s.cookie(r, flashCookie)
+		if err != nil {
+			t.Fatalf("cookieSecure=%v: written %q not found on read back: %v", cookieSecure, c.Name, err)
+		}
+		if got.Value != "abc" {
+			t.Errorf("cookieSecure=%v: value = %q, want abc", cookieSecure, got.Value)
+		}
+	}
+}
+
 func TestCSVSafe(t *testing.T) {
 	// Construct non-ASCII whitespace from code points so the source stays ASCII.
 	nbsp := string(rune(0x00A0)) // NO-BREAK SPACE

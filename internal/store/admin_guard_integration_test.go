@@ -31,8 +31,14 @@ func TestLastAdminGuardIntegration(t *testing.T) {
 	}
 	st := store.New(pool, "test-encryption-secret")
 
-	// Unique usernames so the suite can share a database.
+	// Unique usernames so the suite can share a database. The PID is stable enough
+	// to collide across runs (a fresh container often reuses low PIDs), and the
+	// admin-count invariant under test is global — one leftover admin makes
+	// "cannot demote the ONLY admin" silently untrue — so purge first.
 	u := func(s string) string { return fmt.Sprintf("sh04_%s_%d", s, os.Getpid()) }
+	f := fixtures{UsernameLike: `sh04\_%`}
+	purgeFixtures(t, ctx, pool, f)
+	defer purgeFixtures(t, ctx, pool, f)
 
 	adminID, err := st.CreateUser(ctx, u("admin1"), "pw-admin-1-xxxxx", models.RoleAdmin)
 	if err != nil {

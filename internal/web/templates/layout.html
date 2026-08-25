@@ -5,6 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 	<meta name="theme-color" content="#1f2823">
 	<meta name="csrf-token" content="{{.CSRF}}">
+	{{if .User}}<meta name="user-id" content="{{.User.ID}}">{{end}}
 	<title>{{.Title}} · Treckrr</title>
 	<link rel="manifest" href="/manifest.webmanifest">
 	<link rel="icon" href="/static/icons/favicon.svg?v={{.AssetVersion}}" type="image/svg+xml">

@@ -16,6 +16,13 @@ import (
 const (
 	placeholderSessionSecret = "change-me-please-generate-a-random-value"
 	placeholderAdminPassword = "change-me-admin-password"
+	// The Compose default for the database. It reaches the app inside
+	// DATABASE_URL rather than as its own variable, which is why it slipped past
+	// the placeholder checks above — but a publicly known database password is
+	// the same class of problem as a known admin password.
+	// #nosec G101 -- this is the published placeholder the check below REJECTS,
+	// not a credential the application ever uses.
+	placeholderDBPassword = "treckrr-db-password-change-me"
 )
 
 // Config holds all runtime settings for the application.
@@ -140,6 +147,15 @@ func Load() (*Config, error) {
 
 	if c.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+	if strings.Contains(c.DatabaseURL, placeholderDBPassword) {
+		// Actionable on purpose: POSTGRES_PASSWORD only takes effect when the data
+		// directory is FIRST created, so changing it in .env does nothing to an
+		// existing database. Without saying so, the obvious fix appears not to work.
+		return nil, fmt.Errorf("DATABASE_URL still contains the documented placeholder database password. " +
+			"Set POSTGRES_PASSWORD and DATABASE_URL to a real secret; for a database that already exists, " +
+			"also rotate the role itself: docker exec treckrr-db psql -U treckrr -d treckrr " +
+			"-c \"ALTER USER treckrr WITH PASSWORD '<new>'\"")
 	}
 	if c.SessionSecret == "" || len(c.SessionSecret) < 32 {
 		return nil, fmt.Errorf("SESSION_SECRET is required and must be at least 32 characters (e.g. `openssl rand -hex 32`)")

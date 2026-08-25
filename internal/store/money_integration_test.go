@@ -32,6 +32,10 @@ func TestMoneyRoundTripIntegration(t *testing.T) {
 	}
 	st := store.New(pool, "test-encryption-secret")
 
+	f := fixtures{Years: []int{2099}}
+	purgeFixtures(t, ctx, pool, f)
+	defer purgeFixtures(t, ctx, pool, f)
+
 	baseID, err := st.CreateEmptyBase(ctx, 2099, "Test-Basis")
 	if err != nil {
 		t.Fatalf("create base: %v", err)
@@ -86,6 +90,13 @@ func TestYearPaymentTotalsIntegration(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 	st := store.New(pool, "test-encryption-secret")
+
+	f := fixtures{
+		Years:         []int{2098},
+		NeighborNames: []string{"Bezahlt-A", "Bezahlt-B", "Offen-A", "Offen-leer"},
+	}
+	purgeFixtures(t, ctx, pool, f)
+	defer purgeFixtures(t, ctx, pool, f)
 
 	baseID, err := st.CreateEmptyBase(ctx, 2098, "Zahlungs-Basis")
 	if err != nil {

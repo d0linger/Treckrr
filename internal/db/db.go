@@ -6,9 +6,11 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"net/url"
 	"sort"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver
 )
 
@@ -22,9 +24,68 @@ const (
 	connMaxLifetime = time.Hour
 )
 
+// Server-side guards applied to every pooled connection. The pool is small (10),
+// so a single query that never returns takes a tenth of the app's capacity with
+// it — and a handful of them stop the application entirely while the process
+// still looks healthy. Postgres enforces these regardless of what the Go side
+// does with contexts, which is the point: a caller that forgets a deadline, or a
+// context that outlives its request, is still bounded.
+//
+// statementTimeout is generous relative to real queries (the slowest report is
+// well under a second) and only fires on something genuinely stuck.
+// idleInTransactionTimeout catches the worse case: a transaction left open holds
+// its connection AND blocks vacuum on the rows it touched.
+const (
+	statementTimeout         = "30s"
+	idleInTransactionTimeout = "60s"
+)
+
+// withTimeouts adds the server-side timeouts unless the operator already set
+// them, for BOTH DSN forms libpq accepts: the URL form used everywhere in this
+// repository, and the keyword/value form ("host=… user=…") an operator may
+// legitimately supply. Handling only the first left the hardening silently
+// inactive for the second, which is the worst kind of default — one that looks
+// applied and is not.
+//
+// Anything it cannot parse is passed through untouched rather than rejected: a
+// hardening default must never stop a working deployment from booting.
+func withTimeouts(dsn string) string {
+	if u, err := url.Parse(dsn); err == nil && u.Scheme != "" {
+		if u.Scheme != "postgres" && u.Scheme != "postgresql" {
+			return dsn // not a Postgres URL; leave it alone
+		}
+		q := u.Query()
+		if q.Get("statement_timeout") == "" {
+			q.Set("statement_timeout", statementTimeout)
+		}
+		if q.Get("idle_in_transaction_session_timeout") == "" {
+			q.Set("idle_in_transaction_session_timeout", idleInTransactionTimeout)
+		}
+		u.RawQuery = q.Encode()
+		return u.String()
+	}
+
+	// Keyword/value form. pgconn's own parser decides what is already set —
+	// scanning the string by hand would mis-read quoted values. Unknown keys land
+	// in RuntimeParams, which is exactly where these two belong, so appending them
+	// produces a DSN the driver accepts unchanged.
+	cfg, err := pgconn.ParseConfig(dsn)
+	if err != nil {
+		return dsn
+	}
+	out := dsn
+	if cfg.RuntimeParams["statement_timeout"] == "" {
+		out += " statement_timeout=" + statementTimeout
+	}
+	if cfg.RuntimeParams["idle_in_transaction_session_timeout"] == "" {
+		out += " idle_in_transaction_session_timeout=" + idleInTransactionTimeout
+	}
+	return out
+}
+
 // Connect opens a connection pool and waits until the database is reachable.
 func Connect(ctx context.Context, dsn string) (*sql.DB, error) {
-	pool, err := sql.Open("pgx", dsn)
+	pool, err := sql.Open("pgx", withTimeouts(dsn))
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
@@ -121,6 +182,15 @@ func Migrate(ctx context.Context, pool *sql.DB) error {
 		tx, err := pool.BeginTx(ctx, nil)
 		if err != nil {
 			return err
+		}
+		// Migrations are exempt. A schema change (an index build, a constraint
+		// validation over a large table) is precisely the long-running statement
+		// the pool-wide timeout is there to kill, and killing it half-way would
+		// leave the schema behind its recorded version. SET LOCAL reverts on
+		// commit or rollback, so only this transaction is affected.
+		if _, err := tx.ExecContext(ctx, `SET LOCAL statement_timeout = 0`); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("migration %s: lift statement timeout: %w", name, err)
 		}
 		if _, err := tx.ExecContext(ctx, string(content)); err != nil {
 			_ = tx.Rollback()

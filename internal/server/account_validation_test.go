@@ -135,8 +135,8 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Das neue Passwort darf nicht mit dem aktuellen Passwort übereinstimmen.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Das neue Passwort darf nicht mit dem aktuellen Passwort übereinstimmen.") {
 			t.Errorf("expected identical password warning, got cookie: %q", flashCookie)
 		}
 	})
@@ -163,8 +163,8 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Passwort geändert. Andere Sitzungen wurden beendet.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Passwort geändert. Andere Sitzungen wurden beendet.") {
 			t.Errorf("expected success password change, got cookie: %q", flashCookie)
 		}
 	})
@@ -193,8 +193,8 @@ func TestHandleSessionRevokeValidation(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
-		flashCookie := rr.Header().Get("Set-Cookie")
-		if !strings.Contains(flashCookie, url.QueryEscape("Token darf höchstens 100 Zeichen lang sein.")) {
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Token darf höchstens 100 Zeichen lang sein.") {
 			t.Errorf("expected over-limit token warning, got cookie: %q", flashCookie)
 		}
 	})
