@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"net/url"
 	"sort"
 	"time"
 
@@ -22,9 +23,45 @@ const (
 	connMaxLifetime = time.Hour
 )
 
+// Server-side guards applied to every pooled connection. The pool is small (10),
+// so a single query that never returns takes a tenth of the app's capacity with
+// it — and a handful of them stop the application entirely while the process
+// still looks healthy. Postgres enforces these regardless of what the Go side
+// does with contexts, which is the point: a caller that forgets a deadline, or a
+// context that outlives its request, is still bounded.
+//
+// statementTimeout is generous relative to real queries (the slowest report is
+// well under a second) and only fires on something genuinely stuck.
+// idleInTransactionTimeout catches the worse case: a transaction left open holds
+// its connection AND blocks vacuum on the rows it touched.
+const (
+	statementTimeout         = "30s"
+	idleInTransactionTimeout = "60s"
+)
+
+// withTimeouts adds the server-side timeouts to a URL-form DSN unless the
+// operator already set them. Anything it cannot parse is passed through
+// untouched rather than rejected — a working deployment must not fail to boot
+// because of a hardening default.
+func withTimeouts(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
+		return dsn
+	}
+	q := u.Query()
+	if q.Get("statement_timeout") == "" {
+		q.Set("statement_timeout", statementTimeout)
+	}
+	if q.Get("idle_in_transaction_session_timeout") == "" {
+		q.Set("idle_in_transaction_session_timeout", idleInTransactionTimeout)
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
 // Connect opens a connection pool and waits until the database is reachable.
 func Connect(ctx context.Context, dsn string) (*sql.DB, error) {
-	pool, err := sql.Open("pgx", dsn)
+	pool, err := sql.Open("pgx", withTimeouts(dsn))
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
@@ -121,6 +158,15 @@ func Migrate(ctx context.Context, pool *sql.DB) error {
 		tx, err := pool.BeginTx(ctx, nil)
 		if err != nil {
 			return err
+		}
+		// Migrations are exempt. A schema change (an index build, a constraint
+		// validation over a large table) is precisely the long-running statement
+		// the pool-wide timeout is there to kill, and killing it half-way would
+		// leave the schema behind its recorded version. SET LOCAL reverts on
+		// commit or rollback, so only this transaction is affected.
+		if _, err := tx.ExecContext(ctx, `SET LOCAL statement_timeout = 0`); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("migration %s: lift statement timeout: %w", name, err)
 		}
 		if _, err := tx.ExecContext(ctx, string(content)); err != nil {
 			_ = tx.Rollback()

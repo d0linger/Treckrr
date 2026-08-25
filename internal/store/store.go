@@ -17,6 +17,12 @@ import (
 	"github.com/d0linger/treckrr/internal/models"
 )
 
+// sessionTouchInterval is how stale a session row may get before a request
+// refreshes it. See UserFromSession for why this is throttled rather than done on
+// every request; the profile page shows last activity at a coarser resolution
+// than this anyway.
+const sessionTouchInterval = 5 * time.Minute
+
 // ErrNotFound is returned when a requested row does not exist.
 var ErrNotFound = errors.New("not found")
 
@@ -450,9 +456,21 @@ func (s *Store) UserFromSession(ctx context.Context, token string, slideTTL, abs
 	if err != nil {
 		return nil, err
 	}
+	// Throttled slide: only touch the row when it has not been touched recently.
+	// Refreshing on EVERY authenticated request meant one UPDATE per page view on
+	// the same hot row — WAL volume, a dead tuple each time for vacuum to collect,
+	// and cross-tab contention on a single row for a value that changes nothing
+	// anyone can observe at that resolution.
+	//
+	// It costs nothing in behaviour: an actively used session is still refreshed
+	// at least every sessionTouchInterval, which is four orders of magnitude
+	// shorter than the 30-day sliding window it maintains. last_seen is NOT NULL
+	// with a default, so the predicate can never be NULL and skip forever.
 	_, _ = s.db.ExecContext(ctx,
-		`UPDATE sessions SET last_seen=now(), expires_at=now() + make_interval(secs => $2) WHERE token=$1`,
-		th, slideTTL.Seconds())
+		`UPDATE sessions
+		    SET last_seen=now(), expires_at=now() + make_interval(secs => $2)
+		  WHERE token=$1 AND last_seen < now() - make_interval(secs => $3)`,
+		th, slideTTL.Seconds(), sessionTouchInterval.Seconds())
 	return &u, nil
 }
 
