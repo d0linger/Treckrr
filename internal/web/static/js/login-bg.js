@@ -235,6 +235,9 @@
 	}
 	function frame() {
 		if (!running) return;
+		// Stand the fallback down the instant a real frame arrives, rather than at
+		// the watchdog's next tick: until then both would be drawing.
+		if (fallback) { clearInterval(fallback); fallback = 0; }
 		lastRaf = Date.now();
 		draw(W, H, clock(), pal, items);
 		raf = requestAnimationFrame(frame);

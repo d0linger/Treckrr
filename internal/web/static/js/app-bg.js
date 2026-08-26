@@ -209,6 +209,10 @@
 	// touches it, so it cannot mask a stall and keep itself running.
 	function frame(now) {
 		if (!running) return;
+		// Must happen here, not at the watchdog's next tick: this path and the
+		// fallback both advance `t`, so any overlap runs the backdrop at double
+		// speed until the watchdog gets round to noticing.
+		if (fallback) { clearInterval(fallback); fallback = 0; }
 		lastRaf = Date.now();
 		var dt = Math.min(0.05, (now - prev) / 1000 || 0.016); prev = now; t += dt;
 		compose(dt); raf = requestAnimationFrame(frame);
