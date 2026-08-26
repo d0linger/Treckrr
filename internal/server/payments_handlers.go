@@ -66,7 +66,24 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	amount, err := decimal.NewFromString(strings.ReplaceAll(strings.TrimSpace(r.FormValue("amount")), ",", "."))
+	// Bounded before parsing: this call does not go through parseGermanDecimal, so
+	// it does not inherit that guard, and it runs BEFORE every other check in this
+	// handler — making it the cheapest field to abuse, not the safest.
+	if s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) {
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
+	rawAmount := strings.ReplaceAll(strings.TrimSpace(r.FormValue("amount")), ",", ".")
+	// Refused BEFORE parsing, for the reason spelled out at maxDecimalLen: an
+	// exponent turns a nine-character field into hundreds of milliseconds of work
+	// in every operation that follows, including the checks meant to reject it.
+	// This field does not go through parseGermanDecimal, so it needs its own guard.
+	if strings.ContainsAny(rawAmount, "eE") {
+		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
+	amount, err := decimal.NewFromString(rawAmount)
 	if err != nil || !amount.IsPositive() {
 		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
 		redirect(w, r, neighborURL(neighborID, yearID))
@@ -78,6 +95,10 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	note := strings.TrimSpace(r.FormValue("note"))
 	if s.tooLong(w, r, "Notiz", note, maxNoteLen) {
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
+	if s.tooLong(w, r, "Skonto", r.FormValue("skonto"), maxDecimalLen) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}

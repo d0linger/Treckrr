@@ -139,5 +139,13 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Forces the Dockerfile's `apk upgrade` layer to re-resolve on every
+          # published build. Without it the deployable image can be assembled from
+          # a cached package layer and ship Alpine packages from whenever that
+          # layer was built — the weekly image scan would be current while the
+          # artifact people actually run is not. Only this one layer is busted;
+          # the Go module and build layers keep their cache.
+          build-args: |
+            APK_REFRESH=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

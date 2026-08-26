@@ -117,7 +117,7 @@ Pin a release rather than tracking `latest` with `TRECKRR_TAG=1.4`.
 | **ADMIN_USERNAME** | Bootstrap admin login name | `admin` | No |
 | **APP_PORT** | Port inside the container | `8080` | No |
 | **HOST_PORT** | Published port on the host | `8080` | No |
-| **HOST_BIND** | Host interface to bind; use `127.0.0.1` when the proxy is local | `0.0.0.0` | No |
+| **HOST_BIND** | Host interface to bind; `127.0.0.1` only reaches a proxy on the host itself | `0.0.0.0` | No |
 | **COOKIE_SECURE** | Force the `Secure` cookie flag (set behind HTTPS) | `false` | No |
 | **TRUST_PROXY** | Honour `X-Forwarded-For` / `-Proto` from a reverse proxy | `false` | No |
 | **TRUSTED_PROXIES** | Comma-separated CIDRs allowed to set forwarded headers | — | No |
@@ -264,7 +264,10 @@ RP_ORIGIN=https://treckrr.example.org
   honours forwarded headers from *any* peer that can reach the published port —
   so anyone on the same network can forge their IP into the audit log and rotate
   past the per-IP rate limits. Restrict it to your proxy, or set
-  `HOST_BIND=127.0.0.1` when the proxy runs on the same host.
+  `HOST_BIND=127.0.0.1` — but only when the proxy is installed natively on this
+  host or runs with `network_mode: host`. A proxy in its own container on a bridge
+  network cannot reach the host's loopback; put it on the same Docker network as
+  the app and point it at `app:8080` instead, publishing no host port at all.
 - **X-Forwarded-For is read right-to-left.** The right-most entry is the address
   the proxy actually observed; earlier ones are client-supplied. This assumes
   exactly one trusted hop.

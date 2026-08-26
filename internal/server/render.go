@@ -278,10 +278,37 @@ func formDecimal(r *http.Request, name string) decimal.Decimal {
 	return parseGermanDecimal(r.FormValue(name))
 }
 
+// maxDecimalLen bounds the input decimal parsing will even attempt. Building the
+// mantissa runs through big.Int, whose base-10 parse is superlinear: measured at
+// 95 µs for 100 digits, 32 ms for 100k, and 2.7 SECONDS for a megabyte — which
+// limitBody's 1 MiB ceiling allows in a single field. Every real amount, rate,
+// quantity or width fits in a handful of characters, so anything past this is not
+// a number a person typed.
+//
+// A length cap alone is not enough, because SCIENTIFIC NOTATION packs an enormous
+// value into a handful of characters: "1e1000000" is nine, sails past this limit,
+// and parses cheaply — the cost lands on whatever touches the value afterwards.
+// Measured on decimal v1.4.0: at exponent 1e6, Round(2) takes 60 ms, String() —
+// which the SQL driver calls to store it — 207 ms, and GreaterThan(), i.e. the
+// range check meant to REJECT the value, 58 ms. The exponent is an int32, so
+// twelve characters reach 1e2147483647 and those figures grow superlinearly.
+// Nobody types an exponent into a Betrag or a Stundenzahl, so the notation is
+// refused outright, before any decimal operation runs on it.
+const maxDecimalLen = 32
+
 // parseGermanDecimal parses a raw string as an exact decimal, accepting "," or
 // "." as the decimal separator. Empty/invalid -> 0.
+//
+// The length guard sits HERE rather than at the call sites because the expensive
+// parse is here: twelve form fields across six handlers reach this function, and
+// a per-field check would have to be remembered twelve times and again for every
+// field added later. Over-long input is treated as invalid, which is the same
+// answer these callers already get for anything unparseable.
 func parseGermanDecimal(raw string) decimal.Decimal {
 	raw = strings.ReplaceAll(strings.TrimSpace(raw), ",", ".")
+	if len(raw) > maxDecimalLen || strings.ContainsAny(raw, "eE") {
+		return decimal.Zero
+	}
 	d, err := decimal.NewFromString(raw)
 	if err != nil {
 		return decimal.Zero

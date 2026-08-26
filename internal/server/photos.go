@@ -87,7 +87,8 @@ func processPhoto(raw []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Width*cfg.Height > maxPhotoPixels {
+	// Validate non-positive dimensions and use 64-bit math to prevent overflow.
+	if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > maxPhotoPixels {
 		return nil, errPhotoTooLarge
 	}
 	img, _, err := image.Decode(bytes.NewReader(raw))

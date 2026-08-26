@@ -53,12 +53,36 @@
 	/* Chassis — the machine frame: app bar + nav rail/tab bar stay this dark
 	   green-black in BOTH themes (a deliberate constant, like the white appbar
 	   icons); the orange marker is the only moving part. */
-	--chassis: #1f2823;
-	--chassis-2: #171f1a;
-	--chassis-text: #c9d4cd;
-	--chassis-muted: #9fb0a6;
-	--chassis-line: #33403a;
-	--chassis-active: #85d7a9; /* B: nav marker is a STATE -> mint */
+	--chassis: #fbfaf5;
+	--chassis-text: #1f4d38;   /* 9.23:1 on the chrome */
+	--chassis-muted: #5c6b62;  /* 5.38:1 — #6b7d72 would only reach 4.18 and fail AA */
+	--chassis-line: #1f4d38;   /* the edge does the separating a dark fill used to do */
+	--chassis-active: #85d7a9; /* B: nav marker is a STATE -> mint. Theme-constant. */
+	/* The active nav item is a filled chip rather than coloured text: mint on the
+	   light chrome reaches only 1.63:1, but keeps its full 5.65:1 on this green —
+	   so the marker keeps its colour and its contrast, and only gains a backdrop.
+	   #1f4d38 is deliberately the same green as the edge, the labels and the hero
+	   card; the old chassis #1f2823 reads as black once it is a small block on a
+	   light ground. Lighter is not available: from #2f6b4f on, the mint drops
+	   below 4.5:1. */
+	--chassis-chip: #1f4d38;
+	--chassis-on-chip: #85d7a9;
+	--chassis-pill: #1f4d38;      /* active year segment */
+	--chassis-on-pill: #fbfaf5;
+	/* Overlays that used to be white-on-dark and have to invert with the chrome. */
+	--chassis-fill: rgba(31, 77, 56, .07);
+	--chassis-border: rgba(31, 77, 56, .18);
+	--chassis-hover: rgba(31, 77, 56, .10);
+	/* On the light chrome the edge does the separating, so it needs weight. In dark
+	   the filled bar already separates and a hairline is enough — the dark blocks
+	   below keep it at 1px so that theme renders exactly as before. */
+	--chassis-edge: 2px;
+	/* Backup status glyph. The values below the dark blocks were tuned for a green
+	   bar and collapse on a light one (1.4–2.1:1); these are their light twins. */
+	--bk-mark: #1f4d38;
+	--bk-ok: #1f6b47;
+	--bk-warn: #8a5510;
+	--bk-bad: #b03a20;
 	/* Blueprint grid on the page ground — part of the Werkblatt identity. */
 	--grid-line: rgba(20, 40, 30, .05);
 	--radius: 10px;
@@ -73,8 +97,16 @@
 	--card-hairline: rgba(20, 40, 30, .16);
 	--card-shadow: 0 1px 2px rgba(24, 45, 35, .05);
 	--glow: none;
-	--glass: rgba(31, 40, 35, .92);
-	--glass-border: var(--chassis-line);
+	/* Translucent twin of --chassis for the floating tab bar. It has to move with
+	   the chrome: left on the old dark value it kept the bottom bar dark while the
+	   app bar went light, and the muted labels on it dropped to unreadable. */
+	--glass: rgba(251, 250, 245, .92);
+	--chassis-bar-shadow: 0 -6px 20px rgba(31, 77, 56, .10);
+	/* Accent for active state that sits ON THE BAR rather than on the chip. In the
+	   mobile tab bar the chip wraps only the icon, so the label and the top marker
+	   stand on the chrome itself — where mint reaches 1.63:1. The desktop rail does
+	   not need this: there the whole item IS the chip, so mint stays correct. */
+	--chassis-accent-bar: #1f4d38;
 	--btn-glow: rgba(224, 89, 16, .22);
 	--brand-grad: linear-gradient(135deg, var(--signal), var(--signal-press));
 	--tap: 44px;
@@ -111,11 +143,29 @@
 		--pay: #52b184;
 		--owe: #e0805f;
 		--chassis: #16201b;
-		--chassis-2: #101a15;
 		--chassis-muted: #93a49a;
 		--chassis-line: #263329;
-		/* --chassis-text / --chassis-active are theme-CONSTANT: declared once on
-		   bare :root, no dark override — identical copies would only drift. */
+		--chassis-chip: rgba(255, 255, 255, .05);
+		--chassis-on-chip: #fff;
+		--chassis-pill: #fff;
+		--chassis-on-pill: var(--chassis);
+		--chassis-fill: rgba(255, 255, 255, .08);
+		--chassis-border: rgba(255, 255, 255, .14);
+		--chassis-hover: rgba(255, 255, 255, .14);
+		--bk-mark: #fff;
+		--bk-ok: #8fe6b6;
+		--bk-warn: #f6c650;
+		--bk-bad: #ff9078;
+		--chassis-edge: 1px;
+		--chassis-bar-shadow: 0 -6px 24px rgba(0, 0, 0, .22);
+		--chassis-accent-bar: #85d7a9;
+		/* No longer theme-constant: the light chrome needs dark labels, so this value
+		   has to be restored here or the app bar renders dark green on dark green. */
+		--chassis-text: #c9d4cd;
+		/* --chassis-active stays theme-CONSTANT: the mint marker always sits on a
+		   dark ground (the chip in light, the bar in dark), so one value serves both.
+		   --chassis-text is NOT constant any more — the light chrome needs dark
+		   labels — and is therefore restored above. */
 		--grid-line: rgba(219, 229, 222, .035);
 		--shadow: 0 1px 2px rgba(0, 0, 0, .4);
 		--card-grad: var(--surface); /* flat card surface */
@@ -123,7 +173,6 @@
 		--card-shadow: 0 1px 2px rgba(0, 0, 0, .3);
 		--glow: none;
 		--glass: rgba(16, 26, 21, .94);
-		--glass-border: var(--chassis-line);
 		--btn-glow: rgba(255, 129, 66, .25);
 	}
 }
@@ -149,11 +198,28 @@
 	--accent-text: #e0a640;
 	--focus: #5b9bff;
 	--chassis: #16201b;
-	--chassis-2: #101a15;
 	--chassis-muted: #93a49a;
 	--chassis-line: #263329;
-	/* --chassis-text / --chassis-active are theme-CONSTANT: declared once on
-	   bare :root, no dark override — identical copies would only drift. */
+		--chassis-chip: rgba(255, 255, 255, .05);
+		--chassis-on-chip: #fff;
+		--chassis-pill: #fff;
+		--chassis-on-pill: var(--chassis);
+		--chassis-fill: rgba(255, 255, 255, .08);
+		--chassis-border: rgba(255, 255, 255, .14);
+		--chassis-hover: rgba(255, 255, 255, .14);
+		--bk-mark: #fff;
+		--bk-ok: #8fe6b6;
+		--bk-warn: #f6c650;
+		--bk-bad: #ff9078;
+		--chassis-edge: 1px;
+		--chassis-bar-shadow: 0 -6px 24px rgba(0, 0, 0, .22);
+		--chassis-accent-bar: #85d7a9;
+		/* No longer theme-constant: the light chrome needs dark labels, so this value
+		   has to be restored here or the app bar renders dark green on dark green. */
+		--chassis-text: #c9d4cd;
+	/* --chassis-active stays theme-CONSTANT: the mint marker always sits on a dark
+	   ground (the chip in light, the bar in dark), so one value serves both.
+	   --chassis-text is NOT constant any more and is restored above. */
 	--grid-line: rgba(219, 229, 222, .035);
 	--shadow: 0 1px 2px rgba(0, 0, 0, .4);
 	--card-grad: var(--surface); /* flat card surface */
@@ -161,7 +227,6 @@
 	--card-shadow: 0 1px 2px rgba(0, 0, 0, .3);
 	--glow: none;
 	--glass: rgba(16, 26, 21, .94);
-	--glass-border: var(--chassis-line);
 	--btn-glow: rgba(255, 129, 66, .25);
 	/* Chart-mark tokens must be redeclared here too: forcing dark via the theme
 	   toggle on a light system does not match the prefers-dark media query, so
@@ -281,7 +346,7 @@ em { font-style: normal; color: var(--muted); }
 	background: color-mix(in srgb, var(--chassis) 94%, transparent);
 	-webkit-backdrop-filter: blur(14px) saturate(1.3);
 	backdrop-filter: blur(14px) saturate(1.3);
-	border-bottom: 1px solid var(--chassis-line);
+	border-bottom: var(--chassis-edge) solid var(--chassis-line);
 	box-shadow: 0 4px 20px rgba(0, 0, 0, .18);
 }
 
@@ -292,9 +357,9 @@ em { font-style: normal; color: var(--muted); }
 	gap: .6rem;
 	padding: calc(.6rem + env(safe-area-inset-top)) 1rem .6rem;
 	background: transparent;
-	color: #fff;
+	color: var(--chassis-text);
 }
-.appbar__brand { display: flex; align-items: center; gap: .45rem; color: #fff; font-weight: 700; }
+.appbar__brand { display: flex; align-items: center; gap: .45rem; color: var(--chassis-text); font-weight: 700; }
 .appbar__brand img { display: block; }
 .appbar__brand-mark { display: block; }
 /* min-width:0 + ellipsis so a long page title (e.g. "Bemessungsgrundlagen")
@@ -312,9 +377,9 @@ em { font-style: normal; color: var(--muted); }
 	width: 40px; height: 40px;
 	display: grid; place-items: center;
 	background: transparent; border: 0; border-radius: 10px;
-	color: #fff; cursor: pointer;
+	color: var(--chassis-text); cursor: pointer;
 }
-.appbar__icon:hover { background: rgba(255, 255, 255, .14); }
+.appbar__icon:hover { background: var(--chassis-hover); }
 .appbar__icon svg { display: block; }
 
 /* ---- Side drawer ------------------------------------------------------ */
@@ -744,9 +809,9 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 	background: var(--glass);
 	-webkit-backdrop-filter: blur(14px) saturate(1.25);
 	backdrop-filter: blur(14px) saturate(1.25);
-	border-top: 1px solid var(--glass-border);
+	border-top: var(--chassis-edge) solid var(--chassis-line);
 	padding-bottom: env(safe-area-inset-bottom);
-	box-shadow: 0 -6px 24px rgba(0, 0, 0, .22);
+	box-shadow: var(--chassis-bar-shadow);
 }
 /* The tab bar rides on the chassis (dark in both themes); the orange marker is
    the only moving part. */
@@ -766,12 +831,12 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 	transition: background .18s ease, box-shadow .18s ease;
 }
 .tabbar__icon { width: 22px; height: 22px; display: block; }
-.tabbar__item.is-active { color: var(--chassis-active); font-weight: 700; }
-.tabbar__item.is-active .tabbar__pill { background: rgba(133, 215, 169, .14); color: var(--chassis-active); }
+.tabbar__item.is-active { color: var(--chassis-accent-bar); font-weight: 700; }
+.tabbar__item.is-active .tabbar__pill { background: var(--chassis-chip); color: var(--chassis-on-chip); }
 .tabbar__item.is-active::before {
 	content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
 	width: 20px; height: 3px; border-radius: 3px;
-	background: var(--chassis-active);
+	background: var(--chassis-accent-bar);
 }
 
 .tabbar__item span:last-child { white-space: nowrap; }
@@ -791,21 +856,22 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .yearbar {
 	display: flex; gap: .4rem; align-items: center;
 	overflow-x: auto; -webkit-overflow-scrolling: touch;
-	padding: .5rem 1rem; background: transparent; border-bottom: 1px solid rgba(255, 255, 255, .12);
+	padding: .5rem 1rem; background: transparent; border-bottom: 1px solid var(--chassis-border);
 	scrollbar-width: none;
 }
 .yearbar::-webkit-scrollbar { display: none; }
-/* Year segments on the chassis: mono, squared, paper-white active. The chassis
-   is dark in both themes, so one treatment serves both. */
+/* Year segments on the chassis: mono, squared, filled when active. The chassis is
+   light in one theme and dark in the other, so the overlays go through tokens
+   instead of the white-on-dark literals this block used to carry. */
 .yearpill {
 	flex: 0 0 auto; padding: .35rem .85rem; border-radius: 7px;
-	background: rgba(255, 255, 255, .08); color: rgba(255, 255, 255, .88); font-weight: 600;
+	background: var(--chassis-fill); color: var(--chassis-text); font-weight: 600;
 	font-family: var(--font-mono);
-	font-variant-numeric: tabular-nums; text-decoration: none; border: 1px solid rgba(255, 255, 255, .14);
+	font-variant-numeric: tabular-nums; text-decoration: none; border: 1px solid var(--chassis-border);
 	min-height: 2rem; display: inline-flex; align-items: center;
 }
-.yearpill.is-active { background: #fff; color: var(--chassis); border-color: #fff; font-weight: 700; }
-.yearpill--manage { font-weight: 700; color: rgba(255, 255, 255, .8); }
+.yearpill.is-active { background: var(--chassis-pill); color: var(--chassis-on-pill); border-color: var(--chassis-pill); font-weight: 700; }
+.yearpill--manage { font-weight: 700; color: var(--chassis-muted); }
 
 /* ---- Basis workspace header ------------------------------------------- */
 .workspace {
@@ -1109,13 +1175,14 @@ span.paychip { cursor: default; }
 /* The app bar is a green (--primary) surface in BOTH themes, so the page-surface
    status tokens don't work here — the mid-green --primary-strong is nearly the
    header colour and vanishes in light mode. Use bright, header-tuned colours (same
-   reason .appbar icons are hard-coded #fff) + a faint dark shadow so the ring pops
-   on the green bar in light and dark alike. */
-.bkdot__mark { display: inline-flex; color: #fff; filter: drop-shadow(0 1px 1px rgba(0,0,0,.28)); }
+   reason the .appbar icons follow --chassis-text) + a faint shadow so the ring
+   stays readable. The tones go through --bk-* because the bright values below were
+   picked for a green bar and collapse to 1.4–2.1:1 on a light one. */
+.bkdot__mark { display: inline-flex; color: var(--bk-mark); filter: drop-shadow(0 1px 1px rgba(0,0,0,.20)); }
 .bkdot__mark svg { display: block; }
-.bkdot--ok .bkdot__mark { color: #8fe6b6; }
-.bkdot--warn .bkdot__mark { color: #f6c650; animation: bkdot-pulse 1.7s ease-in-out infinite; }
-.bkdot--bad .bkdot__mark { color: #ff9078; }
+.bkdot--ok .bkdot__mark { color: var(--bk-ok); }
+.bkdot--warn .bkdot__mark { color: var(--bk-warn); animation: bkdot-pulse 1.7s ease-in-out infinite; }
+.bkdot--bad .bkdot__mark { color: var(--bk-bad); }
 @keyframes bkdot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
 /* For a future real "Backup läuft" state, swap the amber icon for the open arc
    (path "M12 3a9 9 0 1 0 9 9") and use: animation: bkdot-spin .9s linear infinite;
@@ -1982,7 +2049,7 @@ span.paychip { cursor: default; }
 		flex-direction: column; justify-content: flex-start; gap: .15rem;
 		background: var(--chassis);
 		-webkit-backdrop-filter: none; backdrop-filter: none;
-		border-top: 0; border-right: 1px solid var(--chassis-line);
+		border-top: 0; border-right: var(--chassis-edge) solid var(--chassis-line);
 		box-shadow: none;
 		padding: 4.6rem .55rem 1rem; /* below the sticky app-bar row */
 		counter-reset: navno;
@@ -2004,7 +2071,7 @@ span.paychip { cursor: default; }
 		font-size: .62rem; font-weight: 700; letter-spacing: .08em;
 		color: var(--chassis-muted);
 	}
-	.tabbar__item.is-active { background: rgba(255, 255, 255, .05); border-left-color: var(--chassis-active); color: #fff; }
+	.tabbar__item.is-active { background: var(--chassis-chip); border-left-color: var(--chassis-active); color: var(--chassis-on-chip); }
 	.tabbar__item.is-active::before { color: var(--chassis-active); }
 	.tabbar__pill { width: auto; height: auto; }
 	.tabbar__item.is-active .tabbar__pill { background: none; box-shadow: none; }

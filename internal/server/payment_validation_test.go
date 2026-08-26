@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/d0linger/treckrr/internal/config"
 	"github.com/d0linger/treckrr/internal/store"
@@ -124,6 +125,66 @@ func TestHandlePaymentAddValidation(t *testing.T) {
 		flashCookie := flashText(t, s, rr)
 		if !strings.Contains(flashCookie, "Datum darf höchstens 50 Zeichen lang sein.") {
 			t.Errorf("expected long date flash message, got cookie: %q", flashCookie)
+		}
+	})
+
+	t.Run("overly long skonto rejected", func(t *testing.T) {
+		longSkonto := strings.Repeat("2", maxDecimalLen+1)
+		form := url.Values{}
+		form.Set("year_id", "1")
+		form.Set("amount", "100.00")
+		form.Set("paid_on", "2026-03-30")
+		form.Set("note", "Valid Note")
+		form.Set("skonto", longSkonto)
+
+		req := httptest.NewRequest(http.MethodPost, "/neighbors/1/payments", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("id", "1")
+		rr := httptest.NewRecorder()
+
+		s.handlePaymentAdd(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Skonto darf höchstens 32 Zeichen lang sein.") {
+			t.Errorf("expected long skonto flash message, got cookie: %q", flashCookie)
+		}
+	})
+
+	t.Run("scientific notation rejected", func(t *testing.T) {
+		// Nine characters, well inside maxDecimalLen, but exponent 1e6 costs
+		// hundreds of milliseconds in every operation that follows — including the
+		// range check meant to reject it. Guarded before parsing, for both the
+		// amount (which bypasses parseGermanDecimal) and the skonto (which does not).
+		for _, tc := range []struct{ field, value string }{
+			{"amount", "1e1000000"},
+			{"amount", "1E9"},
+			{"skonto", "1e1000000"},
+		} {
+			form := url.Values{}
+			form.Set("year_id", "1")
+			form.Set("amount", "100.00")
+			form.Set("paid_on", "2026-03-30")
+			form.Set("note", "")
+			form.Set(tc.field, tc.value)
+
+			req := httptest.NewRequest(http.MethodPost, "/neighbors/1/payments", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.SetPathValue("id", "1")
+			rr := httptest.NewRecorder()
+
+			done := make(chan struct{})
+			go func() { defer close(done); s.handlePaymentAdd(rr, req) }()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatalf("%s=%q did not return within 5s — the guard is not in front of the decimal work", tc.field, tc.value)
+			}
+			if rr.Code != http.StatusSeeOther {
+				t.Errorf("%s=%q: status %d, want SeeOther", tc.field, tc.value, rr.Code)
+			}
 		}
 	})
 
