@@ -1,498 +1,357 @@
 <div align="center">
 
-# Treckrr 🚜
+<img src="internal/web/static/icons/favicon.svg" width="104" alt="Treckrr logo">
 
-**Bill tractor & machine costs for agricultural neighbourly help — from a phone.**
+# Treckrr
 
-Treckrr is a mobile-first Progressive Web App that replaces the hand-kept
-spreadsheet farmers use to settle shared machine work (*Nachbarschaftshilfe*).
-Work is booked per **neighbour** and **year**, priced automatically from a shared
-rate list, offset against a running account, and exported as CSV or a shareable
-receipt.
+**Self-hosted cost-sharing ledger for agricultural machinery** — neighbours book each
+other's tractors and implements, Treckrr prices the work from a shared rate basis and
+issues tax-correct Austrian invoices. Go, PostgreSQL, Docker.
 
-[![CI](https://github.com/d0linger/Treckrr/actions/workflows/ci.yml/badge.svg)](https://github.com/d0linger/Treckrr/actions/workflows/ci.yml)
-[![Security](https://github.com/d0linger/Treckrr/actions/workflows/security.yml/badge.svg)](https://github.com/d0linger/Treckrr/actions/workflows/security.yml)
-![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)
-![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![CI](https://github.com/d0linger/treckrr/actions/workflows/ci.yml/badge.svg)](https://github.com/d0linger/treckrr/actions/workflows/ci.yml)
+[![Security](https://github.com/d0linger/treckrr/actions/workflows/security.yml/badge.svg)](https://github.com/d0linger/treckrr/actions/workflows/security.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-e8763a.svg)](LICENSE)
+![Go](https://img.shields.io/badge/Go-1.26.6+-00ADD8?logo=go&logoColor=white)
+![PWA](https://img.shields.io/badge/PWA-offline--capable-2f6f4f)
+![Self-hosted](https://img.shields.io/badge/self--hosted-Docker-2496ED?logo=docker&logoColor=white)
 
 </div>
 
-> [!NOTE]
-> **The user interface is German** — the app targets a German-speaking farming
-> context. The **code, docs and configuration are English** so the project is easy
-> to fork and adapt.
+Treckrr is for a **Maschinengemeinschaft**: a handful of neighbouring farms that share
+machinery and settle up once a year. Bookings are priced from one agreed rate basis, so
+nobody argues about the hourly rate, and the year closes with a frozen invoice per
+neighbour that satisfies § 11 UStG.
+
+> The application UI is in **German**; this README is in English.
+>
+> All assets are served **locally** — no CDNs, no tracking, strict CSP. Your data stays
+> on your machine.
 
 ---
 
-## Contents
+## 📸 Screenshots
 
-- [Screenshots](#screenshots)
-- [Why Treckrr](#why-treckrr)
-- [How billing works](#how-billing-works)
-- [Features](#features)
-- [Quick start](#quick-start)
-- [Configuration](#configuration)
-- [Deployment](#deployment)
-- [Architecture](#architecture)
-- [Development](#development)
-- [Security & CI](#security--ci)
-- [License](#license)
+> The screenshots follow your theme automatically — **light on GitHub's light theme, dark on its dark theme**.
 
----
+<table>
+<tr>
+<td align="center"><b>Anmelden</b></td>
+<td align="center"><b>Übersicht</b></td>
+<td align="center"><b>Beleg</b></td>
+<td align="center"><b>Grundlage</b></td>
+</tr>
+<tr>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/login-m-dark.png"><img alt="Sign-in with password or passkey" src="docs/img/login-m-light.png" width="200"></picture></td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/dashboard-m-dark.png"><img alt="Year overview with per-neighbour balances" src="docs/img/dashboard-m-light.png" width="200"></picture></td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/beleg-m-dark.png"><img alt="Receipt with itemised bookings, payments and open balance" src="docs/img/beleg-m-light.png" width="200"></picture></td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/grundlagen-m-dark.png"><img alt="Rate basis with tractors, load levels and implements" src="docs/img/grundlagen-m-light.png" width="200"></picture></td>
+</tr>
+</table>
 
-## Screenshots
-
-<p align="center">
-  <img src="docs/img/login.png" width="200" alt="Login — password or passkey">
-  <img src="docs/img/dashboard.png" width="200" alt="Billing-year dashboard">
-  <img src="docs/img/grundlagen.png" width="200" alt="Rate basis — tractor & machine rates">
-  <img src="docs/img/neighbor.png" width="200" alt="Neighbour — balance & new booking">
-</p>
-<p align="center">
-  <img src="docs/img/verrechnung.png" width="200" alt="Bookings & running account (Verrechnung)">
-  <img src="docs/img/beleg.png" width="200" alt="Shareable receipt (Beleg)">
-  <img src="docs/img/stats.png" width="200" alt="Statistics — KPIs & charts">
-  <img src="docs/img/menu.png" width="200" alt="Side-drawer navigation">
-</p>
-<p align="center"><sub>Mobile-first PWA · German UI · light &amp; dark themes · password + TOTP or one-tap passkey login · exact-decimal billing with running-account offset (Verrechnung) and a shareable receipt.</sub></p>
+<p align="center"><b>Jahresübersicht</b> — every neighbour's hours, cost and payment state for the billing year, with batch invoicing and CSV export</p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/dashboard-dark.png"><img alt="Year overview: total cost, per-neighbour balances and payment state" src="docs/img/dashboard-light.png" width="760"></picture></p>
 
 ---
 
-## Why Treckrr
+## ✨ Features
 
-Neighbours share expensive machinery: one farmer's tractor and baler does another's
-field, hours get jotted down, and once a year somebody totals it all up in a
-spreadsheet. That spreadsheet is fragile — a rate changes and last year's numbers
-silently move, a formula breaks, and there is no record of who paid what.
+- **Bookings** priced from a shared rate basis — tractor PS × load level, or per unit/area — with implements, rigs ("Gespanne"), receipt photos, recurring series, quick capture, copy-from-existing, a duplicate warning, and storno that voids without deleting.
+- **Rate bases** per year: tractors, load levels, implements and rigs. Compare two bases side by side, and lock one so its prices stop moving.
+- **Recalculation**: after a rate change, preview every affected booking old → new and apply it in one step. Bookings on an already-issued invoice are left alone.
+- **Billing years** per neighbour with ledger positions, partial payments (7-day undo), carry-forward between years, carrying members over from last year, plus archiving and GDPR anonymisation.
+- **Invoices** frozen at issue time (§ 11 UStG snapshot) with sequential numbering, storno, credit notes, PDF, EPC QR code and optional e-mail with send tracking. **Sammel-Festschreibung** issues a whole year at once, showing per neighbour what would be issued, blocked or skipped.
+- **Austrian VAT modes**: Kleinunternehmer (no VAT shown), flat-rate § 22, or standard taxation — company data, IBAN and payment terms flow into every document.
+- **Public receipt links** — expiring, revocable, hash-stored tokens so a neighbour can view their invoice without an account.
+- **Account statement** per neighbour across all years, as a page and as PDF.
+- **Dunning** (Mahnwesen): overdue list, printable reminder, PDF, EPC QR, CSV export.
+- **Import/export**: CSV bookings with preview, bank statement payment matching, per-neighbour GDPR export, year and neighbour CSV.
+- **Authentication**: password + optional TOTP with recovery codes, passkeys (WebAuthn, user verification required), roles (admin / editor / viewer), and session management with per-device revocation.
+- **Append-only audit log** enforced by a database trigger, filterable and exportable, with staggered retention (1 year operational, 7 years for § 132 BAO records).
+- **Encrypted backups** (AES-256-GCM) on a schedule, optional off-box S3 target, upload-and-validate before restoring, and a CLI restore that puts the app into maintenance mode.
+- **PWA** with offline booking capture that replays under the user who captured it when the connection returns.
+- Full-text search with typo tolerance, statistics per year and across all years, light/dark theme, Prometheus metrics (opt-in).
 
-Treckrr keeps the same mental model but makes it durable:
+Server-rendered Go templates with vanilla JS — no frontend build step, no CDN, strict CSP.
 
-- **Prices live in one place** and are reused across years, so you edit a rate once.
-- **Every booking freezes its price** at the moment it's made — editing a rate list
-  later never rewrites history.
-- **All money is exact decimal** (`NUMERIC` end to end), so totals reconcile to the
-  cent.
-- **It runs on the phone in the field**, installs like an app, and works offline for
-  reading.
-
-Self-hosted, single small Go binary, PostgreSQL, no CDNs — every byte of CSS, JS,
-font and icon is served from your own host.
-
----
-
-## How billing works
-
-Two concepts are deliberately kept apart:
-
-| Concept | German | What it is |
-|---|---|---|
-| **Rate basis** | *Bemessungsgrundlage* | A price list — tractors, machines, load levels and fixed rigs. Published only every few years and **shared by several billing years**. |
-| **Billing year** | *Abrechnungsjahr* | A calendar year you create. It **picks one rate basis** and has its **own set of neighbours**. |
-
-Hourly rates come straight from the original spreadsheet:
-
-| Element | Formula |
-|---|---|
-| Tractor rate | `PS × cost-per-PS/h` (load level *light / medium / heavy*) |
-| Machine rate | `working-width × cost-per-width/h` |
-| Rig (*Gespann*) rate | tractor rate + Σ machine rates |
-| Booking cost | `hours × rig rate` |
-
-Each booking stores a **frozen price snapshot**, so historical exports never change
-when a basis is edited later. Alongside the priced work, each neighbour has a
-**running account** (*Verrechnung*): free-form offsetting entries — *"I owe you"* or
-*"extra charge"* — that combine with the work total into a single **balance**
-(*Saldo*). All amounts are computed and stored as exact decimals
-(Postgres `NUMERIC` + `shopspring/decimal`), never floats.
-
-```
- Rate basis (2024)  ──picked by──▶  Billing year 2024  ──has──▶  Neighbours
-   tractors                             │                          │
-   machines                             │                          ├─ bookings (frozen price)
-   load levels                          │                          └─ ledger entries (Verrechnung)
-   fixed rigs                           ▼                                     │
-                                   completed → payment status                 ▼
-                                                                         Saldo + receipt (Beleg)
-```
-
----
-
-## Features
-
-**Billing years**
-- Create a year, pick its rate basis, add neighbours — existing, brand new, or
-  **carried over** from last year with per-neighbour checkboxes.
-- Fast year switching; status *in progress* → *completed*.
-- Completing a year **locks its bookings** and unlocks a per-neighbour **payment
-  status** (*open* → *paid*) with paid/open totals. Years can be reopened.
-- **Recalculate** flags bookings whose rate basis changed after they were made.
-
-**Bookings**
-- Book a **fixed rig** or a **free manual combination**, with a live rate preview
-  driven by the pricing API.
-- Create, **edit**, **quick multi-row entry**, **void** (stays visible but stops
-  counting; reversible) or delete — with client-side validation.
-- Excel-style neighbour overview (date, activity incl. rig detail, hours, cost)
-  with totals and a per-activity summary.
-
-**Neighbours & settlement**
-- Central, global neighbour list — create/rename once, reused across years.
-  Neighbours **with bookings can't be deleted**, only **deactivated / reactivated**;
-  their history stays intact.
-- **Running account** (*Verrechnung*): add offsetting debits/credits per neighbour
-  that roll into the year's **balance**.
-- Cross-year **history** per neighbour, including payment history.
-- **Printable Beleg** — a compact, screenshot-ready receipt per neighbour/year for
-  handing over or messaging, also as **PDF** and by **e-mail**.
-- **CSV export** per year and per neighbour; **CSV import** of bookings.
-- **Photo receipts** — attach photos to a booking.
-
-**Invoicing (§ 11 UStG)**
-- **Issue a formal invoice** (*Rechnung festschreiben*): a confirm step checks the
-  § 11 mandatory fields (issuer/recipient, tax note, and the recipient UID once an
-  invoice exceeds € 10,000), then **freezes an immutable snapshot** — net / USt /
-  gross / rate and the legal fields are pinned at issuance and carry an integrity
-  anchor, so a later basis or master-data edit never rewrites an issued invoice.
-- **Corrections keep the trail**: *Storno* cancels an invoice and *Gutschrift*
-  books a credit note (e.g. a **Skonto** early-payment discount), split into net and
-  VAT — the original stays on record.
-- **Scan-to-pay**: an **EPC/GiroCode QR** on issued invoices with an IBAN and an
-  open amount; **PDF** and **e-mail** dispatch; mark-sent with undo.
-- **Issuer master data** (*Betriebsdaten*): sender details and tax mode
-  (incl. *Kleinunternehmer*), used across every invoice.
-
-**Payments & dunning**
-- **Record payments** per neighbour (with a soft-delete undo grace) and **import
-  bank credits** from a **CSV** or **camt.053** (ISO 20022) file with a preview.
-- **Mahnwesen**: an overdue overview per year (CSV export) and a three-stage
-  reminder flow — friendly *Zahlungserinnerung* → *1. Mahnung* → *2. Mahnung* — each
-  as PDF, by e-mail, with its own scan-to-pay QR.
-- **Recurring bookings** (*Serienbuchungen*): turn a booking into a weekly/monthly
-  rule that materialises automatically; pause/resume or delete.
-
-**Rate bases & master data**
-- Editable name and "valid-from" year; **clone** a basis into a new one (the source
-  stays untouched); delete while unused or **lock** it read-only.
-- Manage tractors, machines, load levels and fixed rigs per basis in a dedicated
-  workspace.
-- Tractors/machines are **deactivatable** (kept for existing bookings), have a custom
-  **sort order** and machine **categories** with filtering; rigs show a **cost
-  breakdown**, and a **basis comparison** shows the rate delta (%) against another
-  basis.
-
-**Reporting** (`/stats`)
-- KPIs (revenue, hours, paid/open), locally rendered **bar charts** and
-  **sparklines** (per neighbour / activity / tractor — no JS framework) and a
-  **year comparison**.
-
-**Accounts, roles & auth**
-- **Roles**: administrator, editor, read-only.
-- **Login**: password + **TOTP two-factor** (setup QR + one-time **recovery codes**),
-  or one-tap **passkeys / WebAuthn** (usernameless, biometric) — password + TOTP
-  stay the fallback. Admins can reset a user's 2FA.
-- **Sessions**: rolling (stay signed in while active), listable and revocable;
-  password/role changes sign out other sessions.
-
-**Platform**
-- Installable **PWA** with an offline fallback, **dark mode** (light/dark/auto,
-  remembered per device), native `<dialog>` confirmations, and content-hashed assets
-  with automatic service-worker cache refresh.
-- **Automatic database backups** via an optional Compose profile.
-
-<details>
-<summary><strong>Security hardening at a glance</strong></summary>
-
-- **Secrets at rest**: TOTP secrets encrypted (AES-GCM), passwords bcrypt-hashed,
-  recovery codes SHA-256-hashed, passkeys store only public keys.
-- **Request safety**: CSRF tokens on all state-changing requests, **HSTS** over
-  HTTPS, and a strict same-origin **Content-Security-Policy** (no external hosts).
-- **Abuse resistance**: rate limiting on login and every sensitive action;
-  TOTP replay protection.
-- **Audit trail** (`/admin/audit`) with search, action filter and CSV export; every
-  request is also logged to stdout. The `audit_log` table is **append-only** at the
-  database level (a trigger blocks UPDATE and unauthorised DELETE) so the trail is
-  tamper-evident, and entries are pruned on a **staggered retention** — security/auth
-  noise after ~1 year, business- and tax-relevant events kept ~7 years (§ 132 BAO).
-- **Recoverable access**: the bootstrap admin is reconciled from environment
-  variables on every start.
-
-See [SECURITY.md](SECURITY.md) to report a vulnerability.
-
-</details>
-
----
-
-## Quick start
-
-Requires Docker with Compose.
+## 🚀 Quickstart (Docker Compose)
 
 ```bash
-# 1. Configure — set at least SESSION_SECRET, ADMIN_PASSWORD, POSTGRES_PASSWORD
-#    (if you change POSTGRES_PASSWORD, update the password inside DATABASE_URL too)
+git clone https://github.com/d0linger/treckrr.git && cd treckrr
 cp .env.example .env
-
-# 2. Start (builds the app image, runs PostgreSQL as a standalone container)
-docker compose up -d --build
-
-# 3. Open  →  http://localhost:8080   (HOST_PORT from .env)
 ```
 
-On first start the app runs its schema migrations and provisions the admin user.
-The database begins **empty**: create a **rate basis** under **Grundlagen**, then a
-**billing year** under **Jahre**, and add neighbours.
+Generate the secrets and put them in `.env`:
 
-### Prebuilt image (GHCR)
+```bash
+openssl rand -hex 32   # SESSION_SECRET
+openssl rand -hex 32   # BACKUP_ENCRYPTION_KEY (optional, enables backups)
+```
 
-A multi-arch image (`linux/amd64`, `linux/arm64`) is published to GitHub Container
-Registry on every push to `main` and on `v*` release tags — run it without building:
+Set at minimum **SESSION_SECRET**, **ADMIN_PASSWORD** and **POSTGRES_PASSWORD** — and put the same database password inside **DATABASE_URL**. The app refuses to start while any of them still holds the documented placeholder value.
+
+```bash
+docker compose up -d
+```
+
+Open **http://localhost:8080** and log in as `admin`. You are forced to change the bootstrap password on first login.
+
+**Prebuilt image instead of building locally** (multi-arch, amd64 + arm64):
 
 ```bash
 docker compose -f docker-compose.ghcr.yml up -d
-# pin a version instead of latest:
-TRECKRR_TAG=1.2 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
-Image: `ghcr.io/d0linger/treckrr` (tags: `latest`, `main`, semver from release tags).
+Pin a release rather than tracking `latest` with `TRECKRR_TAG=1.4`.
 
 ---
 
-## Configuration
+## ⚙️ Configuration / Environment Variables
 
-Copy `.env.example` to `.env` and adjust. The most important variables:
+| Variable | Description | Default | Required |
+| --- | --- | --- | --- |
+| **DATABASE_URL** | Postgres DSN (URL or keyword/value form) | — | Yes |
+| **SESSION_SECRET** | Signing key, min. 32 chars, not the placeholder | — | Yes |
+| **ADMIN_PASSWORD** | Bootstrap admin password, changed at first login | — | Yes |
+| **POSTGRES_PASSWORD** | Database password; must match `DATABASE_URL` | — | Yes |
+| **POSTGRES_USER** / **POSTGRES_DB** | Database role and name | `treckrr` | No |
+| **ADMIN_USERNAME** | Bootstrap admin login name | `admin` | No |
+| **APP_PORT** | Port inside the container | `8080` | No |
+| **HOST_PORT** | Published port on the host | `8080` | No |
+| **HOST_BIND** | Host interface to bind; use `127.0.0.1` when the proxy is local | `0.0.0.0` | No |
+| **COOKIE_SECURE** | Force the `Secure` cookie flag (set behind HTTPS) | `false` | No |
+| **TRUST_PROXY** | Honour `X-Forwarded-For` / `-Proto` from a reverse proxy | `false` | No |
+| **TRUSTED_PROXIES** | Comma-separated CIDRs allowed to set forwarded headers | — | No |
+| **ENCRYPTION_SECRET** | Data-at-rest key for TOTP secrets; pin to the OLD value before rotating `SESSION_SECRET` | `SESSION_SECRET` | No |
+| **RP_ID** / **RP_ORIGIN** | WebAuthn relying party host and origin; must match the browser URL | `localhost` / `http://localhost:8080` | No |
+| **ADMIN_PASSWORD_RESET** | Break-glass: reset the admin password on next boot | `false` | No |
+| **BACKUP_ENCRYPTION_KEY** | Min. 16 chars; empty disables backups entirely | — | No |
+| **BACKUP_DIR** / **BACKUP_STATUS_FILE** | Dump directory and status file | `/backups` | No |
+| **BACKUP_KEEP** | Number of dumps to retain | `7` | No |
+| **S3_ENDPOINT** / **S3_BUCKET** | Off-box backup target; empty disables it | — | No |
+| **S3_ACCESS_KEY** / **S3_SECRET_KEY** / **S3_PREFIX** | S3 credentials and key prefix | — | No |
+| **S3_USE_SSL** | TLS for the S3 endpoint | `true` | No |
+| **SMTP_HOST** / **SMTP_FROM** | E-mail delivery; both must be set to enable it | — | No |
+| **SMTP_PORT** / **SMTP_USER** / **SMTP_PASSWORD** | SMTP credentials | `587` | No |
+| **SMTP_STARTTLS** | Use STARTTLS | `true` | No |
+| **METRICS_TOKEN** | Min. 16 chars; enables `GET /metrics` behind a bearer token | — | No |
+| **LOG_FORMAT** / **LOG_LEVEL** | `text`\|`json`, `debug`\|`info`\|`warn`\|`error` | `text` / `info` | No |
 
-| Variable | Purpose |
-|---|---|
-| `SESSION_SECRET` | Cookie-signing secret, ≥ 32 chars (`openssl rand -hex 32`). **Change for production.** |
-| `ENCRYPTION_SECRET` | AES key for data at rest (TOTP secrets), ≥ 16 chars. Defaults to `SESSION_SECRET` — see the rotation note below. |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Bootstrap admin, reconciled on **every** start |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Database credentials |
-| `DATABASE_URL` | Postgres connection string (defaults to the `db` container). Its embedded password must match `POSTGRES_PASSWORD`. |
-| `COOKIE_SECURE` | `true` when served over HTTPS directly (or use `TRUST_PROXY`) |
-| `TRUST_PROXY` | `true` behind a trusted reverse proxy — derives client IP & scheme from `X-Forwarded-*` |
-| `RP_ID` / `RP_ORIGIN` | Passkeys: host (no scheme) and full origin, e.g. `treckrr.example.com` / `https://treckrr.example.com` |
-| `APP_PORT` / `HOST_PORT` | Container / host port |
-| `BACKUP_INTERVAL` / `BACKUP_KEEP` | Interval and retention of automatic backups |
-
-> [!IMPORTANT]
-> The admin password is reconciled from the environment on **every** start, so
-> access is always recoverable through your Docker configuration.
-
-> [!IMPORTANT]
-> **Rotating `SESSION_SECRET`** also changes the data-at-rest key unless
-> `ENCRYPTION_SECRET` is set, which would make stored TOTP secrets undecryptable.
-> To rotate safely, first set `ENCRYPTION_SECRET` to the **old** `SESSION_SECRET`
-> so existing TOTP secrets keep decrypting, then change `SESSION_SECRET`. Rotate
-> `ENCRYPTION_SECRET` itself only once those secrets are re-encrypted or no
-> longer needed.
+The backup schedule is a cron expression set in the admin Backup panel, not an environment variable.
 
 ---
 
-## Deployment
+## 💾 Prerequisites & Data Volumes
 
-### Behind a reverse proxy (Nginx Proxy Manager, Traefik, Caddy …)
+- **Docker** with Compose v2. No Go, Node or Postgres needed on the host — everything builds and runs in containers.
+- **RAM**: the compose files cap the app at 768 MB and Postgres at 1 GB, so keep ~1.8 GB free. Idle use is roughly 15 MB and 31 MB.
+- **Port 8080** published on the host (`HOST_PORT`). The database port is not published.
+- Migrations run automatically at startup and are forward-only — **take a backup before upgrading**.
 
-The app speaks **plain HTTP on port 8080** — the proxy terminates TLS.
+Persist these two named volumes:
 
-1. Set `TRUST_PROXY=true` so real client IPs (audit / rate-limit) and the `Secure`
-   cookie flag are derived from `X-Forwarded-For` / `X-Forwarded-Proto`.
-   **Only enable when the app is reachable *exclusively* through the proxy** —
-   otherwise clients could spoof those headers.
-2. Point the proxy at `treckrr-app:8080` (same Docker network) or the host IP, at
-   the **domain root** (no sub-path). Websockets are not required.
-3. For passkeys, set `RP_ID` / `RP_ORIGIN` to the **public** host.
-4. Prefer **not** exposing `HOST_PORT` publicly — only the proxy needs it.
-5. Health check endpoint: `GET /healthz`.
+| Volume | Contents |
+| --- | --- |
+| `pgdata` | PostgreSQL data directory — all business data |
+| `backups` | Encrypted dumps and `status.json` |
 
-**Minimal Nginx example** — the line that matters most is `X-Forwarded-Proto`;
-without it the app can't tell it is served over HTTPS, so it never sets `Secure`
-cookies or HSTS:
+Backups next to the database are not backups: set the **S3_\*** variables, or sync the `backups` volume to another machine.
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name treckrr.example.com;
-    client_max_body_size 10m;
-
-    location / {
-        proxy_pass         http://127.0.0.1:8080;   # or http://treckrr-app:8080 on the same network
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;   # REQUIRED for Secure cookies + HSTS
-    }
-}
-```
-
-With **Traefik** or **Caddy** the `X-Forwarded-*` headers are added automatically —
-keep `TRUST_PROXY=true` and route to `treckrr-app:8080`.
-
-<details>
-<summary><strong>Deploying with Portainer</strong></summary>
-
-Portainer's **web-editor** stack is processed by the Compose engine running *inside
-the Portainer container*, which **cannot see files on the Docker host**. So:
-
-- `env_file: /treckrr/.env` (or any host path) **fails** — Portainer can't read it
-  and the deploy returns **HTTP 500**. Host `env_file` paths only work when you run
-  `docker compose` **on the host itself**.
-- Instead keep `${VAR}` placeholders in the compose file and supply the values in
-  Portainer's **Environment variables** panel (Advanced mode accepts a whole `.env`
-  at once). One set of variables can feed **both** the `db` and `app` services.
-- Values in the panel are literal — no `$`/`#`/quote escaping.
-
-To read a real `.env` **file** from disk instead, don't use the web editor — run the
-stack on the host, where `env_file` works: `cd /treckrr && docker compose up -d`.
-
-</details>
-
-<details>
-<summary><strong>Encrypted backups &amp; restore</strong></summary>
-
-The app makes **AES-256-GCM encrypted** `pg_dump`s. Set a key to enable them:
-
-```bash
-BACKUP_ENCRYPTION_KEY=...   # ≥16 chars, separate from SESSION_SECRET; NOT recoverable
-BACKUP_KEEP=7               # dumps to retain in BACKUP_DIR (default /backups)
-# The backup schedule (cron) is set in the admin Backup panel, not via env.
-```
-
-- **On demand:** admin **Backup** panel → *Backup jetzt* streams a `.dump.enc`
-  to your browser. Scheduled dumps also land in `BACKUP_DIR` and (optionally) S3.
-- **Off-box S3/Backblaze** (3-2-1): set `S3_ENDPOINT`, `S3_BUCKET`,
-  `S3_ACCESS_KEY`, `S3_SECRET_KEY` (and `S3_PREFIX`, `S3_USE_SSL`).
-- **Restore** overwrites the DB — from the panel (upload + re-enter key + type
-  `RESTORE`) or the CLI:
+**Restore** is deliberately CLI-only and asks for typed confirmation:
 
 ```bash
 docker compose run --rm app restore --test <file.dump.enc>   # validate only
-docker compose run --rm app restore <file.dump.enc>          # destructive, asks to type RESTORE
+docker compose run --rm app restore <file.dump.enc>          # overwrites the live database
 ```
-
-</details>
-
-<details>
-<summary><strong>Running rootless (rootless Docker / Podman)</strong></summary>
-
-The stack runs under a **rootless** container engine with no changes:
-
-- The app image runs as a **non-root** user (`treckrr`, UID 10001) with a
-  **read-only root filesystem**, `no-new-privileges` and only a small `tmpfs` for
-  `/tmp`; Postgres uses a named volume; nothing needs privileged ports or
-  capabilities.
-- On Ubuntu: install rootless Docker (`docker-ce-rootless-extras` + `uidmap`, then
-  `dockerd-rootless-setuptool.sh install`), point at the user socket
-  (`export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock`), run
-  `loginctl enable-linger "$USER"`, then `docker compose up -d --build`. Runs
-  unchanged under **rootless Podman** (`podman compose up`).
-- The app listens on **8080** (non-privileged); TLS/443 is terminated by your proxy,
-  so no `CAP_NET_BIND_SERVICE` is needed.
-- The backup profile bind-mounts `./backups`; under rootless the dumps are owned by a
-  mapped sub-UID — retrieve them with `docker compose cp` or make the directory
-  writable for the mapping.
-
-</details>
 
 ---
 
-## Architecture
+## 🧮 Cost calculation
 
-A single Go binary serves the API, the embedded templates and the local assets;
-PostgreSQL holds the data. No runtime dependencies beyond the two containers.
+A booking is priced from the rate basis, not typed in by hand. The tractor
+contributes its power at the load level chosen for the job; every implement on the
+rig adds its working width:
 
 ```
-cmd/treckrr        Entry point (HTTP server, graceful shutdown)
-internal/config    Configuration from environment
-internal/db        Connection pool (pgx) + embedded SQL migrations (auto-run on boot)
-internal/models    Domain types
-internal/calc      Cost model (exact decimals, unit-tested against the spreadsheet)
-internal/auth      bcrypt hashing, session tokens, recovery codes, AES-GCM
-internal/totp      RFC 6238 TOTP (pure Go)
-internal/store     Database access (incl. passkeys, encrypted TOTP secrets)
-internal/server    HTTP routing, middleware, handlers
-internal/web       Embedded HTML templates & local assets (CSS / JS / icons / fonts)
+tractor rate  =  PS            ×  cost per PS   (of the load level)
+machine rate  =  working width ×  cost per AB
+rig rate      =  tractor rate  +  Σ machine rates
+booking cost  =  hours         ×  rig rate
 ```
 
-**Dependencies** are few and audited: `pgx` (Postgres), `x/crypto`,
-`shopspring/decimal`, `go-webauthn`, `rsc.io/qr` (EPC-QR), `signintech/gopdf` +
-`x/image` (PDF Belege/Rechnungen/Mahnungen), `minio-go` (optional S3 backups) and
-`robfig/cron` (backup schedule) — everything else is the standard library.
+Worked example — a 130 PS tractor at load level *mittel* (0.36 €/PS) pulling a 3.0 m
+power harrow (14.50 €/m), for 4.5 hours:
 
-<details>
-<summary><strong>Data model</strong></summary>
+```
+tractor   130 × 0.36  =  46.80 €/h
+harrow    3.0 × 14.50 =  43.50 €/h
+rig                   =  90.30 €/h
+booking   4.5 × 90.30 = 406.35 €
+```
 
-- `price_bases` — rate basis (lockable); `year` = "valid from".
-- `load_levels`, `tractors`, `machines` — price data per basis.
-- `gespanne` (+ `gespann_machines`) — fixed rigs per basis.
-- `billing_years` — billing year; references **one** `price_bases`.
-- `billing_year_neighbors` — which neighbours participate in a year.
-- `neighbors` — global, reused across years.
-- `entries` (+ `entry_machines`) — bookings with **frozen** price snapshots;
-  `entry_photos` — photos attached to a booking.
-- `neighbor_ledger` — offsetting account entries (*Verrechnung*) per neighbour/year.
-- `invoices` — issued invoices, Storno and Gutschrift with their **immutable
-  snapshots**; `payments` — recorded/imported payments; `recurring_entries` —
-  Serienbuchungen rules.
-- `company` — issuer master data (*Betriebsdaten*) for § 11 invoices.
-- `users` — accounts, roles and (optional) email.
-- `sessions` — rolling login sessions; `login_attempts` — rate-limit counters.
-- `webauthn_credentials` — registered passkeys (public keys only);
-  `webauthn_ceremonies` — short-lived registration/login challenges;
-  `totp_recovery_codes` — hashed one-time recovery codes.
-- `backup_settings` — the backup schedule set in the admin panel.
-- `audit_log` — security-/data-relevant actions; **append-only** (trigger-guarded)
-  with staggered retention (security ~1 year, business/tax ~7 years per § 132 BAO).
+Jobs that aren't billed by the hour use a **unit** instead — hectares, cubic
+metres, a flat charge — with quantity × unit price.
 
-Thirty-six ordered, embedded migrations run automatically on startup.
+Every step is exact decimal arithmetic rounded to two places, never binary
+floating point, so totals reconcile to the cent. The cost model lives in
+`internal/calc` and is unit-tested against the values from the original
+spreadsheet the app replaced.
 
-</details>
+Changing a rate later does **not** silently reprice past bookings. They keep the
+price they were booked at; the **Recalculation** view shows every affected booking
+old → new so the change is applied deliberately.
 
 ---
 
-## Development
+## 👥 Roles & permissions
 
-With local Go ≥ 1.26 and a reachable PostgreSQL:
+Every account has exactly one role. There is no per-object sharing — this is a
+single-tenant app where everyone who signs in sees the whole ledger.
+
+| Role | Can | Cannot |
+| --- | --- | --- |
+| **admin** | everything, plus users, company data, audit log and backups | — |
+| **editor** | create and edit bookings, neighbours, rate bases, invoices, payments | reach anything under `/admin` |
+| **viewer** | read everything, export CSV/PDF | any change except to their own account (password, 2FA, passkeys, sessions) |
+
+A viewer's write attempt is refused server-side, not just hidden in the UI. An
+admin can reset another user's password or 2FA; both end that user's sessions
+immediately.
+
+---
+
+## 📈 Health, readiness & metrics
+
+| Endpoint | Auth | Purpose |
+| --- | --- | --- |
+| `GET /livez` | public | Process is alive. **No database call** — a DB outage must not make an orchestrator kill a healthy container. |
+| `GET /readyz` | public | App **and** database reachable. Returns 503 during a restore. |
+| `GET /healthz` | public | Legacy alias of `/readyz`. |
+| `GET /metrics` | Bearer token | Prometheus text format. Only registered when **METRICS_TOKEN** is set and at least 16 characters. |
+
+The container's own `HEALTHCHECK` polls `/healthz` every 30 s.
+
+Metrics cover process state (`treckrr_uptime_seconds`, `go_goroutines`,
+`go_memstats_*`) and the connection pool — `treckrr_db_connections_open`,
+`_in_use`, `_idle`, `_max_open`, plus `treckrr_db_wait_total` and
+`treckrr_db_wait_seconds_total`. Those two are the ones to alert on: they only
+move when requests are queuing for a connection.
 
 ```bash
-export DATABASE_URL="postgres://treckrr:treckrr@localhost:5432/treckrr?sslmode=disable"
-export SESSION_SECRET="dev-secret-please-change-01"
-export ADMIN_USERNAME=admin
-export ADMIN_PASSWORD=admin123
-go mod tidy
-go run ./cmd/treckrr
+curl -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:8080/metrics
 ```
 
-Checks:
+---
+
+## 🌐 Running behind a reverse proxy
+
+Forward the standard headers and tell the app to trust them:
+
+```
+proxy_set_header Host              $host;
+proxy_set_header X-Real-IP         $remote_addr;
+proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
 
 ```bash
-go test ./...
-go vet ./...
+TRUST_PROXY=true
+TRUSTED_PROXIES=10.0.0.5/32        # the proxy's address — see below
+RP_ID=treckrr.example.org          # host only, no scheme
+RP_ORIGIN=https://treckrr.example.org
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
+- **Set TRUSTED_PROXIES.** With `TRUST_PROXY=true` and no allow-list, the app
+  honours forwarded headers from *any* peer that can reach the published port —
+  so anyone on the same network can forge their IP into the audit log and rotate
+  past the per-IP rate limits. Restrict it to your proxy, or set
+  `HOST_BIND=127.0.0.1` when the proxy runs on the same host.
+- **X-Forwarded-For is read right-to-left.** The right-most entry is the address
+  the proxy actually observed; earlier ones are client-supplied. This assumes
+  exactly one trusted hop.
+- **RP_ID / RP_ORIGIN must match the browser's URL**, or passkeys silently fail.
+- **Cookies** become `Secure` and get the `__Host-` prefix automatically once
+  `X-Forwarded-Proto: https` arrives from a trusted proxy. `COOKIE_SECURE=true`
+  forces it.
+- **Let the app own HSTS.** It already sends
+  `max-age=31536000; includeSubDomains` over HTTPS. If the proxy adds a second
+  header, browsers process only the first (RFC 6797 §8.1) and the other is dead.
 
 ---
 
-## Security & CI
+## 🛡️ Rootless & hardened deployment
 
-GitHub workflows under `.github/workflows/`:
+The shipped Compose file is hardened by default; nothing below needs to be
+switched on.
 
-- **CI** (`ci.yml`) — `go vet`, tests with the race detector, build, and `golangci-lint`.
-- **E2E** (`e2e.yml`) — Playwright browser smoke tests (login → booking → Beleg → invoice)
-  and an axe-core accessibility scan.
-- **Security** (`security.yml`) — `gosec` (static analysis) and `govulncheck` (known CVEs).
-- **Dependency review** (`dependency-review.yml`) — on pull requests.
-- **Gitleaks** (`gitleaks.yml`) — scans the full git history for leaked secrets.
-- **DeadCode** (`deadcode.yml`) — fails the build on unreachable functions.
-- **SBOM** (`sbom.yml`) — generates a software bill of materials.
-- **Docker** (`docker-publish.yml`) — builds the multi-arch image and pushes it to GHCR.
+| | app | db |
+| --- | --- | --- |
+| User | non-root, UID **10001** | postgres (UID 70) |
+| Root filesystem | `read_only: true` | writable (data dir) |
+| Capabilities | `cap_drop: ALL` | default set |
+| `no-new-privileges` | yes | yes |
+| Memory / PID limit | 768 MB / 128 | 1 GB / 256 |
+| Writable paths | `tmpfs /tmp`, capped at 320 MB | `pgdata` volume |
 
-**Dependabot** keeps Go modules, GitHub Actions and the Docker base image current.
-Vulnerability reports: [SECURITY.md](SECURITY.md).
+The app writes nothing to disk — state is in PostgreSQL, logs go to stdout — so
+the root filesystem stays read-only. `/tmp` is a **capped** tmpfs because
+multipart uploads spill there, and a tmpfs is RAM: uncapped, a large upload
+writes its way into host memory instead of failing cleanly.
+
+The database port is **not published**. The app port is, on `HOST_BIND`
+(default `0.0.0.0`); set it to `127.0.0.1` if your proxy is local.
+
+Everything works the same under rootless Docker or Podman.
 
 ---
 
-## License
+## 🔒 Security
 
-[MIT](LICENSE) — free to use, modify and distribute. Built only with free,
-license-cost-free tools and libraries.
+- **Passwords**: bcrypt. A failed login runs a dummy comparison so a wrong
+  username costs the same time as a wrong password.
+- **Sessions**: 256-bit random tokens, stored only as SHA-256 hashes. Sliding
+  30-day expiry with a hard 90-day cap, revocable per device.
+- **Second factor**: TOTP with one-time recovery codes, seeds encrypted at rest
+  under a key derived separately from the session secret. Passkeys (WebAuthn)
+  require user verification, and each ceremony is server-side and single-use.
+- **Rate limits** on login by IP *and* by target account, on the 2FA step, on
+  password step-up, and on passkey challenge creation — all in PostgreSQL, so
+  they survive a restart.
+- **CSRF**: every state-changing request carries an HMAC token bound to the
+  session cookie; the login form has its own seeded token.
+- **Headers**: strict CSP with no `unsafe-inline`, `frame-ancestors 'none'`,
+  nosniff, `Referrer-Policy: same-origin`, COOP/CORP same-origin, HSTS over
+  HTTPS. No CDNs — every asset is embedded in the binary.
+- **Audit log** is append-only, enforced by a database trigger rather than
+  application code.
+- **Financial history is protected by the database**: neighbours and billing
+  years carrying bookings, payments, ledger entries or invoices cannot be
+  deleted (`ON DELETE RESTRICT`). GDPR erasure is pseudonymisation, which keeps
+  the § 132 BAO records intact.
+- **Backups** are AES-256-GCM encrypted with a key held separately from the
+  session secret, and can be validated before a restore.
+
+Report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
+
+---
+
+## 🔁 CI / CD
+
+| Workflow | What it does |
+| --- | --- |
+| **CI** | `go vet`, `go test -race` against a real PostgreSQL service, `go build`, module verification and a tidiness check, golangci-lint |
+| **Security** | gosec static scan and govulncheck, weekly as well as on push |
+| **Supply chain** | Trivy over the repository *and* over the built image (the Alpine layer nothing else inspects), CycloneDX SBOM generated from the image |
+| **E2E** | Playwright smoke test: login → booking → Beleg |
+| **DeadCode** | unreachable-function detection |
+| **GODep / GitSecret** | dependency review on PRs, gitleaks secret scanning |
+| **Docker** | multi-arch image (amd64 + arm64) to GHCR — **gated on the tests passing**, so a red build publishes nothing |
+
+Every action is pinned to a full commit SHA, base images are pinned by digest,
+and workflow tokens are least-privilege (`packages: write` only on the job that
+pushes).
+
+---
+
+## 📄 License / Contributing
+
+MIT — see [LICENSE](LICENSE). Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for the build and test commands, and [SECURITY.md](SECURITY.md) for reporting vulnerabilities privately.

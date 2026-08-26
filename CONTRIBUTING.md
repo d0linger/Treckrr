@@ -12,13 +12,23 @@ cp .env.example .env          # then edit the secrets
 docker compose up -d --build  # http://localhost:8080
 ```
 
-For a local Go workflow (Go ≥ 1.26 and a reachable PostgreSQL), see the
-[Development section of the README](README.md#development).
+For a local Go workflow you need Go ≥ 1.26.6 (the `go.mod` language floor; CI
+and the image build on 1.27.0) and a reachable PostgreSQL:
+
+```bash
+export DATABASE_URL="postgres://treckrr:treckrr@localhost:5432/treckrr?sslmode=disable"
+export SESSION_SECRET="$(openssl rand -hex 32)"   # 32 chars minimum, enforced at startup
+export ADMIN_USERNAME=admin
+export ADMIN_PASSWORD=dev-admin-password
+go run ./cmd/treckrr
+```
 
 ## Project layout
 
-The code is a standard Go layout under `internal/` (see the README's
-Architecture section). Notable points:
+The code is a standard Go layout under `internal/`: `server` (HTTP handlers and
+middleware), `store` (all SQL), `db` (pool and migrations), `calc` (the cost
+model), `web` (templates and embedded assets), plus `auth`, `backup`, `mail`,
+`pdf`, `totp` and `bankimport`. Notable points:
 
 - HTML templates and all CSS/JS/icons live in `internal/web` and are embedded
   into the binary via `go:embed`. **After changing them you must rebuild the
@@ -38,7 +48,9 @@ Run the same checks CI runs:
 ```bash
 gofmt -l .          # must print nothing
 go vet ./...
-go test ./...       # the CI also runs with -race
+go test ./...       # CI runs this with -race
+# 27 test files skip themselves unless a database is reachable:
+# TEST_DATABASE_URL=postgres://... go test ./...
 golangci-lint run   # if installed locally
 ```
 
