@@ -18,8 +18,9 @@
  *
  * Good-citizen rendering: the static layer (grid / dots) is drawn once to an
  * offscreen canvas and blitted each frame; only the pulse / sun / drill overlay
- * animates. Honours prefers-reduced-motion (a single static frame, no loop),
- * pauses when the tab is hidden, DPR-capped, opaque context. Purely decorative:
+ * animates. Runs regardless of prefers-reduced-motion (see the note at start()
+ * in login-bg.js), pauses when the tab is hidden, DPR-capped, opaque context.
+ * Purely decorative:
  * aria-hidden, pointer-inert; degrades to the plain --bg background when JS is
  * off or the 2D context is unavailable. CSP-safe — no inline code.
  */
@@ -152,7 +153,6 @@
 	/* ---- driver: cached static layer + animated overlay ------------------ */
 	var DPR = Math.min(1.5, window.devicePixelRatio || 1);
 	var stat = document.createElement("canvas"), sctx = stat.getContext("2d", { alpha: false });
-	var reduce = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
 	// t is read off the wall clock rather than a random phase, so the travelling
 	// light / sun / drill picks up where the previous page left it instead of
 	// jumping on a reload that deliberately kept the same surface.
@@ -217,8 +217,10 @@
 		var dt = Math.min(0.05, (now - prev) / 1000 || 0.016); prev = now; t += dt;
 		compose(dt); raf = requestAnimationFrame(frame);
 	}
+	// Deliberately not gated on prefers-reduced-motion; the reasoning is written out
+	// at start() in login-bg.js. The CSS animations elsewhere still honour it.
 	function start() {
-		if (running || reduce.matches || document.hidden || !W) return;
+		if (running || document.hidden || !W) return;
 		running = true; prev = performance.now(); lastRaf = Date.now(); raf = requestAnimationFrame(frame);
 	}
 	function stop() {
@@ -227,7 +229,7 @@
 		if (fallback) clearInterval(fallback); fallback = 0;
 	}
 	setInterval(function () {
-		if (!running || reduce.matches || document.hidden || !W) return;
+		if (!running || document.hidden || !W) return;
 		var stalled = Date.now() - lastRaf > 800;
 		if (stalled && !fallback) fallback = setInterval(function () { t += 0.04; compose(0.04); }, 40);
 		else if (!stalled && fallback) { clearInterval(fallback); fallback = 0; }
@@ -239,12 +241,11 @@
 	// session restore, prerender) never sits on an unpainted canvas. start() is
 	// idempotent, and the resize paths call it too so a first size() that failed
 	// (canvas not laid out yet) still gets the loop going once it succeeds.
-	if (size() && !reduce.matches) start();
+	if (size()) start();
 
-	if (window.ResizeObserver) new ResizeObserver(function () { if (size() && !reduce.matches) start(); }).observe(canvas);
-	else window.addEventListener("resize", function () { if (size() && !reduce.matches) start(); });
+	if (window.ResizeObserver) new ResizeObserver(function () { if (size()) start(); }).observe(canvas);
+	else window.addEventListener("resize", function () { if (size()) start(); });
 	document.addEventListener("visibilitychange", function () { if (document.hidden) stop(); else start(); });
-	if (reduce.addEventListener) reduce.addEventListener("change", function () { if (reduce.matches) { stop(); compose(0); } else start(); });
 	var dark = window.matchMedia ? matchMedia("(prefers-color-scheme: dark)") : null;
 	if (dark && dark.addEventListener) dark.addEventListener("change", retheme);
 	if (window.MutationObserver) new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
