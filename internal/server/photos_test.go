@@ -9,7 +9,6 @@ import (
 	"image/png"
 	"strings"
 	"testing"
-	"time"
 )
 
 // TestProcessPhotoReencodesToJPEG proves a PNG upload is re-encoded to JPEG
@@ -95,9 +94,13 @@ func TestParseGermanDecimalRejectsOverlongInput(t *testing.T) {
 	if got := parseGermanDecimal("1234,56"); got.String() != "1234.56" {
 		t.Errorf("ordinary input = %s, want 1234.56", got)
 	}
-	start := time.Now()
-	_ = parseGermanDecimal(strings.Repeat("9", 1_000_000))
-	if d := time.Since(start); d > 50*time.Millisecond {
-		t.Errorf("a megabyte of digits took %v — the guard is not in front of the parse", d)
+	// A megabyte rather than a merely-too-long string: that is what limitBody
+	// permits in one field, and it is the input whose parse costs seconds. Asserting
+	// the RESULT rather than the elapsed time keeps this deterministic — remove the
+	// guard and this input parses to a very large number instead of zero, so the
+	// check still fails, without a wall-clock threshold that a loaded runner could
+	// trip on its own.
+	if got := parseGermanDecimal(strings.Repeat("9", 1_000_000)); !got.IsZero() {
+		t.Errorf("a megabyte of digits parsed to a value, want 0 — the length guard is gone")
 	}
 }

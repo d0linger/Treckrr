@@ -52,6 +52,14 @@ FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec4
 # Pinning and upgrading are complements, not alternatives: the pin makes the base
 # layer reproducible, the upgrade makes the shipped packages current. Doing only
 # the first is strictly worse than following the tag.
+# Cache buster for the layer below, and only for that layer. `apk upgrade` pulls
+# whatever Alpine currently ships, so a cached copy of this step silently ships
+# the versions from whenever it was last built — which is precisely the staleness
+# the upgrade exists to prevent. The publish workflow passes the run id here, so
+# every published image resolves packages afresh while the Go module and build
+# layers above stay cached. Local builds leave it at the default and keep full
+# caching.
+ARG APK_REFRESH=static
 RUN apk upgrade --no-cache \
 	&& apk add --no-cache ca-certificates tzdata wget postgresql16-client \
 	&& adduser -D -u 10001 treckrr

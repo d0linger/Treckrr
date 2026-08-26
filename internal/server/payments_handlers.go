@@ -88,7 +88,7 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	if s.tooLong(w, r, "Skonto", r.FormValue("skonto"), maxNameLen) {
+	if s.tooLong(w, r, "Skonto", r.FormValue("skonto"), maxDecimalLen) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}

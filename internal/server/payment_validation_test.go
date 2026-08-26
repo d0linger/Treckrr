@@ -128,7 +128,7 @@ func TestHandlePaymentAddValidation(t *testing.T) {
 	})
 
 	t.Run("overly long skonto rejected", func(t *testing.T) {
-		longSkonto := strings.Repeat("2", 101) // 101 chars
+		longSkonto := strings.Repeat("2", maxDecimalLen+1)
 		form := url.Values{}
 		form.Set("year_id", "1")
 		form.Set("amount", "100.00")
@@ -147,7 +147,7 @@ func TestHandlePaymentAddValidation(t *testing.T) {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
 		flashCookie := flashText(t, s, rr)
-		if !strings.Contains(flashCookie, "Skonto darf höchstens 100 Zeichen lang sein.") {
+		if !strings.Contains(flashCookie, "Skonto darf höchstens 32 Zeichen lang sein.") {
 			t.Errorf("expected long skonto flash message, got cookie: %q", flashCookie)
 		}
 	})
