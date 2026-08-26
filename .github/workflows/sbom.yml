@@ -64,6 +64,12 @@ jobs:
           load: true
           push: false
           tags: treckrr:scan
+          # The weekly run must NOT reuse the cache. `apk upgrade` in the Dockerfile
+          # pulls whatever Alpine currently ships, so a cached package layer would
+          # keep the scan looking at the versions from whenever that layer was
+          # built — the scheduled scan would then quietly certify a stale image.
+          # Push/PR runs keep the cache; only the scheduled one pays the rebuild.
+          no-cache: ${{ github.event_name == 'schedule' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

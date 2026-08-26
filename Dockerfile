@@ -41,7 +41,19 @@ FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec4
 # Non-root user & CA certs (for completeness; app talks only to local DB).
 # postgresql16-client provides pg_dump/pg_restore for encrypted backups; the
 # major version must match the Postgres server (postgres:16-alpine).
-RUN apk add --no-cache ca-certificates tzdata wget postgresql16-client \
+# `apk upgrade` FIRST, and this is not optional hygiene. The digest pin above
+# fixes the starting layer, which means the packages baked into it stay frozen at
+# whatever Alpine shipped when that layer was built — while the Alpine repository
+# keeps publishing security fixes for them. Without this the image ships
+# known-vulnerable openssl for as long as the pin stands: the first run of the
+# image scan caught exactly that, six fixed HIGH CVEs across libcrypto3, libssl3,
+# libpq and postgresql16-client.
+#
+# Pinning and upgrading are complements, not alternatives: the pin makes the base
+# layer reproducible, the upgrade makes the shipped packages current. Doing only
+# the first is strictly worse than following the tag.
+RUN apk upgrade --no-cache \
+	&& apk add --no-cache ca-certificates tzdata wget postgresql16-client \
 	&& adduser -D -u 10001 treckrr
 ENV TZ=Europe/Vienna
 
