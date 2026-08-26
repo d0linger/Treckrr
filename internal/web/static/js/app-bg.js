@@ -157,6 +157,7 @@
 	// light / sun / drill picks up where the previous page left it instead of
 	// jumping on a reload that deliberately kept the same surface.
 	var W = 0, H = 0, pal = palette(), t = Date.now() / 1000, prev = 0, running = false, raf = 0;
+	var lastRaf = 0, fallback = 0;
 	// Whether the visible canvas has ever been composed. The ground is only handed
 	// over to it (see markActive) once this is true.
 	var painted = false;
@@ -201,13 +202,36 @@
 		ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 		v.overlay(ctx, W, H, t, dt, pal);
 	}
+	// See login-bg.js for the reasoning: requestAnimationFrame stops being delivered
+	// when Chrome considers the window occluded — a remote-desktop session does that
+	// routinely — while document.hidden stays false, so nothing notices and the loop
+	// dies silently. lastRaf is stamped only here; the fallback timer below never
+	// touches it, so it cannot mask a stall and keep itself running.
 	function frame(now) {
 		if (!running) return;
+		// Must happen here, not at the watchdog's next tick: this path and the
+		// fallback both advance `t`, so any overlap runs the backdrop at double
+		// speed until the watchdog gets round to noticing.
+		if (fallback) { clearInterval(fallback); fallback = 0; }
+		lastRaf = Date.now();
 		var dt = Math.min(0.05, (now - prev) / 1000 || 0.016); prev = now; t += dt;
 		compose(dt); raf = requestAnimationFrame(frame);
 	}
-	function start() { if (running || reduce.matches || document.hidden || !W) return; running = true; prev = performance.now(); raf = requestAnimationFrame(frame); }
-	function stop() { running = false; if (raf) cancelAnimationFrame(raf); raf = 0; }
+	function start() {
+		if (running || reduce.matches || document.hidden || !W) return;
+		running = true; prev = performance.now(); lastRaf = Date.now(); raf = requestAnimationFrame(frame);
+	}
+	function stop() {
+		running = false;
+		if (raf) cancelAnimationFrame(raf); raf = 0;
+		if (fallback) clearInterval(fallback); fallback = 0;
+	}
+	setInterval(function () {
+		if (!running || reduce.matches || document.hidden || !W) return;
+		var stalled = Date.now() - lastRaf > 800;
+		if (stalled && !fallback) fallback = setInterval(function () { t += 0.04; compose(0.04); }, 40);
+		else if (!stalled && fallback) { clearInterval(fallback); fallback = 0; }
+	}, 500);
 	function retheme() { pal = palette(); if (W) { v.build(sctx, W, H, pal); if (!running) compose(0); } }
 
 	v.reset();

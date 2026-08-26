@@ -207,7 +207,22 @@
 	// The light band is a pure function of t, so read t off the wall clock instead
 	// of a random phase: a reload then picks the sweep up where the previous page
 	// left it, rather than jumping the bar to a new position.
-	var W = 0, H = 0, items = [], pal = palette(), t = Date.now() / 1000, prev = 0, running = false, raf = 0;
+	// requestAnimationFrame is not guaranteed to keep firing. Chrome pauses it when
+	// it decides the WINDOW is occluded — which a remote-desktop session routinely
+	// triggers — and document.hidden stays false throughout, so visibilitychange
+	// never fires and nothing notices. `running` is still true, so start() refuses
+	// to do anything, and the loop is silently dead until the page is reloaded.
+	//
+	// Two changes make that survivable. The phase is read straight off the wall
+	// clock rather than integrated from frame deltas, so any stall or throttle
+	// resumes at the correct position instead of lagging behind by however long it
+	// was paused. And a watchdog notices when frames stop arriving and drives the
+	// drawing from a timer until they come back — timers keep running where rAF
+	// does not. Because the animation is a pure function of the clock, the
+	// timer-driven frames are indistinguishable from the real ones.
+	var W = 0, H = 0, items = [], pal = palette(), running = false, raf = 0;
+	var lastRaf = 0, fallback = 0;
+	function clock() { return Date.now() / 1000; }
 
 	function resize() {
 		var r = canvas.getBoundingClientRect();
@@ -216,22 +231,40 @@
 		canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
 		ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 		items = layoutIcons(W, H, seed);
-		if (!running) draw(W, H, t, pal, items); // keep the static/paused frame current
+		if (!running) draw(W, H, clock(), pal, items); // keep the static/paused frame current
 	}
-	function frame(now) {
+	function frame() {
 		if (!running) return;
-		var dt = Math.min(0.05, (now - prev) / 1000 || 0.016); prev = now; t += dt;
-		draw(W, H, t, pal, items);
+		// Stand the fallback down the instant a real frame arrives, rather than at
+		// the watchdog's next tick: until then both would be drawing.
+		if (fallback) { clearInterval(fallback); fallback = 0; }
+		lastRaf = Date.now();
+		draw(W, H, clock(), pal, items);
 		raf = requestAnimationFrame(frame);
 	}
-	function start() { if (running || reduce.matches || document.hidden) return; running = true; prev = performance.now(); raf = requestAnimationFrame(frame); }
-	function stop() { running = false; if (raf) cancelAnimationFrame(raf); raf = 0; }
-	function retheme() { pal = palette(); if (!running) draw(W, H, t, pal, items); }
+	function start() {
+		if (running || reduce.matches || document.hidden) return;
+		running = true; lastRaf = Date.now(); raf = requestAnimationFrame(frame);
+	}
+	function stop() {
+		running = false;
+		if (raf) cancelAnimationFrame(raf); raf = 0;
+		if (fallback) clearInterval(fallback); fallback = 0;
+	}
+	// lastRaf is stamped ONLY by frame(), never by the fallback, so the fallback
+	// painting cannot mask a stall and keep itself alive.
+	setInterval(function () {
+		if (!running || reduce.matches || document.hidden) return;
+		var stalled = Date.now() - lastRaf > 800;
+		if (stalled && !fallback) fallback = setInterval(function () { draw(W, H, clock(), pal, items); }, 40);
+		else if (!stalled && fallback) { clearInterval(fallback); fallback = 0; }
+	}, 500);
+	function retheme() { pal = palette(); if (!running) draw(W, H, clock(), pal, items); }
 
 	if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
 	else window.addEventListener("resize", resize);
 	resize();
-	if (reduce.matches) draw(W, H, t, pal, items); else start();
+	if (reduce.matches) draw(W, H, clock(), pal, items); else start();
 
 	document.addEventListener("visibilitychange", function () { if (document.hidden) stop(); else start(); });
 	if (reduce.addEventListener) reduce.addEventListener("change", function () { if (reduce.matches) stop(); else start(); });
