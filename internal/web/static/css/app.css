@@ -54,7 +54,6 @@
 	   green-black in BOTH themes (a deliberate constant, like the white appbar
 	   icons); the orange marker is the only moving part. */
 	--chassis: #fbfaf5;
-	--chassis-2: #f2f1e9;
 	--chassis-text: #1f4d38;   /* 9.23:1 on the chrome */
 	--chassis-muted: #5c6b62;  /* 5.38:1 — #6b7d72 would only reach 4.18 and fail AA */
 	--chassis-line: #1f4d38;   /* the edge does the separating a dark fill used to do */
@@ -108,7 +107,6 @@
 	   stand on the chrome itself — where mint reaches 1.63:1. The desktop rail does
 	   not need this: there the whole item IS the chip, so mint stays correct. */
 	--chassis-accent-bar: #1f4d38;
-	--glass-border: var(--chassis-line);
 	--btn-glow: rgba(224, 89, 16, .22);
 	--brand-grad: linear-gradient(135deg, var(--signal), var(--signal-press));
 	--tap: 44px;
@@ -145,7 +143,6 @@
 		--pay: #52b184;
 		--owe: #e0805f;
 		--chassis: #16201b;
-		--chassis-2: #101a15;
 		--chassis-muted: #93a49a;
 		--chassis-line: #263329;
 		--chassis-chip: rgba(255, 255, 255, .05);
@@ -176,7 +173,6 @@
 		--card-shadow: 0 1px 2px rgba(0, 0, 0, .3);
 		--glow: none;
 		--glass: rgba(16, 26, 21, .94);
-		--glass-border: var(--chassis-line);
 		--btn-glow: rgba(255, 129, 66, .25);
 	}
 }
@@ -202,7 +198,6 @@
 	--accent-text: #e0a640;
 	--focus: #5b9bff;
 	--chassis: #16201b;
-	--chassis-2: #101a15;
 	--chassis-muted: #93a49a;
 	--chassis-line: #263329;
 		--chassis-chip: rgba(255, 255, 255, .05);
@@ -232,7 +227,6 @@
 	--card-shadow: 0 1px 2px rgba(0, 0, 0, .3);
 	--glow: none;
 	--glass: rgba(16, 26, 21, .94);
-	--glass-border: var(--chassis-line);
 	--btn-glow: rgba(255, 129, 66, .25);
 	/* Chart-mark tokens must be redeclared here too: forcing dark via the theme
 	   toggle on a light system does not match the prefers-dark media query, so
