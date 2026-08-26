@@ -127,6 +127,31 @@ func TestHandlePaymentAddValidation(t *testing.T) {
 		}
 	})
 
+	t.Run("overly long skonto rejected", func(t *testing.T) {
+		longSkonto := strings.Repeat("2", 101) // 101 chars
+		form := url.Values{}
+		form.Set("year_id", "1")
+		form.Set("amount", "100.00")
+		form.Set("paid_on", "2026-03-30")
+		form.Set("note", "Valid Note")
+		form.Set("skonto", longSkonto)
+
+		req := httptest.NewRequest(http.MethodPost, "/neighbors/1/payments", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("id", "1")
+		rr := httptest.NewRecorder()
+
+		s.handlePaymentAdd(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Skonto darf höchstens 100 Zeichen lang sein.") {
+			t.Errorf("expected long skonto flash message, got cookie: %q", flashCookie)
+		}
+	})
+
 	t.Run("valid paid_on accepted", func(t *testing.T) {
 		form := url.Values{}
 		form.Set("year_id", "1")

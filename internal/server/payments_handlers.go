@@ -81,6 +81,10 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
+	if s.tooLong(w, r, "Skonto", r.FormValue("skonto"), maxNameLen) {
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
 	// Validate the optional Skonto up front (before recording anything): a
 	// percentage in [0, 10]. Out of range rejects the whole submission.
 	skonto := parseGermanDecimal(r.FormValue("skonto"))
