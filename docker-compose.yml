@@ -124,6 +124,16 @@ services:
       S3_PREFIX: ${S3_PREFIX:-}
       S3_USE_SSL: ${S3_USE_SSL:-true}
       # Structured logging: LOG_FORMAT text|json, LOG_LEVEL debug|info|warn|error.
+      # E-mail (Beleg/Mahnung versenden). Opt-in: only offered when SMTP_HOST and
+      # SMTP_FROM are both set. Kept in step with docker-compose.ghcr.yml, which
+      # already projected these — without them the feature cannot be configured at
+      # all from this file.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
       LOG_FORMAT: ${LOG_FORMAT:-text}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Prometheus /metrics (opt-in). Set a long random token to enable; scrapers
