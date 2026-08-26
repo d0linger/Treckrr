@@ -284,6 +284,16 @@ func formDecimal(r *http.Request, name string) decimal.Decimal {
 // limitBody's 1 MiB ceiling allows in a single field. Every real amount, rate,
 // quantity or width fits in a handful of characters, so anything past this is not
 // a number a person typed.
+//
+// A length cap alone is not enough, because SCIENTIFIC NOTATION packs an enormous
+// value into a handful of characters: "1e1000000" is nine, sails past this limit,
+// and parses cheaply — the cost lands on whatever touches the value afterwards.
+// Measured on decimal v1.4.0: at exponent 1e6, Round(2) takes 60 ms, String() —
+// which the SQL driver calls to store it — 207 ms, and GreaterThan(), i.e. the
+// range check meant to REJECT the value, 58 ms. The exponent is an int32, so
+// twelve characters reach 1e2147483647 and those figures grow superlinearly.
+// Nobody types an exponent into a Betrag or a Stundenzahl, so the notation is
+// refused outright, before any decimal operation runs on it.
 const maxDecimalLen = 32
 
 // parseGermanDecimal parses a raw string as an exact decimal, accepting "," or
@@ -296,7 +306,7 @@ const maxDecimalLen = 32
 // answer these callers already get for anything unparseable.
 func parseGermanDecimal(raw string) decimal.Decimal {
 	raw = strings.ReplaceAll(strings.TrimSpace(raw), ",", ".")
-	if len(raw) > maxDecimalLen {
+	if len(raw) > maxDecimalLen || strings.ContainsAny(raw, "eE") {
 		return decimal.Zero
 	}
 	d, err := decimal.NewFromString(raw)

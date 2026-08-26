@@ -104,3 +104,24 @@ func TestParseGermanDecimalRejectsOverlongInput(t *testing.T) {
 		t.Errorf("a megabyte of digits parsed to a value, want 0 — the length guard is gone")
 	}
 }
+
+// TestParseGermanDecimalRejectsScientificNotation covers what the length cap
+// cannot: an exponent is short enough to pass every size check and still make the
+// value ruinously expensive to touch. Measured on decimal v1.4.0 at exponent 1e6 —
+// Round(2) 60 ms, String() 207 ms, GreaterThan() 58 ms — and the exponent is an
+// int32, so twelve characters reach 1e2147483647.
+func TestParseGermanDecimalRejectsScientificNotation(t *testing.T) {
+	for _, in := range []string{"1e1000000", "1E1000000", "1e100", "-2.5e9", "1,5e6"} {
+		// Never render the value itself: if the guard is gone, `got` is a number
+		// with a million digits and the failure message alone would be megabytes.
+		if got := parseGermanDecimal(in); !got.IsZero() {
+			t.Errorf("parseGermanDecimal(%q) parsed to a value with exponent %d, want 0", in, got.Exponent())
+		}
+	}
+	// Ordinary numbers, including the German comma, must still parse.
+	for in, want := range map[string]string{"1234,56": "1234.56", "0,5": "0.5", "-40": "-40", "7": "7"} {
+		if got := parseGermanDecimal(in); got.String() != want {
+			t.Errorf("parseGermanDecimal(%q) = %s, want %s", in, got, want)
+		}
+	}
+}
