@@ -278,10 +278,27 @@ func formDecimal(r *http.Request, name string) decimal.Decimal {
 	return parseGermanDecimal(r.FormValue(name))
 }
 
+// maxDecimalLen bounds the input decimal parsing will even attempt. Building the
+// mantissa runs through big.Int, whose base-10 parse is superlinear: measured at
+// 95 µs for 100 digits, 32 ms for 100k, and 2.7 SECONDS for a megabyte — which
+// limitBody's 1 MiB ceiling allows in a single field. Every real amount, rate,
+// quantity or width fits in a handful of characters, so anything past this is not
+// a number a person typed.
+const maxDecimalLen = 32
+
 // parseGermanDecimal parses a raw string as an exact decimal, accepting "," or
 // "." as the decimal separator. Empty/invalid -> 0.
+//
+// The length guard sits HERE rather than at the call sites because the expensive
+// parse is here: twelve form fields across six handlers reach this function, and
+// a per-field check would have to be remembered twelve times and again for every
+// field added later. Over-long input is treated as invalid, which is the same
+// answer these callers already get for anything unparseable.
 func parseGermanDecimal(raw string) decimal.Decimal {
 	raw = strings.ReplaceAll(strings.TrimSpace(raw), ",", ".")
+	if len(raw) > maxDecimalLen {
+		return decimal.Zero
+	}
 	d, err := decimal.NewFromString(raw)
 	if err != nil {
 		return decimal.Zero

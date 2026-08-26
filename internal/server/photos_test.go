@@ -2,11 +2,14 @@ package server
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"strings"
 	"testing"
+	"time"
 )
 
 // TestProcessPhotoReencodesToJPEG proves a PNG upload is re-encoded to JPEG
@@ -42,21 +45,59 @@ func TestProcessPhotoReencodesToJPEG(t *testing.T) {
 	}
 }
 
-// TestProcessPhotoOversizedRejected verifies that an image with dimensions exceeding
-// maxPhotoPixels is rejected.
+// TestProcessPhotoOversizedRejected verifies that an image whose DECLARED
+// dimensions exceed maxPhotoPixels is refused before it is decoded — the point
+// being that a 12 MiB upload must not be allowed to expand into hundreds of MB
+// of pixels first.
+//
+// The checksum below is computed, not invented. With a wrong one the PNG decoder
+// rejects the header for a bad CRC and processPhoto returns that error instead,
+// so the test would pass without the size check ever running — it would stay
+// green even if the guard were deleted outright. Hence both the real CRC and the
+// assertion on the specific error rather than on "some error happened".
 func TestProcessPhotoOversizedRejected(t *testing.T) {
-	// Build a valid PNG header with width 7000 and height 7000 (49 MP > 40 MP).
-	// PNG signature (8) + IHDR length (4) + IHDR tag (4) + width (4) + height (4) + 5 bytes + CRC (4)
+	// PNG signature (8) + IHDR length (4) + "IHDR" (4) + width (4) + height (4)
+	// + bit depth, color type, compression, filter, interlace (5) + CRC32 (4).
+	// 7000 x 7000 = 49 MP, above the 40 MP ceiling.
 	header := []byte{
 		0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
 		0x00, 0x00, 0x00, 0x0d,
 		'I', 'H', 'D', 'R',
-		0x00, 0x00, 0x1b, 0x58, // Width: 7000
-		0x00, 0x00, 0x1b, 0x58, // Height: 7000
+		0x00, 0x00, 0x1b, 0x58, // width  7000
+		0x00, 0x00, 0x1b, 0x58, // height 7000
 		0x08, 0x02, 0x00, 0x00, 0x00,
-		0x2c, 0x72, 0xc1, 0xee, // CRC
+		0x16, 0xf9, 0x2c, 0xd8, // crc32("IHDR" + the 13 bytes above)
 	}
-	if _, err := processPhoto(header); err == nil {
-		t.Errorf("expected error for oversized image input, got nil")
+	// Guard the guard: if this ever stops decoding, the test below would pass for
+	// the wrong reason again.
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(header))
+	if err != nil {
+		t.Fatalf("header no longer decodes (%v) — fix the CRC, or this test proves nothing", err)
+	}
+	if cfg.Width != 7000 || cfg.Height != 7000 {
+		t.Fatalf("header declares %dx%d, want 7000x7000", cfg.Width, cfg.Height)
+	}
+
+	_, err = processPhoto(header)
+	if !errors.Is(err, errPhotoTooLarge) {
+		t.Errorf("processPhoto = %v, want errPhotoTooLarge", err)
+	}
+}
+
+// TestParseGermanDecimalRejectsOverlongInput pins the cost guard in
+// parseGermanDecimal. big.Int's base-10 parse is superlinear — a megabyte of
+// digits, which limitBody permits in one field, takes seconds of CPU.
+func TestParseGermanDecimalRejectsOverlongInput(t *testing.T) {
+	if got := parseGermanDecimal(strings.Repeat("9", maxDecimalLen+1)); !got.IsZero() {
+		t.Errorf("over-long input parsed to %s, want 0", got)
+	}
+	// A number a person could actually type still parses.
+	if got := parseGermanDecimal("1234,56"); got.String() != "1234.56" {
+		t.Errorf("ordinary input = %s, want 1234.56", got)
+	}
+	start := time.Now()
+	_ = parseGermanDecimal(strings.Repeat("9", 1_000_000))
+	if d := time.Since(start); d > 50*time.Millisecond {
+		t.Errorf("a megabyte of digits took %v — the guard is not in front of the parse", d)
 	}
 }

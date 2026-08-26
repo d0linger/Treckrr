@@ -66,6 +66,13 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
+	// Bounded before parsing: this call does not go through parseGermanDecimal, so
+	// it does not inherit that guard, and it runs BEFORE every other check in this
+	// handler — making it the cheapest field to abuse, not the safest.
+	if s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) {
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
 	amount, err := decimal.NewFromString(strings.ReplaceAll(strings.TrimSpace(r.FormValue("amount")), ",", "."))
 	if err != nil || !amount.IsPositive() {
 		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
