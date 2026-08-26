@@ -41,3 +41,22 @@ func TestProcessPhotoReencodesToJPEG(t *testing.T) {
 		t.Errorf("expected error for non-image input")
 	}
 }
+
+// TestProcessPhotoOversizedRejected verifies that an image with dimensions exceeding
+// maxPhotoPixels is rejected.
+func TestProcessPhotoOversizedRejected(t *testing.T) {
+	// Build a valid PNG header with width 7000 and height 7000 (49 MP > 40 MP).
+	// PNG signature (8) + IHDR length (4) + IHDR tag (4) + width (4) + height (4) + 5 bytes + CRC (4)
+	header := []byte{
+		0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
+		0x00, 0x00, 0x00, 0x0d,
+		'I', 'H', 'D', 'R',
+		0x00, 0x00, 0x1b, 0x58, // Width: 7000
+		0x00, 0x00, 0x1b, 0x58, // Height: 7000
+		0x08, 0x02, 0x00, 0x00, 0x00,
+		0x2c, 0x72, 0xc1, 0xee, // CRC
+	}
+	if _, err := processPhoto(header); err == nil {
+		t.Errorf("expected error for oversized image input, got nil")
+	}
+}
