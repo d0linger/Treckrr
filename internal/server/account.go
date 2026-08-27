@@ -166,6 +166,11 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	user := userFromCtx(r)
+	code := r.FormValue("code")
+	if s.tooLong(w, r, "Code", code, maxNameLen) {
+		redirect(w, r, "/account/2fa")
+		return
+	}
 	if s.sensitiveBlocked(w, r, user.ID, "/account/2fa") {
 		return
 	}
@@ -183,7 +188,7 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 		redirect(w, r, "/account/2fa")
 		return
 	}
-	if !totp.Validate(secret, r.FormValue("code")) {
+	if !totp.Validate(secret, code) {
 		s.sensitiveFail(r, user.ID)
 		s.setFlash(w, r, "error", "Code ungültig. Bitte erneut versuchen.")
 		redirect(w, r, "/account/2fa")

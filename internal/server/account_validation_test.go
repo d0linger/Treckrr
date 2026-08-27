@@ -170,6 +170,65 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 	})
 }
 
+func TestHandleLogin2FAValidation(t *testing.T) {
+	s := testAccountServer(t)
+
+	t.Run("oversized TOTP login code is rejected", func(t *testing.T) {
+		form := url.Values{}
+		form.Set("totp", strings.Repeat("1", maxNameLen+1))
+
+		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		pendingToken := s.signPending2FA(123)
+		req.AddCookie(&http.Cookie{Name: pending2FACookie, Value: pendingToken})
+		rr := httptest.NewRecorder()
+
+		s.handleLogin2FA(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		if loc := rr.Header().Get("Location"); loc != "/login" {
+			t.Errorf("expected Location /login, got %q", loc)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Code darf höchstens 100 Zeichen lang sein.") {
+			t.Errorf("expected over-limit code warning, got cookie: %q", flashCookie)
+		}
+	})
+}
+
+func TestHandleTwoFactorConfirmValidation(t *testing.T) {
+	s := testAccountServer(t)
+
+	t.Run("oversized 2FA confirm code is rejected", func(t *testing.T) {
+		form := url.Values{}
+		form.Set("code", strings.Repeat("1", maxNameLen+1))
+		form.Set("password", "SecurePassword123")
+
+		req := httptest.NewRequest(http.MethodPost, "/account/2fa/confirm", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rr := httptest.NewRecorder()
+
+		ctx := context.WithValue(req.Context(), userCtxKey, &models.User{
+			ID:       123,
+			Username: "testuser",
+			Role:     "editor",
+		})
+		req = req.WithContext(ctx)
+
+		s.handleTwoFactorConfirm(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Code darf höchstens 100 Zeichen lang sein.") {
+			t.Errorf("expected over-limit code warning, got cookie: %q", flashCookie)
+		}
+	})
+}
+
 func TestHandleSessionRevokeValidation(t *testing.T) {
 	s := testAccountServer(t)
 

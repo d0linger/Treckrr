@@ -151,6 +151,11 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
+	input := r.FormValue("totp")
+	if s.tooLong(w, r, "Code", input, maxNameLen) {
+		redirect(w, r, "/login")
+		return
+	}
 	// Mitigation: Enforce per-user rate limiting on the 2FA step to protect
 	// against distributed brute-force attacks on the 6-digit TOTP code.
 	if s.sensitiveBlocked(w, r, userID, "/login") {
@@ -168,7 +173,6 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
-	input := r.FormValue("totp")
 	secret, _ := s.store.GetTotpSecret(r.Context(), userID)
 
 	// Validate the TOTP code, then enforce replay protection: a matched code is
