@@ -13,8 +13,8 @@
  *
  * Colours are read from the live CSS design tokens (--bg, --text, --primary,
  * --signal, --muted), so the sheet tracks the active theme (Hell / Nachtschicht)
- * and re-themes on the fly. Honours prefers-reduced-motion by painting a single
- * static frame and never animating. Purely decorative: aria-hidden and
+ * and re-themes on the fly. Animates regardless of prefers-reduced-motion — see
+ * the note at start() for why. Purely decorative: aria-hidden and
  * pointer-inert, so it never touches the form. CSP-safe — no inline code, all
  * drawing happens on the canvas.
  */
@@ -203,7 +203,6 @@
 	}
 	var draw = pickVariant("treckrr-loginbg", ["graph", "hatch"]) === "graph" ? graph : hatch;
 	var seed = pickSeed("treckrr-loginbg-seed");
-	var reduce = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
 	// The light band is a pure function of t, so read t off the wall clock instead
 	// of a random phase: a reload then picks the sweep up where the previous page
 	// left it, rather than jumping the bar to a new position.
@@ -242,8 +241,25 @@
 		draw(W, H, clock(), pal, items);
 		raf = requestAnimationFrame(frame);
 	}
+	// This backdrop deliberately does NOT gate on prefers-reduced-motion.
+	//
+	// It used to, and the effect was that the sweep stood still on any machine with
+	// Windows' "animate controls and elements inside windows" switched off: that is
+	// what SPI_GETCLIENTAREAANIMATION reports, and it is what Chrome and Edge map
+	// the media query to. That box is commonly unchecked for reasons that have
+	// nothing to do with motion sensitivity — performance tweaks, remote-desktop
+	// defaults, hand-me-down "make Windows faster" advice — so the query was
+	// suppressing the backdrop for people who never asked for less motion, with no
+	// way to tell the two groups apart. Measured on the live instance: the phase is
+	// read off the wall clock, so the single static frame landed somewhere new on
+	// every load, which read as "the bar only moves when I refresh".
+	//
+	// Product decision: the sweep runs by default, and there is no per-user switch.
+	// The rest of the app still honours the query — page fade-in, card hover, the
+	// modal, toasts, chart fills and the backup pulse all stand down under it, see
+	// the prefers-reduced-motion blocks in app.css.
 	function start() {
-		if (running || reduce.matches || document.hidden) return;
+		if (running || document.hidden) return;
 		running = true; lastRaf = Date.now(); raf = requestAnimationFrame(frame);
 	}
 	function stop() {
@@ -254,7 +270,7 @@
 	// lastRaf is stamped ONLY by frame(), never by the fallback, so the fallback
 	// painting cannot mask a stall and keep itself alive.
 	setInterval(function () {
-		if (!running || reduce.matches || document.hidden) return;
+		if (!running || document.hidden) return;
 		var stalled = Date.now() - lastRaf > 800;
 		if (stalled && !fallback) fallback = setInterval(function () { draw(W, H, clock(), pal, items); }, 40);
 		else if (!stalled && fallback) { clearInterval(fallback); fallback = 0; }
@@ -264,10 +280,9 @@
 	if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
 	else window.addEventListener("resize", resize);
 	resize();
-	if (reduce.matches) draw(W, H, clock(), pal, items); else start();
+	start();
 
 	document.addEventListener("visibilitychange", function () { if (document.hidden) stop(); else start(); });
-	if (reduce.addEventListener) reduce.addEventListener("change", function () { if (reduce.matches) stop(); else start(); });
 	var dark = window.matchMedia ? matchMedia("(prefers-color-scheme: dark)") : null;
 	if (dark && dark.addEventListener) dark.addEventListener("change", retheme);
 	if (window.MutationObserver) new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
