@@ -1135,6 +1135,9 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 
 	dates := r.Form["q_date"]
 	gespanne := r.Form["q_gespann"]
+	if len(gespanne) > maxQuickEntries {
+		gespanne = gespanne[:maxQuickEntries]
+	}
 	hoursList := r.Form["q_hours"]
 	created := 0
 	for i := range gespanne {
