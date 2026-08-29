@@ -169,6 +169,11 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 	if s.sensitiveBlocked(w, r, user.ID, "/account/2fa") {
 		return
 	}
+	code := r.FormValue("code")
+	if s.tooLong(w, r, "Code", code, maxNameLen) {
+		redirect(w, r, "/account/2fa")
+		return
+	}
 	secret, err := s.store.GetTotpSecret(r.Context(), user.ID)
 	if err != nil || secret == "" {
 		s.setFlash(w, r, "error", "Kein ausstehendes 2FA‑Geheimnis. Bitte erneut starten.")
@@ -183,7 +188,7 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 		redirect(w, r, "/account/2fa")
 		return
 	}
-	if !totp.Validate(secret, r.FormValue("code")) {
+	if !totp.Validate(secret, code) {
 		s.sensitiveFail(r, user.ID)
 		s.setFlash(w, r, "error", "Code ungültig. Bitte erneut versuchen.")
 		redirect(w, r, "/account/2fa")

@@ -138,6 +138,11 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
+	input := r.FormValue("totp")
+	if s.tooLong(w, r, "Code", input, maxNameLen) {
+		redirect(w, r, "/login")
+		return
+	}
 	c, err := s.cookie(r, pending2FACookie)
 	if err != nil {
 		s.setFlash(w, r, "error", "Anmeldung abgelaufen. Bitte erneut anmelden.")
@@ -168,7 +173,6 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
-	input := r.FormValue("totp")
 	secret, _ := s.store.GetTotpSecret(r.Context(), userID)
 
 	// Validate the TOTP code, then enforce replay protection: a matched code is
