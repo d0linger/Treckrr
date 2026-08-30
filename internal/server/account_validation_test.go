@@ -63,6 +63,9 @@ type mockAccountRows struct {
 var testAccountPasswordHash string
 
 func (r *mockAccountRows) Columns() []string {
+	if strings.Contains(r.query, "totp_secret") {
+		return []string{"totp_secret"}
+	}
 	return []string{"id", "username", "email", "role", "is_admin", "must_change_password", "totp_enabled", "created_at", "password_hash"}
 }
 
@@ -73,6 +76,11 @@ func (r *mockAccountRows) Next(dest []driver.Value) error {
 		return io.EOF
 	}
 	r.hasRead = true
+
+	if strings.Contains(r.query, "totp_secret") {
+		dest[0] = "JBSWY3DPEHPK3PXP"
+		return nil
+	}
 
 	dest[0] = int64(123)
 	dest[1] = "testuser"
@@ -166,6 +174,37 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 		flashCookie := flashText(t, s, rr)
 		if !strings.Contains(flashCookie, "Passwort geändert. Andere Sitzungen wurden beendet.") {
 			t.Errorf("expected success password change, got cookie: %q", flashCookie)
+		}
+	})
+}
+
+func TestHandleTwoFactorConfirmValidation(t *testing.T) {
+	s := testAccountServer(t)
+
+	t.Run("oversized 2fa code is rejected", func(t *testing.T) {
+		form := url.Values{}
+		form.Set("password", "SecurePassword123")
+		form.Set("code", strings.Repeat("1", maxNameLen+1))
+
+		req := httptest.NewRequest(http.MethodPost, "/account/2fa/confirm", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rr := httptest.NewRecorder()
+
+		ctx := context.WithValue(req.Context(), userCtxKey, &models.User{
+			ID:       123,
+			Username: "testuser",
+			Role:     "editor",
+		})
+		req = req.WithContext(ctx)
+
+		s.handleTwoFactorConfirm(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Code darf höchstens 100 Zeichen lang sein.") {
+			t.Errorf("expected over-limit code warning, got cookie: %q", flashCookie)
 		}
 	})
 }

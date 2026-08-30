@@ -169,6 +169,10 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input := r.FormValue("totp")
+	if s.tooLong(w, r, "Code", input, maxNameLen) {
+		redirect(w, r, "/login")
+		return
+	}
 	secret, _ := s.store.GetTotpSecret(r.Context(), userID)
 
 	// Validate the TOTP code, then enforce replay protection: a matched code is
