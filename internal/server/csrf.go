@@ -82,6 +82,15 @@ func (s *Server) csrfToken(r *http.Request) string {
 // csrf_token form field or the X-CSRF-Token header.
 func (s *Server) csrf(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The CSP report sink is exempt. The browser posts it itself, so it can
+		// never carry a token, and it DOES attach the session cookie because
+		// report-uri is same-origin — which made csrfToken return a token to
+		// compare against and rejected every report with 403. The endpoint changes
+		// no state: it reads at most 8 KiB, writes a log line and returns 204.
+		if r.URL.Path == "/csp-report" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		switch r.Method {
 		case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
 			if expected := s.csrfToken(r); expected != "" {

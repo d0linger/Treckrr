@@ -1698,6 +1698,23 @@ span.paychip { cursor: default; }
 /* "Jetzt sichern" RUNS a backup — push it away from the save button so two
    same-styled neighbours can't be confused into an accidental run. */
 .bkp__btnrow .bkp__runnow { margin-left: auto; }
+/* Per-instance spacing for this page. These values used to sit in style="…"
+   attributes on the elements themselves, which style-src 'self' blocks outright
+   — no unsafe-inline, and hashes do not apply to style attributes — so they were
+   silently dropped and the page rendered with the default margins instead. Same
+   reasoning as the note above .bkp__btnrow; the template had simply grown its own
+   overrides past it. */
+.bkp__note--tight { margin: .25rem 0 0; }
+.bkp__note--gap { margin: .4rem 0 0; }
+.bkp__note--inset { margin: .5rem .1rem 0; }
+.bkp__note--far { margin: .9rem 0 0; }
+.bkp__note--lead { margin: 0 0 .6rem; }
+.bkp__note--lead-lg { margin: 0 0 .8rem; }
+.bkp__btnrow--wide { margin-top: 1.4rem; }
+.bkp__btnrow--far { margin: 1.1rem 0 0; }
+.bkp__btnrow--near { margin: .9rem 0 0; }
+.bkp__sec--flush { margin: 0; }
+.bkp__lbl--flush { margin-top: 0; }
 .bkp__seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); margin-bottom: .6rem; }
 .bkp__seg button { font-family: var(--font-body); font-size: .72rem; font-weight: 600; padding: .34rem .55rem; border: 0;
 	border-right: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
