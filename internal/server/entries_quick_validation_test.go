@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/d0linger/treckrr/internal/config"
@@ -20,7 +21,7 @@ import (
 // happily served results would hide a guard placed too late.
 type countingDriver struct{ n *int }
 
-func (d countingDriver) Open(string) (driver.Conn, error) { return countingConn{d.n}, nil }
+func (d countingDriver) Open(string) (driver.Conn, error) { return countingConn(d), nil }
 
 type countingConn struct{ n *int }
 
@@ -31,10 +32,16 @@ func (c countingConn) Prepare(string) (driver.Stmt, error) {
 func (c countingConn) Close() error              { return nil }
 func (c countingConn) Begin() (driver.Tx, error) { return nil, driver.ErrSkip }
 
+var quickDriverSeq atomic.Uint64
+
 func quickServer(t *testing.T) (*Server, *int) {
 	t.Helper()
 	n := 0
-	name := "mock_quick_" + t.Name()
+	// sql.Register panics on a duplicate name, and a name derived from the test
+	// repeats as soon as the same test runs twice in one process — `go test
+	// -count=2` is enough. A process-wide counter keeps every registration
+	// distinct.
+	name := "mock_quick_" + strconv.FormatUint(quickDriverSeq.Add(1), 10)
 	sql.Register(name, countingDriver{&n})
 	db, err := sql.Open(name, "")
 	if err != nil {
