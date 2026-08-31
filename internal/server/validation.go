@@ -15,6 +15,7 @@ const (
 	maxNameLen          = 100     // short names, labels, identifiers, categories
 	maxNoteLen          = 500     // notes, descriptions, cancellation reasons
 	maxImportPayloadLen = 4 << 20 // 4MB ceiling for import file/form payloads
+	maxQuickEntries     = 100     // ceiling for quick entry rows per batch request
 )
 
 // lenError returns a German over-limit message when value exceeds max code
