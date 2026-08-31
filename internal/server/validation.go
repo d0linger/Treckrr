@@ -15,6 +15,10 @@ const (
 	maxNameLen          = 100     // short names, labels, identifiers, categories
 	maxNoteLen          = 500     // notes, descriptions, cancellation reasons
 	maxImportPayloadLen = 4 << 20 // 4MB ceiling for import file/form payloads
+	// maxQuickEntries bounds the rows one Schnellerfassung submit may carry. The
+	// form renders a fixed six (neighbor.html) and has no way to add more, so this
+	// is pure headroom; see handleQuickEntries for what each row costs.
+	maxQuickEntries = 100
 )
 
 // lenError returns a German over-limit message when value exceeds max code

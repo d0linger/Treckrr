@@ -1113,6 +1113,24 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	}
 	neighborID := formInt64(r, "neighbor_id")
 	yearID := formInt64(r, "year_id")
+	// Every accepted row costs five database round trips — GetGespann, GetTractor,
+	// GetLoadLevel and MachinesByIDs inside buildGespannEntry, then CreateEntry —
+	// and the loop below is driven purely by how many q_gespann keys arrive. The
+	// body is capped at 1 MiB (limitBody), which still fits on the order of twenty
+	// thousand rows, so one request could drive six figures of queries. The form
+	// sends exactly six and offers no way to add a row, so anything past this
+	// ceiling did not come from it.
+	//
+	// Reject rather than truncate: these rows are business records. Silently
+	// dropping everything past a cap would report "N Buchungen gespeichert" while
+	// discarding the rest, which is worse than refusing the request outright. The
+	// check sits ahead of every store call so an abusive submit costs no queries
+	// at all.
+	if n := len(r.Form["q_gespann"]); n > maxQuickEntries {
+		s.setFlash(w, r, "error", fmt.Sprintf("Zu viele Zeilen auf einmal (%d). Es können höchstens %d Zeilen gespeichert werden.", n, maxQuickEntries))
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if errors.Is(err, store.ErrNotFound) {
 		s.badRequest(w, "Unbekanntes Abrechnungsjahr")
