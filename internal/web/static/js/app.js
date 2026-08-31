@@ -737,7 +737,11 @@
 			for (var i = 0; i < cs.length; i++) {
 				var p = cs[i]; s += p + ":" + cs.getPropertyValue(p) + ";";
 			}
-			dst.setAttribute("style", s);
+			// cssText, not setAttribute("style", …): the latter writes a style
+			// ATTRIBUTE, which style-src 'self' blocks, so every element in the clone
+			// came out unstyled and the exported PNG lost its layout. Assigning through
+			// the CSSOM is not governed by CSP and applies normally.
+			dst.style.cssText = s;
 			var sc = src.children, dc = dst.children;
 			for (var j = 0; j < sc.length; j++) inlineStyles(sc[j], dc[j]);
 		}
@@ -766,11 +770,17 @@
 			// The live .beleg clips with overflow:hidden and is capped by max-width; in the
 			// foreignObject those would shave the right edge off. Let the clone size to the
 			// full captured width and show everything so no column is cut.
-			clone.style.overflow = "visible";
-			clone.style.maxWidth = "none";
-			clone.style.width = w + "px";
-			clone.style.marginLeft = "0";
-			clone.style.marginRight = "0";
+			// Each override sets the LOGICAL twin alongside the physical name.
+			// getComputedStyle enumerates both and inlineStyles copies the lot in that
+			// order, so whichever lands later in the declaration wins — inline-size sits
+			// after width, and margin-inline after margin. Zeroing only marginLeft and
+			// marginRight therefore left the beleg's centring margin (210px at this
+			// width) in force: the clone rendered that far to the right and carried its
+			// right-hand column off the canvas.
+			clone.style.setProperty("overflow", "visible");
+			["max-width", "max-inline-size"].forEach(function (k) { clone.style.setProperty(k, "none"); });
+			["width", "inline-size"].forEach(function (k) { clone.style.setProperty(k, w + "px"); });
+			["margin-left", "margin-right", "margin-inline"].forEach(function (k) { clone.style.setProperty(k, "0"); });
 			return inlineFonts().then(function (fontCss) {
 				var xml = new XMLSerializer().serializeToString(clone);
 				var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">'

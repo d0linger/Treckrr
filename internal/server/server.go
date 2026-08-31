@@ -566,9 +566,14 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCSPReport records Content-Security-Policy violation reports the browser
-// posts to report-uri. Public (browsers send it without credentials) and never
-// trusted for anything but a log line — the strict CSP has no unsafe-inline, so a
-// report usually means an accidental inline handler/style regressed.
+// posts to report-uri. Never trusted for anything but a log line — the strict CSP
+// has no unsafe-inline, so a report usually means an accidental inline
+// handler/style regressed.
+//
+// report-uri is same-origin here, so the browser DOES attach the session cookie;
+// what it cannot attach is a CSRF token. The csrf middleware therefore exempts
+// this path explicitly (see csrf.go) — without that every report was answered
+// with 403 and the channel this policy advertises never worked.
 func (s *Server) handleCSPReport(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<10)) // reports are small
 	slog.Warn("csp violation", "report", sanitizeLog(strings.TrimSpace(string(body))), "ua", sanitizeLog(r.UserAgent()))
