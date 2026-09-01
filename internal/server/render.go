@@ -316,11 +316,21 @@ func parseGermanDecimal(raw string) decimal.Decimal {
 	return d
 }
 
+// maxFormListLen bounds the number of items parsed from repeated form fields.
+const maxFormListLen = 100
+
 // formInt64List collects repeated form values under name as int64s.
 func formInt64List(r *http.Request, name string) []int64 {
 	var ids []int64
 	for _, v := range r.Form[name] {
-		if id, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
+		if len(ids) >= maxFormListLen {
+			break
+		}
+		v = strings.TrimSpace(v)
+		if len(v) > maxDecimalLen {
+			continue
+		}
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
 			ids = append(ids, id)
 		}
 	}
@@ -329,13 +339,7 @@ func formInt64List(r *http.Request, name string) []int64 {
 
 // formMachineIDs collects repeated "machine_ids" checkbox values.
 func formMachineIDs(r *http.Request) []int64 {
-	var ids []int64
-	for _, v := range r.Form["machine_ids"] {
-		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
-			ids = append(ids, id)
-		}
-	}
-	return ids
+	return formInt64List(r, "machine_ids")
 }
 
 // redirect issues a see-other redirect (post/redirect/get).
