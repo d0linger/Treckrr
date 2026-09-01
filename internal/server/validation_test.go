@@ -38,6 +38,59 @@ func TestLenError(t *testing.T) {
 	}
 }
 
+func TestFormInt64ListAndMachineIDs_Bounds(t *testing.T) {
+	// 1. Normal parsing
+	form := url.Values{}
+	form.Add("ids", " 10 ")
+	form.Add("ids", "20")
+	form.Add("machine_ids", "100")
+
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if err := req.ParseForm(); err != nil {
+		t.Fatalf("ParseForm failed: %v", err)
+	}
+
+	ids := formInt64List(req, "ids")
+	if len(ids) != 2 || ids[0] != 10 || ids[1] != 20 {
+		t.Errorf("formInt64List = %v, want [10 20]", ids)
+	}
+
+	mIDs := formMachineIDs(req)
+	if len(mIDs) != 1 || mIDs[0] != 100 {
+		t.Errorf("formMachineIDs = %v, want [100]", mIDs)
+	}
+
+	// 2. Oversized item string length check (> maxDecimalLen)
+	longForm := url.Values{}
+	longForm.Add("ids", strings.Repeat("1", 33)) // 33 chars > maxDecimalLen (32)
+	longForm.Add("ids", "30")
+
+	reqLong := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(longForm.Encode()))
+	reqLong.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	_ = reqLong.ParseForm()
+
+	idsLong := formInt64List(reqLong, "ids")
+	if len(idsLong) != 1 || idsLong[0] != 30 {
+		t.Errorf("formInt64List with long item = %v, want [30]", idsLong)
+	}
+
+	// 3. Slice count limit check (> maxFormListLen)
+	manyForm := url.Values{}
+	for i := 0; i < 150; i++ {
+		manyForm.Add("ids", "1")
+	}
+
+	reqMany := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(manyForm.Encode()))
+	reqMany.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	_ = reqMany.ParseForm()
+
+	idsMany := formInt64List(reqMany, "ids")
+	if len(idsMany) != maxFormListLen {
+		t.Errorf("formInt64List count = %d, want capped at maxFormListLen (%d)", len(idsMany), maxFormListLen)
+	}
+}
+
 func TestEntryPrecheckTaskLabelSanitization(t *testing.T) {
 	s := testNeighborServer(t)
 
