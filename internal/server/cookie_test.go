@@ -136,6 +136,8 @@ func TestCSVSafe(t *testing.T) {
 		{"+1+1", "'+1+1"},
 		{"-2", "'-2"},
 		{"@cmd", "'@cmd"},
+		{"%cmd", "'%cmd"},
+		{"|cmd", "'|cmd"},
 		{"\t=cmd", "'\t=cmd"}, // leading tab then a trigger -> quoted
 		{" =1+1", "' =1+1"},   // leading ASCII space -> quoted, original kept
 		{nbsp + "=SUM(A1)", "'" + nbsp + "=SUM(A1)"}, // NBSP prefix -> quoted
