@@ -150,7 +150,7 @@ func deDecimal(v decimal.Decimal) string {
 }
 
 // csvSafe neutralizes spreadsheet formula injection: a cell whose first
-// non-whitespace character is one of = + - @ is prefixed with a single quote so
+// non-whitespace character is one of = + - @ % | is prefixed with a single quote so
 // Excel/LibreOffice treat it as literal text instead of a formula. All leading
 // Unicode whitespace is skipped first (space, tab, CR/LF, vertical tab, form
 // feed, NBSP, …), because several importers strip it before evaluating a formula
@@ -165,7 +165,7 @@ func csvSafe(v string) string {
 		return v
 	}
 	switch t[0] {
-	case '=', '+', '-', '@':
+	case '=', '+', '-', '@', '%', '|':
 		return "'" + v
 	}
 	return v
