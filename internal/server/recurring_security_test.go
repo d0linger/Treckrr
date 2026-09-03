@@ -83,27 +83,27 @@ func (r *mockRecurRows) Next(dest []driver.Value) error {
 		return io.EOF
 	}
 	// GetEntry return
-	dest[0] = int64(10)                           // id
-	dest[1] = int64(2)                            // neighbor_id
-	dest[2] = int64(1)                            // billing_year_id
-	dest[3] = time.Now()                          // entry_date
-	dest[4] = "Mähen"                             // task_label
-	dest[5] = nil                                 // gespann_id
-	dest[6] = nil                                 // tractor_id
-	dest[7] = nil                                 // load_level_id
-	dest[8] = ""                                  // tractor_label
-	dest[9] = ""                                  // load_label
-	dest[10] = ""                                 // machine_labels
-	dest[11] = "2"                                // hours
-	dest[12] = "50"                               // hourly_rate
-	dest[13] = "100"                              // cost
-	dest[14] = "Note"                             // note
-	dest[15] = mockEntryVoided                    // voided
-	dest[16] = ""                                 // void_reason
-	dest[17] = time.Now()                         // created_at
-	dest[18] = "h"                                // unit
-	dest[19] = "2"                                // quantity
-	dest[20] = "50"                               // unit_price
+	dest[0] = int64(10)        // id
+	dest[1] = int64(2)         // neighbor_id
+	dest[2] = int64(1)         // billing_year_id
+	dest[3] = time.Now()       // entry_date
+	dest[4] = "Mähen"          // task_label
+	dest[5] = nil              // gespann_id
+	dest[6] = nil              // tractor_id
+	dest[7] = nil              // load_level_id
+	dest[8] = ""               // tractor_label
+	dest[9] = ""               // load_label
+	dest[10] = ""              // machine_labels
+	dest[11] = "2"             // hours
+	dest[12] = "50"            // hourly_rate
+	dest[13] = "100"           // cost
+	dest[14] = "Note"          // note
+	dest[15] = mockEntryVoided // voided
+	dest[16] = ""              // void_reason
+	dest[17] = time.Now()      // created_at
+	dest[18] = "h"             // unit
+	dest[19] = "2"             // quantity
+	dest[20] = "50"            // unit_price
 	return nil
 }
 
