@@ -39,6 +39,11 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if entry.Voided {
+		s.setFlash(w, r, "error", "Stornierte Buchungen können nicht als wiederkehrende Buchung eingerichtet werden.")
+		redirect(w, r, "/recurring")
+		return
+	}
 	machineIDs, err := s.store.EntryMachineIDs(r.Context(), id)
 	if err != nil {
 		// Don't save a template that would silently drop the entry's machines.
@@ -49,7 +54,12 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 	if kind != "weekly" && kind != "monthly" {
 		kind = "weekly"
 	}
-	start, perr := time.Parse("2006-01-02", trimmed(r, "next_run"))
+	nextRun := trimmed(r, "next_run")
+	if s.tooLong(w, r, "Nächstes Datum", nextRun, maxNameLen) {
+		redirect(w, r, "/recurring")
+		return
+	}
+	start, perr := time.Parse("2006-01-02", nextRun)
 	if perr != nil {
 		start = time.Now().AddDate(0, 0, 7)
 	}
