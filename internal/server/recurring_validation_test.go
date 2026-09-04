@@ -85,27 +85,27 @@ func (r *mockRecurRows) Next(dest []driver.Value) error {
 				entryID = idVal
 			}
 		}
-		dest[0] = entryID                           // id
-		dest[1] = int64(1)                          // neighbor_id
-		dest[2] = int64(1)                          // billing_year_id
-		dest[3] = time.Now()                        // entry_date
-		dest[4] = "Mähen"                          // task_label
-		dest[5] = nil                               // gespann_id
-		dest[6] = nil                               // tractor_id
-		dest[7] = nil                               // load_level_id
-		dest[8] = ""                                // tractor_label
-		dest[9] = ""                                // load_label
-		dest[10] = ""                               // machine_labels
-		dest[11] = "1.00"                           // hours
-		dest[12] = "10.00"                          // hourly_rate
-		dest[13] = "10.00"                          // cost
-		dest[14] = ""                               // note
-		dest[15] = entryID == 2                     // voided when id == 2
-		dest[16] = ""                               // void_reason
-		dest[17] = time.Now()                       // created_at
-		dest[18] = "h"                              // unit
-		dest[19] = "1.00"                           // quantity
-		dest[20] = "10.00"                          // unit_price
+		dest[0] = entryID       // id
+		dest[1] = int64(1)      // neighbor_id
+		dest[2] = int64(1)      // billing_year_id
+		dest[3] = time.Now()    // entry_date
+		dest[4] = "Mähen"       // task_label
+		dest[5] = nil           // gespann_id
+		dest[6] = nil           // tractor_id
+		dest[7] = nil           // load_level_id
+		dest[8] = ""            // tractor_label
+		dest[9] = ""            // load_label
+		dest[10] = ""           // machine_labels
+		dest[11] = "1.00"       // hours
+		dest[12] = "10.00"      // hourly_rate
+		dest[13] = "10.00"      // cost
+		dest[14] = ""           // note
+		dest[15] = entryID == 2 // voided when id == 2
+		dest[16] = ""           // void_reason
+		dest[17] = time.Now()   // created_at
+		dest[18] = "h"          // unit
+		dest[19] = "1.00"       // quantity
+		dest[20] = "10.00"      // unit_price
 	} else {
 		dest[0] = int64(1)
 	}
