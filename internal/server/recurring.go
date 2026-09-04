@@ -39,6 +39,15 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if entry.Voided {
+		s.setFlash(w, r, "error", "Stornierte Buchungen können nicht als Vorlage verwendet werden.")
+		redirect(w, r, "/recurring")
+		return
+	}
+	if s.tooLong(w, r, "Startdatum", r.FormValue("next_run"), maxNameLen) {
+		redirect(w, r, "/recurring")
+		return
+	}
 	machineIDs, err := s.store.EntryMachineIDs(r.Context(), id)
 	if err != nil {
 		// Don't save a template that would silently drop the entry's machines.
