@@ -13,15 +13,30 @@ import (
 // precheck produces, so the race between the two reads the same to the user.
 var ErrHasHistory = errors.New("record still referenced by financial history")
 
-// isForeignKeyViolation reports whether err is a Postgres foreign-key violation
-// (SQLSTATE 23503). It inspects the typed driver error rather than searching the
-// message text: a substring match would also fire on an unrelated error that
-// happens to contain those five digits, and would stop working if the wrapper
-// ever reformatted the message. pgconn ships inside the pgx module the driver
-// already comes from, so this adds no new dependency.
+// isForeignKeyViolation reports whether err is a Postgres referential-integrity
+// violation. It inspects the typed driver error rather than searching the message
+// text: a substring match would also fire on an unrelated error that happens to
+// contain those five digits, and would stop working if the wrapper ever
+// reformatted the message. pgconn ships inside the pgx module the driver already
+// comes from, so this adds no new dependency.
+//
+// Two codes, because the one Postgres raises for ON DELETE RESTRICT — which is
+// what 0039 puts on the financial tables — depends on the server version:
+//
+//	                       PG 16      PG 18
+//	ON DELETE RESTRICT     23503      23001   (restrict_violation)
+//	ON DELETE NO ACTION    23503      23503   (foreign_key_violation)
+//
+// Verified by executing a delete against both servers. Matching only 23503 works
+// today (we ship PG 16) but would silently stop working on an upgrade: the guard
+// would fall through, and a blocked delete would surface as an unhandled 500
+// instead of ErrHasHistory and the "which records stand in the way" message.
 func isForeignKeyViolation(err error) bool {
 	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23503"
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Code == "23503" || pgErr.Code == "23001"
 }
 
 // DeleteBlockers counts the money- and tax-relevant records that a cascading
