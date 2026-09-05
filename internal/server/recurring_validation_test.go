@@ -79,27 +79,27 @@ func (r *mockRecurringRows) Next(dest []driver.Value) error {
 	r.hasRead = true
 	if strings.Contains(r.query, "FROM entries") {
 		// Mock GetEntry row matching scanEntry
-		dest[0] = int64(1)                          // id
-		dest[1] = int64(10)                         // neighbor_id
-		dest[2] = int64(100)                        // billing_year_id
-		dest[3] = time.Now()                        // entry_date
-		dest[4] = "Task Label"                      // task_label
-		dest[5] = nil                              // gespann_id
-		dest[6] = nil                              // tractor_id
-		dest[7] = nil                              // load_level_id
-		dest[8] = ""                               // tractor_label
-		dest[9] = ""                               // load_label
-		dest[10] = ""                              // machine_labels
-		dest[11] = "1.0"                           // hours
-		dest[12] = "10.0"                          // hourly_rate
-		dest[13] = "10.0"                          // cost
-		dest[14] = "Note"                          // note
-		dest[15] = false                           // voided
-		dest[16] = ""                              // void_reason
-		dest[17] = time.Now()                       // created_at
-		dest[18] = "h"                             // unit
-		dest[19] = "1.0"                           // quantity
-		dest[20] = "10.0"                          // unit_price
+		dest[0] = int64(1)     // id
+		dest[1] = int64(10)    // neighbor_id
+		dest[2] = int64(100)   // billing_year_id
+		dest[3] = time.Now()   // entry_date
+		dest[4] = "Task Label" // task_label
+		dest[5] = nil          // gespann_id
+		dest[6] = nil          // tractor_id
+		dest[7] = nil          // load_level_id
+		dest[8] = ""           // tractor_label
+		dest[9] = ""           // load_label
+		dest[10] = ""          // machine_labels
+		dest[11] = "1.0"       // hours
+		dest[12] = "10.0"      // hourly_rate
+		dest[13] = "10.0"      // cost
+		dest[14] = "Note"      // note
+		dest[15] = false       // voided
+		dest[16] = ""          // void_reason
+		dest[17] = time.Now()  // created_at
+		dest[18] = "h"         // unit
+		dest[19] = "1.0"       // quantity
+		dest[20] = "10.0"      // unit_price
 	} else {
 		dest[0] = int64(1)
 	}
@@ -126,9 +126,7 @@ func (s *mockVoidedRecurringStmt) Query(args []driver.Value) (driver.Rows, error
 	return &mockVoidedRecurringRows{mockRecurringRows{query: s.query}}, nil
 }
 
-type mockVoidedRecurringDriver struct {
-	mockRecurringDriver
-}
+type mockVoidedRecurringDriver struct{}
 
 func (d *mockVoidedRecurringDriver) Open(name string) (driver.Conn, error) {
 	return &mockVoidedRecurringConn{}, nil
