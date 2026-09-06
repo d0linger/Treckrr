@@ -165,3 +165,30 @@ func TestGespannRateMachinesOnlyIsExactlyTheMachineSum(t *testing.T) {
 		}
 	}
 }
+
+// A half-set tractor pair is not a machines-only rig. The rate function already
+// contributes nothing for one, but the callers used to hand it through as if the
+// tractor had been left out deliberately, so the rig list advertised the machine
+// sum for a combination the booking path refuses. This pins the rate side; the
+// caller side is covered in the server package.
+func TestGespannRateHalfPairIsNotMachinesOnly(t *testing.T) {
+	tr := models.Tractor{PS: decimal.RequireFromString("130")}
+	ll := models.LoadLevel{CostPerPS: decimal.RequireFromString("0.36")}
+	m := models.Machine{
+		WorkingWidth: decimal.RequireFromString("2.5"),
+		CostPerAB:    decimal.RequireFromString("16.4"),
+	}
+	full := GespannRate(&tr, &ll, []models.Machine{m})
+	half := GespannRate(&tr, nil, []models.Machine{m})
+	if full.StringFixed(2) != "87.80" { // 46,80 + 41,00
+		t.Fatalf("complete rig = %s, want 87.80", full.StringFixed(2))
+	}
+	// The tractor silently vanishing is exactly the trap: the number looks
+	// plausible, so a caller must not treat it as a price.
+	if half.StringFixed(2) != "41.00" {
+		t.Fatalf("half pair = %s, want 41.00 (the machine sum)", half.StringFixed(2))
+	}
+	if half.Equal(full) {
+		t.Error("half pair and complete rig priced the same")
+	}
+}

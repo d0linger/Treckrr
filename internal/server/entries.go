@@ -559,6 +559,15 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	if err != nil {
 		return nil, nil, "Interner Fehler beim Laden der Maschinen."
 	}
+	// Without a tractor the machines ARE the price. If none of the submitted ids
+	// resolve — a stale form after a machine was deleted, or ids from another
+	// basis — the rate would come out at 0,00 € and the booking would be saved as
+	// "gespeichert" for nothing. Reproduced before this guard: 3 h at 0,0000 with
+	// cost 0,0000. With a tractor the rate is still meaningful, so that path keeps
+	// its long-standing behaviour of ignoring ids it cannot resolve.
+	if tractor == nil && len(machines) == 0 {
+		return nil, nil, "Die gewählten Maschinen sind nicht mehr verfügbar — bitte die Seite neu laden."
+	}
 	hours := formDecimal(r, "hours")
 	if !hours.IsPositive() {
 		return nil, nil, "Stunden müssen größer als 0 sein."
@@ -1229,6 +1238,11 @@ func (s *Server) buildGespannEntry(r *http.Request, gespannID int64, hours decim
 	}
 	machines, err := s.store.MachinesByIDs(r.Context(), g.MachineIDs)
 	if err != nil {
+		return nil, nil, false
+	}
+	// See buildEntryFromForm: a machines-only rig whose machines no longer resolve
+	// would book at a rate of zero.
+	if tractor == nil && len(machines) == 0 {
 		return nil, nil, false
 	}
 	entryDate, err := time.Parse("2006-01-02", dateStr)

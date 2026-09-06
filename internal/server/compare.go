@@ -61,11 +61,16 @@ func (s *Server) gespannRates(r *http.Request, baseID int64) map[string]decimal.
 	}
 	for _, g := range gespanne {
 		// A machines-only rig has a real price and must be comparable across bases
-		// like any other; only a half-set tractor pair is skipped, which the save
-		// path no longer produces.
+		// like any other. A HALF-SET pair has no price at all — TractorRate needs
+		// both halves — so it is skipped rather than compared at its machine sum,
+		// which would drop the tractor silently. The save path no longer produces
+		// these; rigs stored before that validation still can be.
+		if (g.TractorID == nil) != (g.LoadLevelID == nil) {
+			continue
+		}
 		var t *models.Tractor
 		var l *models.LoadLevel
-		if g.TractorID != nil && g.LoadLevelID != nil {
+		if g.TractorID != nil {
 			tv, ok1 := tById[*g.TractorID]
 			lv, ok2 := lById[*g.LoadLevelID]
 			if !ok1 || !ok2 {
