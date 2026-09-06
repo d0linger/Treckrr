@@ -564,7 +564,7 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	// basis — the rate would come out at 0,00 € and the booking would be saved as
 	// "gespeichert" for nothing. Reproduced before this guard: 3 h at 0,0000 with
 	// cost 0,0000. With a tractor the rate is still meaningful, so that path keeps
-	// its long-standing behaviour of ignoring ids it cannot resolve.
+	// its long-standing behavior of ignoring ids it cannot resolve.
 	if tractor == nil && len(machines) == 0 {
 		return nil, nil, "Die gewählten Maschinen sind nicht mehr verfügbar — bitte die Seite neu laden."
 	}
