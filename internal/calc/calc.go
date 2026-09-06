@@ -41,8 +41,20 @@ func MachineRate(m models.Machine) decimal.Decimal {
 }
 
 // GespannRate sums the tractor rate and all machine rates.
-func GespannRate(t models.Tractor, l models.LoadLevel, machines []models.Machine) decimal.Decimal {
-	rate := TractorRate(t, l)
+//
+// A nil tractor or load level contributes nothing: a rig may be machines only,
+// for work where the customer supplies the tractor and only the implement is
+// billed (the ÖKL list prices implements separately for exactly that reason).
+//
+// The two are all-or-nothing. TractorRate is PS × cost-per-PS, so a tractor
+// without a load level has no rate to compute; callers must reject that pairing
+// rather than let it silently drop the tractor from the price. The signature
+// takes pointers so every call site had to be revisited when this changed.
+func GespannRate(t *models.Tractor, l *models.LoadLevel, machines []models.Machine) decimal.Decimal {
+	rate := decimal.Zero
+	if t != nil && l != nil {
+		rate = TractorRate(*t, *l)
+	}
 	for _, m := range machines {
 		rate = rate.Add(MachineRate(m))
 	}

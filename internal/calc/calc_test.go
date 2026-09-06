@@ -93,11 +93,102 @@ func TestGespannRateAndCost(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rate := GespannRate(tc.tractor, tc.load, tc.machines)
+			rate := GespannRate(&tc.tractor, &tc.load, tc.machines)
 			got := Cost(dec(tc.hours), rate)
 			if got.StringFixed(2) != tc.want {
 				t.Fatalf("cost = %s, want %s (rate %s)", got.StringFixed(2), tc.want, rate)
 			}
 		})
+	}
+}
+
+// TestGespannRateWithoutTractor covers the machines-only rig: work where the
+// customer supplies the tractor and only the implement is billed. The tractor and
+// its load level price each other (PS × €/PS), so they are all-or-nothing — half
+// a pair contributes nothing rather than silently pricing the other half.
+func TestGespannRateWithoutTractor(t *testing.T) {
+	tr := models.Tractor{PS: decimal.RequireFromString("130")}
+	ll := models.LoadLevel{CostPerPS: decimal.RequireFromString("0.36")}
+	// 1,7 m × 6,471 €/AB·h = 11,00 €/h — the ÖKL concrete-mixer case.
+	mixer := models.Machine{
+		WorkingWidth: decimal.RequireFromString("1.7"),
+		CostPerAB:    decimal.RequireFromString("6.471"),
+	}
+	machines := []models.Machine{mixer}
+
+	cases := []struct {
+		name string
+		t    *models.Tractor
+		l    *models.LoadLevel
+		ms   []models.Machine
+		want string
+	}{
+		{"machines only", nil, nil, machines, "11.00"},
+		{"tractor and machines", &tr, &ll, machines, "57.80"}, // 46,80 + 11,00
+		{"tractor only", &tr, &ll, nil, "46.80"},
+		{"nothing at all", nil, nil, nil, "0.00"},
+		// Half a pair has no rate to compute; it must not fall back to pricing the
+		// machines as if the tractor had been left out deliberately.
+		{"tractor without load level", &tr, nil, machines, "11.00"},
+		{"load level without tractor", nil, &ll, machines, "11.00"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := GespannRate(tc.t, tc.l, tc.ms); got.StringFixed(2) != tc.want {
+				t.Errorf("GespannRate = %s, want %s", got.StringFixed(2), tc.want)
+			}
+		})
+	}
+}
+
+// TestGespannRateMachinesOnlyIsExactlyTheMachineSum guards the property the
+// billing depends on: without a tractor the rate is the machine sum to the cent,
+// with no stray rounding from the absent tractor term.
+func TestGespannRateMachinesOnlyIsExactlyTheMachineSum(t *testing.T) {
+	widths := []string{"1.2", "1.5", "1.7", "2.3", "3.8", "6.8"}
+	costs := []string{"6.471", "9.8", "11.2", "14.5", "18.9", "22"}
+	for _, w := range widths {
+		for _, c := range costs {
+			m := models.Machine{
+				WorkingWidth: decimal.RequireFromString(w),
+				CostPerAB:    decimal.RequireFromString(c),
+			}
+			want := MachineRate(m)
+			if got := GespannRate(nil, nil, []models.Machine{m}); !got.Equal(want) {
+				t.Errorf("%s m × %s: GespannRate = %s, MachineRate = %s", w, c, got, want)
+			}
+			// Two of them: the sum must not drift either.
+			want2 := MachineRate(m).Add(MachineRate(m))
+			if got := GespannRate(nil, nil, []models.Machine{m, m}); !got.Equal(want2) {
+				t.Errorf("%s m × %s twice: GespannRate = %s, want %s", w, c, got, want2)
+			}
+		}
+	}
+}
+
+// A half-set tractor pair is not a machines-only rig. The rate function already
+// contributes nothing for one, but the callers used to hand it through as if the
+// tractor had been left out deliberately, so the rig list advertised the machine
+// sum for a combination the booking path refuses. This pins the rate side; the
+// caller side is covered in the server package.
+func TestGespannRateHalfPairIsNotMachinesOnly(t *testing.T) {
+	tr := models.Tractor{PS: decimal.RequireFromString("130")}
+	ll := models.LoadLevel{CostPerPS: decimal.RequireFromString("0.36")}
+	m := models.Machine{
+		WorkingWidth: decimal.RequireFromString("2.5"),
+		CostPerAB:    decimal.RequireFromString("16.4"),
+	}
+	full := GespannRate(&tr, &ll, []models.Machine{m})
+	half := GespannRate(&tr, nil, []models.Machine{m})
+	if full.StringFixed(2) != "87.80" { // 46,80 + 41,00
+		t.Fatalf("complete rig = %s, want 87.80", full.StringFixed(2))
+	}
+	// The tractor silently vanishing is exactly the trap: the number looks
+	// plausible, so a caller must not treat it as a price.
+	if half.StringFixed(2) != "41.00" {
+		t.Fatalf("half pair = %s, want 41.00 (the machine sum)", half.StringFixed(2))
+	}
+	if half.Equal(full) {
+		t.Error("half pair and complete rig priced the same")
 	}
 }

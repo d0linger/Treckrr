@@ -108,7 +108,12 @@ func (s *Server) handleCarryOverNeighbors(w http.ResponseWriter, r *http.Request
 		prevMembers[n.ID] = true
 	}
 
-	selected := formInt64List(r, "neighbor_ids")
+	selected, ok := formInt64List(r, "neighbor_ids")
+	if !ok {
+		s.setFlash(w, r, "error", "Zu viele Nachbarn auf einmal. Bitte in kleineren Gruppen übernehmen.")
+		redirect(w, r, dashboardURL(yearID))
+		return
+	}
 	if len(selected) == 0 {
 		s.setFlash(w, r, "info", "Keine Nachbarn ausgewählt.")
 		redirect(w, r, dashboardURL(yearID))

@@ -214,21 +214,18 @@ func (s *Server) handleNeighborSettle(w http.ResponseWriter, r *http.Request) {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
-	remaining, err := s.neighborRemaining(r.Context(), yearID, neighborID)
-	if err != nil {
-		s.serverError(w, "settle: remaining", err)
-		return
-	}
-	if !remaining.IsPositive() {
-		s.setFlash(w, r, "info", "Konto ist bereits ausgeglichen.")
-		redirect(w, r, dashboardURL(yearID))
-		return
-	}
-	if err := s.store.AddPayment(r.Context(), yearID, neighborID, remaining, time.Now(), "Restbetrag beglichen"); err != nil {
+	// The amount is derived from the balance, so it must be read and written in
+	// one locked transaction — see store.SettleRemaining. Reading it here and
+	// passing it down let two concurrent clicks book the same rest twice.
+	booked, err := s.store.SettleRemaining(r.Context(), yearID, neighborID, time.Now(), "Restbetrag beglichen")
+	switch {
+	case err != nil:
 		s.setFlash(w, r, "error", "Zahlung konnte nicht verbucht werden.")
-	} else {
+	case booked.IsZero():
+		s.setFlash(w, r, "info", "Konto ist bereits ausgeglichen.")
+	default:
 		s.audit(r, "payment_settle", "year", yearID,
-			s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID)+" · "+remaining.StringFixed(2)+" €")
+			s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID)+" · "+booked.StringFixed(2)+" €")
 		s.setFlash(w, r, "success", "Restbetrag als bezahlt verbucht.")
 	}
 	redirect(w, r, dashboardURL(yearID))
@@ -257,6 +254,10 @@ func (s *Server) handleNeighborCarryForward(w http.ResponseWriter, r *http.Reque
 		s.serverError(w, "carry: year", err)
 		return
 	}
+	// Advisory fast path only: it spares the year/membership lookups below when
+	// there is plainly nothing to move. The amount that actually gets posted is
+	// recomputed under the account lock in store.CarryForwardRemaining — this
+	// value must never reach the write.
 	remaining, err := s.neighborRemaining(r.Context(), yearID, neighborID)
 	if err != nil {
 		s.serverError(w, "carry: remaining", err)
@@ -289,11 +290,15 @@ func (s *Server) handleNeighborCarryForward(w http.ResponseWriter, r *http.Reque
 	}
 	fromDesc := "Ins Folgejahr übertragen (" + itoa(year.Year+1) + ")"
 	toDesc := "Übertrag aus " + itoa(year.Year)
-	if err := s.store.CarryForward(r.Context(), neighborID, yearID, nextID, remaining, time.Now(), fromDesc, toDesc); err != nil {
+	moved, err := s.store.CarryForwardRemaining(r.Context(), neighborID, yearID, nextID, time.Now(), fromDesc, toDesc)
+	switch {
+	case err != nil:
 		s.setFlash(w, r, "error", "Übernahme fehlgeschlagen.")
-	} else {
+	case moved.IsZero():
+		s.setFlash(w, r, "info", "Kein offener Rest zum Übernehmen.")
+	default:
 		s.audit(r, "carry_forward", "neighbor", neighborID,
-			s.neighborName(r, neighborID)+" · "+remaining.StringFixed(2)+" € → "+itoa(year.Year+1))
+			s.neighborName(r, neighborID)+" · "+moved.StringFixed(2)+" € → "+itoa(year.Year+1))
 		s.setFlash(w, r, "success", "Rest ins Folgejahr übernommen.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))

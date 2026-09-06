@@ -39,6 +39,16 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// A storno is a statement that this booking should not have been made. Copying
+	// it into a series would recreate it on every run — verified before this guard
+	// existed: voiding a 42,00 € booking and setting up a weekly series produced an
+	// active rule carrying the full amount. The form is hidden for voided bookings
+	// (entry_edit.html), so reaching this means a stale page or a crafted request.
+	if entry.Voided {
+		s.setFlash(w, r, "error", "Aus einer stornierten Buchung kann keine Serie eingerichtet werden.")
+		redirect(w, r, "/recurring")
+		return
+	}
 	machineIDs, err := s.store.EntryMachineIDs(r.Context(), id)
 	if err != nil {
 		// Don't save a template that would silently drop the entry's machines.

@@ -125,25 +125,45 @@ func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int
 			OldRate: e.HourlyRate, OldCost: e.Cost, NewRate: e.HourlyRate, NewCost: e.Cost,
 			TractorLabel: e.TractorLabel, LoadLabel: e.LoadLabel, MachineLabels: e.MachineLabels,
 		}
-		if e.TractorID != nil && e.LoadLevelID != nil {
-			t, tok := tByID[*e.TractorID]
-			l, lok := lByID[*e.LoadLevelID]
+		// Machines-only bookings (customer's own tractor) carry no tractor id and
+		// must still be repriced: skipping them left them frozen at their original
+		// rate while every other booking followed the basis.
+		//
+		// QUANTITY bookings also carry no tractor id, and they must NOT be touched:
+		// their price is the unit price the user typed, not something derived from
+		// the basis. Repricing one as if it were a rig yields rate 0 and cost 0 —
+		// applying that would wipe every Pauschale/ha/Ballen booking to zero. The
+		// old tractor guard excluded them by accident; this excludes them on purpose.
+		hourly := e.Unit == "" || e.Unit == "h"
+		priceable := hourly && e.TractorID == nil && e.LoadLevelID == nil
+		var t *models.Tractor
+		var l *models.LoadLevel
+		if hourly && e.TractorID != nil && e.LoadLevelID != nil {
+			tv, tok := tByID[*e.TractorID]
+			lv, lok := lByID[*e.LoadLevelID]
 			if tok && lok {
-				var ms []models.Machine
-				mnames := make([]string, 0)
-				for _, mid := range emMap[e.ID] {
-					if m, ok := mByID[mid]; ok {
-						ms = append(ms, m)
-						mnames = append(mnames, m.Name)
-					}
-				}
-				rate := calc.GespannRate(t, l, ms)
-				cost := calc.Cost(e.Hours, rate)
-				row.NewRate, row.NewCost = rate, cost
-				row.TractorLabel, row.LoadLabel = t.Label(), l.Name
-				row.MachineLabels = strings.Join(mnames, ", ")
-				row.Changed = !rate.Equal(e.HourlyRate) || !cost.Equal(e.Cost)
+				t, l, priceable = &tv, &lv, true
 			}
+		}
+		if priceable {
+			var ms []models.Machine
+			mnames := make([]string, 0)
+			for _, mid := range emMap[e.ID] {
+				if m, ok := mByID[mid]; ok {
+					ms = append(ms, m)
+					mnames = append(mnames, m.Name)
+				}
+			}
+			rate := calc.GespannRate(t, l, ms)
+			cost := calc.Cost(e.Hours, rate)
+			row.NewRate, row.NewCost = rate, cost
+			if t != nil && l != nil {
+				row.TractorLabel, row.LoadLabel = t.Label(), l.Name
+			} else {
+				row.TractorLabel, row.LoadLabel = "", ""
+			}
+			row.MachineLabels = strings.Join(mnames, ", ")
+			row.Changed = !rate.Equal(e.HourlyRate) || !cost.Equal(e.Cost)
 		}
 		out = append(out, row)
 	}

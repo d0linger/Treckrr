@@ -316,26 +316,43 @@ func parseGermanDecimal(raw string) decimal.Decimal {
 	return d
 }
 
-// formInt64List collects repeated form values under name as int64s.
-func formInt64List(r *http.Request, name string) []int64 {
-	var ids []int64
-	for _, v := range r.Form[name] {
+// maxFormListLen bounds how many values one repeated form field may carry.
+//
+// Every id in these lists costs database work downstream — the neighbor takeover
+// runs a membership query and an insert per id — and limitBody's 1 MiB allows on
+// the order of twenty thousand of them in a single request. The forms that
+// produce these lists are checkbox groups over a price basis' machines (single
+// digits here) or a year's neighbors (a farming community, tens), so this is
+// two orders of magnitude of headroom and still bounds the work.
+const maxFormListLen = 500
+
+// formInt64List collects repeated form values under name as int64s. The bool
+// reports whether the request was within maxFormListLen; a caller that gets false
+// must REFUSE, not proceed with a shortened list. Truncating silently would drop
+// neighbors from a billing year or machines from a rig while still reporting
+// success — the caller and the operator would never learn what went missing.
+//
+// The cap counts the values as SUBMITTED, not the ones that parse, so padding the
+// request with unparseable junk cannot buy extra work.
+func formInt64List(r *http.Request, name string) ([]int64, bool) {
+	raw := r.Form[name]
+	if len(raw) > maxFormListLen {
+		return nil, false
+	}
+	ids := make([]int64, 0, len(raw))
+	for _, v := range raw {
 		if id, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
 			ids = append(ids, id)
 		}
 	}
-	return ids
+	return ids, true
 }
 
-// formMachineIDs collects repeated "machine_ids" checkbox values.
-func formMachineIDs(r *http.Request) []int64 {
-	var ids []int64
-	for _, v := range r.Form["machine_ids"] {
-		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
-			ids = append(ids, id)
-		}
-	}
-	return ids
+// formMachineIDs collects repeated "machine_ids" checkbox values. Same contract
+// as formInt64List, whose implementation it now shares — the copy it used to
+// carry had drifted, missing the TrimSpace the other one applied.
+func formMachineIDs(r *http.Request) ([]int64, bool) {
+	return formInt64List(r, "machine_ids")
 }
 
 // redirect issues a see-other redirect (post/redirect/get).

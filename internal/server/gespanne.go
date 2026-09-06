@@ -105,12 +105,27 @@ func (s *Server) handleGespanne(w http.ResponseWriter, r *http.Request) {
 				v.Machines = append(v.Machines, m)
 			}
 		}
-		if v.Tractor != nil && v.Load != nil {
-			v.Rate = calc.GespannRate(*v.Tractor, *v.Load, v.Machines)
-			tr := calc.TractorRate(*v.Tractor, *v.Load)
-			v.Breakdown = append(v.Breakdown, partRate{
-				Label: v.Tractor.Label() + " · " + v.Load.Name, Rate: tr,
-			})
+		// Priced even without a tractor: a machines-only rig is the "customer brings
+		// the tractor" case, and leaving it at 0,00 €/h made it look broken while
+		// still being selectable in the booking form.
+		//
+		// A HALF-SET pair is different and must stay unpriced. TractorRate needs both
+		// halves, so pricing it would quietly drop the tractor and advertise the
+		// machine sum — observed at 41,00 €/h on a rig the booking path refuses with
+		// "Traktor und Belastungsstufe gehören zusammen". The save path no longer
+		// creates these, but rigs stored before that validation still can be. The
+		// same applies when a referenced tractor or load level has since been
+		// deleted: the rig is incomplete, not machines-only.
+		halfPair := (g.TractorID == nil) != (g.LoadLevelID == nil)
+		missing := (g.TractorID != nil && v.Tractor == nil) || (g.LoadLevelID != nil && v.Load == nil)
+		if !halfPair && !missing {
+			v.Rate = calc.GespannRate(v.Tractor, v.Load, v.Machines)
+			if v.Tractor != nil && v.Load != nil {
+				v.Breakdown = append(v.Breakdown, partRate{
+					Label: v.Tractor.Label() + " · " + v.Load.Name,
+					Rate:  calc.TractorRate(*v.Tractor, *v.Load),
+				})
+			}
 			for _, m := range v.Machines {
 				v.Breakdown = append(v.Breakdown, partRate{Label: m.Name, Rate: calc.MachineRate(m)})
 			}
@@ -141,7 +156,12 @@ func (s *Server) handleGespannSave(w http.ResponseWriter, r *http.Request) {
 	name := trimmed(r, "name")
 	tractorID := formInt64Ptr(r, "tractor_id")
 	loadID := formInt64Ptr(r, "load_level_id")
-	machineIDs := formMachineIDs(r)
+	machineIDs, ok := formMachineIDs(r)
+	if !ok {
+		s.setFlash(w, r, "error", "Zu viele Maschinen auf einmal.")
+		redirect(w, r, gespanneURL(baseID))
+		return
+	}
 	sortOrder := formInt(r, "sort_order")
 	if name == "" {
 		s.setFlash(w, r, "error", "Name darf nicht leer sein.")
@@ -149,6 +169,19 @@ func (s *Server) handleGespannSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.tooLong(w, r, "Name", name, maxNameLen) {
+		redirect(w, r, gespanneURL(baseID))
+		return
+	}
+	// Tractor and load level price each other (PS × €/PS), so one without the
+	// other has no rate at all — accepting it would silently bill the machines
+	// only. A rig with neither is fine as long as it carries a machine.
+	if (tractorID == nil) != (loadID == nil) {
+		s.setFlash(w, r, "error", "Traktor und Belastungsstufe gehören zusammen — bitte beides wählen oder beides leer lassen.")
+		redirect(w, r, gespanneURL(baseID))
+		return
+	}
+	if tractorID == nil && len(machineIDs) == 0 {
+		s.setFlash(w, r, "error", "Ein Gespann braucht einen Traktor mit Belastungsstufe oder mindestens eine Maschine.")
 		redirect(w, r, gespanneURL(baseID))
 		return
 	}

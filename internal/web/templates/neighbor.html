@@ -73,7 +73,7 @@
 		<div data-mode-panel="manual" hidden>
 			<label class="field"><span>Traktor</span>
 				<select class="select" name="tractor_id" data-tractor-select>
-					<option value="">— wählen —</option>
+					<option value="">— keiner —</option>
 					{{range .Tractors}}
 						<option value="{{.ID}}">{{.Label}}</option>
 					{{end}}
@@ -81,7 +81,7 @@
 			</label>
 			<label class="field"><span>Belastungsstufe</span>
 				<select class="select" name="load_level_id" data-load-select>
-					<option value="">— wählen —</option>
+					<option value="">— keine —</option>
 					{{range .Loads}}
 						<option value="{{.ID}}">{{.Name}} ({{num .CostPerPS}} €/PS·h)</option>
 					{{end}}
@@ -113,6 +113,9 @@
 			</span>
 			<span class="rate-preview__rate">Satz <strong data-rate>–</strong></span>
 		</div>
+		<p class="rate-preview__note" data-no-tractor-note hidden>
+			Kein Traktor gewählt — verrechnet werden nur die Maschinen.
+		</p>
 		</div><!-- /data-h-only -->
 
 		<div data-qty-only hidden>
@@ -213,7 +216,7 @@
 				<span class="bcard__cost">{{money .Cost}}</span>
 			</div>
 			<div class="bcard__foot">
-				<span class="bcard__detail">{{if eq .Unit "h"}}{{num .Hours}} h × {{money .HourlyRate}}/h · {{.TractorLabel}} · {{.LoadLabel}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{else}}{{num .Quantity}} {{.Unit}} × {{money .UnitPrice}}/{{.Unit}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
+				<span class="bcard__detail">{{if eq .Unit "h"}}{{num .Hours}} h × {{money .HourlyRate}}/h{{if .TractorLabel}} · {{.TractorLabel}} · {{.LoadLabel}}{{else}} · ohne Traktor{{end}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{else}}{{num .Quantity}} {{.Unit}} × {{money .UnitPrice}}/{{.Unit}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
 				{{if not $.Completed}}
 				<span class="bcard__acts">
 					{{if .Voided}}
