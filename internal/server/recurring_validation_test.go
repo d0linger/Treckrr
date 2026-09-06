@@ -81,27 +81,27 @@ func (r *mockRecurRows) Next(dest []driver.Value) error {
 	}
 	r.hasRead = true
 	if strings.Contains(r.query, "FROM entries") {
-		dest[0] = int64(10)    // id
-		dest[1] = int64(1)     // neighbor_id
-		dest[2] = int64(1)     // billing_year_id
-		dest[3] = time.Now()   // entry_date
-		dest[4] = "Mähen"      // task_label
-		dest[5] = nil          // gespann_id
-		dest[6] = nil          // tractor_id
-		dest[7] = nil          // load_level_id
-		dest[8] = ""           // tractor_label
-		dest[9] = ""           // load_label
-		dest[10] = ""          // machine_labels
-		dest[11] = "2.00"      // hours
-		dest[12] = "30.00"     // hourly_rate
-		dest[13] = "60.00"     // cost
-		dest[14] = ""          // note
-		dest[15] = r.voided    // voided
-		dest[16] = ""          // void_reason
-		dest[17] = time.Now()  // created_at
-		dest[18] = "h"         // unit
-		dest[19] = "2.00"      // quantity
-		dest[20] = "30.00"     // unit_price
+		dest[0] = int64(10)   // id
+		dest[1] = int64(1)    // neighbor_id
+		dest[2] = int64(1)    // billing_year_id
+		dest[3] = time.Now()  // entry_date
+		dest[4] = "Mähen"     // task_label
+		dest[5] = nil         // gespann_id
+		dest[6] = nil         // tractor_id
+		dest[7] = nil         // load_level_id
+		dest[8] = ""          // tractor_label
+		dest[9] = ""          // load_label
+		dest[10] = ""         // machine_labels
+		dest[11] = "2.00"     // hours
+		dest[12] = "30.00"    // hourly_rate
+		dest[13] = "60.00"    // cost
+		dest[14] = ""         // note
+		dest[15] = r.voided   // voided
+		dest[16] = ""         // void_reason
+		dest[17] = time.Now() // created_at
+		dest[18] = "h"        // unit
+		dest[19] = "2.00"     // quantity
+		dest[20] = "30.00"    // unit_price
 		return nil
 	}
 	return io.EOF
