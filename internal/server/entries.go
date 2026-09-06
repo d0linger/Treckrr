@@ -507,11 +507,14 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 		}, nil, ""
 	}
 
+	machineIDs, ok := formMachineIDs(r)
+	if !ok {
+		return nil, nil, "Zu viele Maschinen auf einmal."
+	}
 	var (
 		gespannID   *int64
 		tractorID   = formInt64Ptr(r, "tractor_id")
 		loadLevelID = formInt64Ptr(r, "load_level_id")
-		machineIDs  = formMachineIDs(r)
 		taskLabel   = trimmed(r, "task_label")
 	)
 	if r.FormValue("mode") != "manual" {
