@@ -695,6 +695,15 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .rate-preview__cost { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
 .rate-preview__rate { font-size: var(--fs-sm); opacity: .92; text-align: right; }
 .rate-preview strong { font-variant-numeric: tabular-nums; font-weight: 700; }
+/* Informational only: a machines-only booking is a legitimate shape (the customer
+   brings the tractor), so this states what will be billed rather than warning or
+   blocking. It sits under the preview and disappears as soon as a tractor is
+   picked — nothing to dismiss. */
+.rate-preview__note {
+	display: flex; align-items: center; gap: .35rem;
+	margin: .4rem 0 0; font-size: var(--fs-sm); color: var(--muted);
+}
+.rate-preview__note .ic { flex: 0 0 auto; }
 
 /* Skeleton shimmer over the live figures while the pricing table is still being
    fetched — so the "–" placeholder reads as "loading", not "broken". */

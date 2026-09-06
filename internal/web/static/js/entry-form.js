@@ -32,6 +32,7 @@
 	var unitLabels = form.querySelectorAll("[data-unit-label]");
 	var unitCustomWrap = form.querySelector("[data-unit-custom]");
 	var unitCustomInput = form.querySelector("[data-unit-custom-input]");
+	var noTractorNote = form.querySelector("[data-no-tractor-note]");
 
 	function decVal(el) { return parseFloat((((el && el.value) || "0")).replace(",", ".")) || 0; }
 	function isHours() {
@@ -60,39 +61,55 @@
 		return sum;
 	}
 
+	// Returns { ps, loadCost, machineIds, hasTractor } or null when the selection
+	// cannot be priced. A rig without a tractor is priceable as long as it carries
+	// a machine — the customer's own tractor pulls it — and mirrors the same
+	// all-or-nothing rule the server applies in calc.GespannRate: half a tractor
+	// pair has no rate, so it stays unpriced here too.
 	function resolveSelection() {
-		// Returns { ps, loadCost, machineIds } or null when incomplete.
 		if (!pricing) return null;
+		var ids = [];
 		if (currentMode() === "gespann") {
 			var gid = parseInt(form.querySelector("[data-gespann-select]").value, 10);
 			if (!gid) return null;
 			var g = byId(pricing.gespanne, gid);
-			if (!g || !g.tractor || !g.load) return null;
+			if (!g) return null;
+			ids = g.machines || [];
+			if (!g.tractor && !g.load) {
+				if (!ids.length) return null;
+				return { ps: 0, loadCost: 0, machineIds: ids, hasTractor: false };
+			}
+			if (!g.tractor || !g.load) return null;
 			var t = byId(pricing.tractors, g.tractor);
 			var l = byId(pricing.loads, g.load);
 			if (!t || !l) return null;
-			return { ps: t.ps, loadCost: l.cost, machineIds: g.machines || [] };
+			return { ps: t.ps, loadCost: l.cost, machineIds: ids, hasTractor: true };
 		}
+		form.querySelectorAll("[data-machine]:checked").forEach(function (c) {
+			ids.push(parseInt(c.value, 10));
+		});
 		var tid = parseInt(form.querySelector("[data-tractor-select]").value, 10);
 		var lid = parseInt(form.querySelector("[data-load-select]").value, 10);
+		if (!tid && !lid) {
+			if (!ids.length) return null;
+			return { ps: 0, loadCost: 0, machineIds: ids, hasTractor: false };
+		}
 		if (!tid || !lid) return null;
 		var tr = byId(pricing.tractors, tid);
 		var lo = byId(pricing.loads, lid);
 		if (!tr || !lo) return null;
-		var ids = [];
-		form.querySelectorAll("[data-machine]:checked").forEach(function (c) {
-			ids.push(parseInt(c.value, 10));
-		});
-		return { ps: tr.ps, loadCost: lo.cost, machineIds: ids };
+		return { ps: tr.ps, loadCost: lo.cost, machineIds: ids, hasTractor: true };
 	}
 
 	function update() {
 		if (!isHours()) {
 			var q = decVal(qtyEl), p = decVal(unitPriceEl);
 			if (qtyCostEl) qtyCostEl.textContent = (q > 0 && p > 0) ? fmt(round2(q * p)) : "–";
+			if (noTractorNote) noTractorNote.hidden = true;
 			return;
 		}
 		var sel = resolveSelection();
+		if (noTractorNote) noTractorNote.hidden = !(sel && sel.hasTractor === false);
 		if (!sel) {
 			rateEl.textContent = "–";
 			costEl.textContent = "–";

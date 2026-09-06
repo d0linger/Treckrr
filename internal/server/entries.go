@@ -530,16 +530,27 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 			tractorID, loadLevelID = nil, nil
 		}
 	}
-	if tractorID == nil || loadLevelID == nil {
-		return nil, nil, "Bitte Traktor und Belastungsstufe (oder ein Gespann) wählen."
+	// The tractor is optional — a booking may be machines only, for work where the
+	// customer supplies the tractor — but the pair is all-or-nothing, because
+	// TractorRate needs both to produce a number.
+	if (tractorID == nil) != (loadLevelID == nil) {
+		return nil, nil, "Traktor und Belastungsstufe gehören zusammen — bitte beides wählen oder beides leer lassen."
 	}
-	tractor, err := s.store.GetTractor(r.Context(), *tractorID)
-	if err != nil {
-		return nil, nil, "Traktor nicht gefunden."
+	if tractorID == nil && len(machineIDs) == 0 {
+		return nil, nil, "Bitte Traktor und Belastungsstufe oder mindestens eine Maschine wählen."
 	}
-	load, err := s.store.GetLoadLevel(r.Context(), *loadLevelID)
-	if err != nil {
-		return nil, nil, "Belastungsstufe nicht gefunden."
+	var tractor *models.Tractor
+	var load *models.LoadLevel
+	if tractorID != nil {
+		t, err := s.store.GetTractor(r.Context(), *tractorID)
+		if err != nil {
+			return nil, nil, "Traktor nicht gefunden."
+		}
+		l, err := s.store.GetLoadLevel(r.Context(), *loadLevelID)
+		if err != nil {
+			return nil, nil, "Belastungsstufe nicht gefunden."
+		}
+		tractor, load = t, l
 	}
 	machines, err := s.store.MachinesByIDs(r.Context(), machineIDs)
 	if err != nil {
@@ -560,27 +571,30 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	if msg := lenError("Notiz", note, maxNoteLen); msg != "" {
 		return nil, nil, msg
 	}
-	rate := calc.GespannRate(*tractor, *load, machines)
+	rate := calc.GespannRate(tractor, load, machines)
 	names := make([]string, 0, len(machines))
 	ids := make([]int64, 0, len(machines))
 	for _, m := range machines {
 		names = append(names, m.Name)
 		ids = append(ids, m.ID)
 	}
-	return &models.Entry{
+	entry := &models.Entry{
 		Date:          entryDate,
 		TaskLabel:     taskLabel,
 		GespannID:     gespannID,
-		TractorID:     &tractor.ID,
-		LoadLevelID:   &load.ID,
-		TractorLabel:  tractor.Label(),
-		LoadLabel:     load.Name,
 		MachineLabels: strings.Join(names, ", "),
 		Hours:         hours,
 		HourlyRate:    rate,
 		Cost:          calc.Cost(hours, rate),
 		Note:          note,
-	}, ids, ""
+	}
+	// Left nil/empty on a machines-only booking, which is what the templates and
+	// the recalculation branch on to tell the two shapes apart.
+	if tractor != nil && load != nil {
+		entry.TractorID, entry.LoadLevelID = &tractor.ID, &load.ID
+		entry.TractorLabel, entry.LoadLabel = tractor.Label(), load.Name
+	}
+	return entry, ids, ""
 }
 
 // entryUpdateDetail renders a per-field old→new summary of an edited booking so
@@ -1190,16 +1204,25 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 // buildGespannEntry resolves a fixed gespann into a snapshotted entry.
 func (s *Server) buildGespannEntry(r *http.Request, gespannID int64, hours decimal.Decimal, dateStr string) (*models.Entry, []int64, bool) {
 	g, err := s.store.GetGespann(r.Context(), gespannID)
-	if err != nil || g.TractorID == nil || g.LoadLevelID == nil {
+	// A machines-only rig is valid; a half-set tractor pair is not (see
+	// calc.GespannRate), and neither is a rig with nothing in it at all.
+	if err != nil || (g.TractorID == nil) != (g.LoadLevelID == nil) {
 		return nil, nil, false
 	}
-	tractor, err := s.store.GetTractor(r.Context(), *g.TractorID)
-	if err != nil {
+	if g.TractorID == nil && len(g.MachineIDs) == 0 {
 		return nil, nil, false
 	}
-	load, err := s.store.GetLoadLevel(r.Context(), *g.LoadLevelID)
-	if err != nil {
-		return nil, nil, false
+	var tractor *models.Tractor
+	var load *models.LoadLevel
+	if g.TractorID != nil {
+		tractor, err = s.store.GetTractor(r.Context(), *g.TractorID)
+		if err != nil {
+			return nil, nil, false
+		}
+		load, err = s.store.GetLoadLevel(r.Context(), *g.LoadLevelID)
+		if err != nil {
+			return nil, nil, false
+		}
 	}
 	machines, err := s.store.MachinesByIDs(r.Context(), g.MachineIDs)
 	if err != nil {
@@ -1209,7 +1232,7 @@ func (s *Server) buildGespannEntry(r *http.Request, gespannID int64, hours decim
 	if err != nil {
 		entryDate = time.Now()
 	}
-	rate := calc.GespannRate(*tractor, *load, machines)
+	rate := calc.GespannRate(tractor, load, machines)
 	names := make([]string, 0, len(machines))
 	ids := make([]int64, 0, len(machines))
 	for _, m := range machines {
@@ -1217,19 +1240,20 @@ func (s *Server) buildGespannEntry(r *http.Request, gespannID int64, hours decim
 		ids = append(ids, m.ID)
 	}
 	gid := g.ID
-	return &models.Entry{
+	entry := &models.Entry{
 		Date:          entryDate,
 		TaskLabel:     g.Name,
 		GespannID:     &gid,
-		TractorID:     &tractor.ID,
-		LoadLevelID:   &load.ID,
-		TractorLabel:  tractor.Label(),
-		LoadLabel:     load.Name,
 		MachineLabels: strings.Join(names, ", "),
 		Hours:         hours,
 		HourlyRate:    rate,
 		Cost:          calc.Cost(hours, rate),
-	}, ids, true
+	}
+	if tractor != nil && load != nil {
+		entry.TractorID, entry.LoadLevelID = &tractor.ID, &load.ID
+		entry.TractorLabel, entry.LoadLabel = tractor.Label(), load.Name
+	}
+	return entry, ids, true
 }
 
 func (s *Server) handleEntryDelete(w http.ResponseWriter, r *http.Request) {

@@ -60,13 +60,18 @@ func (s *Server) gespannRates(r *http.Request, baseID int64) map[string]decimal.
 		mById[m.ID] = m
 	}
 	for _, g := range gespanne {
-		if g.TractorID == nil || g.LoadLevelID == nil {
-			continue
-		}
-		t, ok1 := tById[*g.TractorID]
-		l, ok2 := lById[*g.LoadLevelID]
-		if !ok1 || !ok2 {
-			continue
+		// A machines-only rig has a real price and must be comparable across bases
+		// like any other; only a half-set tractor pair is skipped, which the save
+		// path no longer produces.
+		var t *models.Tractor
+		var l *models.LoadLevel
+		if g.TractorID != nil && g.LoadLevelID != nil {
+			tv, ok1 := tById[*g.TractorID]
+			lv, ok2 := lById[*g.LoadLevelID]
+			if !ok1 || !ok2 {
+				continue
+			}
+			t, l = &tv, &lv
 		}
 		var ms []models.Machine
 		for _, mid := range g.MachineIDs {

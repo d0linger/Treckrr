@@ -105,15 +105,18 @@ func (s *Server) handleGespanne(w http.ResponseWriter, r *http.Request) {
 				v.Machines = append(v.Machines, m)
 			}
 		}
+		// Priced even without a tractor: a machines-only rig is the "customer brings
+		// the tractor" case, and leaving it at 0,00 €/h made it look broken while
+		// still being selectable in the booking form.
+		v.Rate = calc.GespannRate(v.Tractor, v.Load, v.Machines)
 		if v.Tractor != nil && v.Load != nil {
-			v.Rate = calc.GespannRate(*v.Tractor, *v.Load, v.Machines)
-			tr := calc.TractorRate(*v.Tractor, *v.Load)
 			v.Breakdown = append(v.Breakdown, partRate{
-				Label: v.Tractor.Label() + " · " + v.Load.Name, Rate: tr,
+				Label: v.Tractor.Label() + " · " + v.Load.Name,
+				Rate:  calc.TractorRate(*v.Tractor, *v.Load),
 			})
-			for _, m := range v.Machines {
-				v.Breakdown = append(v.Breakdown, partRate{Label: m.Name, Rate: calc.MachineRate(m)})
-			}
+		}
+		for _, m := range v.Machines {
+			v.Breakdown = append(v.Breakdown, partRate{Label: m.Name, Rate: calc.MachineRate(m)})
 		}
 		views = append(views, v)
 	}
@@ -149,6 +152,19 @@ func (s *Server) handleGespannSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.tooLong(w, r, "Name", name, maxNameLen) {
+		redirect(w, r, gespanneURL(baseID))
+		return
+	}
+	// Tractor and load level price each other (PS × €/PS), so one without the
+	// other has no rate at all — accepting it would silently bill the machines
+	// only. A rig with neither is fine as long as it carries a machine.
+	if (tractorID == nil) != (loadID == nil) {
+		s.setFlash(w, r, "error", "Traktor und Belastungsstufe gehören zusammen — bitte beides wählen oder beides leer lassen.")
+		redirect(w, r, gespanneURL(baseID))
+		return
+	}
+	if tractorID == nil && len(machineIDs) == 0 {
+		s.setFlash(w, r, "error", "Ein Gespann braucht einen Traktor mit Belastungsstufe oder mindestens eine Maschine.")
 		redirect(w, r, gespanneURL(baseID))
 		return
 	}

@@ -142,6 +142,17 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 			continue
 		}
 		bookings++
+		// The machines are collected for EVERY booking, including a machines-only
+		// one (customer's own tractor). Doing it inside the tractor branch below
+		// used to drop those implements from the price appendix, so the customer
+		// was charged a machine rate the document never explained.
+		var used []int64
+		for _, mid := range machineIDsByEntry[e.ID] {
+			if _, ok := machineByID[mid]; ok {
+				used = append(used, mid)
+				usedMachine[mid] = true
+			}
+		}
 		if e.TractorID == nil || e.LoadLevelID == nil {
 			continue
 		}
@@ -161,11 +172,8 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 			set = map[int64]bool{}
 			loads[*e.LoadLevelID] = set
 		}
-		for _, mid := range machineIDsByEntry[e.ID] {
-			if _, ok := machineByID[mid]; ok {
-				set[mid] = true
-				usedMachine[mid] = true
-			}
+		for _, mid := range used {
+			set[mid] = true
 		}
 	}
 

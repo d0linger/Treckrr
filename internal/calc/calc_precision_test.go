@@ -55,10 +55,10 @@ func TestGespannRateExact(t *testing.T) {
 		{WorkingWidth: dec("3.0"), CostPerAB: dec("5.0")}, // 15.00
 		{WorkingWidth: dec("2.0"), CostPerAB: dec("7.5")}, // 15.00
 	}
-	if got := GespannRate(tr, ll, machines); got.StringFixed(2) != "78.00" {
+	if got := GespannRate(&tr, &ll, machines); got.StringFixed(2) != "78.00" {
 		t.Fatalf("GespannRate = %s, want 78.00", got.StringFixed(2))
 	}
-	if got := GespannRate(tr, ll, nil); got.StringFixed(2) != "48.00" {
+	if got := GespannRate(&tr, &ll, nil); got.StringFixed(2) != "48.00" {
 		t.Fatalf("GespannRate(no machines) = %s, want 48.00", got.StringFixed(2))
 	}
 }
