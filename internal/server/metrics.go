@@ -81,6 +81,12 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Parked mail: pending means "a neighbor has not received something we told
+	// the operator was merely delayed" — the one queue depth worth alerting on.
+	if n, err := s.store.PendingMailCount(r.Context()); err == nil {
+		gauge("treckrr_mail_outbox_pending", "Outbound mails parked for retry.", float64(n))
+	}
+
 	// Counters and the request histogram fed from internal/metrics (HTTP volume,
 	// auth failures, maintenance work).
 	metrics.Render(&b)

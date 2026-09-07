@@ -18,6 +18,7 @@ import (
 	"github.com/d0linger/treckrr/internal/backup"
 	"github.com/d0linger/treckrr/internal/config"
 	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/mail"
 	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/server"
@@ -170,7 +171,7 @@ func run() error {
 	// Background maintenance: purge expired sessions and stale rate-limit rows on a
 	// timer, so cleanup no longer depends on /healthz being hit — and /healthz can
 	// stay a cheap, side-effect-free probe instead of running DELETEs per request.
-	go purgeLoop(ctx, st)
+	go purgeLoop(ctx, cfg, st)
 
 	// Encrypted backups: scheduled writer (in-app) + on-demand download handler.
 	// Seed the schedule from env on first boot; thereafter it is GUI-editable.
@@ -250,7 +251,7 @@ func waitTimeout(wg *sync.WaitGroup, d time.Duration) bool {
 
 // purgeLoop periodically removes expired sessions and stale rate-limit rows until
 // ctx is canceled. It runs one purge shortly after boot, then on a fixed tick.
-func purgeLoop(ctx context.Context, st *store.Store) {
+func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store) {
 	purge := func() {
 		bg, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
@@ -290,6 +291,35 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 		// events are kept for the long window (§ 132 BAO, 7 years). The classification
 		// lives in the store (shortLivedAuditActions); everything not listed defaults to
 		// the long window, so a new action is never dropped early by omission.
+		// Deliver parked mail (failed synchronous sends). The sender is injected so
+		// the store stays free of a config dependency; each delivery gets its own
+		// bounded context so one slow SMTP dialog cannot eat the whole tick.
+		if cfg.MailEnabled() {
+			sent, gaveUp, err := st.ProcessMailOutbox(bg, func(ctx context.Context, to, subject, body, attName, attType string, attData []byte) error {
+				sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				var atts []mail.Attachment
+				if attName != "" {
+					atts = append(atts, mail.Attachment{Filename: attName, ContentType: attType, Data: attData})
+				}
+				return mail.Send(sctx, cfg, to, subject, body, atts)
+			})
+			if err != nil {
+				metrics.Inc(metrics.MaintenanceFails)
+				slog.Error("mail outbox", "err", err)
+			}
+			if sent > 0 {
+				metrics.Add(metrics.MailSent, int64(sent))
+				slog.Info("mail outbox delivered", "count", sent)
+			}
+			if gaveUp > 0 {
+				metrics.Add(metrics.MailFailed, int64(gaveUp))
+				slog.Warn("mail outbox gave up", "count", gaveUp)
+			}
+		}
+		if err := st.PurgeSentMail(bg, time.Now().Add(-30*24*time.Hour)); err != nil {
+			slog.Error("purge sent mail", "err", err)
+		}
 		shortCutoff, longCutoff := auditRetentionCutoffs(time.Now())
 		if n, err := st.PurgeAuditLog(bg, shortCutoff, longCutoff); err != nil {
 			metrics.Inc(metrics.MaintenanceFails)

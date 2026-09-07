@@ -305,6 +305,15 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 	att := mail.Attachment{Filename: "Mahnung_" + sanitizeFilename(v.Invoice.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
 	if err := mail.Send(r.Context(), s.cfg, v.Neighbor.Email, v.Title+" · Rechnung "+v.Invoice.Number, body, []mail.Attachment{att}); err != nil {
 		metrics.Inc(metrics.MailFailed)
+		s.audit(r, "mahnung_email_failed", "neighbor", v.Neighbor.ID,
+			v.Neighbor.Name+" · "+v.Title+" · Rechnung "+v.Invoice.Number+" · "+err.Error())
+		if qerr := s.store.EnqueueMail(r.Context(), store.OutboxMail{
+			Kind: "mahnung", NeighborID: v.Neighbor.ID, BillingYearID: v.Invoice.BillingYearID,
+			Recipient: v.Neighbor.Email, Subject: v.Title + " · Rechnung " + v.Invoice.Number, Body: body,
+			AttName: att.Filename, AttType: att.ContentType, AttData: att.Data,
+		}); qerr != nil {
+			slog.Error("mahnung email enqueue failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(qerr.Error()))
+		}
 		slog.Error("mahnung email send failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
 		redirect(w, r, back)

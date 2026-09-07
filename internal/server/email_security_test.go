@@ -194,7 +194,9 @@ func TestEmailSendFailureDoesNotLeakInternalErrors(t *testing.T) {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
 		flashCookie := flashText(t, s, rr)
-		if !strings.Contains(flashCookie, "Versand fehlgeschlagen.") {
+		// Property, not wording: the flash may explain the retry plan (outbox),
+		// but it must stay generic — the leak checks below are the real guard.
+		if !strings.Contains(flashCookie, "Versand fehlgeschlagen") {
 			t.Errorf("expected generic error flash, got cookie: %q", flashCookie)
 		}
 		if strings.Contains(flashCookie, "connection") || strings.Contains(flashCookie, "refused") || strings.Contains(flashCookie, "dial") {
@@ -218,7 +220,9 @@ func TestEmailSendFailureDoesNotLeakInternalErrors(t *testing.T) {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
 		flashCookie := flashText(t, s, rr)
-		if !strings.Contains(flashCookie, "Versand fehlgeschlagen.") {
+		// Property, not wording: the flash may explain the retry plan (outbox),
+		// but it must stay generic — the leak checks below are the real guard.
+		if !strings.Contains(flashCookie, "Versand fehlgeschlagen") {
 			t.Errorf("expected generic error flash, got cookie: %q", flashCookie)
 		}
 		if strings.Contains(flashCookie, "connection") || strings.Contains(flashCookie, "refused") || strings.Contains(flashCookie, "dial") {

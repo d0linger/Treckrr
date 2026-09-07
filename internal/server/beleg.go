@@ -772,7 +772,22 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	if err := mail.Send(r.Context(), s.cfg, neighbor.Email, "Rechnung "+iv.Number, body, []mail.Attachment{att}); err != nil {
 		metrics.Inc(metrics.MailFailed)
 		slog.Error("beleg email send failed", "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))
-		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
+		s.audit(r, "beleg_email_failed", "neighbor", neighbor.ID,
+			neighbor.Name+" · Rechnung "+iv.Number+" · "+err.Error())
+		// Park the exact message for retry by the maintenance loop. Before, the
+		// failure evaporated with the flash: one SMTP hiccup during the yearly
+		// invoice run meant re-clicking every affected neighbor by hand.
+		if qerr := s.store.EnqueueMail(r.Context(), store.OutboxMail{
+			Kind: "beleg", NeighborID: neighbor.ID, BillingYearID: year.ID,
+			Recipient: neighbor.Email, Subject: "Rechnung " + iv.Number, Body: body,
+			AttName: att.Filename, AttType: att.ContentType, AttData: att.Data,
+		}); qerr != nil {
+			slog.Error("beleg email enqueue failed", "neighbor", neighbor.ID, "err", sanitizeLog(qerr.Error()))
+			s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
+			redirect(w, r, back)
+			return
+		}
+		s.setFlash(w, r, "error", "Versand fehlgeschlagen — ein erneuter Versuch wurde eingeplant (automatisch, mit Protokoll im Audit-Log).")
 		redirect(w, r, back)
 		return
 	}
