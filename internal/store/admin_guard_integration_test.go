@@ -35,6 +35,23 @@ func TestLastAdminGuardIntegration(t *testing.T) {
 	// to collide across runs (a fresh container often reuses low PIDs), and the
 	// admin-count invariant under test is global — one leftover admin makes
 	// "cannot demote the ONLY admin" silently untrue — so purge first.
+	// The invariant below is global, so this test must not run while another
+	// package's test holds an admin user open. Same advisory lock as the server
+	// package's handler env.
+	// A pinned connection: pg_advisory_lock is session-scoped, so releasing it
+	// through the pool could hit a different connection and leave it held.
+	lockConn, err := pool.Conn(ctx)
+	if err != nil {
+		t.Fatalf("admin-count lock conn: %v", err)
+	}
+	if _, err := lockConn.ExecContext(ctx, `SELECT pg_advisory_lock(918273645)`); err != nil {
+		t.Fatalf("admin-count advisory lock: %v", err)
+	}
+	defer func() {
+		_, _ = lockConn.ExecContext(ctx, `SELECT pg_advisory_unlock(918273645)`)
+		_ = lockConn.Close()
+	}()
+
 	u := func(s string) string { return fmt.Sprintf("sh04_%s_%d", s, os.Getpid()) }
 	f := fixtures{UsernameLike: `sh04\_%`}
 	purgeFixtures(t, ctx, pool, f)

@@ -70,6 +70,26 @@ jobs:
           pg_isready -h localhost -p 5432 -U treckrr
       - name: Test
         run: go test -race -coverprofile=coverage.out ./...
+      # The profile used to be written and thrown away, so a slide in coverage
+      # was invisible. The floor is deliberately a few points BELOW the current
+      # figure: it catches a real regression (a whole handler family losing its
+      # tests) without turning every refactor into a threshold fight. Raise it
+      # when the number rises, never lower it to make a red build pass.
+      - name: Coverage floor
+        run: |
+          go tool cover -func=coverage.out | tail -1
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
+          floor=50.0
+          awk -v t="$total" -v f="$floor" 'BEGIN {
+            if (t+0 < f+0) { print "coverage " t "% is below the " f "% floor"; exit 1 }
+            print "coverage " t "% (floor " f "%)"
+          }'
+      - name: Upload coverage profile
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 14
       - name: Build
         run: go build ./...
 
