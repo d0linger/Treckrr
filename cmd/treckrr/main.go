@@ -18,6 +18,7 @@ import (
 	"github.com/d0linger/treckrr/internal/backup"
 	"github.com/d0linger/treckrr/internal/config"
 	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/server"
 	"github.com/d0linger/treckrr/internal/store"
@@ -251,7 +252,9 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 	purge := func() {
 		bg, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
+		metrics.Inc(metrics.MaintenanceRuns)
 		if err := st.PurgeExpiredSessions(bg); err != nil {
+			metrics.Inc(metrics.MaintenanceFails)
 			slog.Error("purge sessions", "err", err)
 		}
 		if err := st.PurgeStaleRateLimits(bg); err != nil {
@@ -266,8 +269,10 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 		}
 		// Materialize any due recurring bookings (idempotent).
 		if n, err := st.RunDueRecurring(bg); err != nil {
+			metrics.Inc(metrics.MaintenanceFails)
 			slog.Error("recurring generation", "err", err)
 		} else if n > 0 {
+			metrics.Add(metrics.RecurringCreated, int64(n))
 			slog.Info("recurring bookings created", "count", n)
 			// These are system-created bookings (no HTTP request / user), so record a
 			// system-actor audit line — otherwise the entries appear in the DB with no
@@ -285,8 +290,10 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 		// the long window, so a new action is never dropped early by omission.
 		shortCutoff, longCutoff := auditRetentionCutoffs(time.Now())
 		if n, err := st.PurgeAuditLog(bg, shortCutoff, longCutoff); err != nil {
+			metrics.Inc(metrics.MaintenanceFails)
 			slog.Error("purge audit log", "err", err)
 		} else if n > 0 {
+			metrics.Add(metrics.AuditPurged, n)
 			slog.Info("audit log purged", "count", n)
 		}
 	}

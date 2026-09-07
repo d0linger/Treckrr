@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/d0linger/treckrr/internal/metrics"
 )
 
 // metricsTokenMinLen is the minimum METRICS_TOKEN length required to enable the
@@ -53,6 +55,35 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	gauge("treckrr_db_connections_max_open", "Maximum allowed open connections (0 = unlimited).", float64(db.MaxOpenConnections))
 	counter("treckrr_db_wait_total", "Total number of connection waits due to pool exhaustion.", float64(db.WaitCount))
 	counter("treckrr_db_wait_seconds_total", "Total time blocked waiting for a connection.", db.WaitDuration.Seconds())
+
+	// Backup health. status.json already carries all of this; not exporting it
+	// meant a backup that had been failing for weeks was only visible to someone
+	// who happened to open the admin panel.
+	bs := readBackupStatus(s.cfg.BackupStatusFile)
+	okVal := func(b bool) float64 {
+		if b {
+			return 1
+		}
+		return 0
+	}
+	gauge("treckrr_backup_configured", "1 when a backup status file exists.", okVal(bs.Configured))
+	if bs.Configured {
+		gauge("treckrr_backup_ok", "1 when the last backup run succeeded.", okVal(bs.State == "ok"))
+		gauge("treckrr_backup_age_seconds", "Seconds since the last successful backup.",
+			time.Since(bs.LastBackup).Seconds())
+		gauge("treckrr_backup_encrypted", "1 when the last dump was encrypted.", okVal(bs.Encrypted))
+		if !bs.RestoreTested.IsZero() {
+			gauge("treckrr_backup_restore_tested_age_seconds",
+				"Seconds since the last restore verification.", time.Since(bs.RestoreTested).Seconds())
+		}
+		if bs.S3 == "ok" || bs.S3 == "fehler" {
+			gauge("treckrr_backup_s3_ok", "1 when the last off-host upload succeeded.", okVal(bs.S3 == "ok"))
+		}
+	}
+
+	// Counters and the request histogram fed from internal/metrics (HTTP volume,
+	// auth failures, maintenance work).
+	metrics.Render(&b)
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

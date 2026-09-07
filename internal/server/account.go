@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/d0linger/treckrr/internal/auth"
+	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/totp"
 )
 
@@ -19,6 +20,7 @@ func acctLimitKey(userID int64) string { return "acct:" + itoa64(userID) }
 // for password / 2FA verification is currently tripped.
 func (s *Server) sensitiveBlocked(w http.ResponseWriter, r *http.Request, userID int64, redirectTo string) bool {
 	if s.logins.blocked(r.Context(), acctLimitKey(userID)) {
+		metrics.Inc(metrics.RateLimitTrips)
 		s.audit(r, "rate_limited", "user", userID, "zu viele Versuche bei sensibler Aktion")
 		s.setFlash(w, r, "error", "Zu viele Versuche. Bitte in einigen Minuten erneut versuchen.")
 		redirect(w, r, redirectTo)

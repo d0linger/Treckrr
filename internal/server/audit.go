@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/d0linger/treckrr/internal/metrics"
 )
 
 // newReqID returns a short random id used to correlate a request's access-log
@@ -336,6 +338,7 @@ func (s *Server) recoverPanic(next http.Handler) http.Handler {
 				panic(rec)
 			}
 			id, _ := r.Context().Value(reqIDKey).(string)
+			metrics.Inc(metrics.HTTPPanics)
 			slog.Error("handler panic",
 				"req_id", id,
 				"path", sanitizeLog(r.URL.Path),
@@ -349,6 +352,23 @@ func (s *Server) recoverPanic(next http.Handler) http.Handler {
 	})
 }
 
+// statusClass buckets a status code into the 2xx/3xx/4xx/5xx label. One series
+// per class rather than per code: the cardinality stays fixed and the question
+// a dashboard actually asks ("are we serving errors?") is answered directly.
+func statusClass(code int) string {
+	switch {
+	case code >= 500:
+		return "5xx"
+	case code >= 400:
+		return "4xx"
+	case code >= 300:
+		return "3xx"
+	case code >= 200:
+		return "2xx"
+	}
+	return "1xx"
+}
+
 func (s *Server) accessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -357,6 +377,13 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 		r = r.WithContext(context.WithValue(r.Context(), reqIDKey, id))
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
+		// Measured for EVERY request, including the noisy paths skipped by the log
+		// below: a health-check flood or a 404 storm is exactly what a rate graph
+		// should show, even when it would drown the log.
+		dur := time.Since(start)
+		metrics.Inc(metrics.HTTPRequests)
+		metrics.IncLabel(metrics.HTTPRequestsByClass, "class", statusClass(rec.status))
+		metrics.ObserveRequest(dur.Seconds())
 		if noisyPath(r.URL.Path) && rec.status < 400 {
 			return
 		}
@@ -369,7 +396,7 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 			"method", sanitizeLog(r.Method),
 			"path", sanitizeLog(r.URL.Path),
 			"status", rec.status,
-			"dur", time.Since(start).Round(time.Millisecond).String(),
+			"dur", dur.Round(time.Millisecond).String(),
 			"user", sanitizeLog(user),
 			"ip", sanitizeLog(s.clientIP(r)))
 	})

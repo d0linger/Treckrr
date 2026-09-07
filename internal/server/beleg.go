@@ -18,6 +18,7 @@ import (
 	"github.com/d0linger/treckrr/internal/auth"
 	"github.com/d0linger/treckrr/internal/calc"
 	"github.com/d0linger/treckrr/internal/mail"
+	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
@@ -769,6 +770,7 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	body := "Guten Tag " + neighbor.Name + ",\n\nanbei die Rechnung " + iv.Number + " als PDF.\n\nMit freundlichen Grüßen\n" + from
 	att := mail.Attachment{Filename: "Rechnung_" + sanitizeFilename(iv.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
 	if err := mail.Send(r.Context(), s.cfg, neighbor.Email, "Rechnung "+iv.Number, body, []mail.Attachment{att}); err != nil {
+		metrics.Inc(metrics.MailFailed)
 		slog.Error("beleg email send failed", "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
 		redirect(w, r, back)

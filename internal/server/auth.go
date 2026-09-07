@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/d0linger/treckrr/internal/auth"
+	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
 	"github.com/d0linger/treckrr/internal/totp"
@@ -86,6 +87,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// deliberate trade-off; it is time-bounded and self-healing, and passkey
 	// login (a separate route) is unaffected, so it is not an unrecoverable lockout.
 	if s.logins.blocked(r.Context(), rlKey) || (accountLimited && s.logins.accountBlocked(r.Context(), username)) {
+		metrics.Inc(metrics.LoginBlocked)
 		s.auditLogin(r, username, "login_blocked", "zu viele Fehlversuche")
 		s.setFlash(w, r, "error", "Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen.")
 		redirect(w, r, "/login")
@@ -98,6 +100,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if accountLimited {
 			s.logins.accountFail(r.Context(), username)
 		}
+		metrics.Inc(metrics.LoginFailed)
 		s.auditLogin(r, username, "login_failed", "falsche Zugangsdaten")
 		s.setFlash(w, r, "error", "Benutzername oder Passwort falsch.")
 		redirect(w, r, "/login")

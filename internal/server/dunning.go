@@ -13,6 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/mail"
+	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
@@ -303,6 +304,7 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 	body := "Guten Tag " + v.Neighbor.Name + ",\n\nanbei " + v.Title + " zur Rechnung " + v.Invoice.Number + " als PDF.\n\nMit freundlichen Grüßen\n" + from
 	att := mail.Attachment{Filename: "Mahnung_" + sanitizeFilename(v.Invoice.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
 	if err := mail.Send(r.Context(), s.cfg, v.Neighbor.Email, v.Title+" · Rechnung "+v.Invoice.Number, body, []mail.Attachment{att}); err != nil {
+		metrics.Inc(metrics.MailFailed)
 		slog.Error("mahnung email send failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
 		redirect(w, r, back)
