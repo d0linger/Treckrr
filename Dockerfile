@@ -13,7 +13,7 @@
 # pinning without that discipline freezes a known-vulnerable base, which is worse
 # than following the tag. The weekly image scan in sbom.yml is the backstop that
 # makes a stale pin visible.
-FROM golang:1.27.0-alpine3.24@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS build
+FROM golang:1.27.1-alpine3.24@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS build
 
 WORKDIR /src
 
