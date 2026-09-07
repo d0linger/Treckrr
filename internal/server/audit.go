@@ -5,9 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/csv"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -100,7 +102,14 @@ func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF})
 	cw := csv.NewWriter(w)
 	cw.Comma = ';'
-	defer cw.Flush()
+	defer func() {
+		cw.Flush()
+		if err := cw.Error(); err != nil {
+			// The status is long gone — logging is what is still possible; without
+			// it an aborted download is a silently truncated file behind HTTP 200.
+			slog.Warn("csv export incomplete", "path", sanitizeLog(r.URL.Path), "err", sanitizeLog(err.Error()))
+		}
+	}()
 	_ = cw.Write([]string{"Zeitpunkt", "Benutzer", "Aktion", "Objekt", "ID", "Detail", "IP"})
 	for _, e := range filtered {
 		_ = cw.Write([]string{
@@ -309,6 +318,37 @@ func noisyPath(p string) bool {
 // accessLog logs one meaningful request per line to stdout (Docker logs).
 // Successful static/PWA/health requests are skipped to keep the log readable;
 // errors are always logged.
+// recoverPanic turns a handler panic into a logged 500 instead of a dropped
+// connection. Without it a panic bypasses slog entirely (net/http prints a raw
+// stack to stderr) and leaves no req_id to correlate. It sits INSIDE accessLog
+// so the stack line carries the same req_id as the request line and the request
+// itself is still logged, as a 500. http.ErrAbortHandler is re-raised: that is
+// net/http's sanctioned way to abort a response mid-stream and must keep its
+// special handling.
+func (s *Server) recoverPanic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			rec := recover()
+			if rec == nil {
+				return
+			}
+			if rec == http.ErrAbortHandler { //nolint:errorlint // sentinel comparison per net/http contract
+				panic(rec)
+			}
+			id, _ := r.Context().Value(reqIDKey).(string)
+			slog.Error("handler panic",
+				"req_id", id,
+				"path", sanitizeLog(r.URL.Path),
+				"panic", sanitizeLog(fmt.Sprint(rec)),
+				"stack", string(debug.Stack()))
+			// Best effort: if the handler already streamed a body this writes into
+			// it, but the status recorder still flips to 500 for the access log.
+			http.Error(w, "Interner Fehler — bitte erneut versuchen.", http.StatusInternalServerError)
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) accessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

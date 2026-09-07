@@ -269,7 +269,7 @@ func (s *Server) Handler() http.Handler {
 	// the nosniff/frame/CSP headers (the gate returns before inner handlers run).
 	// userCache is outermost so limitBody, auth/admin, the handler and accessLog all
 	// share ONE session resolution instead of repeating the SELECT+UPDATE.
-	return s.userCacheMW(s.limitBody(s.accessLog(s.securityHeaders(s.maintenanceGate(s.csrf(mux))))))
+	return s.userCacheMW(s.limitBody(s.accessLog(s.recoverPanic(s.securityHeaders(s.maintenanceGate(s.csrf(mux)))))))
 }
 
 // userCacheMW installs the per-request session memo (see currentUser).

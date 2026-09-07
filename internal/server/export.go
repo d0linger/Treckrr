@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/csv"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"unicode"
@@ -111,7 +112,14 @@ func (s *Server) writeCSV(w http.ResponseWriter, filename string, entries []mode
 
 	cw := csv.NewWriter(w)
 	cw.Comma = ';'
-	defer cw.Flush()
+	defer func() {
+		cw.Flush()
+		if err := cw.Error(); err != nil {
+			// The status is long gone — logging is what is still possible; without
+			// it an aborted download is a silently truncated file behind HTTP 200.
+			slog.Warn("csv export incomplete", "file", sanitizeLog(filename), "err", sanitizeLog(err.Error()))
+		}
+	}()
 
 	_ = cw.Write([]string{
 		"Nachbar", "Datum", "Tätigkeit", "Traktor", "Belastung",

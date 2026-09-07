@@ -4,6 +4,7 @@ package mail
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
@@ -27,7 +28,7 @@ type Attachment struct {
 // Send delivers a plain-text mail with optional attachments to one recipient. It
 // dials cfg.SMTPHost:SMTPPort, upgrades via STARTTLS when configured, authenticates
 // (PLAIN) if a user is set, and sends. Errors are returned to the caller to surface.
-func Send(cfg *config.Config, to, subject, body string, atts []Attachment) error {
+func Send(ctx context.Context, cfg *config.Config, to, subject, body string, atts []Attachment) error {
 	if !cfg.MailEnabled() {
 		return fmt.Errorf("e-mail ist nicht konfiguriert")
 	}
@@ -59,11 +60,19 @@ func Send(cfg *config.Config, to, subject, body string, atts []Attachment) error
 	// Dial with an explicit timeout and set a deadline covering the whole exchange
 	// (greeting, EHLO, STARTTLS, AUTH, delivery), so an unresponsive server can't
 	// hang the request goroutine indefinitely.
-	conn, err := (&net.Dialer{Timeout: 15 * time.Second}).Dial("tcp", addr)
+	conn, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("SMTP-Verbindung: %w", err)
 	}
-	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
+	// The whole exchange must finish inside the HTTP server's 30 s WriteTimeout,
+	// or the response is cut off while the mail may still go out and the user
+	// sees an error for a delivery that happened. 10 s dial + 18 s dialog leaves
+	// slack for rendering the redirect.
+	_ = conn.SetDeadline(time.Now().Add(18 * time.Second))
+	// And a canceled request (or a shutdown) aborts the dialog immediately
+	// instead of letting a doomed exchange run to its deadline.
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
 	c, err := smtp.NewClient(conn, cfg.SMTPHost)
 	if err != nil {
 		_ = conn.Close()

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/d0linger/treckrr/internal/auth"
@@ -92,9 +93,12 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 		s.serverError(w, "password change: revoke sessions", err)
 		return
 	}
-	// Best-effort: clear the forced-change flag. A failure only re-prompts the user to
-	// change their (already changed) password next login — no security impact.
-	_ = s.store.SetMustChangePassword(r.Context(), user.ID, false)
+	// A failure only re-prompts the user to change their (already changed)
+	// password next login — but it must be VISIBLE, or the resulting forced-change
+	// loop is undiagnosable.
+	if err := s.store.SetMustChangePassword(r.Context(), user.ID, false); err != nil {
+		slog.Warn("clear must_change_password failed", "user", user.ID, "err", sanitizeLog(err.Error()))
+	}
 	s.audit(r, "password_change", "user", user.ID, "eigenes Passwort; andere Sitzungen beendet")
 	s.setFlash(w, r, "success", "Passwort geändert. Andere Sitzungen wurden beendet.")
 	redirect(w, r, "/profile")
@@ -266,9 +270,12 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 		s.serverError(w, "2fa disable: clear totp", err)
 		return
 	}
-	// Best-effort cleanup: with TOTP now off, leftover recovery codes can't be used to
-	// bypass anything (they only unlock an active second factor).
-	_ = s.store.ClearRecoveryCodes(r.Context(), user.ID)
+	// With TOTP now off, leftover recovery codes cannot bypass anything (they only
+	// unlock an active second factor) — but a failed cleanup should leave a trace,
+	// not vanish.
+	if err := s.store.ClearRecoveryCodes(r.Context(), user.ID); err != nil {
+		slog.Warn("clear recovery codes failed", "user", user.ID, "err", sanitizeLog(err.Error()))
+	}
 	s.audit(r, "2fa_disable", "user", user.ID, "")
 	s.setFlash(w, r, "success", "Zwei‑Faktor‑Authentifizierung deaktiviert.")
 	redirect(w, r, "/profile")

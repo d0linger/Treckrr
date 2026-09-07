@@ -91,7 +91,14 @@ func (s *Server) handleMahnwesenExport(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF}) // UTF-8 BOM for Excel
 	cw := csv.NewWriter(w)
 	cw.Comma = ';'
-	defer cw.Flush()
+	defer func() {
+		cw.Flush()
+		if err := cw.Error(); err != nil {
+			// The status is long gone — logging is what is still possible; without
+			// it an aborted download is a silently truncated file behind HTTP 200.
+			slog.Warn("csv export incomplete", "path", sanitizeLog(r.URL.Path), "err", sanitizeLog(err.Error()))
+		}
+	}()
 	_ = cw.Write([]string{"Nachbar", "Rechnung", "Rechnungsdatum", "Fällig am", "Tage überfällig", "Offener Betrag (€)"})
 	for _, dr := range rows {
 		_ = cw.Write([]string{
@@ -295,7 +302,7 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	body := "Guten Tag " + v.Neighbor.Name + ",\n\nanbei " + v.Title + " zur Rechnung " + v.Invoice.Number + " als PDF.\n\nMit freundlichen Grüßen\n" + from
 	att := mail.Attachment{Filename: "Mahnung_" + sanitizeFilename(v.Invoice.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
-	if err := mail.Send(s.cfg, v.Neighbor.Email, v.Title+" · Rechnung "+v.Invoice.Number, body, []mail.Attachment{att}); err != nil {
+	if err := mail.Send(r.Context(), s.cfg, v.Neighbor.Email, v.Title+" · Rechnung "+v.Invoice.Number, body, []mail.Attachment{att}); err != nil {
 		slog.Error("mahnung email send failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
 		redirect(w, r, back)

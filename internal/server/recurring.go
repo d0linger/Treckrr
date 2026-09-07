@@ -70,7 +70,12 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 		TractorLabel: entry.TractorLabel, LoadLabel: entry.LoadLabel, MachineLabels: entry.MachineLabels,
 		TaskLabel: entry.TaskLabel, Note: entry.Note,
 	}
-	if err := s.store.CreateRecurring(r.Context(), entry.NeighborID, tmpl, kind, start); err != nil {
+	if err := s.store.CreateRecurring(r.Context(), id, entry.NeighborID, tmpl, kind, start); err != nil {
+		if errors.Is(err, store.ErrSourceEntryVoided) {
+			s.setFlash(w, r, "error", "Aus einer stornierten Buchung kann keine Serie eingerichtet werden.")
+			redirect(w, r, "/recurring")
+			return
+		}
 		s.serverError(w, r.URL.Path, err)
 		return
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -201,7 +202,14 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF}) // UTF-8 BOM, so Excel opens umlauts/€ correctly
 	cw := csv.NewWriter(w)
 	cw.Comma = ';'
-	defer cw.Flush()
+	defer func() {
+		cw.Flush()
+		if err := cw.Error(); err != nil {
+			// The status is long gone — logging is what is still possible; without
+			// it an aborted download is a silently truncated file behind HTTP 200.
+			slog.Warn("csv export incomplete", "path", sanitizeLog(r.URL.Path), "err", sanitizeLog(err.Error()))
+		}
+	}()
 	_ = cw.Write([]string{
 		"Nachbar", "Datum", "Tätigkeit", "Traktor", "Belastung", "Maschinen",
 		"Einheit", "Menge", "Satz/Einheit (€)", "Kosten (€)", "Notiz",

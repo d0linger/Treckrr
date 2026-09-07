@@ -13,15 +13,37 @@ import (
 )
 
 // CreateRecurring stores a new recurring-booking rule.
-func (s *Store) CreateRecurring(ctx context.Context, neighborID int64, t models.RecurTemplate, intervalKind string, nextRun time.Time) error {
+// ErrSourceEntryVoided reports that the booking a series was to be created from
+// was canceled between the handler's check and the insert.
+var ErrSourceEntryVoided = errors.New("source entry is voided")
+
+func (s *Store) CreateRecurring(ctx context.Context, sourceEntryID, neighborID int64, t models.RecurTemplate, intervalKind string, nextRun time.Time) error {
 	blob, err := json.Marshal(t)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	// Re-checked INSIDE the transaction, with the entry row share-locked so a
+	// concurrent storno waits: the handler's pre-check reads outside any
+	// transaction and only serves the friendly flash message.
+	var voided bool
+	if err := tx.QueryRowContext(ctx,
+		`SELECT voided FROM entries WHERE id=$1 FOR SHARE`, sourceEntryID).Scan(&voided); err != nil {
+		return err
+	}
+	if voided {
+		return ErrSourceEntryVoided
+	}
+	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO recurring_entries (neighbor_id, template, interval_kind, next_run)
-		 VALUES ($1,$2,$3,$4)`, neighborID, blob, intervalKind, nextRun)
-	return err
+		 VALUES ($1,$2,$3,$4)`, neighborID, blob, intervalKind, nextRun); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ListRecurring returns all rules with their neighbor name, newest first.

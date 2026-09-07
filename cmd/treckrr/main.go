@@ -201,6 +201,10 @@ func run() error {
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		// Server-internal errors (TLS handshakes, port problems, its own panic
+		// lines) otherwise go through the std log package and never reach the
+		// JSON log stream everything else uses.
+		ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError),
 	}
 
 	go func() {

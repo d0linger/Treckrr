@@ -235,7 +235,11 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 		Value:  token,
 		MaxAge: int(sessionTTL.Seconds()),
 	})
-	_ = s.store.AddAudit(r.Context(), &user.ID, user.Username, "login", "auth", "", "", s.clientIP(r)) // best-effort audit line
+	if err := s.store.AddAudit(r.Context(), &user.ID, user.Username, "login", "auth", "", "", s.clientIP(r)); err != nil {
+		// The login itself must not fail on this, but a dropped auth event is
+		// exactly what an incident review needs — leave a trace.
+		slog.Warn("audit write failed", "action", "login", "err", sanitizeLog(err.Error()))
+	}
 	return true
 }
 
@@ -288,7 +292,9 @@ func (s *Server) clearPending2FA(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if u := s.currentUser(r); u != nil {
-		_ = s.store.AddAudit(r.Context(), &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r)) // best-effort audit line
+		if err := s.store.AddAudit(r.Context(), &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r)); err != nil {
+			slog.Warn("audit write failed", "action", "logout", "err", sanitizeLog(err.Error()))
+		}
 	}
 	if c, err := s.cookie(r, sessionCookie); err == nil && c.Value != "" {
 		// Invalidate the server-side session, not just the cookie: if this fails the

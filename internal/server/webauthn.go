@@ -225,7 +225,10 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 	var body struct {
 		Password string `json:"password"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Ungültige Anfrage.", http.StatusBadRequest)
+		return
+	}
 	// This is a password-verification endpoint like the 2FA and change-password
 	// steps, and it must be throttled like them: unbounded, a hijacked session
 	// could brute-force the account password here (and drive one bcrypt hash per

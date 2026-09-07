@@ -768,7 +768,7 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	body := "Guten Tag " + neighbor.Name + ",\n\nanbei die Rechnung " + iv.Number + " als PDF.\n\nMit freundlichen Grüßen\n" + from
 	att := mail.Attachment{Filename: "Rechnung_" + sanitizeFilename(iv.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
-	if err := mail.Send(s.cfg, neighbor.Email, "Rechnung "+iv.Number, body, []mail.Attachment{att}); err != nil {
+	if err := mail.Send(r.Context(), s.cfg, neighbor.Email, "Rechnung "+iv.Number, body, []mail.Attachment{att}); err != nil {
 		slog.Error("beleg email send failed", "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
 		redirect(w, r, back)

@@ -2,6 +2,7 @@ package mail
 
 import (
 	"bufio"
+	"context"
 	"net"
 	netmail "net/mail"
 	"strings"
@@ -14,7 +15,7 @@ import (
 // SMTP dialog, closing the header-injection vector.
 func TestSendRejectsHeaderInjection(t *testing.T) {
 	cfg := &config.Config{SMTPHost: "localhost", SMTPFrom: "mr@example.at"}
-	err := Send(cfg, "victim@x.com\r\nBcc: leak@evil.com", "s", "b", nil)
+	err := Send(context.Background(), cfg, "victim@x.com\r\nBcc: leak@evil.com", "s", "b", nil)
 	if err == nil || !strings.Contains(err.Error(), "ungültige") {
 		t.Fatalf("expected rejection of CRLF address, got %v", err)
 	}
@@ -97,7 +98,7 @@ func TestSendEnvelopeFromIsBareAddress(t *testing.T) {
 
 	host, port, _ := net.SplitHostPort(ln.Addr().String())
 	cfg := &config.Config{SMTPHost: host, SMTPPort: port, SMTPFrom: "Maschinenring <mr@example.at>", SMTPStartTLS: false}
-	if err := Send(cfg, "n@example.at", "s", "b", nil); err != nil {
+	if err := Send(context.Background(), cfg, "n@example.at", "s", "b", nil); err != nil {
 		t.Fatalf("Send failed: %v", err)
 	}
 	res := <-got
@@ -145,7 +146,7 @@ func TestSendRequiresStartTLS(t *testing.T) {
 
 	host, port, _ := net.SplitHostPort(ln.Addr().String())
 	cfg := &config.Config{SMTPHost: host, SMTPPort: port, SMTPFrom: "mr@example.at", SMTPStartTLS: true}
-	err = Send(cfg, "n@example.at", "s", "b", nil)
+	err = Send(context.Background(), cfg, "n@example.at", "s", "b", nil)
 	if err == nil || !strings.Contains(err.Error(), "STARTTLS") {
 		t.Fatalf("expected STARTTLS-required rejection, got %v", err)
 	}

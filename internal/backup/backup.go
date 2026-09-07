@@ -249,7 +249,36 @@ func New(opt Options, db *sql.DB) *Service {
 	if opt.EncKey != "" {
 		s.secret = []byte(opt.EncKey)
 	}
+	s.cleanupLeftovers()
 	return s
+}
+
+// cleanupLeftovers deals with what a crash or a human left in the backup dir.
+// A *.staging file is by definition an incomplete write — the atomic rename
+// never happened — so one older than an hour is garbage and is removed (and
+// logged; prune's glob never matches it, so it would otherwise sit forever).
+// Plain *.dump files are NOT ours to delete — an operator may have created them
+// deliberately — but they escape rotation entirely, so their presence is at
+// least flagged.
+func (s *Service) cleanupLeftovers() {
+	if s.opt.Dir == "" {
+		return
+	}
+	stale, _ := filepath.Glob(filepath.Join(s.opt.Dir, "*.dump.enc.staging"))
+	for _, f := range stale {
+		fi, err := os.Stat(f)
+		if err != nil || time.Since(fi.ModTime()) <= time.Hour {
+			continue
+		}
+		if err := os.Remove(f); err != nil {
+			slog.Warn("backup: stale staging file not removable", "file", filepath.Base(f), "err", err)
+		} else {
+			slog.Info("backup: removed stale staging file", "file", filepath.Base(f))
+		}
+	}
+	if plain, _ := filepath.Glob(filepath.Join(s.opt.Dir, "*.dump")); len(plain) > 0 {
+		slog.Warn("backup dir contains unencrypted .dump files outside rotation", "count", len(plain))
+	}
 }
 
 // acquireOp serializes DB dump/restore operations, honoring ctx cancellation and
@@ -604,7 +633,11 @@ func (s *Service) prune(keep int) {
 	}
 	sort.Strings(entries) // timestamped names sort chronologically
 	for _, old := range entries[:len(entries)-keep] {
-		_ = os.Remove(old)
+		if err := os.Remove(old); err != nil {
+			// A full disk or permission slip must not stay invisible until the
+			// volume runs over.
+			slog.Warn("backup prune: remove failed", "file", filepath.Base(old), "err", err)
+		}
 	}
 }
 
@@ -955,7 +988,9 @@ func (s *Service) pruneS3(ctx context.Context, keep int) {
 		return
 	}
 	for _, f := range files[keep:] { // S3List is newest-first
-		_ = cl.RemoveObject(ctx, s.opt.S3.Bucket, s.opt.S3.Prefix+f.Name, minio.RemoveObjectOptions{})
+		if err := cl.RemoveObject(ctx, s.opt.S3.Bucket, s.opt.S3.Prefix+f.Name, minio.RemoveObjectOptions{}); err != nil {
+			slog.Warn("backup prune: s3 remove failed", "object", f.Name, "err", err)
+		}
 	}
 }
 
