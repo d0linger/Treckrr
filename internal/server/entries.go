@@ -559,13 +559,13 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	if err != nil {
 		return nil, nil, "Interner Fehler beim Laden der Maschinen."
 	}
-	// Without a tractor the machines ARE the price. If none of the submitted ids
-	// resolve — a stale form after a machine was deleted, or ids from another
-	// basis — the rate would come out at 0,00 € and the booking would be saved as
-	// "gespeichert" for nothing. Reproduced before this guard: 3 h at 0,0000 with
-	// cost 0,0000. With a tractor the rate is still meaningful, so that path keeps
-	// its long-standing behavior of ignoring ids it cannot resolve.
-	if tractor == nil && len(machines) == 0 {
+	// Every submitted machine id must resolve, tractor or not. The machines-only
+	// case priced at 0,00 € (reproduced: 3 h at 0,0000, "gespeichert"); WITH a
+	// tractor the silent drop was subtler and worse — the booking saved at the
+	// bare tractor rate, underbilling by the vanished machine's share without
+	// anyone noticing. A stale form after a machine was deleted is exactly when
+	// the user must be told, not accommodated (Ausbaukarte Nr. 61).
+	if len(machines) != len(machineIDs) {
 		return nil, nil, "Die gewählten Maschinen sind nicht mehr verfügbar — bitte die Seite neu laden."
 	}
 	hours := formDecimal(r, "hours")
@@ -1240,9 +1240,9 @@ func (s *Server) buildGespannEntry(r *http.Request, gespannID int64, hours decim
 	if err != nil {
 		return nil, nil, false
 	}
-	// See buildEntryFromForm: a machines-only rig whose machines no longer resolve
-	// would book at a rate of zero.
-	if tractor == nil && len(machines) == 0 {
+	// See buildEntryFromForm: every stored machine id must resolve, or the row is
+	// priced without the missing machine's share and quietly underbills.
+	if len(machines) != len(g.MachineIDs) {
 		return nil, nil, false
 	}
 	entryDate, err := time.Parse("2006-01-02", dateStr)

@@ -236,6 +236,22 @@ func (s *Store) ApplyRecalc(ctx context.Context, yearID int64, neighborID *int64
 	if status == models.YearCompleted {
 		return 0, oldTotal, newTotal, ErrYearCompleted
 	}
+	// Serialize against Settle/CarryForward: both derive what they write from the
+	// balance and take a row lock on billing_year_neighbors for their account.
+	// Without taking the same locks here, a settle could read its "remaining"
+	// while this transaction is mid-way through repricing the very bookings that
+	// balance is made of (Pentest-Empfehlung 5). Ordered, so two concurrent
+	// recalcs cannot deadlock each other; settle/carry lock a single row and
+	// never touch billing_years, so no cycle is possible.
+	lockQ := `SELECT 1 FROM billing_year_neighbors WHERE billing_year_id=$1 ORDER BY neighbor_id FOR UPDATE`
+	lockArgs := []any{yearID}
+	if neighborID != nil {
+		lockQ = `SELECT 1 FROM billing_year_neighbors WHERE billing_year_id=$1 AND neighbor_id=$2 FOR UPDATE`
+		lockArgs = append(lockArgs, *neighborID)
+	}
+	if _, e := tx.ExecContext(ctx, lockQ, lockArgs...); e != nil {
+		return 0, oldTotal, newTotal, e
+	}
 	// Same optimistic treatment the per-booking guard below uses, one level up.
 	revNow, e := s.basisRevisionTx(ctx, tx, yearID)
 	if e != nil {

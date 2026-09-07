@@ -16,6 +16,14 @@ jobs:
   build-test:
     name: Build & Test
     runs-on: ubuntu-latest
+    strategy:
+      # The delete-guard mapping depends on the server version (RESTRICT raises
+      # 23503 on PG 16 but 23001 on PG 18 — measured, fixed in ccdb566), so the
+      # suite runs against both: 16 is what ships, 18 is what the upgrade lands
+      # on. Anything version-dependent breaks HERE, not on the production box.
+      fail-fast: false
+      matrix:
+        pgver: ["16", "18"]
     # A Postgres service, because 27 test files skip themselves without
     # TEST_DATABASE_URL. Without it the DB-backed suite — migrations, the
     # append-only audit guard, the 0039 deletion constraints, money integrity,
@@ -23,7 +31,7 @@ jobs:
     # ran only when someone remembered to start a database by hand.
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:${{ matrix.pgver }}-alpine
         env:
           POSTGRES_USER: treckrr
           POSTGRES_PASSWORD: test
@@ -76,6 +84,7 @@ jobs:
       # tests) without turning every refactor into a threshold fight. Raise it
       # when the number rises, never lower it to make a red build pass.
       - name: Coverage floor
+        if: matrix.pgver == '16'
         run: |
           go tool cover -func=coverage.out | tail -1
           total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
@@ -85,6 +94,7 @@ jobs:
             print "coverage " t "% (floor " f "%)"
           }'
       - name: Upload coverage profile
+        if: matrix.pgver == '16'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage

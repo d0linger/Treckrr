@@ -355,6 +355,10 @@ Everything works the same under rootless Docker or Podman.
 - **Second factor**: TOTP with one-time recovery codes, seeds encrypted at rest
   under a key derived separately from the session secret. Passkeys (WebAuthn)
   require user verification, and each ceremony is server-side and single-use.
+  Known edge (go-webauthn 0.18): a client that returns *unsolicited* extension
+  outputs fails the ceremony by design; password + TOTP remain available as the
+  fallback, so a login is never lost — if a passkey suddenly stops working after
+  a browser update, that is the first thing to check.
 - **Rate limits** on login by IP *and* by target account, on the 2FA step, on
   password step-up, and on passkey challenge creation — all in PostgreSQL, so
   they survive a restart.

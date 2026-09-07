@@ -2,7 +2,11 @@
 # (published by .github/workflows/docker-publish.yml for amd64 + arm64).
 # No local build needed:
 #   docker compose -f docker-compose.ghcr.yml up -d
-# Pin a release instead of latest by setting TRECKRR_TAG (e.g. TRECKRR_TAG=1.2).
+# Pin a release instead of latest by setting TRECKRR_TAG. Two kinds exist:
+#   TRECKRR_TAG=1.2          a v* release tag
+#   TRECKRR_TAG=sha-abc1234  the immutable per-build tag every main publish gets
+# Running :latest means every pull may silently change the deployment; a pinned
+# tag makes "which build is prod running" a fact instead of a guess.
 services:
   db:
     image: postgres:16-alpine
