@@ -170,6 +170,12 @@ type Status struct {
 	Encrypted     bool      `json:"encrypted"`
 	SchemaVersion string    `json:"schema_version,omitempty"`
 	RestoreTested time.Time `json:"restore_tested,omitempty"`
+	// ArchiveVerified is the cheap post-write drill (decrypt + pg_restore --list
+	// + TOC plausibility) that runs on every backup. RestoreTested is the real
+	// thing: a load into a scratch database. Keeping them apart stops the panel
+	// from promising a rehearsal that never happened.
+	ArchiveVerified time.Time `json:"archive_verified,omitempty"`
+	RehearsalNote   string    `json:"rehearsal_note,omitempty"`
 }
 
 // Settings is the runtime backup schedule, editable in the GUI. An empty cron
@@ -200,6 +206,10 @@ type Options struct {
 	Dir         string
 	StatusFile  string
 	Keep        int
+	// RehearseURL points at a server where a scratch database may be created and
+	// dropped for restore rehearsals. Empty disables rehearsals entirely — the
+	// conservative default, because the feature needs CREATE DATABASE rights.
+	RehearseURL string
 	S3          S3Options
 	// SettingsFn returns the current GUI-editable schedule. When nil the service
 	// falls back to a fixed default cron and Keep. Called each scheduler tick so
@@ -530,7 +540,13 @@ func (s *Service) runVolume(ctx context.Context, keep int) error {
 		st.LastBackup = now
 		st.OK = true
 		st.SizeBytes = int64(len(enc))
-		st.RestoreTested = now
+		// RestoreTested is deliberately NOT set here. This path ran
+		// verifyRestorable, which reads the archive's table of contents and checks
+		// the object names — it never asks pg_restore to load anything. Claiming a
+		// tested restore for that is the difference between "the file parses" and
+		// "we can come back from this". Only RehearseRestore, which restores into a
+		// scratch database and queries it, stamps that field.
+		st.ArchiveVerified = now
 	})
 	return nil
 }
@@ -622,7 +638,14 @@ func (s *Service) repairS3Mirror(ctx context.Context, name string) error {
 	return s.verifyS3Object(ctx, name, int64(len(data)))
 }
 
-// prune keeps only the newest keep dumps in the volume backup dir.
+// minRetention is the age below which a dump is never pruned, regardless of
+// count. Counting alone is a trap: seven retried runs in one bad afternoon
+// evict a whole week of recovery points, leaving seven copies of the same hour.
+// A day's grace means the newest dumps can never push out everything older.
+const minRetention = 24 * time.Hour
+
+// prune keeps the newest keep dumps in the volume backup dir, but never deletes
+// one younger than minRetention.
 func (s *Service) prune(keep int) {
 	if keep <= 0 {
 		return
@@ -632,7 +655,11 @@ func (s *Service) prune(keep int) {
 		return
 	}
 	sort.Strings(entries) // timestamped names sort chronologically
+	cutoff := time.Now().Add(-minRetention)
 	for _, old := range entries[:len(entries)-keep] {
+		if fi, serr := os.Stat(old); serr == nil && fi.ModTime().After(cutoff) {
+			continue // too young to evict, even though the count says otherwise
+		}
 		if err := os.Remove(old); err != nil {
 			// A full disk or permission slip must not stay invisible until the
 			// volume runs over.

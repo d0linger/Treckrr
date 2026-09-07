@@ -28,17 +28,41 @@ func TestEntryPhotosIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	defer pool.Close()
+	// As a Cleanup, not a defer: the purge below is also a Cleanup, and
+	// Cleanups run LIFO after all defers — a deferred Close would slam the
+	// pool shut before the purge gets to run.
+	t.Cleanup(func() { _ = pool.Close() })
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	st := store.New(pool, "test-encryption-secret")
 
 	pid := os.Getpid()
-	baseID, _ := st.CreateEmptyBase(ctx, 4500+pid%1000, "Foto-Basis")
-	yearID, _ := st.CreateBillingYear(ctx, 4500+pid%1000, baseID, "Foto-Jahr")
-	nid, _ := st.CreateNeighbor(ctx, fmt.Sprintf("Foto Nachbar %d", pid), "")
-	_ = st.AddNeighborToYear(ctx, yearID, nid)
+	// Purge BEFORE seeding, and check every error. Both were missing: the
+	// fixture year and neighbor name are UNIQUE and derived from the pid, which
+	// container runtimes reuse — so a second run with the same pid hit the
+	// unique constraints, the discarded errors left baseID/yearID/nid at 0, and
+	// the first insert failed as a foreign-key violation on id 0. That is what
+	// made this suite intermittently red for reasons unrelated to the code.
+	f := fixtures{Years: []int{4500 + pid%1000}, NeighborNames: []string{fmt.Sprintf("Foto Nachbar %d", pid)}}
+	purgeFixtures(t, ctx, pool, f)
+	t.Cleanup(func() { purgeFixtures(t, ctx, pool, f) })
+
+	baseID, err := st.CreateEmptyBase(ctx, 4500+pid%1000, "Foto-Basis")
+	if err != nil {
+		t.Fatalf("base: %v", err)
+	}
+	yearID, err := st.CreateBillingYear(ctx, 4500+pid%1000, baseID, "Foto-Jahr")
+	if err != nil {
+		t.Fatalf("year: %v", err)
+	}
+	nid, err := st.CreateNeighbor(ctx, fmt.Sprintf("Foto Nachbar %d", pid), "")
+	if err != nil {
+		t.Fatalf("neighbor: %v", err)
+	}
+	if err := st.AddNeighborToYear(ctx, yearID, nid); err != nil {
+		t.Fatalf("membership: %v", err)
+	}
 	eid, err := st.CreateEntry(ctx, &models.Entry{
 		NeighborID: nid, BillingYearID: yearID, Date: time.Now(), TaskLabel: "Foto",
 		Unit: "h", Hours: decimal.RequireFromString("1"), HourlyRate: decimal.RequireFromString("40"),

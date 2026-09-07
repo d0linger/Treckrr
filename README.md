@@ -126,12 +126,51 @@ Pin a release rather than tracking `latest` with `TRECKRR_TAG=1.4`.
 | **ADMIN_PASSWORD_RESET** | Break-glass: reset the admin password on next boot | `false` | No |
 | **BACKUP_ENCRYPTION_KEY** | Min. 16 chars; empty disables backups entirely | — | No |
 | **BACKUP_DIR** / **BACKUP_STATUS_FILE** | Dump directory and status file | `/backups` | No |
-| **BACKUP_KEEP** | Number of dumps to retain | `7` | No |
+| **BACKUP_KEEP** | Dumps to retain — seeds the GUI value on first boot only, after that Admin → Backup wins | `7` | No |
+| **BACKUP_ENCRYPTION_KEY_OLD** | Previous key, for `rotate-key` (see below) | — | No |
+| **BACKUP_REHEARSE_URL** | Postgres URL allowed to create/drop a scratch DB; enables real restore rehearsals | — | No |
 | **S3_ENDPOINT** / **S3_BUCKET** | Off-box backup target; empty disables it | — | No |
+| **S3_KEEP** | Objects to keep in the bucket, 0 = all; seeds the GUI value on first boot only | `0` | No |
 | **S3_ACCESS_KEY** / **S3_SECRET_KEY** / **S3_PREFIX** | S3 credentials and key prefix | — | No |
 | **S3_USE_SSL** | TLS for the S3 endpoint | `true` | No |
 | **SMTP_HOST** / **SMTP_FROM** | E-mail delivery; both must be set to enable it | — | No |
 | **SMTP_PORT** / **SMTP_USER** / **SMTP_PASSWORD** | SMTP credentials | `587` | No |
+
+### Rotating the backup key
+
+Changing `BACKUP_ENCRYPTION_KEY` on its own orphans every existing dump: new
+backups use the new key, older ones can no longer be opened. Rotate instead:
+
+```bash
+# BACKUP_ENCRYPTION_KEY = the new key, BACKUP_ENCRYPTION_KEY_OLD = the previous one
+docker compose run --rm app rotate-key
+```
+
+Every dump is re-encrypted, verified as restorable **with the new key**, and only
+then replaced atomically. A dump that fails verification is left untouched and
+reported, so a partial run degrades to "some files still use the old key" — never
+to an unreadable archive. The command is resumable: run it again after fixing
+whatever failed. Remove `BACKUP_ENCRYPTION_KEY_OLD` once it reports everything
+rotated.
+
+The same applies to `ENCRYPTION_SECRET` (TOTP secrets at rest): pin it to the old
+value before rotating `SESSION_SECRET`, as the table above notes.
+
+### Rehearsing a restore
+
+The backup panel's "Restore getestet" used to be stamped by a table-of-contents
+read — that proves the file is a well-formed archive, not that it loads. Set
+`BACKUP_REHEARSE_URL` to a Postgres URL that may create and drop a scratch
+database, then:
+
+```bash
+docker compose run --rm app rehearse-restore
+```
+
+It restores the newest dump into `treckrr_restore_rehearsal`, checks the applied
+migrations and the money tables, drops the scratch database and reports timings.
+Only this stamps `restore_tested`; the cheap per-backup check now reports itself
+separately as `archive_verified`.
 | **SMTP_STARTTLS** | Use STARTTLS | `true` | No |
 | **METRICS_TOKEN** | Min. 16 chars; enables `GET /metrics` behind a bearer token | — | No |
 | **LOG_FORMAT** / **LOG_LEVEL** | `text`\|`json`, `debug`\|`info`\|`warn`\|`error` | `text` / `info` | No |

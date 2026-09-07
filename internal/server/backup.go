@@ -23,17 +23,18 @@ const backupMaxAge = 26 * time.Hour
 
 // backupStatus is the admin-panel view of the backup status.json.
 type backupStatus struct {
-	Enabled       bool   // a BACKUP_ENCRYPTION_KEY is configured (on-demand available)
-	Configured    bool   // a status.json exists (scheduled backups have run)
-	State         string // "ok" | "stale" | "failed" | "none"
-	LastBackup    time.Time
-	AgeHours      int
-	SizeLabel     string
-	Offhost       string
-	Encrypted     bool
-	SchemaVersion string
-	RestoreTested time.Time
-	S3            string
+	Enabled         bool   // a BACKUP_ENCRYPTION_KEY is configured (on-demand available)
+	Configured      bool   // a status.json exists (scheduled backups have run)
+	State           string // "ok" | "stale" | "failed" | "none"
+	LastBackup      time.Time
+	AgeHours        int
+	SizeLabel       string
+	Offhost         string
+	Encrypted       bool
+	SchemaVersion   string
+	RestoreTested   time.Time
+	ArchiveVerified time.Time
+	S3              string
 }
 
 // readBackupStatus loads and classifies the backup status file. Any problem
@@ -66,13 +67,14 @@ func readBackupStatus(path string) backupStatus {
 		return backupStatus{State: "none"}
 	}
 	st := backupStatus{
-		Configured:    true,
-		LastBackup:    d.LastBackup,
-		SizeLabel:     humanSize(d.SizeBytes),
-		Offhost:       "—",
-		Encrypted:     d.Encrypted,
-		SchemaVersion: d.SchemaVersion,
-		RestoreTested: d.RestoreTested,
+		Configured:      true,
+		LastBackup:      d.LastBackup,
+		SizeLabel:       humanSize(d.SizeBytes),
+		Offhost:         "—",
+		Encrypted:       d.Encrypted,
+		SchemaVersion:   d.SchemaVersion,
+		RestoreTested:   d.RestoreTested,
+		ArchiveVerified: d.ArchiveVerified,
 	}
 	if d.OffhostOK != nil {
 		if *d.OffhostOK {

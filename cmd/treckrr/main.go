@@ -97,6 +97,7 @@ func newBackup(cfg *config.Config, pool *sql.DB, st *store.Store) *backup.Servic
 		Dir:         cfg.BackupDir,
 		StatusFile:  cfg.BackupStatusFile,
 		Keep:        cfg.BackupKeep,
+		RehearseURL: cfg.BackupRehearseURL,
 		S3: backup.S3Options{
 			Endpoint:  cfg.S3Endpoint,
 			Bucket:    cfg.S3Bucket,
@@ -177,6 +178,7 @@ func run() error {
 		VolumeCron: "0 3 * * *",
 		VolumeKeep: cfg.BackupKeep,
 		S3Cron:     "0 4 * * *",
+		S3Keep:     cfg.S3Keep,
 	}); err != nil {
 		return err
 	}
@@ -318,8 +320,12 @@ func runCommand(cmd string, args []string) error {
 		return runRestore(args)
 	case "backup":
 		return runBackupCLI(args)
+	case "rotate-key":
+		return runRotateKeyCLI(args)
+	case "rehearse-restore":
+		return runRehearseCLI(args)
 	default:
-		return fmt.Errorf("unknown command %q (known: restore, backup)", cmd)
+		return fmt.Errorf("unknown command %q (known: restore, backup, rotate-key, rehearse-restore)", cmd)
 	}
 }
 
@@ -405,5 +411,69 @@ func runBackupCLI(args []string) error {
 		return err
 	}
 	slog.Info("encrypted backup written")
+	return nil
+}
+
+// runRotateKeyCLI re-encrypts every stored dump from the previous key to the one
+// now in BACKUP_ENCRYPTION_KEY. CLI-only: it rewrites every recovery point.
+//
+// The previous key is read from BACKUP_ENCRYPTION_KEY_OLD rather than an
+// argument, so it never lands in the shell history or a process list.
+func runRotateKeyCLI(args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("usage: treckrr rotate-key   (set BACKUP_ENCRYPTION_KEY to the new key and BACKUP_ENCRYPTION_KEY_OLD to the previous one)")
+	}
+	oldKey := os.Getenv("BACKUP_ENCRYPTION_KEY_OLD")
+	if oldKey == "" {
+		return fmt.Errorf("BACKUP_ENCRYPTION_KEY_OLD is not set — it must hold the key the existing dumps were written with")
+	}
+	_, pool, bk, err := openBackup()
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	res, err := bk.RotateKey(context.Background(), oldKey)
+	for _, n := range res.Rotated {
+		slog.Info("rotated", "file", n)
+	}
+	for _, n := range res.Skipped {
+		slog.Warn("skipped", "detail", n)
+	}
+	if err != nil {
+		return err
+	}
+	slog.Info("key rotation finished", "rotated", len(res.Rotated), "skipped", len(res.Skipped))
+	return nil
+}
+
+// runRehearseCLI restores the newest dump into a scratch database and queries it
+// — the real drill behind the panel's "Restore getestet" line.
+func runRehearseCLI(args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("usage: treckrr rehearse-restore   (needs BACKUP_REHEARSE_URL)")
+	}
+	_, pool, bk, err := openBackup()
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	files, err := bk.List()
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		return fmt.Errorf("no stored dump to rehearse")
+	}
+	enc, err := bk.Open(files[0].Name)
+	if err != nil {
+		return err
+	}
+	rep, err := bk.RehearseRestore(context.Background(), enc)
+	if err != nil {
+		return err
+	}
+	slog.Info("restore rehearsal succeeded",
+		"file", files[0].Name, "migrations", rep.Migrations,
+		"tables", rep.Tables, "rows", rep.Rows, "took", rep.Duration.String())
 	return nil
 }

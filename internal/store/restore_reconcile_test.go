@@ -2,8 +2,12 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
+	neturl "net/url"
 	"os"
 	"testing"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/d0linger/treckrr/internal/db"
 	"github.com/d0linger/treckrr/internal/store"
@@ -39,40 +43,59 @@ func TestResetPoolKeepsPoolUsable(t *testing.T) {
 // columns and schema_migrations row are the backup's), so every query touching the
 // new columns fails. The post-restore reconcile must bring it forward in one shot,
 // so no container restart is needed — the fix ported from Parkrr.
+//
+// It runs against its OWN throwaway database, not the shared one. The previous
+// version dropped 0024's seventeen columns on the SHARED invoices table and let
+// the reconcile re-add them — but Postgres counts dropped columns against the
+// 1600-column table limit FOREVER, so every suite run burned seventeen slots
+// until, after enough runs, migration 0024 could not apply at all and the whole
+// suite collapsed (SQLSTATE 54011). It also ran DELETE FROM invoices mid-suite,
+// silently eating other tests' fixtures. A scratch database resets both problems
+// on every run and needs no cleanup discipline at all.
 func TestReconcileAfterRestoreReappliesMigration(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("TEST_DATABASE_URL not set; skipping DB integration test")
 	}
 	ctx := context.Background()
-	pool, err := db.Connect(ctx, url)
+
+	// Maintenance connection to create/drop the scratch database.
+	base, err := neturl.Parse(url)
 	if err != nil {
-		t.Fatalf("connect: %v", err)
+		t.Fatalf("parse url: %v", err)
 	}
-	// Close last: t.Cleanup is LIFO, so register the pool close first (runs after
-	// the re-migrate cleanup below, which still needs an open pool). A plain
-	// `defer pool.Close()` would run before any t.Cleanup and close it too early.
+	admin := *base
+	admin.Path = "/postgres"
+	adminPool, err := sql.Open("pgx", admin.String())
+	if err != nil {
+		t.Fatalf("admin connect: %v", err)
+	}
+	t.Cleanup(func() { _ = adminPool.Close() })
+	const scratch = "treckrr_reconcile_test"
+	drop := func() {
+		_, _ = adminPool.ExecContext(ctx, `DROP DATABASE IF EXISTS `+scratch+` WITH (FORCE)`)
+	}
+	drop() // a crashed previous run leaves it behind
+	if _, err := adminPool.ExecContext(ctx, `CREATE DATABASE `+scratch); err != nil {
+		t.Fatalf("create scratch db: %v", err)
+	}
+	t.Cleanup(drop)
+
+	scratchURL := *base
+	scratchURL.Path = "/" + scratch
+	pool, err := db.Connect(ctx, scratchURL.String())
+	if err != nil {
+		t.Fatalf("connect scratch: %v", err)
+	}
 	t.Cleanup(func() { _ = pool.Close() })
 	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("migrate: %v", err)
+		t.Fatalf("migrate scratch: %v", err)
 	}
 	st := store.New(pool, "test-encryption-secret")
 
-	// The test DB is shared; make sure it is left fully migrated even if an
-	// assertion below fails after we deliberately drop part of the schema.
-	t.Cleanup(func() {
-		if err := db.Migrate(context.Background(), pool); err != nil {
-			t.Errorf("cleanup: re-migrate shared test DB: %v", err)
-		}
-	})
-
-	// Simulate restoring a pre-0024 dump: clear invoices (so the re-created partial
-	// unique index cannot trip over rows that all default back to issued), drop the
-	// columns/index 0024 added and remove its migrations row — exactly the state a
-	// restored older backup leaves behind.
-	if _, err := pool.ExecContext(ctx, `DELETE FROM invoices`); err != nil {
-		t.Fatalf("simulate old backup (clear invoices): %v", err)
-	}
+	// Simulate restoring a pre-0024 dump: drop the columns/index 0024 added and
+	// remove its migrations row — exactly the state a restored older backup
+	// leaves behind. The database is ours alone, so no shared fixture can be hit.
 	if _, err := pool.ExecContext(ctx, `ALTER TABLE invoices
 		DROP COLUMN IF EXISTS net, DROP COLUMN IF EXISTS vat_rate, DROP COLUMN IF EXISTS vat_amount,
 		DROP COLUMN IF EXISTS gross, DROP COLUMN IF EXISTS show_vat, DROP COLUMN IF EXISTS tax_mode,
@@ -97,7 +120,6 @@ func TestReconcileAfterRestoreReappliesMigration(t *testing.T) {
 	if err := st.ReconcileAfterRestore(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-
 	// 0024 is recorded again, and the previously-failing queries run.
 	var has bool
 	if err := pool.QueryRowContext(ctx,

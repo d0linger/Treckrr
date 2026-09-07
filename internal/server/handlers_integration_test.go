@@ -63,7 +63,13 @@ func newItEnv(t *testing.T) *itEnv {
 	st := store.New(pool, "test-encryption-key-at-least-32-bytes!!")
 
 	e := &itEnv{t: t, ctx: ctx, pool: pool, st: st, adminPass: "It-Passwort-123!"} //nolint:gosec // G101: fixed password for a throwaway test account
-	e.year = 5200 + os.Getpid()%700
+	// Year BAND, not just a unique number. Tests derive their year from the pid,
+	// and packages run in parallel with DIFFERENT pids — so two packages whose
+	// ranges overlap can land on the same year, and one test's fixture purge then
+	// deletes the billing year another test is still using (seen as FK violations
+	// on billing_year_id). internal/store spans 3000-5899; this package stays
+	// above it with room to spare.
+	e.year = 6100 + os.Getpid()%500
 	uname := fmt.Sprintf("ithandler%d_%s", os.Getpid(), sanitizeTestName(t.Name()))
 
 	// This env creates an ADMIN user, and TestLastAdminGuardIntegration in the
