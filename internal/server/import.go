@@ -229,7 +229,10 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 // would import and which are rejected. Nothing is written. The raw CSV is echoed
 // back in a hidden field so the commit step re-parses the exact same input.
 func (s *Server) handleImportPreview(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(4 << 20); err != nil {
+	// The correction editor (Ausbaukarte 69) posts a plain urlencoded form, the
+	// upload a multipart one. ParseMultipartForm parses the urlencoded body too
+	// and then reports ErrNotMultipart, which is not an error here.
+	if err := r.ParseMultipartForm(4 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
@@ -244,17 +247,30 @@ func (s *Server) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, dashboardURL(yearID))
 		return
 	}
-	file, _, err := r.FormFile("file")
-	if err != nil {
-		s.setFlash(w, r, "error", "Bitte eine CSV-Datei wählen.")
-		redirect(w, r, "/entries/import?year="+itoa64(yearID))
-		return
-	}
-	defer file.Close()
-	raw, err := io.ReadAll(io.LimitReader(file, 4<<20))
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
+	// Two ways in: a fresh upload, or the corrected text from the preview's own
+	// editor (Ausbaukarte 69) — fixing a typo should not mean editing the file
+	// on disk and uploading it again.
+	var raw []byte
+	if edited := r.FormValue("csv"); strings.TrimSpace(edited) != "" {
+		if len(edited) > maxImportPayloadLen {
+			s.setFlash(w, r, "error", "Importdaten zu groß.")
+			redirect(w, r, "/entries/import?year="+itoa64(yearID))
+			return
+		}
+		raw = []byte(edited)
+	} else {
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			s.setFlash(w, r, "error", "Bitte eine CSV-Datei wählen.")
+			redirect(w, r, "/entries/import?year="+itoa64(yearID))
+			return
+		}
+		defer file.Close()
+		raw, err = io.ReadAll(io.LimitReader(file, 4<<20))
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
 	}
 	members, err := s.yearMembers(r, yearID)
 	if err != nil {
@@ -330,9 +346,24 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/entries/import?year="+itoa64(yearID))
 		return
 	}
-	created := 0
+	// Line selection (Ausbaukarte 69): with checkboxes present, only the ticked
+	// lines are imported. No checkbox at all means an older page or a client
+	// without them — fall back to "every OK row", the previous behavior.
+	selected := map[int]bool{}
+	hasSelection := len(r.PostForm["line"]) > 0
+	for _, v := range r.PostForm["line"] {
+		if n, err := strconv.Atoi(v); err == nil {
+			selected[n] = true
+		}
+	}
+
+	created, skipped := 0, 0
 	for _, row := range rows {
 		if !row.OK() {
+			continue
+		}
+		if hasSelection && !selected[row.Line] {
+			skipped++
 			continue
 		}
 		e := &models.Entry{
@@ -356,7 +387,17 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 			created++
 		}
 	}
-	s.audit(r, "import", "year", yearID, itoa(created)+" Buchungen importiert")
-	s.setFlash(w, r, "success", itoa(created)+" Buchung(en) importiert.")
+	s.audit(r, "import", "year", yearID, itoa(created)+" Buchungen importiert"+
+		func() string {
+			if skipped > 0 {
+				return ", " + itoa(skipped) + " abgewählt"
+			}
+			return ""
+		}())
+	msg := itoa(created) + " Buchung(en) importiert."
+	if skipped > 0 {
+		msg += " " + itoa(skipped) + " abgewählte Zeile(n) übersprungen."
+	}
+	s.setFlash(w, r, "success", msg)
 	redirect(w, r, dashboardURL(yearID))
 }

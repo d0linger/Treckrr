@@ -94,7 +94,9 @@
 	function flush() {
 		if (flushing || !navigator.onLine) return;
 		flushing = true;
-		all().then(function (all_items) {
+		// Returned so a caller can wait for the flush — the queue panel redraws
+		// only once the sending is actually done.
+		return all().then(function (all_items) {
 			var items = all_items.filter(ownedByCurrentUser);
 			var orphans = all_items.length - items.length;
 			if (orphans > 0 && window.console && console.warn) {
@@ -156,7 +158,92 @@
 		}, true);
 	}
 
-	window.addEventListener("online", flush);
+	// ---- Warteschlange sichtbar machen (Ausbaukarte 72) --------------------
+	// The badge was a dead counter: a booking that kept failing to send could
+	// sit there indefinitely with no way to look at it, fix it or drop it.
+
+	var panel = document.querySelector("[data-offline-panel]");
+	var list = document.querySelector("[data-offline-list]");
+	var badgeEl = document.querySelector("[data-offline-badge]");
+
+	// Build the text nodes with textContent, never innerHTML: every value here
+	// is data the user typed into a booking form.
+	function row(item) {
+		var wrap = document.createElement("div");
+		wrap.className = "offlineq__row";
+		var meta = document.createElement("div");
+		meta.className = "offlineq__meta";
+		var d = item.data || {};
+		var title = document.createElement("strong");
+		var qty = d.unit && d.unit !== "h" ? (d.quantity || "?") + " " + d.unit : (d.hours || "?") + " h";
+		title.textContent = (d.task_label || "Buchung") + " · " + qty;
+		var sub = document.createElement("span");
+		sub.className = "muted small";
+		sub.textContent = (d.entry_date || "ohne Datum") + (d.note ? " · " + d.note : "");
+		meta.appendChild(title);
+		meta.appendChild(sub);
+		var drop = document.createElement("button");
+		drop.type = "button";
+		drop.className = "btn btn--danger btn--sm";
+		drop.textContent = "Verwerfen";
+		drop.addEventListener("click", function () {
+			if (!window.confirm("Diese offline erfasste Buchung verwerfen? Sie wird nicht gesendet.")) return;
+			del(item.id).then(function () { renderQueue(); refreshBadge(); });
+		});
+		wrap.appendChild(meta);
+		wrap.appendChild(drop);
+		return wrap;
+	}
+
+	function renderQueue() {
+		if (!list) return Promise.resolve();
+		return all().then(function (items) {
+			var mine = items.filter(ownedByCurrentUser);
+			list.textContent = "";
+			if (!mine.length) {
+				var empty = document.createElement("p");
+				empty.className = "muted small";
+				empty.textContent = "Nichts in der Warteschlange.";
+				list.appendChild(empty);
+				return;
+			}
+			mine.forEach(function (item) { list.appendChild(row(item)); });
+		});
+	}
+
+	function openPanel() {
+		if (!panel) return;
+		renderQueue().then(function () {
+			panel.hidden = false;
+			var close = panel.querySelector("[data-offline-close]");
+			if (close) close.focus();
+		});
+	}
+	function closePanel() {
+		if (!panel) return;
+		panel.hidden = true;
+		if (badgeEl) badgeEl.focus();
+	}
+
+	if (badgeEl) badgeEl.addEventListener("click", openPanel);
+	if (panel) {
+		var closeBtn = panel.querySelector("[data-offline-close]");
+		if (closeBtn) closeBtn.addEventListener("click", closePanel);
+		var flushBtn = panel.querySelector("[data-offline-flush]");
+		if (flushBtn) {
+			flushBtn.addEventListener("click", function () {
+				if (!navigator.onLine) { toast("Keine Verbindung — die Buchungen bleiben gespeichert."); return; }
+				Promise.resolve(flush()).then(function () { renderQueue(); });
+			});
+		}
+		// Click on the backdrop (not the sheet) and Escape both close it.
+		panel.addEventListener("click", function (e) { if (e.target === panel) closePanel(); });
+		document.addEventListener("keydown", function (e) {
+			if (e.key === "Escape" && !panel.hidden) closePanel();
+		});
+	}
+
+	window.addEventListener("online", function () { flush(); });
 	refreshBadge();
 	flush();
 })();

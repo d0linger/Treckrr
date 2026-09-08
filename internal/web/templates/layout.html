@@ -53,7 +53,8 @@
 				<span>Treckrr</span>
 			</a>
 			<h1 class="appbar__title">{{.Title}}</h1>
-			<span class="appbar__offline" data-offline-badge role="status" aria-live="polite" hidden title="Offline erfasste Buchungen, werden bei Verbindung gesendet"></span>
+			<button type="button" class="appbar__offline" data-offline-badge aria-live="polite" hidden
+				aria-haspopup="dialog" title="Offline erfasste Buchungen ansehen"></button>
 			{{with .BackupHealth}}
 			<div class="bkdot bkdot--{{.Tone}}" data-bk>
 				<button class="appbar__icon bkdot__btn" type="button" data-bk-toggle aria-expanded="false" aria-controls="bkPop" aria-label="Backup: {{.Title}}{{if .AgeLabel}}, {{.AgeLabel}}{{end}}">
@@ -186,9 +187,23 @@
 		</form>
 	</dialog>
 
+	<div class="offlineq" data-offline-panel hidden role="dialog" aria-modal="true" aria-labelledby="offlineq-title">
+		<div class="offlineq__sheet card">
+			<div class="offlineq__head">
+				<h2 id="offlineq-title" class="section-title">Offline erfasste Buchungen</h2>
+				<button type="button" class="btn btn--ghost btn--sm" data-offline-close>Schließen</button>
+			</div>
+			<p class="muted small">Diese Buchungen warten auf eine Verbindung. Sie werden automatisch gesendet — hier lassen sie sich vorher ansehen oder verwerfen.</p>
+			<div data-offline-list></div>
+			<div class="btnrow">
+				<button type="button" class="btn btn--primary btn--sm" data-offline-flush>Jetzt senden</button>
+			</div>
+		</div>
+	</div>
 	<script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
 	<script src="/static/js/passkey.js?v={{.AssetVersion}}" defer></script>
 	<script src="/static/js/offline.js?v={{.AssetVersion}}" defer></script>
+	<script src="/static/js/capture.js?v={{.AssetVersion}}" defer></script>
 	{{if .User}}<script src="/static/js/app-bg.js?v={{.AssetVersion}}" defer></script>{{end}}
 	{{block "scripts" .}}{{end}}
 </body>

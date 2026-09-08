@@ -42,7 +42,12 @@
 				</select>
 			</label>
 			<label class="field"><span>Datum</span>
-				<input class="input" type="date" name="entry_date" value="{{.Today}}" required></label>
+				<input class="input" type="date" name="entry_date" value="{{.Today}}" required>
+				<span class="btnrow btnrow--tight">
+					<button class="btn btn--ghost btn--xs" type="button" data-days="0" data-target="entry_date">heute</button>
+					<button class="btn btn--ghost btn--xs" type="button" data-days="1" data-target="entry_date">gestern</button>
+					<button class="btn btn--ghost btn--xs" type="button" data-days="7" data-target="entry_date">vor 1 Woche</button>
+				</span></label>
 		</div>
 		<label class="field" data-unit-custom hidden><span>Eigene Einheit</span>
 			<input class="input" type="text" name="unit_custom" placeholder="z. B. Stk, Fuder" maxlength="16" data-unit-custom-input></label>
@@ -152,7 +157,7 @@
 			<div class="tablewrap">
 				<table class="dtable">
 					<thead><tr><th>Datum</th><th>Gespann</th><th class="num">Stunden</th></tr></thead>
-					<tbody>
+					<tbody data-quick-rows>
 						{{range $i := seq 6}}
 						<tr>
 							<td><input class="input" type="date" name="q_date" value="{{$.Today}}"></td>
@@ -168,7 +173,10 @@
 					</tbody>
 				</table>
 			</div>
-			<button class="btn btn--primary" type="submit">Zeilen speichern</button>
+			<div class="btnrow">
+				<button class="btn btn--ghost btn--sm" type="button" data-quick-add>+ Zeile</button>
+				<button class="btn btn--primary" type="submit">Zeilen speichern</button>
+			</div>
 		</form>
 	</details>
 	{{end}}
@@ -228,13 +236,13 @@
 					<a class="iconact" href="/entries/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">{{template "ic-edit"}}</a>
 					<a class="iconact" href="/entries/{{.ID}}/copy" title="Als neue Buchung kopieren" aria-label="Kopieren">{{template "ic-copy"}}</a>
 					<form method="post" action="/entries/{{.ID}}/void"
-						data-confirm-danger data-confirm="Buchung stornieren? (bleibt sichtbar, zählt nicht mehr)"
+						data-confirm-danger data-confirm="Buchung vom {{date .Date}} über {{money .Cost}} stornieren? (bleibt sichtbar, zählt nicht mehr)"
 						data-confirm-reason="Grund der Stornierung (optional)">
 						<input type="hidden" name="voided" value="true">
 						<input type="hidden" name="reason" value="">
 						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">{{template "ic-void"}}</button>
 					</form>
-					<form method="post" action="/entries/{{.ID}}/delete" data-confirm-danger data-confirm="Buchung endgültig löschen?">
+					<form method="post" action="/entries/{{.ID}}/delete" data-confirm-danger data-confirm="Buchung vom {{date .Date}}{{if .TaskLabel}} ({{.TaskLabel}}){{end}} über {{money .Cost}} endgültig löschen?">
 						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
 					{{end}}
@@ -294,7 +302,7 @@
 						<input type="hidden" name="reason" value="">
 						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">{{template "ic-void"}}</button>
 					</form>
-					<form method="post" action="/ledger/{{.ID}}/delete" data-confirm-danger data-confirm="{{if .TransferID}}Übertrag rückgängig machen? Die Gegenbuchung im anderen Jahr wird ebenfalls entfernt — der Rest ist dort wieder offen.{{else}}Position endgültig löschen?{{end}}">
+					<form method="post" action="/ledger/{{.ID}}/delete" data-confirm-danger data-confirm="{{if .TransferID}}Übertrag rückgängig machen? Die Gegenbuchung im anderen Jahr wird ebenfalls entfernt — der Rest ist dort wieder offen.{{else}}Position vom {{date .Date}} über {{money .Amount}}{{if .Description}} „{{.Description}}“{{end}} endgültig löschen?{{end}}">
 						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
 					{{end}}
