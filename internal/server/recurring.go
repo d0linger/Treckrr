@@ -55,6 +55,10 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	if s.tooLong(w, r, "Startdatum", r.FormValue("next_run"), maxNameLen) {
+		redirect(w, r, "/recurring")
+		return
+	}
 	kind := r.FormValue("interval_kind")
 	if kind != "weekly" && kind != "monthly" {
 		kind = "weekly"
