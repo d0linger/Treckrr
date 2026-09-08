@@ -125,8 +125,9 @@
 		<p class="muted small">Noch kein Foto angehängt.</p>
 		{{end}}
 		<form method="post" action="/entries/{{.Entry.ID}}/photos" enctype="multipart/form-data" class="form">
-			<input class="input" type="file" name="photo" accept="image/*" capture="environment" required>
-			<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit">Foto anhängen</button></div>
+			<input class="input" type="file" name="photo" accept="image/*" capture="environment" multiple required>
+			<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit">Fotos anhängen</button></div>
+			<p class="muted small">Mehrere Aufnahmen auf einmal möglich (max. 10 je Vorgang).</p>
 		</form>
 	</div>
 

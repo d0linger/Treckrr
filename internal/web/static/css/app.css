@@ -627,6 +627,12 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 /* Monospace field for raw CSV correction in the import preview. */
 .input--code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .78rem; white-space: pre; overflow-x: auto; }
 
+/* Beleg action bar, grouped by purpose (Ausbaukarte 80): view toggles above,
+   output/handover below, each row under a quiet label. */
+.beleg__actgroup { display: flex; flex-direction: column; gap: .35rem; }
+.beleg__actlabel { font-size: .68rem; font-weight: 700; letter-spacing: .04em;
+	text-transform: uppercase; color: var(--muted); }
+
 .btn--xs { min-height: 30px; padding: .2rem .55rem; font-size: .7rem; }
 .btn--block { width: 100%; }
 .btn--icon { padding: 0; width: var(--tap); min-height: var(--tap); border-radius: 50%; font-size: 1.1rem; }

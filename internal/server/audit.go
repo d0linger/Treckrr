@@ -9,12 +9,14 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/d0linger/treckrr/internal/metrics"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // newReqID returns a short random id used to correlate a request's access-log
@@ -35,10 +37,9 @@ const auditPageSize = 50
 // pagination. Filtering, counting and paging all run in SQL so they cover the
 // full audit history, not just a fixed recent batch.
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
-	q := sanitizeQueryParam(r.URL.Query().Get("q"), maxNameLen)
-	action := sanitizeQueryParam(r.URL.Query().Get("action"), maxNameLen)
+	aq := auditQueryFromRequest(r)
 
-	total, err := s.store.CountAudit(r.Context(), q, action)
+	total, err := s.store.CountAudit(r.Context(), aq)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -56,7 +57,7 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	offset := (page - 1) * auditPageSize
 
-	entries, err := s.store.ListAuditFiltered(r.Context(), q, action, auditPageSize, offset)
+	entries, err := s.store.ListAuditFiltered(r.Context(), aq, auditPageSize, offset)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -66,12 +67,22 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	users, err := s.store.AuditUsers(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 
 	data := s.newPage(w, r, "Protokoll", "admin")
 	data["Entries"] = entries
 	data["Actions"] = actions
-	data["Q"] = q
-	data["Action"] = action
+	data["Users"] = users
+	data["Q"] = aq.Text
+	data["Action"] = aq.Action
+	data["Username"] = aq.Username
+	data["From"] = r.URL.Query().Get("from")
+	data["To"] = r.URL.Query().Get("to")
+	data["FilterQuery"] = auditFilterQuery(r)
 	data["Total"] = total
 	data["Page"] = page
 	data["TotalPages"] = totalPages
@@ -90,10 +101,9 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 
 // handleAuditExport streams the (optionally filtered) audit trail as CSV.
 func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
-	q := sanitizeQueryParam(r.URL.Query().Get("q"), maxNameLen)
-	action := sanitizeQueryParam(r.URL.Query().Get("action"), maxNameLen)
+	aq := auditQueryFromRequest(r)
 
-	filtered, err := s.store.ListAuditFiltered(r.Context(), q, action, 0, 0)
+	filtered, err := s.store.ListAuditFiltered(r.Context(), aq, 0, 0)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -400,4 +410,32 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 			"user", sanitizeLog(user),
 			"ip", sanitizeLog(s.clientIP(r)))
 	})
+}
+
+// auditQueryFromRequest reads the protocol filters, capping every text value
+// and ignoring an unparsable date rather than guessing one — a malformed
+// "from" must widen the view, never silently hide history.
+func auditQueryFromRequest(r *http.Request) store.AuditQuery {
+	return store.AuditQuery{
+		Text:     sanitizeQueryParam(r.URL.Query().Get("q"), maxNameLen),
+		Action:   sanitizeQueryParam(r.URL.Query().Get("action"), maxNameLen),
+		Username: sanitizeQueryParam(r.URL.Query().Get("username"), maxNameLen),
+		From:     parseDay(r.URL.Query().Get("from")),
+		To:       parseDay(r.URL.Query().Get("to")),
+	}
+}
+
+// auditFilterQuery re-encodes the active filters, so the pager and the CSV
+// link keep them instead of resetting the view.
+func auditFilterQuery(r *http.Request) string {
+	v := url.Values{}
+	for _, k := range []string{"q", "action", "username", "from", "to"} {
+		if s := strings.TrimSpace(r.URL.Query().Get(k)); s != "" {
+			v.Set(k, s)
+		}
+	}
+	if len(v) == 0 {
+		return ""
+	}
+	return "&" + v.Encode()
 }

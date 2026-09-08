@@ -122,44 +122,55 @@
 		} catch (e) { /* keep the static favicon */ }
 	})();
 
-	// Live text search over [data-search]'s target selector, plus an optional
-	// "only open" companion checkbox ([data-open-filter]) that also hides rows
-	// without a data-open marker. Both signals feed one visibility pass so they
-	// never fight over the inline display value.
-	document.querySelectorAll("[data-search]").forEach(function (input) {
-		var sel = input.getAttribute("data-search");
-		var openCb = document.querySelector("[data-open-filter]");
-		function apply() {
-			var q = input.value.toLowerCase();
-			var onlyOpen = openCb && openCb.checked;
-			document.querySelectorAll(sel).forEach(function (item) {
-				var hit = item.textContent.toLowerCase().indexOf(q) >= 0;
-				if (onlyOpen && !item.hasAttribute("data-open")) hit = false;
-				item.style.display = hit ? "" : "none";
-			});
+	// Row filtering (Ausbaukarte 76). Text search, an "only open" checkbox and a
+	// category select all hide rows of the SAME list, so they share one
+	// visibility pass keyed by the target selector — otherwise the last control
+	// to fire wins and the other one silently stops working.
+	(function () {
+		var groups = {}; // target selector -> { search, open, category, empty, count }
+		function group(sel) {
+			if (!groups[sel]) groups[sel] = { sel: sel };
+			return groups[sel];
 		}
-		input.addEventListener("input", apply);
-		if (openCb) openCb.addEventListener("change", apply);
-	});
-
-	// Auto-submit the enclosing form when a marked select changes.
-	document.querySelectorAll("select[data-autosubmit]").forEach(function (sel) {
-		sel.addEventListener("change", function () {
-			if (sel.form) sel.form.submit();
+		document.querySelectorAll("[data-search]").forEach(function (input) {
+			var g = group(input.getAttribute("data-search"));
+			g.search = input;
+			if (input.getAttribute("data-search-empty")) g.empty = document.querySelector(input.getAttribute("data-search-empty"));
+			if (input.getAttribute("data-search-count")) g.count = document.querySelector(input.getAttribute("data-search-count"));
 		});
-	});
-
-	// Category filter for master-data lists (prices page).
-	document.querySelectorAll("[data-filter]").forEach(function (input) {
-		var targetSel = input.getAttribute("data-filter");
-		input.addEventListener("change", function () {
-			var val = input.value;
-			document.querySelectorAll(targetSel).forEach(function (row) {
-				var cat = row.getAttribute("data-category") || "";
-				row.style.display = (!val || cat === val) ? "" : "none";
-			});
+		document.querySelectorAll("[data-filter]").forEach(function (sel) {
+			group(sel.getAttribute("data-filter")).category = sel;
 		});
-	});
+		var openCb = document.querySelector("[data-open-filter]");
+
+		Object.keys(groups).forEach(function (sel) {
+			var g = groups[sel];
+			function apply() {
+				var q = g.search ? g.search.value.toLowerCase() : "";
+				var cat = g.category ? g.category.value : "";
+				var onlyOpen = openCb && openCb.checked;
+				var shown = 0, total = 0;
+				document.querySelectorAll(sel).forEach(function (item) {
+					total++;
+					var hit = !q || item.textContent.toLowerCase().indexOf(q) >= 0;
+					if (hit && cat) hit = (item.getAttribute("data-category") || "") === cat;
+					if (hit && onlyOpen && !item.hasAttribute("data-open")) hit = false;
+					item.style.display = hit ? "" : "none";
+					if (hit) shown++;
+				});
+				if (g.empty) g.empty.hidden = shown !== 0 || total === 0;
+				if (g.count) {
+					g.count.textContent = shown === total
+						? total + " Einträge"
+						: shown + " von " + total + " Einträgen";
+				}
+			}
+			if (g.search) g.search.addEventListener("input", apply);
+			if (g.category) g.category.addEventListener("change", apply);
+			if (openCb && g.search) openCb.addEventListener("change", apply);
+			apply();
+		});
+	})();
 
 	// Carry-over: toggle all neighbour checkboxes at once.
 	document.querySelectorAll("[data-carry-toggle-all]").forEach(function (btn) {
@@ -1182,6 +1193,9 @@
 			else if (e.key === "ArrowUp") { e.preventDefault(); if (items.length) { sel = (sel - 1 + items.length) % items.length; highlight(); } }
 			else if (e.key === "Enter") { e.preventDefault(); if (sel >= 0) go(sel); }
 		}
+		document.querySelectorAll("[data-cmdk-open]").forEach(function (btn) {
+			btn.addEventListener("click", function () { if (ov) close(); else open(); });
+		});
 		document.addEventListener("keydown", function (e) {
 			if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); if (ov) close(); else open(); }
 		});

@@ -182,3 +182,37 @@ func randToken() (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
+
+// PaymentRow is one payment with the billing year it belongs to, for the
+// cross-year history (Ausbaukarte 79).
+type PaymentRow struct {
+	models.Payment
+	Year int
+}
+
+// ListNeighborPayments returns every payment a neighbor ever made, newest
+// first — the "Zahlungshistorie" the overview page promised but never showed.
+func (s *Store) ListNeighborPayments(ctx context.Context, neighborID int64) ([]PaymentRow, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT p.id, p.billing_year_id, p.neighbor_id, p.amount, p.paid_on, p.note,
+		        p.method, p.invoice_id, COALESCE(iv.number, ''), p.created_at, y.year
+		   FROM payments p
+		   JOIN billing_years y ON y.id = p.billing_year_id
+		   LEFT JOIN invoices iv ON iv.id = p.invoice_id
+		  WHERE p.neighbor_id = $1 AND p.deleted_at IS NULL
+		  ORDER BY p.paid_on DESC, p.id DESC`, neighborID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PaymentRow
+	for rows.Next() {
+		var r PaymentRow
+		if err := rows.Scan(&r.ID, &r.BillingYearID, &r.NeighborID, &r.Amount, &r.PaidOn, &r.Note,
+			&r.Method, &r.InvoiceID, &r.InvoiceNumber, &r.Created, &r.Year); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}

@@ -1,6 +1,9 @@
 {{define "content"}}
 <section class="stack">
-	<h1 class="section-title">Betriebsdaten</h1>
+	<div class="pagehead">
+		<a class="backbtn" href="/admin" aria-label="Zurück zur Verwaltung">{{template "ic-back"}}</a>
+		<h1 class="pagehead__t">Betriebsdaten</h1>
+	</div>
 	<p class="muted small">Absender und Steuerhinweis für den Rechnungs-Modus des Belegs. Empfänger-Adressen pflegst du je Nachbar unter „Nachbarn".</p>
 	{{with .Company}}
 	<form method="post" action="/admin/company" class="card form">

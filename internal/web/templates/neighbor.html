@@ -181,6 +181,21 @@
 	</details>
 	{{end}}
 
+	{{if .Photos}}
+	<details class="card disclosure">
+		<summary>Belegfotos ({{len .Photos}})</summary>
+		<p class="muted small">Alle Wiegescheine und Belege dieses Jahres. Klick öffnet das Bild, der Titel führt zur Buchung.</p>
+		<div class="photogrid">
+			{{range .Photos}}
+			<a href="/entries/{{.EntryID}}/photos/{{.PhotoID}}" target="_blank" rel="noopener"
+				title="{{date .EntryDate}}{{if .TaskLabel}} · {{.TaskLabel}}{{end}}">
+				<img src="/entries/{{.EntryID}}/photos/{{.PhotoID}}" alt="Beleg vom {{date .EntryDate}}" loading="lazy">
+			</a>
+			{{end}}
+		</div>
+	</details>
+	{{end}}
+
 	{{if .TaskSummary}}
 	<h2 class="section-title">Zusammenfassung nach Tätigkeit</h2>
 	<div class="card tablewrap">
@@ -215,10 +230,12 @@
 			<div class="bcard__head">
 				<span class="bcard__date">{{date .Date}}</span>
 				<span class="bcard__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}</span>
-				{{if or .Voided (index $.Stale .ID)}}
+				{{$eid := .ID}}
+				{{if or .Voided (index $.Stale .ID) (index $.PhotoCounts .ID)}}
 				<span class="bcard__badges">
 					{{if .Voided}}<span class="chip2 chip2--void"><span class="chip2__g">{{template "ic-void"}}</span>Storniert</span>{{end}}
 					{{if index $.Stale .ID}}<span class="chip2 chip2--stale" title="Preis weicht von der aktuellen Grundlage ab"><span class="chip2__g">{{template "ic-warn"}}</span>Grundlage</span>{{end}}
+					{{with index $.PhotoCounts $eid}}<a class="chip2" href="/entries/{{$eid}}/edit" title="Belegfotos"><span class="chip2__g">{{template "ic-photo"}}</span>{{.}} Foto{{if gt . 1}}s{{end}}</a>{{end}}
 				</span>
 				{{end}}
 				<span class="bcard__cost">{{money .Cost}}</span>

@@ -82,7 +82,10 @@
 	<h2 class="section-title" id="nachbarn">Nachbarn im Jahr {{.Year.Year}}</h2>
 	{{if .Summaries}}
 	<div class="listtools">
-		<input class="input" type="search" placeholder="Nachbar suchen …" data-search="[data-nb-item]" aria-label="Nachbar suchen">
+		<input class="input" type="search" placeholder="Nachbar suchen …" data-search="[data-nb-item]" aria-label="Nachbar suchen"
+			data-search-empty="[data-nb-empty]" data-search-count="[data-nb-count]">
+		<p class="muted small"><span data-nb-count></span></p>
+		<p class="muted small" data-nb-empty hidden>Kein Nachbar passt zur Suche.</p>
 		{{if .Completed}}
 		<label class="switch"><input type="checkbox" data-open-filter><span>Nur offene</span></label>
 		{{end}}

@@ -136,6 +136,20 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	// Fotos sichtbar machen (Ausbaukarte 74): a chip per booking and a gallery,
+	// so a Wiegeschein is not buried behind a booking's edit page.
+	photoCounts, err := s.store.PhotoCounts(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	photos, err := s.store.ListNeighborPhotos(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data["PhotoCounts"] = photoCounts
+	data["Photos"] = photos
 	data["Persons"] = persons
 	data["TravelFlat"] = company.TravelFlat
 	data["TravelPerKm"] = company.TravelPerKm
@@ -188,11 +202,24 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 		totalHours = totalHours.Add(h.Hours)
 	}
 	company, _ := s.store.GetCompany(r.Context())
+	// The heading promised a Zahlungshistorie and rendered only year tiles
+	// (Ausbaukarte 79) — here are the payments themselves, across all years.
+	payments, err := s.store.ListNeighborPayments(r.Context(), neighbor.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	var paidTotal decimal.Decimal
+	for _, p := range payments {
+		paidTotal = paidTotal.Add(p.Amount)
+	}
 	data := s.newPage(w, r, neighbor.Name+" · Verlauf", "dashboard")
 	data["Neighbor"] = neighbor
 	data["Rows"] = rows
 	data["TotalCost"] = totalCost
 	data["TotalHours"] = totalHours
+	data["Payments"] = payments
+	data["PaidTotal"] = paidTotal
 	data["Company"] = company
 	data["Today"] = time.Now()
 	s.render(w, r, "neighbor_overview", data)

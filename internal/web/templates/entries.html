@@ -63,7 +63,7 @@
 						<td>{{if not $.Completed}}<input type="checkbox" name="entry_id" value="{{.ID}}" aria-label="Buchung vom {{date .Date}} auswählen">{{end}}</td>
 						<td>{{date .Date}}</td>
 						<td><a href="/neighbors/{{.NeighborID}}?year={{$.Year.ID}}">{{.NeighborName}}</a></td>
-						<td>{{if .TaskLabel}}{{.TaskLabel}}{{else}}—{{end}}{{if .Voided}} <span class="tag">storniert</span>{{end}}{{if .Note}} <span class="muted small">{{.Note}}</span>{{end}}</td>
+						<td>{{if .TaskLabel}}{{.TaskLabel}}{{else}}—{{end}}{{if .Voided}} <span class="tag">storniert</span>{{end}}{{$eid := .ID}}{{with index $.PhotoCounts $eid}} <a class="tag" href="/entries/{{$eid}}/edit" title="Belegfotos">{{.}} Foto{{if gt . 1}}s{{end}}</a>{{end}}{{if .Note}} <span class="muted small">{{.Note}}</span>{{end}}</td>
 						<td>{{if eq .Unit "h"}}{{num .Hours}} h{{else}}{{num .Quantity}} {{.Unit}}{{end}}</td>
 						<td class="num">{{money .Cost}}</td>
 					</tr>

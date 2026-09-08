@@ -80,6 +80,11 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	photoCounts, err := s.store.PhotoCounts(r.Context(), year.ID, 0)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 
 	page := f.Offset/entryPageSize + 1
 	pages := (total + entryPageSize - 1) / entryPageSize
@@ -94,6 +99,7 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 	data["SumCost"] = sum
 	data["Neighbors"] = neighbors
 	data["Units"] = units
+	data["PhotoCounts"] = photoCounts
 	data["Completed"] = year.Completed()
 	data["Page"] = page
 	data["Pages"] = pages

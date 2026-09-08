@@ -7,9 +7,14 @@
 
 	<!-- Belastungsstufen --------------------------------------------------->
 	<h2 class="section-title">Belastungsstufen <span class="badge">{{len .Loads}}</span> <span class="muted">(€ / PS · h)</span></h2>
+	{{if gt (len .Loads) 5}}
+	<input class="input" type="search" placeholder="Stufe suchen …" aria-label="Belastungsstufe suchen"
+		data-search="[data-load-row]" data-search-empty="[data-load-empty]">
+	<p class="muted small" data-load-empty hidden>Keine Stufe passt zur Suche.</p>
+	{{end}}
 	<div class="list">
 		{{range .Loads}}
-		<details class="card disclosure disclosure--row">
+		<details class="card disclosure disclosure--row" data-load-row>
 			<summary>
 				<span class="list__title">{{.Name}}</span>
 				<span class="list__value">{{num .CostPerPS}} €/PS·h</span>
@@ -52,9 +57,15 @@
 
 	<!-- Traktoren ---------------------------------------------------------->
 	<h2 class="section-title">Traktoren <span class="badge">{{len .TractorViews}}</span> <span class="muted">(Stundensatz = PS × €/PS·h)</span></h2>
+	{{if gt (len .TractorViews) 5}}
+	<input class="input" type="search" placeholder="Traktor suchen …" aria-label="Traktor suchen"
+		data-search="[data-tractor-row]" data-search-empty="[data-tractor-empty]" data-search-count="[data-tractor-count]">
+	<p class="muted small"><span data-tractor-count></span></p>
+	<p class="muted small" data-tractor-empty hidden>Kein Traktor passt zur Suche.</p>
+	{{end}}
 	<div class="list">
 		{{range .TractorViews}}
-		<details class="card disclosure disclosure--row {{if not .Tractor.Active}}is-inactive{{end}}">
+		<details class="card disclosure disclosure--row {{if not .Tractor.Active}}is-inactive{{end}}" data-tractor-row>
 			<summary>
 				<span class="list__main">
 					<span class="list__title">{{.Tractor.Label}}{{if not .Tractor.Active}}<span class="pill-off">inaktiv</span>{{end}}</span>
@@ -115,6 +126,10 @@
 	<datalist id="machine-cats">
 		{{range .Categories}}<option value="{{.}}"></option>{{end}}
 	</datalist>
+	<input class="input" type="search" placeholder="Maschine suchen …" aria-label="Maschine suchen"
+		data-search="[data-machine-row]" data-search-empty="[data-machine-empty]" data-search-count="[data-machine-count]">
+	<p class="muted small"><span data-machine-count></span></p>
+	<p class="muted small" data-machine-empty hidden>Keine Maschine passt zu Suche und Kategorie.</p>
 	{{if .Categories}}
 	<label class="field">
 		<span>Filter nach Kategorie</span>

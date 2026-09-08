@@ -171,9 +171,36 @@
 		<div class="beleg__foot">Stand {{.Today}} · Treckrr</div>
 	</div>
 
-	{{/* Werkblatt F1: print/export/share are equal-rank secondary plates — the ONE
-	     signal action of the page stays the business action (ausstellen/Gutschrift). */}}
+	{{/* Werkblatt F1: print/export/share stay equal-rank secondary plates — the
+	     ONE signal action of the page remains the business action
+	     (ausstellen/Gutschrift). What changed for Ausbaukarte 80 is grouping,
+	     not weight: eleven buttons in one row gave no clue which of them alters
+	     the view and which sends the document out of the house. */}}
 	<div class="beleg__actions no-print">
+		{{if or .CanBundle .HasGrund .HasInvoice}}
+		<div class="beleg__actgroup">
+			<span class="beleg__actlabel">Ansicht</span>
+			<div class="beleg__actrow">
+				{{if .CanBundle}}
+				<button type="button" class="btn btn--ghost" data-beleg-bundle aria-controls="beleg-items beleg-bundle" aria-pressed="{{if .Bundle}}true{{else}}false{{end}}">
+					<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 4.5-9 4.5-9-4.5 9-4.5Z"/><path d="m3 16.5 9 4.5 9-4.5"/><path d="m3 12 9 4.5 9-4.5"/></svg>Bündeln
+				</button>
+				{{end}}
+				{{if .HasGrund}}
+				<button type="button" class="btn btn--ghost" data-beleg-grund aria-controls="beleg-grund" aria-pressed="{{if .ShowGrund}}true{{else}}false{{end}}">
+					<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Grundlage
+				</button>
+				{{end}}
+				{{if .HasInvoice}}
+				<button type="button" class="btn btn--ghost" data-beleg-rechnung aria-pressed="{{if .Rechnung}}true{{else}}false{{end}}">
+					<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Rechnung
+				</button>
+				{{end}}
+			</div>
+		</div>
+		{{end}}
+		<div class="beleg__actgroup">
+			<span class="beleg__actlabel">Ausgeben &amp; weitergeben</span>
 		<div class="beleg__actrow">
 			<button type="button" class="btn btn--ghost" data-beleg-print>
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.6"/><path d="M7 17h10v4H7z"/></svg>
@@ -206,21 +233,6 @@
 				<button type="submit" class="btn btn--ghost">{{template "ic-check"}} Versendet</button>
 				{{end}}
 			</form>
-			{{end}}
-			{{if .CanBundle}}
-			<button type="button" class="btn btn--ghost" data-beleg-bundle aria-controls="beleg-items beleg-bundle" aria-pressed="{{if .Bundle}}true{{else}}false{{end}}">
-				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 4.5-9 4.5-9-4.5 9-4.5Z"/><path d="m3 16.5 9 4.5 9-4.5"/><path d="m3 12 9 4.5 9-4.5"/></svg>Bündeln
-			</button>
-			{{end}}
-			{{if .HasGrund}}
-			<button type="button" class="btn btn--ghost" data-beleg-grund aria-controls="beleg-grund" aria-pressed="{{if .ShowGrund}}true{{else}}false{{end}}">
-				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Grundlage
-			</button>
-			{{end}}
-			{{if .HasInvoice}}
-			<button type="button" class="btn btn--ghost" data-beleg-rechnung aria-pressed="{{if .Rechnung}}true{{else}}false{{end}}">
-				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Rechnung
-			</button>
 			{{end}}
 			{{/* Self-service public links (Parkrr portal-link pattern) live in a
 			     popup behind ONE compact button, so the page stays lean. Opens
@@ -262,6 +274,7 @@
 				</div>
 			</details>
 			{{end}}
+		</div>
 		</div>
 		{{with .LastSend}}
 		<p class="beleg__sent muted small">{{template "ic-check"}} Zuletzt versendet am {{.SentAt.Format "02.01.2006, 15:04"}} Uhr ({{.Channel}})</p>

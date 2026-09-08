@@ -37,8 +37,50 @@ func (s *Server) handleNeighborsManage(w http.ResponseWriter, r *http.Request) {
 		stats = append(stats, neighborStat{Neighbor: n, Years: years, Entries: entries})
 	}
 
+	// Scope (Ausbaukarte 78): archived and anonymised neighbors stood in the same
+	// undivided list as the active ones. Default shows the active ones — that is
+	// who gets booked — with the other two a click away.
+	scope := r.URL.Query().Get("scope")
+	shown := make([]neighborStat, 0, len(stats))
+	var active, archived, anon int
+	for _, st := range stats {
+		switch {
+		case st.Neighbor.Anonymized:
+			anon++
+		case st.Neighbor.Archived:
+			archived++
+		default:
+			active++
+		}
+		keep := false
+		switch scope {
+		case "archiviert":
+			keep = st.Neighbor.Archived && !st.Neighbor.Anonymized
+		case "anonymisiert":
+			keep = st.Neighbor.Anonymized
+		case "alle":
+			keep = true
+		default:
+			keep = !st.Neighbor.Archived && !st.Neighbor.Anonymized
+		}
+		if keep {
+			shown = append(shown, st)
+		}
+	}
+	// The year to link a neighbor into, so the list is a way INTO the data
+	// rather than a dead end. Absent on a fresh installation.
+	year, yerr := s.store.LatestBillingYear(r.Context())
+
 	data := s.newPage(w, r, "Nachbarn", "neighbors")
-	data["Stats"] = stats
+	data["Stats"] = shown
+	data["Scope"] = scope
+	data["CountActive"] = active
+	data["CountArchived"] = archived
+	data["CountAnon"] = anon
+	data["Total"] = len(stats)
+	if yerr == nil {
+		data["Year"] = year
+	}
 	s.render(w, r, "neighbors_manage", data)
 }
 

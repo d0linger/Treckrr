@@ -75,23 +75,23 @@ func TestAuditFilterPaginationIntegration(t *testing.T) {
 	}
 
 	// Search matches exactly the one marker row.
-	if n, err := st.CountAudit(ctx, marker, ""); err != nil || n != 1 {
+	if n, err := st.CountAudit(ctx, store.AuditQuery{Text: marker}); err != nil || n != 1 {
 		t.Fatalf("CountAudit(marker) = %d, %v; want 1, nil", n, err)
 	}
 	// Action filter counts the full history, not a recent slice.
-	if n, err := st.CountAudit(ctx, "", "itest_b"); err != nil || n != 40 {
+	if n, err := st.CountAudit(ctx, store.AuditQuery{Action: "itest_b"}); err != nil || n != 40 {
 		t.Fatalf("CountAudit(itest_b) = %d, %v; want 40", n, err)
 	}
-	if n, err := st.CountAudit(ctx, "", "itest_a"); err != nil || n != 80 {
+	if n, err := st.CountAudit(ctx, store.AuditQuery{Action: "itest_a"}); err != nil || n != 80 {
 		t.Fatalf("CountAudit(itest_a) = %d, %v; want 80", n, err)
 	}
 
 	// Paging: first page full, later page holds the remainder.
-	p1, err := st.ListAuditFiltered(ctx, "", "itest_a", 50, 0)
+	p1, err := st.ListAuditFiltered(ctx, store.AuditQuery{Action: "itest_a"}, 50, 0)
 	if err != nil || len(p1) != 50 {
 		t.Fatalf("page1 len = %d, %v; want 50", len(p1), err)
 	}
-	p2, err := st.ListAuditFiltered(ctx, "", "itest_a", 50, 50)
+	p2, err := st.ListAuditFiltered(ctx, store.AuditQuery{Action: "itest_a"}, 50, 50)
 	if err != nil || len(p2) != 30 {
 		t.Fatalf("page2 len = %d, %v; want 30 (80 total - 50)", len(p2), err)
 	}

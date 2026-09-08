@@ -3,8 +3,25 @@
 	<p class="muted">Zentrale Nachbarn‑Verwaltung. Diese Nachbarn kannst du in jedem
 		Abrechnungsjahr über die Übersicht hinzufügen oder vom Vorjahr übernehmen.</p>
 
+	<div class="btnrow">
+		{{$sc := .Scope}}
+		{{if eq $sc ""}}<span class="btn btn--sm" aria-current="true">Aktiv ({{.CountActive}})</span>
+		{{else}}<a class="btn btn--ghost btn--sm" href="/neighbors">Aktiv ({{.CountActive}})</a>{{end}}
+		{{if eq $sc "archiviert"}}<span class="btn btn--sm" aria-current="true">Archiviert ({{.CountArchived}})</span>
+		{{else}}<a class="btn btn--ghost btn--sm" href="/neighbors?scope=archiviert">Archiviert ({{.CountArchived}})</a>{{end}}
+		{{if eq $sc "anonymisiert"}}<span class="btn btn--sm" aria-current="true">Anonymisiert ({{.CountAnon}})</span>
+		{{else}}<a class="btn btn--ghost btn--sm" href="/neighbors?scope=anonymisiert">Anonymisiert ({{.CountAnon}})</a>{{end}}
+		{{if eq $sc "alle"}}<span class="btn btn--sm" aria-current="true">Alle ({{.Total}})</span>
+		{{else}}<a class="btn btn--ghost btn--sm" href="/neighbors?scope=alle">Alle ({{.Total}})</a>{{end}}
+	</div>
 	{{if .Stats}}
-	<input class="input" type="search" placeholder="Nachbar suchen …" data-search="[data-nb-item]" aria-label="Nachbar suchen">
+	<input class="input" type="search" placeholder="Nachbar suchen …" data-search="[data-nb-item]" aria-label="Nachbar suchen" data-search-empty="[data-nb-empty]">
+	<p class="muted small" data-nb-empty hidden>Kein Nachbar passt zur Suche.</p>
+	{{else}}
+	<div class="empty">
+		<span class="empty__title">Keine Nachbarn in dieser Ansicht</span>
+		<span class="muted small">Andere Ansicht wählen oder unten einen Nachbarn anlegen.</span>
+	</div>
 	{{end}}
 	<div class="list">
 		{{range .Stats}}
@@ -16,6 +33,10 @@
 						in {{.Years}} {{if eq .Years 1}}Jahr{{else}}Jahren{{end}} · {{.Entries}} Buchungen{{if .Neighbor.Note}} · {{.Neighbor.Note}}{{end}}
 					</span>
 				</div>
+				{{if and $.Year (not .Neighbor.Anonymized)}}
+				<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}">Jahr {{$.Year.Year}}</a>
+				{{end}}
+				<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}/overview">Verlauf</a>
 			</div>
 			<details class="disclosure disclosure--plain">
 				<summary>Bearbeiten</summary>

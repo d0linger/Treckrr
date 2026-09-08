@@ -89,8 +89,13 @@ func TestEntryPhotosIntegration(t *testing.T) {
 		t.Errorf("content type = %q, want image/jpeg", ct)
 	}
 
-	if n, _ := st.CountEntryPhotos(ctx, eid); n != 1 {
-		t.Errorf("count = %d, want 1", n)
+	// PhotoCounts replaced the per-entry counter: one query for a whole year,
+	// keyed by booking.
+	if counts, err := st.PhotoCounts(ctx, yearID, nid); err != nil || counts[eid] != 1 {
+		t.Errorf("PhotoCounts[%d] = %d, %v; want 1, nil", eid, counts[eid], err)
+	}
+	if refs, err := st.ListNeighborPhotos(ctx, yearID, nid); err != nil || len(refs) != 1 || refs[0].EntryID != eid {
+		t.Errorf("ListNeighborPhotos = %+v, %v; want one ref for entry %d", refs, err, eid)
 	}
 	if ps, _ := st.ListEntryPhotos(ctx, eid); len(ps) != 1 {
 		t.Errorf("list len = %d, want 1", len(ps))
@@ -104,7 +109,7 @@ func TestEntryPhotosIntegration(t *testing.T) {
 	if err := st.DeleteEntryPhoto(ctx, eid, pidPhoto); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if n, _ := st.CountEntryPhotos(ctx, eid); n != 0 {
-		t.Errorf("count after delete = %d, want 0", n)
+	if counts, err := st.PhotoCounts(ctx, yearID, nid); err != nil || counts[eid] != 0 {
+		t.Errorf("count after delete = %d, %v; want 0, nil", counts[eid], err)
 	}
 }

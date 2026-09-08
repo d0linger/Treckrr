@@ -17,12 +17,23 @@
 					{{$a := .Action}}
 					{{range .Actions}}<option value="{{.}}" {{if eq . $a}}selected{{end}}>{{.}}</option>{{end}}
 				</select></label>
+			<label class="field"><span>Benutzer</span>
+				<select class="select" name="username">
+					<option value="">Alle Benutzer</option>
+					{{$u := .Username}}
+					{{range .Users}}<option value="{{.}}" {{if eq . $u}}selected{{end}}>{{.}}</option>{{end}}
+				</select></label>
+			<label class="field"><span>Von</span>
+				<input class="input" type="date" name="from" value="{{.From}}"></label>
+			<label class="field"><span>Bis</span>
+				<input class="input" type="date" name="to" value="{{.To}}"></label>
 		</div>
 		{{/* Werkblatt F3: filtering is a display operation, not the page's action —
 		     secondary green outline; the log itself is the hero. */}}
 		<div class="btnrow">
 			<button class="btn btn--ghost btn--sm" type="submit">Filtern</button>
-			<a class="btn btn--ghost btn--sm" href="/admin/audit/export?q={{.Q}}&action={{.Action}}">CSV Export</a>
+			<a class="btn btn--ghost btn--sm" href="/admin/audit/export?export=1{{.FilterQuery}}">CSV Export</a>
+			<a class="btn btn--ghost btn--sm" href="/admin/audit">Filter zurücksetzen</a>
 		</div>
 	</form>
 	<p class="muted small">{{if .Total}}{{.RangeFrom}}–{{.RangeTo}} von {{.Total}} Einträgen · Seite {{.Page}}/{{.TotalPages}}{{else}}Keine Einträge.{{end}}</p>
@@ -44,9 +55,9 @@
 
 	{{if gt .TotalPages 1}}
 	<div class="btnrow btnrow--split">
-		{{if .HasPrev}}<a class="btn btn--ghost btn--sm" href="/admin/audit?q={{.Q}}&action={{.Action}}&page={{.PrevPage}}">‹ Neuere</a>{{else}}<span></span>{{end}}
+		{{if .HasPrev}}<a class="btn btn--ghost btn--sm" href="/admin/audit?page={{.PrevPage}}{{.FilterQuery}}">‹ Neuere</a>{{else}}<span></span>{{end}}
 		<span class="muted small">Seite {{.Page}} / {{.TotalPages}}</span>
-		{{if .HasNext}}<a class="btn btn--ghost btn--sm" href="/admin/audit?q={{.Q}}&action={{.Action}}&page={{.NextPage}}">Ältere ›</a>{{else}}<span></span>{{end}}
+		{{if .HasNext}}<a class="btn btn--ghost btn--sm" href="/admin/audit?page={{.NextPage}}{{.FilterQuery}}">Ältere ›</a>{{else}}<span></span>{{end}}
 	</div>
 	{{end}}
 </section>
