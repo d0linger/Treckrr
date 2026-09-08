@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // execPage renders a page's full "layout" with the given data and fails on any
@@ -224,6 +226,22 @@ func TestCompanyPageRenders(t *testing.T) {
 			"SkontoPct": d(0), "SkontoDays": 0,
 			"InvoicePrefix": "", "InvoiceStart": 1, "SmallBusinessLimit": d(0),
 		},
+	})
+}
+
+func TestYearClosingRenders(t *testing.T) {
+	// A clean year and an open one, so both branches of every check render.
+	execPage(t, "year_closing", map[string]any{
+		"Title": "Jahresabschluss",
+		"Year":  map[string]any{"ID": int64(1), "Year": 2026, "Status": "in_progress"},
+		// Real store values, not maps: the template calls .Clean and .More, and a
+		// map would silently answer nil for both — rendering only one branch.
+		"Checks": []store.ClosingCheck{
+			{Key: "uninvoiced", Label: "Buchungen ohne Rechnung", Detail: "d"},
+			{Key: "unpaid", Label: "Offene Beträge", Detail: "d",
+				Count: 7, Names: []string{"Huber", "Maier"}, Amount: decimal.NewFromInt(240)},
+		},
+		"OpenChecks": 1,
 	})
 }
 

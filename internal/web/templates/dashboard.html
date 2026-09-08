@@ -65,18 +65,16 @@
 			{{end}}
 		</div>
 		{{if .Completed}}
-		<form method="post" action="/years/{{.Year.ID}}/status">
+		<form method="post" action="/years/{{.Year.ID}}/status"
+			data-confirm="Abrechnungsjahr {{.Year.Year}} wieder öffnen? Buchungen und Belege werden dadurch wieder änderbar."
+			data-confirm-reason="Grund für das Wiederöffnen (wird protokolliert)">
 			<input type="hidden" name="status" value="in_progress">
 			<input type="hidden" name="origin" value="dashboard">
+			<input type="hidden" name="reason" value="">
 			<button class="btn btn--ghost btn--sm" type="submit">Wieder öffnen</button>
 		</form>
 		{{else}}
-		<form method="post" action="/years/{{.Year.ID}}/status"
-			data-confirm="Abrechnungsjahr {{.Year.Year}} abschließen? Danach kannst du je Nachbar den Zahlungsstatus pflegen.">
-			<input type="hidden" name="status" value="completed">
-			<input type="hidden" name="origin" value="dashboard">
-			<button class="btn btn--primary btn--sm" type="submit">Jahr abschließen</button>
-		</form>
+		<a class="btn btn--primary btn--sm" href="/years/{{.Year.ID}}/abschluss">Jahr abschließen …</a>
 		{{end}}
 		<a class="btn btn--ghost btn--sm" href="/years/{{.Year.ID}}/issue-all" title="Alle offenen Nachbarn auf einmal abrechnen">Sammel-Festschreibung</a>
 	</div>

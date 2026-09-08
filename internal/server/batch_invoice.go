@@ -121,6 +121,9 @@ func (s *Server) handleBatchIssueCommit(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
+	if !s.requireOpenYear(w, r, yearID, dashboardURL(yearID)) {
+		return
+	}
 	if company, err := s.store.GetCompany(r.Context()); err != nil || strings.TrimSpace(company.Name) == "" {
 		s.setFlash(w, r, "error", "Bitte zuerst die Betriebsdaten (Absender) ausfüllen.")
 		redirect(w, r, dashboardURL(yearID))

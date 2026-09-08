@@ -971,6 +971,9 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
+	if !s.requireOpenYear(w, r, yearID, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)) {
+		return
+	}
 	// A formal Rechnung needs a sender: don't fix an invoice number against empty
 	// Betriebsdaten — send the user to fill them in first.
 	company, err := s.store.GetCompany(r.Context())
@@ -1042,6 +1045,9 @@ func (s *Server) handleInvoiceStorno(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
+	if !s.requireOpenYear(w, r, yearID, back) {
+		return
+	}
 	reason := trimmed(r, "reason")
 	if s.tooLong(w, r, "Grund", reason, maxNoteLen) {
 		redirect(w, r, back)
@@ -1082,6 +1088,9 @@ func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID)
+	if !s.requireOpenYear(w, r, yearID, back) {
+		return
+	}
 	note := trimmed(r, "note")
 	if s.tooLong(w, r, "Grund", note, maxNoteLen) {
 		redirect(w, r, back)

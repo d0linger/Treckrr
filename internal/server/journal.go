@@ -291,6 +291,9 @@ func (s *Server) handleFreeGutschrift(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
+	if !s.requireOpenYear(w, r, yearID, back) {
+		return
+	}
 	note := trimmed(r, "note")
 	if s.tooLong(w, r, "Grund", note, maxNoteLen) || s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) {
 		redirect(w, r, back)
@@ -334,6 +337,9 @@ func (s *Server) handleAnzahlungCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
+	if !s.requireOpenYear(w, r, yearID, back) {
+		return
+	}
 	label := trimmed(r, "label")
 	if s.tooLong(w, r, "Bezeichnung", label, maxNameLen) || s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) {
 		redirect(w, r, back)

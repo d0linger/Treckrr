@@ -509,6 +509,11 @@ func (s *Server) handleCreditPayout(w http.ResponseWriter, r *http.Request) {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
+	// Bound by the year lock like every other balance-changing write — the
+	// payout path had no guard at all.
+	if !s.requireOpenYear(w, r, yearID, back) {
+		return
+	}
 	remaining, err := s.neighborRemaining(r.Context(), yearID, neighborID)
 	if err != nil {
 		s.serverError(w, "credit payout: remaining", err)

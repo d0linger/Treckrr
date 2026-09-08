@@ -168,6 +168,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /neighbors/{id}/gutschrift", s.auth(s.handleFreeGutschrift))
 	mux.Handle("POST /neighbors/{id}/anzahlung", s.auth(s.handleAnzahlungCreate))
 	mux.Handle("POST /documents/{id}/storno", s.auth(s.handleDocumentStorno))
+	mux.Handle("GET /years/{id}/abschluss", s.auth(s.handleYearClosing))
 	mux.Handle("GET /rechnungsjournal", s.auth(s.handleJournal))
 	mux.Handle("GET /rechnungsjournal/export.csv", s.auth(s.handleJournalCSV))
 	mux.Handle("GET /rechnungsjournal/archiv.zip", s.auth(s.handleJournalZip))
