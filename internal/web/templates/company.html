@@ -20,6 +20,10 @@
 			<input class="input" name="dunning_fee_1" inputmode="decimal" value="{{num .DunningFee1}}"></label>
 		<label class="field"><span>Mahnspesen 2. Mahnung (€) – 0 = keine</span>
 			<input class="input" name="dunning_fee_2" inputmode="decimal" value="{{num .DunningFee2}}"></label>
+		<label class="field"><span>Skonto-Angebot (%) – 0 = keine Klausel auf der Rechnung</span>
+			<input class="input" name="skonto_pct" inputmode="decimal" value="{{num .SkontoPct}}"></label>
+		<label class="field"><span>Skonto-Frist (Tage ab Rechnungsdatum)</span>
+			<input class="input" type="number" min="0" max="90" step="1" name="skonto_days" value="{{.SkontoDays}}"></label>
 		<label class="field"><span>Besteuerung</span>
 			<select class="select" name="tax_mode">
 				<option value="kleinunternehmer" {{if eq .TaxMode "kleinunternehmer"}}selected{{end}}>Kleinunternehmer – kein USt-Ausweis</option>

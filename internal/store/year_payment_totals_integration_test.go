@@ -97,10 +97,10 @@ func TestAllYearPaymentTotalsMatchesPerYearIntegration(t *testing.T) {
 	// open 20 with the credit silently absorbed.
 	booking(yearA, debtor, "100")
 	booking(yearA, creditor, "50")
-	if err := st.AddPayment(ctx, yearA, debtor, dec("40"), time.Now(), "test"); err != nil {
+	if err := st.AddPayment(ctx, yearA, debtor, dec("40"), time.Now(), "test", ""); err != nil {
 		t.Fatalf("payment: %v", err)
 	}
-	if err := st.AddPayment(ctx, yearA, creditor, dec("90"), time.Now(), "test"); err != nil {
+	if err := st.AddPayment(ctx, yearA, creditor, dec("90"), time.Now(), "test", ""); err != nil {
 		t.Fatalf("payment: %v", err)
 	}
 	// Year B: a ledger posting so the ledger leg is covered too. 200 - 25 = 175
@@ -109,7 +109,7 @@ func TestAllYearPaymentTotalsMatchesPerYearIntegration(t *testing.T) {
 	if _, err := st.AddNeighborLedger(ctx, yearB, debtor, dec("-25"), "Gegenleistung", time.Now()); err != nil {
 		t.Fatalf("ledger: %v", err)
 	}
-	if err := st.AddPayment(ctx, yearB, debtor, dec("75"), time.Now(), "test"); err != nil {
+	if err := st.AddPayment(ctx, yearB, debtor, dec("75"), time.Now(), "test", ""); err != nil {
 		t.Fatalf("payment: %v", err)
 	}
 

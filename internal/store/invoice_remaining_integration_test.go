@@ -83,7 +83,7 @@ func TestInvoiceRemainingIntegration(t *testing.T) {
 	}
 
 	// A 30 payment reduces it to 120 — the QR must encode 120, not the 200 gross.
-	if err := st.AddPayment(ctx, yearID, nid, decimal.RequireFromString("30"), time.Now(), ""); err != nil {
+	if err := st.AddPayment(ctx, yearID, nid, decimal.RequireFromString("30"), time.Now(), "", ""); err != nil {
 		t.Fatalf("add payment: %v", err)
 	}
 	rest, err = st.InvoiceRemaining(ctx, yearID, nid)

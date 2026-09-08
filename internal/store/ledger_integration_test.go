@@ -87,7 +87,7 @@ func TestLedgerNetIntegration(t *testing.T) {
 	}
 
 	// Net owed = 100 - 20 = 80. A full payment → paid total 80, open 0.
-	if err := st.AddPayment(ctx, yearID, nid, decimal.RequireFromString("80"), time.Now(), "test"); err != nil {
+	if err := st.AddPayment(ctx, yearID, nid, decimal.RequireFromString("80"), time.Now(), "test", ""); err != nil {
 		t.Fatalf("add payment: %v", err)
 	}
 	paid, open, _, err := st.YearPaymentTotals(ctx, yearID)

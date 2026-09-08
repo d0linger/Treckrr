@@ -394,6 +394,17 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	data["InvCredits"] = invCredits           // negative sum of credit notes
 	data["HasCredits"] = invCredits.IsNegative()
 	data["InvRest"] = invRest
+	// Skonto-Angebot (Nr. 42): nur bei aktiver Klausel UND festgeschriebener
+	// Rechnung — die Frist laeuft ab dem Rechnungsdatum, ohne Rechnung gibt es
+	// kein Datum, an dem sie haengen koennte. Eine abgelaufene Frist zeigt keine
+	// Klausel mehr: ein Versprechen, das nicht mehr gilt, gehoert nicht aufs Blatt.
+	if company.SkontoPct.IsPositive() && company.SkontoDays > 0 && hasInvoice && !invoice.IssuedOn.IsZero() {
+		until := invoice.IssuedOn.AddDate(0, 0, company.SkontoDays)
+		if !time.Now().After(until) {
+			data["SkontoUntil"] = until
+			data["SkontoPct"] = company.SkontoPct
+		}
+	}
 	// Due date + countdown for the invoice: same definition as the Mahnwesen list
 	// (issue date + company payment term). Only meaningful while something is still
 	// payable; the template shows "fällig am … (in N Tagen / seit N Tagen überfällig)".

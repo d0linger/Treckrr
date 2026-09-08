@@ -110,7 +110,7 @@ func TestDunningRowsIntegration(t *testing.T) {
 	}
 
 	// Record a payment covering the full gross (113) → no longer open → not listed.
-	if err := st.AddPayment(ctx, yearID, nid, decimal.RequireFromString("113.00"), time.Now(), ""); err != nil {
+	if err := st.AddPayment(ctx, yearID, nid, decimal.RequireFromString("113.00"), time.Now(), "", ""); err != nil {
 		t.Fatalf("add payment: %v", err)
 	}
 	rows, err = st.DunningRows(ctx, yearID, 14, now)

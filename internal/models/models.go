@@ -223,7 +223,10 @@ type Neighbor struct {
 	// PaymentTermDays overrides the company payment term for this neighbor
 	// (nil = company default) — individual terms between neighbors are common.
 	PaymentTermDays *int
-	Archived        bool
+	// IBAN is the neighbor's account, used by the bank-import matcher as the
+	// second key after the invoice reference. Optional.
+	IBAN     string
+	Archived bool
 	// Anonymized marks a neighbor whose live personal data was erased (DSGVO
 	// Art. 17) while retained invoice snapshots stay intact. Such rows are also
 	// archived and cannot be edited or re-anonymized.
@@ -306,6 +309,12 @@ type Payment struct {
 	Amount        decimal.Decimal
 	PaidOn        time.Time
 	Note          string
+	// Method is how the money arrived (Überweisung, bar, Verrechnung, "").
+	Method string
+	// InvoiceID links the payment to the frozen invoice it settles (nil for
+	// payments recorded before an invoice existed, or from before 0044).
+	InvoiceID     *int64
+	InvoiceNumber string // joined for display; empty when unlinked
 	Created       time.Time
 }
 
@@ -340,6 +349,11 @@ type Company struct {
 	DunningFee2 decimal.Decimal
 	// DunningGraceDays is the Nachfrist printed on a Mahnung ("zahlbar bis").
 	DunningGraceDays int
+	// SkontoPct/SkontoDays are the Skonto OFFER printed on the invoice ("2 % bei
+	// Zahlung binnen 14 Tagen"). Both 0 = no clause. The § 16 credit that applies
+	// a taken Skonto at payment time exists independently of this.
+	SkontoPct  decimal.Decimal
+	SkontoDays int
 }
 
 // InvoiceParty is a frozen issuer/recipient block on an invoice snapshot.

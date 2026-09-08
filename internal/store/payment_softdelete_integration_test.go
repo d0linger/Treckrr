@@ -61,7 +61,7 @@ func TestPaymentSoftDeleteIntegration(t *testing.T) {
 	if err := st.AddNeighborToYear(ctx, yearID, nid); err != nil {
 		t.Fatalf("membership: %v", err)
 	}
-	if err := st.AddPayment(ctx, yearID, nid, decimal.RequireFromString("100"), time.Now(), ""); err != nil {
+	if err := st.AddPayment(ctx, yearID, nid, decimal.RequireFromString("100"), time.Now(), "", ""); err != nil {
 		t.Fatalf("add payment: %v", err)
 	}
 

@@ -109,7 +109,11 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Saldo"] = cost.Add(ledgerSum)
 	data["Payments"] = payments
 	data["PaidSum"] = paidSum
-	data["Remaining"] = cost.Add(ledgerSum).Sub(paidSum)
+	remaining := cost.Add(ledgerSum).Sub(paidSum)
+	data["Remaining"] = remaining
+	// The credit shown on the payout/carry buttons: the negative rest, made
+	// positive for display ("Guthaben (45,00 €)").
+	data["CreditAmount"] = remaining.Neg()
 	// An issued invoice enables the Skonto (§16) option on the payment form.
 	_, invErr := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
 	data["HasInvoice"] = invErr == nil

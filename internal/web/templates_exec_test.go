@@ -221,6 +221,7 @@ func TestCompanyPageRenders(t *testing.T) {
 			"TaxNote": "§ 22 UStG", "TaxMode": "pauschal", "VATRate": d(0),
 			"PaymentTermDays": 14, "DunningGraceDays": 14,
 			"DunningFee1": d(0), "DunningFee2": d(0),
+			"SkontoPct": d(0), "SkontoDays": 0,
 		},
 	})
 }

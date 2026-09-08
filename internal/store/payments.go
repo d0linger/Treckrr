@@ -16,20 +16,38 @@ import (
 // AddPayment records a dated payment a neighbor made toward a billing year.
 // It is allowed regardless of the year's status (the payment side is decoupled
 // from booking lock).
-func (s *Store) AddPayment(ctx context.Context, yearID, neighborID int64, amount decimal.Decimal, paidOn time.Time, note string) error {
+func (s *Store) AddPayment(ctx context.Context, yearID, neighborID int64, amount decimal.Decimal, paidOn time.Time, note, method string) error {
+	// Linked to the ACTIVE invoice at recording time, forward-only: after a
+	// storno + re-issue the attribution used to be guesswork. A scalar subquery
+	// keeps this a single statement — no invoice means NULL, exactly as before.
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO payments (billing_year_id, neighbor_id, amount, paid_on, note)
-		 VALUES ($1,$2,$3,$4,$5)`,
-		yearID, neighborID, amount, paidOn, note)
+		`INSERT INTO payments (billing_year_id, neighbor_id, amount, paid_on, note, method, invoice_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,
+		         (SELECT id FROM invoices
+		           WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='invoice' AND status='issued'
+		           ORDER BY id DESC LIMIT 1))`,
+		yearID, neighborID, amount, paidOn, note, method)
+	return err
+}
+
+// UpdatePayment corrects a payment's amount, date, note and method in place —
+// the alternative was delete-and-retype, which loses the created_at ordering
+// and, with it, any sense of when the money actually arrived.
+func (s *Store) UpdatePayment(ctx context.Context, id int64, amount decimal.Decimal, paidOn time.Time, note, method string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE payments SET amount=$2, paid_on=$3, note=$4, method=$5 WHERE id=$1 AND deleted_at IS NULL`,
+		id, amount, paidOn, note, method)
 	return err
 }
 
 // ListPayments returns a neighbor's payments for a year, oldest first.
 func (s *Store) ListPayments(ctx context.Context, yearID, neighborID int64) ([]models.Payment, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, billing_year_id, neighbor_id, amount, paid_on, note, created_at
-		   FROM payments WHERE billing_year_id=$1 AND neighbor_id=$2 AND deleted_at IS NULL
-		  ORDER BY paid_on, id`, yearID, neighborID)
+		`SELECT p.id, p.billing_year_id, p.neighbor_id, p.amount, p.paid_on, p.note,
+		        p.method, p.invoice_id, COALESCE(iv.number, ''), p.created_at
+		   FROM payments p LEFT JOIN invoices iv ON iv.id = p.invoice_id
+		  WHERE p.billing_year_id=$1 AND p.neighbor_id=$2 AND p.deleted_at IS NULL
+		  ORDER BY p.paid_on, p.id`, yearID, neighborID)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +55,8 @@ func (s *Store) ListPayments(ctx context.Context, yearID, neighborID int64) ([]m
 	var out []models.Payment
 	for rows.Next() {
 		var p models.Payment
-		if err := rows.Scan(&p.ID, &p.BillingYearID, &p.NeighborID, &p.Amount, &p.PaidOn, &p.Note, &p.Created); err != nil {
+		if err := rows.Scan(&p.ID, &p.BillingYearID, &p.NeighborID, &p.Amount, &p.PaidOn, &p.Note,
+			&p.Method, &p.InvoiceID, &p.InvoiceNumber, &p.Created); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -50,9 +69,11 @@ func (s *Store) ListPayments(ctx context.Context, yearID, neighborID int64) ([]m
 func (s *Store) GetPayment(ctx context.Context, id int64) (models.Payment, error) {
 	var p models.Payment
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, billing_year_id, neighbor_id, amount, paid_on, note, created_at
-		   FROM payments WHERE id=$1`, id).
-		Scan(&p.ID, &p.BillingYearID, &p.NeighborID, &p.Amount, &p.PaidOn, &p.Note, &p.Created)
+		`SELECT p.id, p.billing_year_id, p.neighbor_id, p.amount, p.paid_on, p.note,
+		        p.method, p.invoice_id, COALESCE(iv.number, ''), p.created_at
+		   FROM payments p LEFT JOIN invoices iv ON iv.id = p.invoice_id WHERE p.id=$1`, id).
+		Scan(&p.ID, &p.BillingYearID, &p.NeighborID, &p.Amount, &p.PaidOn, &p.Note,
+			&p.Method, &p.InvoiceID, &p.InvoiceNumber, &p.Created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}

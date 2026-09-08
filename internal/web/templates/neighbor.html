@@ -352,9 +352,10 @@
 				<span class="bcard__cost">−{{money .Amount}}</span>
 			</div>
 			<div class="bcard__foot">
-				<span class="bcard__detail">{{if .Note}}{{.Note}}{{else}}—{{end}}</span>
+				<span class="bcard__detail">{{if .Method}}{{.Method}}{{end}}{{if .InvoiceNumber}}{{if .Method}} · {{end}}Rechnung {{.InvoiceNumber}}{{end}}{{if .Note}}{{if or .Method .InvoiceNumber}} · {{end}}{{.Note}}{{end}}{{if not (or .Method .InvoiceNumber .Note)}}—{{end}}</span>
 				<span class="bcard__acts">
-					<form method="post" action="/payments/{{.ID}}/delete" data-confirm-danger data-confirm="Zahlung löschen?">
+					<a class="iconact" href="/payments/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">{{template "ic-edit"}}</a>
+					<form method="post" action="/payments/{{.ID}}/delete" data-confirm-danger data-confirm="Zahlung vom {{date .PaidOn}} über {{money .Amount}} löschen?">
 						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
 				</span>
@@ -378,8 +379,15 @@
 					<input class="input" type="number" step="0.01" min="0" name="amount" required></label>
 				<label class="field"><span>Datum</span>
 					<input class="input" type="date" name="paid_on" value="{{.Today}}"></label>
+				<label class="field"><span>Zahlungsart</span>
+					<select class="select" name="method">
+						<option value="">—</option>
+						<option value="überweisung">Überweisung</option>
+						<option value="bar">Bar</option>
+						<option value="verrechnung">Verrechnung</option>
+					</select></label>
 				<label class="field"><span>Notiz</span>
-					<input class="input" name="note" placeholder="z. B. Überweisung"></label>
+					<input class="input" name="note" placeholder="optional"></label>
 				{{if .HasInvoice}}
 				<label class="field"><span>Skonto % (§ 16, optional)</span>
 					<input class="input" type="number" step="0.1" min="0" max="10" name="skonto" placeholder="z. B. 2"></label>
@@ -396,6 +404,19 @@
 		<input type="hidden" name="year_id" value="{{.Year.ID}}">
 		<button class="btn btn--ghost btn--sm" type="submit">Rest ins Folgejahr übernehmen</button>
 	</form>
+	{{else if .Remaining.IsNegative}}
+	<div class="btnrow">
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/credit-payout" class="form"
+			data-confirm="Guthaben ({{money .CreditAmount}}) als ausbezahlt verbuchen?">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<button class="btn btn--ghost btn--sm" type="submit">Guthaben ({{money .CreditAmount}}) als ausbezahlt verbuchen</button>
+		</form>
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/carry-forward" class="form"
+			data-confirm="Guthaben ({{money .CreditAmount}}) ins Folgejahr übernehmen?">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<button class="btn btn--ghost btn--sm" type="submit">Guthaben ins Folgejahr übernehmen</button>
+		</form>
+	</div>
 	{{end}}
 
 	{{if not .Completed}}<a class="fab" href="#neue-buchung" aria-label="Neue Buchung" title="Neue Buchung">{{template "ic-plus"}}</a>{{end}}

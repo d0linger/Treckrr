@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/d0linger/treckrr/internal/models"
+
+	"github.com/shopspring/decimal"
 )
 
 // handleCompany renders the Betriebsdaten (sender/invoice settings) form.
@@ -47,6 +49,13 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 	}
 	if f := formDecimal(r, "dunning_fee_2"); f.IsPositive() {
 		c.DunningFee2 = f
+	}
+	// Skonto-Angebot: 0-10 %% / 0-90 Tage; beides 0 = keine Klausel.
+	if f := formDecimal(r, "skonto_pct"); f.IsPositive() && f.LessThanOrEqual(decimal.NewFromInt(10)) {
+		c.SkontoPct = f
+	}
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("skonto_days"))); err == nil && v >= 0 && v <= 90 {
+		c.SkontoDays = v
 	}
 	c.DunningGraceDays = 14
 	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("dunning_grace_days"))); err == nil && v >= 0 && v <= 365 {

@@ -110,7 +110,7 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	if err := s.store.AddPayment(r.Context(), yearID, neighborID, amount, parsePaidOn(r.FormValue("paid_on")), note); err != nil {
+	if err := s.store.AddPayment(r.Context(), yearID, neighborID, amount, parsePaidOn(r.FormValue("paid_on")), note, paymentMethod(r)); err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
@@ -302,4 +302,135 @@ func (s *Server) handleNeighborCarryForward(w http.ResponseWriter, r *http.Reque
 		s.setFlash(w, r, "success", "Rest ins Folgejahr übernommen.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
+}
+
+// paymentMethod whitelists the Zahlungsart. Anything unknown collapses to "" —
+// the field feeds displays and exports, never money math, so a typo must not be
+// able to invent a category.
+func paymentMethod(r *http.Request) string {
+	switch v := r.FormValue("method"); v {
+	case "überweisung", "bar", "verrechnung":
+		return v
+	}
+	return ""
+}
+
+// handlePaymentEditForm renders the correction form for one payment. Payments
+// were the only money record without an edit path: bookings and ledger rows have
+// edit/void/undo, a mistyped payment forced delete-and-retype (Ausbaukarte 38).
+func (s *Server) handlePaymentEditForm(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	p, err := s.store.GetPayment(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data := s.newPage(w, r, "Zahlung bearbeiten", "")
+	data["Payment"] = p
+	data["NeighborName"] = s.neighborName(r, p.NeighborID)
+	data["Back"] = neighborURL(p.NeighborID, p.BillingYearID)
+	s.render(w, r, "payment_edit", data)
+}
+
+// handlePaymentUpdate saves the correction.
+func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	p, err := s.store.GetPayment(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	back := neighborURL(p.NeighborID, p.BillingYearID)
+	if s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) {
+		redirect(w, r, back)
+		return
+	}
+	rawAmount := strings.ReplaceAll(strings.TrimSpace(r.FormValue("amount")), ",", ".")
+	if strings.ContainsAny(rawAmount, "eE") {
+		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
+		redirect(w, r, back)
+		return
+	}
+	amount, err := decimal.NewFromString(rawAmount)
+	if err != nil || !amount.IsPositive() {
+		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
+		redirect(w, r, back)
+		return
+	}
+	note := strings.TrimSpace(r.FormValue("note"))
+	if s.tooLong(w, r, "Notiz", note, maxNoteLen) {
+		redirect(w, r, back)
+		return
+	}
+	before := p.Amount
+	if err := s.store.UpdatePayment(r.Context(), id, amount, parsePaidOn(r.FormValue("paid_on")), note, paymentMethod(r)); err != nil {
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+		redirect(w, r, back)
+		return
+	}
+	s.audit(r, "payment_update", "neighbor", p.NeighborID,
+		s.neighborName(r, p.NeighborID)+" · "+before.StringFixed(2)+" € → "+amount.StringFixed(2)+" €")
+	s.setFlash(w, r, "success", "Zahlung aktualisiert.")
+	redirect(w, r, back)
+}
+
+// handleCreditPayout books the cash-out of a credit balance (Ausbaukarte 41): a
+// positive ledger posting that neutralizes the negative rest, with the payout
+// named as such. Cash leaving the farm and a mutual offset both end the credit —
+// what differs is only the description trail.
+func (s *Server) handleCreditPayout(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	yearID := s.yearIDFromForm(r)
+	back := neighborURL(neighborID, yearID)
+	if yearID == 0 {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	remaining, err := s.neighborRemaining(r.Context(), yearID, neighborID)
+	if err != nil {
+		s.serverError(w, "credit payout: remaining", err)
+		return
+	}
+	if !remaining.IsNegative() {
+		s.setFlash(w, r, "info", "Kein Guthaben vorhanden.")
+		redirect(w, r, back)
+		return
+	}
+	amount := remaining.Neg()
+	if _, err := s.store.AddNeighborLedger(r.Context(), yearID, neighborID, amount,
+		"Guthaben ausbezahlt", time.Now()); err != nil {
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+		redirect(w, r, back)
+		return
+	}
+	s.audit(r, "credit_payout", "neighbor", neighborID,
+		s.neighborName(r, neighborID)+" · "+amount.StringFixed(2)+" € Guthaben ausbezahlt")
+	s.setFlash(w, r, "success", "Guthaben von "+amount.StringFixed(2)+" € als ausbezahlt verbucht.")
+	redirect(w, r, back)
 }
