@@ -128,3 +128,63 @@ func (s *Server) handleRecurringDelete(w http.ResponseWriter, r *http.Request) {
 	s.setFlash(w, r, "success", "Serie entfernt.")
 	redirect(w, r, "/recurring")
 }
+
+// handleRecurringUpdate changes a rule's cadence and next run (Ausbaukarte 68).
+func (s *Server) handleRecurringUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	kind := r.FormValue("interval_kind")
+	next, perr := time.Parse("2006-01-02", trimmed(r, "next_run"))
+	if perr != nil {
+		s.setFlash(w, r, "error", "Bitte ein gültiges Datum für den nächsten Lauf angeben.")
+		redirect(w, r, "/recurring")
+		return
+	}
+	switch err := s.store.UpdateRecurring(r.Context(), id, kind, next); {
+	case errors.Is(err, store.ErrNotFound):
+		http.NotFound(w, r)
+		return
+	case err != nil:
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+	default:
+		s.audit(r, "update", "recurring", id, kind+" · nächster Lauf "+next.Format("02.01.2006"))
+		s.setFlash(w, r, "success", "Serie aktualisiert.")
+	}
+	redirect(w, r, "/recurring")
+}
+
+// handleRecurringRunNow books one extra occurrence for today (Ausbaukarte 68).
+func (s *Server) handleRecurringRunNow(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	entryID, booked, err := s.store.RunRecurringNow(r.Context(), id)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		http.NotFound(w, r)
+		return
+	case errors.Is(err, store.ErrInactiveRule):
+		s.setFlash(w, r, "error", "Die Serie ist pausiert — bitte zuerst aktivieren.")
+	case err != nil:
+		s.serverError(w, r.URL.Path, err)
+		return
+	case !booked:
+		s.setFlash(w, r, "error", "Für heute gibt es kein offenes Abrechnungsjahr, dem dieser Nachbar zugeordnet ist.")
+	case entryID == 0:
+		// The idempotency key already existed: today's occurrence is there.
+		s.setFlash(w, r, "info", "Für heute wurde bereits eine Buchung dieser Serie erstellt.")
+	default:
+		s.audit(r, "run_now", "recurring", id, "eine Buchung für heute erstellt")
+		s.setFlash(w, r, "success", "Buchung für heute erstellt.")
+	}
+	redirect(w, r, "/recurring")
+}

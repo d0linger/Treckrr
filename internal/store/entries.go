@@ -498,7 +498,20 @@ func collectEntries(rows *sql.Rows) ([]models.Entry, error) {
 	return out, rows.Err()
 }
 
+// scanEntryWithName reads an entry row that carries the neighbor's name as its
+// last column (the filtered list joins it in). It shares scanEntry's column
+// order so the two can only drift together.
+func scanEntryWithName(sc scanner, name *string) (models.Entry, error) {
+	return scanEntryInto(sc, name)
+}
+
 func scanEntry(sc scanner) (models.Entry, error) {
+	return scanEntryInto(sc, nil)
+}
+
+// scanEntryInto is the one place that knows entrySelect's column order. With a
+// non-nil name it additionally reads the joined neighbor name.
+func scanEntryInto(sc scanner, name *string) (models.Entry, error) {
 	var (
 		e       models.Entry
 		gespann sql.NullInt64
@@ -507,10 +520,14 @@ func scanEntry(sc scanner) (models.Entry, error) {
 		person  sql.NullInt64
 		date    time.Time
 	)
-	if err := sc.Scan(&e.ID, &e.NeighborID, &e.BillingYearID, &date, &e.TaskLabel, &gespann,
+	dest := []any{&e.ID, &e.NeighborID, &e.BillingYearID, &date, &e.TaskLabel, &gespann,
 		&tractor, &load, &e.TractorLabel, &e.LoadLabel, &e.MachineLabels,
 		&e.Hours, &e.HourlyRate, &e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created,
-		&e.Unit, &e.Quantity, &e.UnitPrice, &person); err != nil {
+		&e.Unit, &e.Quantity, &e.UnitPrice, &person}
+	if name != nil {
+		dest = append(dest, name)
+	}
+	if err := sc.Scan(dest...); err != nil {
 		return e, err
 	}
 	if person.Valid {

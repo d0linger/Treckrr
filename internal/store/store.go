@@ -30,6 +30,10 @@ var ErrNotFound = errors.New("not found")
 // remaining (uncredited) gross amount.
 var ErrGutschriftTooLarge = errors.New("gutschrift exceeds invoice")
 
+// ErrInactiveRule refuses to run a paused recurring rule on demand: pausing is
+// a statement that this series should not book right now.
+var ErrInactiveRule = errors.New("recurring rule is paused")
+
 // ErrInvoiceIncomplete is returned when issuance is attempted on content that does
 // not satisfy the § 11 UStG mandatory fields (a store-side backstop to the UI).
 var ErrInvoiceIncomplete = errors.New("invoice content incomplete (§11)")

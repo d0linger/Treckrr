@@ -134,9 +134,24 @@ func (s *Server) handleBatchIssueCommit(w http.ResponseWriter, r *http.Request) 
 		s.serverError(w, "batch issue: commit", err)
 		return
 	}
+	// Selection (Ausbaukarte 70): with checkboxes present, only the ticked
+	// neighbors are issued. An empty set means the form was submitted with
+	// nothing ticked — issue nothing rather than everything, which is the one
+	// mistake that cannot be undone without a Storno per invoice.
+	selected := map[int64]bool{}
+	hasSelection := len(r.PostForm["neighbor_id"]) > 0
+	for _, id := range formIDs(r, "neighbor_id") {
+		selected[id] = true
+	}
+	if !hasSelection {
+		s.setFlash(w, r, "info", "Keine Nachbarn ausgewählt.")
+		redirect(w, r, fmt.Sprintf("/years/%d/issue-all", yearID))
+		return
+	}
+
 	issued, skipped := 0, 0
 	for _, row := range rows {
-		if !row.Issuable || row.AlreadyInvoiced {
+		if !row.Issuable || row.AlreadyInvoiced || !selected[row.Neighbor.ID] {
 			skipped++
 			continue
 		}

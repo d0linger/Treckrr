@@ -242,3 +242,79 @@ func entryFromTemplate(t models.RecurTemplate) *models.Entry {
 		MachineLabels: t.MachineLabels,
 	}
 }
+
+// ---- Serie bearbeiten und sofort ausführen (Ausbaukarte 68) ----------------
+
+// UpdateRecurring changes a rule's cadence and next run date. The template
+// stays as it was: it is a frozen copy of the source booking, and editing it
+// here would mean rebuilding a booking form for a rule — the operator instead
+// deletes the rule and sets up a new one from the corrected booking.
+func (s *Store) UpdateRecurring(ctx context.Context, id int64, intervalKind string, nextRun time.Time) error {
+	if intervalKind != "weekly" && intervalKind != "monthly" {
+		intervalKind = "weekly"
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE recurring_entries SET interval_kind=$2, next_run=$3 WHERE id=$1`,
+		id, intervalKind, nextRun)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// RunRecurringNow materializes ONE extra occurrence of a rule, dated today,
+// without touching the rhythm — "jetzt zusätzlich buchen", not "vorziehen".
+// It reuses the scheduled run's idempotency key ("recur:<rule>:<date>"), so
+// clicking twice on the same day books once, and today's scheduled run later
+// finds the occurrence already there.
+//
+// Returns (0, false, nil) when the neighbor has no open billing year for
+// today — the same condition the scheduled run waits on, reported to the
+// operator instead of silently doing nothing.
+func (s *Store) RunRecurringNow(ctx context.Context, id int64) (int64, bool, error) {
+	var neighborID int64
+	var blob []byte
+	var active bool
+	err := s.db.QueryRowContext(ctx,
+		`SELECT neighbor_id, template, active FROM recurring_entries WHERE id=$1`, id).
+		Scan(&neighborID, &blob, &active)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, ErrNotFound
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	if !active {
+		return 0, false, ErrInactiveRule
+	}
+	var tmpl models.RecurTemplate
+	if err := json.Unmarshal(blob, &tmpl); err != nil {
+		return 0, false, err
+	}
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	yid, ok, err := s.neighborYearForDate(ctx, neighborID, today)
+	if err != nil {
+		return 0, false, err
+	}
+	if !ok {
+		return 0, false, nil
+	}
+	e := entryFromTemplate(tmpl)
+	e.NeighborID = neighborID
+	e.BillingYearID = yid
+	e.Date = today
+	e.IdempotencyKey = fmt.Sprintf("recur:%d:%s", id, today.Format("2006-01-02"))
+	entryID, err := s.CreateEntry(ctx, e, tmpl.MachineIDs)
+	if err != nil {
+		return 0, false, err
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE recurring_entries SET last_run_at=$2 WHERE id=$1`, id, today); err != nil {
+		return entryID, true, err
+	}
+	return entryID, true, nil
+}
