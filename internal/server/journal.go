@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -135,7 +136,7 @@ func (s *Server) handleJournal(w http.ResponseWriter, r *http.Request) {
 // writeJournalCSV writes the journal in the export CSV dialect (BOM + ';').
 func writeJournalCSV(w *csv.Writer, rows []store.JournalRow) {
 	_ = w.Write([]string{"Nummer", "Datum", "Art", "Status", "Nachbar", "Netto (€)", "USt-Satz (%)", "USt (€)", "Brutto (€)"})
-	kinds := map[string]string{"invoice": "Rechnung", "storno": "Storno", "gutschrift": "Gutschrift"}
+	kinds := map[string]string{"invoice": "Rechnung", "storno": "Storno", "gutschrift": "Gutschrift", "anzahlung": "Abschlag"}
 	status := map[string]string{"issued": "ausgestellt", "canceled": "storniert"}
 	for _, j := range rows {
 		_ = w.Write([]string{
@@ -268,4 +269,137 @@ func (s *Server) kuIssueNote(r *http.Request, company models.Company, calYear in
 			sum.StringFixed(2), company.SmallBusinessLimit.StringFixed(2), calYear)
 	}
 	return ""
+}
+
+// ---- Freie Gutschrift und Anzahlung (Ausbaukarte 53/54) --------------------
+
+// handleFreeGutschrift issues a standalone credit note — the correction path
+// that used to require an active invoice.
+func (s *Server) handleFreeGutschrift(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	yearID := s.yearIDFromForm(r)
+	if yearID == 0 {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
+	note := trimmed(r, "note")
+	if s.tooLong(w, r, "Grund", note, maxNoteLen) || s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) {
+		redirect(w, r, back)
+		return
+	}
+	year, err := s.store.GetBillingYear(r.Context(), yearID)
+	if err != nil {
+		s.serverError(w, "free gutschrift: year", err)
+		return
+	}
+	amount := formDecimal(r, "amount").Abs()
+	gv, err := s.store.FreeGutschrift(r.Context(), yearID, neighborID, year.Year, amount, note)
+	switch {
+	case errors.Is(err, store.ErrAmountRequired):
+		s.setFlash(w, r, "error", "Bitte einen Betrag größer 0 eingeben.")
+	case err != nil:
+		s.setFlash(w, r, "error", "Gutschrift fehlgeschlagen.")
+	default:
+		s.audit(r, "invoice_gutschrift", "neighbor", neighborID,
+			s.neighborName(r, neighborID)+" · freie Gutschrift "+gv.Number+" · "+amount.StringFixed(2)+" €")
+		s.setFlash(w, r, "success", "Gutschrift "+gv.Number+" erstellt.")
+	}
+	redirect(w, r, back)
+}
+
+// handleAnzahlungCreate issues an Abschlag for a partial payment during the
+// season (Ausbaukarte 54).
+func (s *Server) handleAnzahlungCreate(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	yearID := s.yearIDFromForm(r)
+	if yearID == 0 {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
+	label := trimmed(r, "label")
+	if s.tooLong(w, r, "Bezeichnung", label, maxNameLen) || s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) {
+		redirect(w, r, back)
+		return
+	}
+	year, err := s.store.GetBillingYear(r.Context(), yearID)
+	if err != nil {
+		s.serverError(w, "anzahlung: year", err)
+		return
+	}
+	// An Abschlag anticipates the Schlussrechnung; once that exists there is
+	// nothing left to anticipate, and a second document requesting money would
+	// only confuse what is owed.
+	if _, err := s.store.GetInvoice(r.Context(), yearID, neighborID); err == nil {
+		s.setFlash(w, r, "error", "Es gibt bereits eine festgeschriebene Rechnung — ein Abschlag ist nicht mehr sinnvoll.")
+		redirect(w, r, back)
+		return
+	} else if !errors.Is(err, store.ErrNotFound) {
+		s.serverError(w, "anzahlung: lookup", err)
+		return
+	}
+	amount := formDecimal(r, "amount").Abs()
+	av, err := s.store.CreateAnzahlung(r.Context(), yearID, neighborID, year.Year,
+		amount, label, parsePaidOn(r.FormValue("due_on")))
+	switch {
+	case errors.Is(err, store.ErrAmountRequired):
+		s.setFlash(w, r, "error", "Bitte einen Betrag größer 0 eingeben.")
+	case err != nil:
+		s.setFlash(w, r, "error", "Abschlag konnte nicht erstellt werden.")
+	default:
+		s.audit(r, "anzahlung_create", "neighbor", neighborID,
+			s.neighborName(r, neighborID)+" · Abschlag "+av.Number+" · "+amount.StringFixed(2)+" €")
+		s.setFlash(w, r, "success", "Abschlag "+av.Number+" erstellt.")
+	}
+	redirect(w, r, back)
+}
+
+// handleDocumentStorno cancels one Abschlag or free credit note by id.
+func (s *Server) handleDocumentStorno(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	reason := trimmed(r, "reason")
+	if s.tooLong(w, r, "Grund", reason, maxNoteLen) {
+		redirect(w, r, "/")
+		return
+	}
+	sv, err := s.store.StornoDocument(r.Context(), id, reason)
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", sv.NeighborID, sv.BillingYearID)
+	if err != nil {
+		s.setFlash(w, r, "error", "Storno fehlgeschlagen.")
+		redirect(w, r, "/")
+		return
+	}
+	s.audit(r, "document_storno", "neighbor", sv.NeighborID,
+		s.neighborName(r, sv.NeighborID)+" · Storno "+sv.Number)
+	s.setFlash(w, r, "success", "Beleg storniert ("+sv.Number+").")
+	redirect(w, r, back)
 }

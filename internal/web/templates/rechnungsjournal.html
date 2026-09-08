@@ -25,8 +25,9 @@
 					<td>{{.Number}}</td>
 					<td>{{date .IssuedOn}}</td>
 					<td>
-						{{if eq .Kind "invoice"}}Rechnung{{else if eq .Kind "storno"}}Storno{{else if eq .Kind "gutschrift"}}Gutschrift{{else}}{{.Kind}}{{end}}
+						{{if eq .Kind "invoice"}}Rechnung{{else if eq .Kind "storno"}}Storno{{else if eq .Kind "gutschrift"}}Gutschrift{{else if eq .Kind "anzahlung"}}Abschlag{{else}}{{.Kind}}{{end}}
 						{{if eq .Status "canceled"}}<span class="tag">storniert</span>{{end}}
+						{{if not .CountsForRevenue}}<span class="tag">nicht im Umsatz</span>{{end}}
 					</td>
 					<td><a href="/neighbors/{{.NeighborID}}/beleg?year={{$.Year.ID}}&rechnung=1">{{.NeighborName}}</a></td>
 					<td class="num">{{money .Net}}</td>

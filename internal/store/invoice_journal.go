@@ -17,8 +17,9 @@ import (
 type JournalRow struct {
 	ID           int64
 	Number       string
-	Kind         string // invoice / storno / gutschrift
+	Kind         string // invoice / storno / gutschrift / anzahlung
 	Status       string // issued / canceled
+	RefKind      string // kind of the document this one corrects ("" if none)
 	IssuedOn     time.Time
 	NeighborID   int64
 	NeighborName string
@@ -29,21 +30,39 @@ type JournalRow struct {
 }
 
 // CountsForRevenue reports whether the row belongs into a signed revenue sum.
-// The rule: every kind='invoice' row counts (a canceled original is always
-// paired with its issued Storno, so the pair nets to zero), and any other kind
-// only while issued (a Gutschrift canceled by a full Storno cascade has no
-// reversal document of its own — including it would subtract twice).
+// Case by case, because "issued" alone is not the criterion:
+//
+//   - invoice: always. A canceled original is always paired with its own issued
+//     Storno, so the pair nets to zero; dropping it would subtract twice.
+//   - anzahlung: never. An Abschlag is a payment request, not a tax document —
+//     the Schlussrechnung carries the revenue (see CreateAnzahlung).
+//   - storno: only while issued, and only when it reverses a document that
+//     itself counted. A Storno of an Anzahlung must not subtract revenue that
+//     was never added.
+//   - gutschrift: only while issued. One canceled by the full-Storno cascade
+//     has no reversal document of its own, so it must simply drop out.
 func (r JournalRow) CountsForRevenue() bool {
-	return r.Kind == "invoice" || r.Status == "issued"
+	switch r.Kind {
+	case "invoice":
+		return true
+	case "anzahlung":
+		return false
+	case "storno":
+		return r.Status == "issued" && r.RefKind != "anzahlung"
+	default:
+		return r.Status == "issued"
+	}
 }
 
 // ListInvoiceJournal returns every invoice-family document of a year in
 // chronological order.
 func (s *Store) ListInvoiceJournal(ctx context.Context, yearID int64) ([]JournalRow, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT iv.id, iv.number, iv.kind, iv.status, iv.issued_on, iv.neighbor_id, n.name,
+		`SELECT iv.id, iv.number, iv.kind, iv.status, COALESCE(ref.kind, ''), iv.issued_on, iv.neighbor_id, n.name,
 		        COALESCE(iv.net,0), COALESCE(iv.vat_rate,0), COALESCE(iv.vat_amount,0), COALESCE(iv.gross,0)
-		   FROM invoices iv JOIN neighbors n ON n.id = iv.neighbor_id
+		   FROM invoices iv
+		   JOIN neighbors n ON n.id = iv.neighbor_id
+		   LEFT JOIN invoices ref ON ref.id = iv.references_invoice_id
 		  WHERE iv.billing_year_id = $1
 		  ORDER BY iv.issued_on, iv.id`, yearID)
 	if err != nil {
@@ -53,7 +72,7 @@ func (s *Store) ListInvoiceJournal(ctx context.Context, yearID int64) ([]Journal
 	var out []JournalRow
 	for rows.Next() {
 		var j JournalRow
-		if err := rows.Scan(&j.ID, &j.Number, &j.Kind, &j.Status, &j.IssuedOn, &j.NeighborID, &j.NeighborName,
+		if err := rows.Scan(&j.ID, &j.Number, &j.Kind, &j.Status, &j.RefKind, &j.IssuedOn, &j.NeighborID, &j.NeighborName,
 			&j.Net, &j.VATRate, &j.VATAmount, &j.Gross); err != nil {
 			return nil, err
 		}
@@ -99,9 +118,14 @@ func (s *Store) ListInvoiceDocs(ctx context.Context, yearID int64) ([]models.Inv
 // UStG) is measured against. Same counting rule as CountsForRevenue.
 func (s *Store) KUCalendarYearGross(ctx context.Context, calYear int) (decimal.Decimal, error) {
 	var sum decimal.Decimal
+	// Mirrors JournalRow.CountsForRevenue in SQL: invoices always, Abschläge
+	// never, a Storno only when it reverses something that counted.
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COALESCE(SUM(gross),0) FROM invoices
-		  WHERE EXTRACT(YEAR FROM issued_on) = $1
-		    AND (kind='invoice' OR status='issued')`, calYear).Scan(&sum)
+		`SELECT COALESCE(SUM(iv.gross),0)
+		   FROM invoices iv LEFT JOIN invoices ref ON ref.id = iv.references_invoice_id
+		  WHERE EXTRACT(YEAR FROM iv.issued_on) = $1
+		    AND iv.kind <> 'anzahlung'
+		    AND (iv.kind = 'invoice'
+		         OR (iv.status = 'issued' AND COALESCE(ref.kind,'') <> 'anzahlung'))`, calYear).Scan(&sum)
 	return sum, err
 }

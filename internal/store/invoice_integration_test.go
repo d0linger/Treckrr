@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -46,6 +47,10 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 	st := store.New(pool, "test-encryption-secret")
+	// The company row is a shared singleton and this test writes a tax mode per
+	// subtest, then reads it back. Every server itEnv writes that same row, so
+	// without this lock a parallel package silently replaces the mode under us.
+	lockCompanyRow(t, ctx, pool)
 
 	f := fixtures{
 		Years:         []int{2085, 2086, 2087, 2088, 2091, 2092, 2093, 2094, 2095},
@@ -432,5 +437,27 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 		if !found {
 			t.Fatalf("gutschrift %s missing from document history", g.Number)
 		}
+	})
+}
+
+// companyRowLockKey must match internal/server's companyLockKey: the company
+// row is one singleton shared by both packages' integration tests.
+const companyRowLockKey = 918273646
+
+func lockCompanyRow(t *testing.T, ctx context.Context, pool *sql.DB) {
+	t.Helper()
+	// Pinned connection: pg_advisory_lock is session-scoped, and the pool would
+	// happily run the unlock on a different one.
+	conn, err := pool.Conn(ctx)
+	if err != nil {
+		t.Fatalf("company lock conn: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, companyRowLockKey); err != nil {
+		_ = conn.Close()
+		t.Fatalf("company advisory lock: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, companyRowLockKey)
+		_ = conn.Close()
 	})
 }

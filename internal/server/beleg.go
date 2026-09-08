@@ -391,7 +391,21 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	data["InvPaidUSt"] = invPaidUSt
 	data["Documents"] = documents
 	data["HasDocuments"] = len(documents) > 1 // more than the invoice itself
-	data["InvCredits"] = invCredits           // negative sum of credit notes
+	// Abschläge (Nr. 54): listed with their own storno action while no
+	// Schlussrechnung exists; afterwards they stay in the Belegverlauf.
+	anzahlungen, err := s.store.ListAnzahlungen(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		return nil, err
+	}
+	anzSum, err := s.store.AnzahlungSum(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		return nil, err
+	}
+	data["Anzahlungen"] = anzahlungen
+	data["AnzahlungSum"] = anzSum
+	// Separate from "Today", which is the German display date on this page.
+	data["TodayISO"] = time.Now().Format("2006-01-02")
+	data["InvCredits"] = invCredits // negative sum of credit notes
 	data["HasCredits"] = invCredits.IsNegative()
 	data["InvRest"] = invRest
 	// Skonto-Angebot (Nr. 42): nur bei aktiver Klausel UND festgeschriebener

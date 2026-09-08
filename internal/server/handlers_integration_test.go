@@ -79,6 +79,7 @@ func newItEnv(t *testing.T) *itEnv {
 	// admin?"). `go test ./...` runs packages in parallel against one database, so
 	// the two must not overlap. Both take the same session-level advisory lock.
 	lockAdminCount(t, ctx, pool)
+	lockCompany(t, ctx, pool)
 
 	// Purge by PREFIX, not by this run's exact name: a crashed earlier run leaves
 	// its admin user behind under a different PID, and a stray admin silently
@@ -529,6 +530,30 @@ func TestWebauthnBeginHandlersIntegration(t *testing.T) {
 // asserts on the global admin count. Session-level, so it is held for the whole
 // test and released on Cleanup.
 const adminCountLockKey = 918273645
+
+// companyLockKey guards every test that writes the company row. That row is a
+// SINGLETON shared by every package: newItEnv sets the Betriebsdaten on each
+// server test, while the store's snapshot test sets a tax mode and reads it
+// back through BuildInvoiceContent. Two packages, one row, no lock — the store
+// test would intermittently see another package's "pauschal" where it had just
+// written "kleinunternehmer". Both sides take this lock on a pinned connection.
+const companyLockKey = 918273646
+
+func lockCompany(t *testing.T, ctx context.Context, pool *sql.DB) {
+	t.Helper()
+	conn, err := pool.Conn(ctx)
+	if err != nil {
+		t.Fatalf("company lock conn: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, companyLockKey); err != nil {
+		_ = conn.Close()
+		t.Fatalf("company advisory lock: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, companyLockKey)
+		_ = conn.Close()
+	})
+}
 
 func lockAdminCount(t *testing.T, ctx context.Context, pool *sql.DB) {
 	t.Helper()
