@@ -263,6 +263,9 @@ type Entry struct {
 	// IdempotencyKey is set only for offline-captured bookings replayed from the
 	// client queue; a unique index makes a duplicate replay a no-op.
 	IdempotencyKey string
+	// PersonID attributes a Mannstunden booking to a helper (nil for machine
+	// bookings and everything booked before the Personenstamm existed).
+	PersonID *int64
 }
 
 // WebauthnCredential is a registered passkey (public key only).
@@ -375,6 +378,23 @@ type Company struct {
 	// SmallBusinessLimit is the Kleinunternehmer revenue ceiling to warn
 	// against (0 = monitoring off).
 	SmallBusinessLimit decimal.Decimal
+	// TravelFlat/TravelPerKm are the Anfahrt surcharges (Ausbaukarte 58) kept
+	// as master data instead of a retyped amount. Both 0 = the surcharge form
+	// stays hidden.
+	TravelFlat  decimal.Decimal
+	TravelPerKm decimal.Decimal
+}
+
+// Person is a helper with an own hourly rate (Ausbaukarte 57). The ÖKL
+// Richtwerte state the Fahrerlohn separately from the machine rate, so
+// Mannstunden are billed from this master data instead of a hand-typed price.
+type Person struct {
+	ID         int64
+	Name       string
+	HourlyRate decimal.Decimal
+	Note       string
+	Archived   bool
+	Created    time.Time
 }
 
 // InvoiceParty is a frozen issuer/recipient block on an invoice snapshot.

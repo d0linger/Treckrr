@@ -225,6 +225,7 @@ func TestCompanyPageRenders(t *testing.T) {
 			"DunningFee1": d(0), "DunningFee2": d(0),
 			"SkontoPct": d(0), "SkontoDays": 0,
 			"InvoicePrefix": "", "InvoiceStart": 1, "SmallBusinessLimit": d(0),
+			"TravelFlat": d(0), "TravelPerKm": d(0),
 		},
 	})
 }

@@ -68,6 +68,13 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("invoice_start"))); err == nil && v >= 1 && v <= 999999 {
 		c.InvoiceStart = v
 	}
+	// Anfahrt (Nr. 58): 0 = kein Zuschlag, das Formular bleibt verborgen.
+	if f := formDecimal(r, "travel_flat"); f.IsPositive() {
+		c.TravelFlat = f
+	}
+	if f := formDecimal(r, "travel_per_km"); f.IsPositive() {
+		c.TravelPerKm = f
+	}
 	// Kleinunternehmergrenze (Nr. 55): 0 = Überwachung aus.
 	if f := formDecimal(r, "small_business_limit"); f.IsPositive() {
 		c.SmallBusinessLimit = f

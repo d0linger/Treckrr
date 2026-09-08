@@ -188,13 +188,14 @@ func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 		`INSERT INTO entries
 		   (neighbor_id, billing_year_id, entry_date, task_label, gespann_id, tractor_id, load_level_id,
 		    tractor_label, load_label, machine_labels, hours, hourly_rate, cost, note,
-		    unit, quantity, unit_price, idempotency_key)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+		    unit, quantity, unit_price, idempotency_key, person_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 		 ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
 		 RETURNING id`,
 		e.NeighborID, e.BillingYearID, e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID),
 		nullInt(e.LoadLevelID), e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours,
-		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey)).Scan(&id)
+		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey),
+		nullInt(e.PersonID)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		// A replayed offline booking whose key already exists: a safe no-op. Commit
 		// the empty tx and return 0 to signal "already recorded".
@@ -483,7 +484,7 @@ func (s *Store) SetEntryVoided(ctx context.Context, id int64, voided bool, reaso
 const entrySelect = `SELECT id, neighbor_id, billing_year_id, entry_date, task_label, gespann_id,
 	tractor_id, load_level_id, tractor_label, load_label, machine_labels,
 	hours, hourly_rate, cost, note, voided, void_reason, created_at,
-	unit, quantity, unit_price FROM entries`
+	unit, quantity, unit_price, person_id FROM entries`
 
 func collectEntries(rows *sql.Rows) ([]models.Entry, error) {
 	var out []models.Entry
@@ -503,13 +504,17 @@ func scanEntry(sc scanner) (models.Entry, error) {
 		gespann sql.NullInt64
 		tractor sql.NullInt64
 		load    sql.NullInt64
+		person  sql.NullInt64
 		date    time.Time
 	)
 	if err := sc.Scan(&e.ID, &e.NeighborID, &e.BillingYearID, &date, &e.TaskLabel, &gespann,
 		&tractor, &load, &e.TractorLabel, &e.LoadLabel, &e.MachineLabels,
 		&e.Hours, &e.HourlyRate, &e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created,
-		&e.Unit, &e.Quantity, &e.UnitPrice); err != nil {
+		&e.Unit, &e.Quantity, &e.UnitPrice, &person); err != nil {
 		return e, err
+	}
+	if person.Valid {
+		e.PersonID = &person.Int64
 	}
 	e.Date = date
 	if gespann.Valid {

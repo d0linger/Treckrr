@@ -1,0 +1,84 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
+		<h1 class="pagehead__t">Personen</h1>
+	</div>
+	<p class="muted small">Helfer mit eigenem Stundensatz. Die ÖKL-Richtwerte weisen den Fahrerlohn getrennt von der Maschine aus — hier steht er einmal, statt bei jeder Buchung neu getippt zu werden. Erfasst wird beim Nachbarn unter „Mannstunden“.</p>
+
+	<details class="card disclosure">
+		<summary>+ Person anlegen</summary>
+		<form method="post" action="/personen" class="form">
+			<div class="form__grid">
+				<label class="field"><span>Name</span>
+					<input class="input" name="name" required maxlength="100" placeholder="z. B. Franz"></label>
+				<label class="field"><span>Stundensatz (€)</span>
+					<input class="input" name="hourly_rate" inputmode="decimal" placeholder="z. B. 18,00"></label>
+			</div>
+			<label class="field"><span>Notiz</span>
+				<input class="input" name="note" placeholder="optional"></label>
+			<button class="btn btn--primary btn--sm" type="submit">Anlegen</button>
+		</form>
+	</details>
+
+	{{if .PersonHours}}
+	<h2 class="section-title">Mannstunden {{.Year.Year}}</h2>
+	<div class="tablewrap">
+		<table class="dtable">
+			<thead><tr><th>Person</th><th class="num">Stunden</th><th class="num">Kosten</th></tr></thead>
+			<tbody>
+				{{range .PersonHours}}
+				<tr><td>{{.Name}}</td><td class="num">{{num .Hours}}</td><td class="num">{{money .Cost}}</td></tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	{{end}}
+
+	{{if .Persons}}
+	<div class="stack stack--tight">
+		{{range .Persons}}
+		<div class="card stack stack--tight">
+			<div class="list__row list__row--plain">
+				<div class="list__main">
+					<span class="list__title">{{.Name}}
+						{{if .Archived}}<span class="tag">archiviert</span>{{end}}
+					</span>
+					<span class="list__sub">{{money .HourlyRate}} je Stunde{{if .Note}} · {{.Note}}{{end}}</span>
+				</div>
+			</div>
+			<details class="disclosure disclosure--plain">
+				<summary>Bearbeiten</summary>
+				<form method="post" action="/personen/{{.ID}}/update" class="form">
+					<div class="form__grid">
+						<label class="field"><span>Name</span>
+							<input class="input" name="name" value="{{.Name}}" required maxlength="100"></label>
+						<label class="field"><span>Stundensatz (€)</span>
+							<input class="input" name="hourly_rate" inputmode="decimal" value="{{numInput .HourlyRate}}"></label>
+					</div>
+					<label class="field"><span>Notiz</span>
+						<input class="input" name="note" value="{{.Note}}"></label>
+					<button class="btn btn--primary btn--sm" type="submit">Speichern</button>
+				</form>
+				<div class="btnrow">
+					<form method="post" action="/personen/{{.ID}}/archive">
+						<input type="hidden" name="archived" value="{{if .Archived}}false{{else}}true{{end}}">
+						<button class="btn btn--ghost btn--sm" type="submit">{{if .Archived}}Reaktivieren{{else}}Archivieren{{end}}</button>
+					</form>
+					<form method="post" action="/personen/{{.ID}}/delete"
+						data-confirm-danger data-confirm="Person {{.Name}} löschen? Das geht nur, solange keine Buchung darauf verweist.">
+						<button class="btn btn--danger btn--sm" type="submit">Löschen</button>
+					</form>
+				</div>
+			</details>
+		</div>
+		{{end}}
+	</div>
+	{{else}}
+	<div class="empty">
+		<span class="empty__title">Noch keine Personen</span>
+		<span class="muted small">Lege Helfer an, um Mannstunden mit hinterlegtem Satz zu verrechnen.</span>
+	</div>
+	{{end}}
+</section>
+{{end}}

@@ -30,6 +30,10 @@
 			<input class="input" type="number" min="1" max="999999" step="1" name="invoice_start" value="{{.InvoiceStart}}"></label>
 		<label class="field"><span>Kleinunternehmergrenze (€/Kalenderjahr, 0 = keine Überwachung)</span>
 			<input class="input" name="small_business_limit" inputmode="decimal" value="{{num .SmallBusinessLimit}}"></label>
+		<label class="field"><span>Anfahrtspauschale (€ je Einsatz, 0 = kein Zuschlag)</span>
+			<input class="input" name="travel_flat" inputmode="decimal" value="{{num .TravelFlat}}"></label>
+		<label class="field"><span>Kilometergeld (€ je km, 0 = kein Zuschlag)</span>
+			<input class="input" name="travel_per_km" inputmode="decimal" value="{{num .TravelPerKm}}"></label>
 		<label class="field"><span>Besteuerung</span>
 			<select class="select" name="tax_mode">
 				<option value="kleinunternehmer" {{if eq .TaxMode "kleinunternehmer"}}selected{{end}}>Kleinunternehmer – kein USt-Ausweis</option>

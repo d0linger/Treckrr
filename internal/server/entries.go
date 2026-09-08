@@ -123,6 +123,23 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	// An issued invoice enables the Skonto (§16) option on the payment form.
 	_, invErr := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
 	data["HasInvoice"] = invErr == nil
+	// Mannstunden (Nr. 56/57) and Anfahrt (Nr. 58) get their own small forms on
+	// this page rather than extra fields in the main booking form, whose three
+	// stacked submit handlers and pricing fetch are not worth disturbing.
+	persons, err := s.store.ActivePersons(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	company, err := s.store.GetCompany(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data["Persons"] = persons
+	data["TravelFlat"] = company.TravelFlat
+	data["TravelPerKm"] = company.TravelPerKm
+	data["HasTravelRates"] = company.TravelFlat.IsPositive() || company.TravelPerKm.IsPositive()
 	data["Tractors"] = tractors
 	data["Loads"] = loads
 	data["Machines"] = machines
