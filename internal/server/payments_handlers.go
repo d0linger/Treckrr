@@ -9,6 +9,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -390,6 +391,102 @@ func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
 		s.neighborName(r, p.NeighborID)+" · "+before.StringFixed(2)+" € → "+amount.StringFixed(2)+" €")
 	s.setFlash(w, r, "success", "Zahlung aktualisiert.")
 	redirect(w, r, back)
+}
+
+// installmentView is one Ratenplan row with its derived state.
+type installmentView struct {
+	Plan   models.PaymentPlan
+	Status string
+}
+
+// installmentViews derives each installment's state by comparing the paid sum
+// against the cumulative plan: money is not earmarked per rate — whatever has
+// been paid covers the plan from the top. "erledigt" once the paid sum reaches
+// the running total, "überfällig" past the due date, "offen" otherwise.
+func installmentViews(plans []models.PaymentPlan, paid decimal.Decimal) []installmentView {
+	if len(plans) == 0 {
+		return nil
+	}
+	out := make([]installmentView, 0, len(plans))
+	cum := decimal.Zero
+	today := time.Now().Format("2006-01-02")
+	for _, p := range plans {
+		cum = cum.Add(p.Amount)
+		status := "offen"
+		switch {
+		case paid.GreaterThanOrEqual(cum):
+			status = "erledigt"
+		case p.DueOn.Format("2006-01-02") < today:
+			status = "überfällig"
+		}
+		out = append(out, installmentView{Plan: p, Status: status})
+	}
+	return out
+}
+
+// handleInstallmentAdd records one agreed installment (Ratenplan, Ausbaukarte 43).
+func (s *Server) handleInstallmentAdd(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	yearID := s.yearIDFromForm(r)
+	back := neighborURL(neighborID, yearID)
+	if yearID == 0 {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) {
+		redirect(w, r, back)
+		return
+	}
+	rawAmount := strings.ReplaceAll(strings.TrimSpace(r.FormValue("amount")), ",", ".")
+	amount, err := decimal.NewFromString(rawAmount)
+	if err != nil || !amount.IsPositive() || strings.ContainsAny(rawAmount, "eE") {
+		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
+		redirect(w, r, back)
+		return
+	}
+	note := strings.TrimSpace(r.FormValue("note"))
+	if s.tooLong(w, r, "Notiz", note, maxNoteLen) {
+		redirect(w, r, back)
+		return
+	}
+	if _, err := s.store.AddInstallment(r.Context(), yearID, neighborID, amount, parsePaidOn(r.FormValue("due_on")), note); err != nil {
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+		redirect(w, r, back)
+		return
+	}
+	s.audit(r, "installment_add", "neighbor", neighborID,
+		s.neighborName(r, neighborID)+" · Rate "+amount.StringFixed(2)+" €")
+	s.setFlash(w, r, "success", "Rate hinzugefügt.")
+	redirect(w, r, back)
+}
+
+// handleInstallmentDelete removes one installment.
+func (s *Server) handleInstallmentDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	p, err := s.store.DeleteInstallment(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	s.audit(r, "installment_delete", "neighbor", p.NeighborID,
+		s.neighborName(r, p.NeighborID)+" · Rate "+p.Amount.StringFixed(2)+" € entfernt")
+	s.setFlash(w, r, "success", "Rate entfernt.")
+	redirect(w, r, neighborURL(p.NeighborID, p.BillingYearID))
 }
 
 // handleCreditPayout books the cash-out of a credit balance (Ausbaukarte 41): a

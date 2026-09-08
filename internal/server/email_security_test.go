@@ -74,7 +74,7 @@ func (r *mockEmailRows) Columns() []string {
 	case strings.Contains(q, "from billing_years"):
 		return []string{"y_id", "y_year", "y_base_id", "y_label", "y_status", "y_created", "b_id", "b_year", "b_name", "b_locked", "b_created"}
 	case strings.Contains(q, "from neighbors"):
-		return []string{"id", "name", "note", "address", "tax_id", "email", "payment_term_days", "archived", "anonymized", "created_at"}
+		return []string{"id", "name", "note", "address", "tax_id", "email", "iban", "payment_term_days", "archived", "anonymized", "created_at"}
 	default:
 		return []string{"val"}
 	}
@@ -150,10 +150,11 @@ func (r *mockEmailRows) Next(dest []driver.Value) error {
 		dest[3] = "Test Address"
 		dest[4] = ""
 		dest[5] = "neighbor@example.com"
-		dest[6] = nil // payment_term_days: Firmenstandard
-		dest[7] = false
+		dest[6] = ""  // iban
+		dest[7] = nil // payment_term_days: Firmenstandard
 		dest[8] = false
-		dest[9] = time.Now()
+		dest[9] = false
+		dest[10] = time.Now()
 	default:
 		dest[0] = "100.00"
 	}

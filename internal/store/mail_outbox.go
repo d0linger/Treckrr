@@ -44,15 +44,16 @@ func outboxBackoff(attempt int) time.Duration {
 
 // EnqueueMail parks a mail whose synchronous send failed, for retry by the
 // maintenance loop.
-func (s *Store) EnqueueMail(ctx context.Context, m OutboxMail) error {
-	// 0 means "no linked record" and must become NULL — both columns carry
-	// foreign keys, and id 0 never exists.
-	nullable := func(id int64) any {
-		if id == 0 {
-			return nil
-		}
-		return id
+// nullable turns id 0 ("no linked record") into NULL for foreign-key columns —
+// id 0 never exists, and inserting it would violate the constraint.
+func nullable(id int64) any {
+	if id == 0 {
+		return nil
 	}
+	return id
+}
+
+func (s *Store) EnqueueMail(ctx context.Context, m OutboxMail) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO mail_outbox (kind, neighbor_id, billing_year_id, recipient, subject, body,
 		                          att_name, att_type, att_data, next_attempt_at)

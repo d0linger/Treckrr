@@ -109,6 +109,12 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Saldo"] = cost.Add(ledgerSum)
 	data["Payments"] = payments
 	data["PaidSum"] = paidSum
+	plans, err := s.store.ListInstallments(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data["Installments"] = installmentViews(plans, paidSum)
 	remaining := cost.Add(ledgerSum).Sub(paidSum)
 	data["Remaining"] = remaining
 	// The credit shown on the payout/carry buttons: the negative rest, made

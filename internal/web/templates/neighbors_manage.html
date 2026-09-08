@@ -34,6 +34,8 @@
 						<input class="input" name="tax_id" value="{{.Neighbor.TaxID}}" placeholder="z. B. ATU12345678"></label>
 					<label class="field"><span>E-Mail (für Beleg-Versand, optional)</span>
 						<input class="input" type="email" name="email" value="{{.Neighbor.Email}}" placeholder="name@example.at" autocomplete="off"></label>
+					<label class="field"><span>IBAN (für Zahlungs-Import-Zuordnung, optional)</span>
+						<input class="input" name="iban" value="{{.Neighbor.IBAN}}" placeholder="AT.." autocomplete="off"></label>
 					<label class="field"><span>Zahlungsziel (Tage) – leer = Firmenstandard</span>
 						<input class="input" type="number" min="0" max="365" step="1" name="payment_term_days"
 							value="{{with .Neighbor.PaymentTermDays}}{{.}}{{end}}" placeholder="Firmenstandard"></label>

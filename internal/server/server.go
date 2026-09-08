@@ -165,6 +165,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /payments/{id}/edit", s.auth(s.handlePaymentEditForm))
 	mux.Handle("POST /payments/{id}/update", s.auth(s.handlePaymentUpdate))
 	mux.Handle("POST /neighbors/{id}/credit-payout", s.auth(s.handleCreditPayout))
+	mux.Handle("POST /neighbors/{id}/installments", s.auth(s.handleInstallmentAdd))
+	mux.Handle("POST /installments/{id}/delete", s.auth(s.handleInstallmentDelete))
 	mux.Handle("POST /payments/{id}/delete", s.auth(s.handlePaymentDelete))
 	mux.Handle("POST /payments/{id}/restore", s.auth(s.handlePaymentRestore))
 	mux.Handle("GET /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcPreview))

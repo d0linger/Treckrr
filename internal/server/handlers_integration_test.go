@@ -109,7 +109,7 @@ func newItEnv(t *testing.T) *itEnv {
 	// CreateNeighbor's second argument is the note, not the address — and § 11
 	// requires a recipient address before a number may be frozen.
 	if err := st.UpdateNeighbor(ctx, e.neighborID, "IT-Nachbar "+uname, "",
-		"Feldweg 1, 4710 Testdorf", "", "", nil); err != nil {
+		"Feldweg 1, 4710 Testdorf", "", "", "", nil); err != nil {
 		t.Fatalf("neighbor address: %v", err)
 	}
 	if err := st.AddNeighborToYear(ctx, e.yearID64, e.neighborID); err != nil {

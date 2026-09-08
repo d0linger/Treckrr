@@ -318,6 +318,19 @@ type Payment struct {
 	Created       time.Time
 }
 
+// PaymentPlan is one agreed installment (Ratenplan). Planned rows only — actual
+// money flows through payments; the UI derives the state per installment by
+// comparing the paid sum against the cumulative plan.
+type PaymentPlan struct {
+	ID            int64
+	BillingYearID int64
+	NeighborID    int64
+	DueOn         time.Time
+	Amount        decimal.Decimal
+	Note          string
+	Created       time.Time
+}
+
 // BackupSettings is the GUI-editable backup schedule: independent volume and S3
 // cron expressions and retention counts. An empty cron disables that destination.
 type BackupSettings struct {

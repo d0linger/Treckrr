@@ -2,8 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -62,22 +60,4 @@ func (s *Store) LastDunningNotices(ctx context.Context, yearID int64) (map[int64
 		out[n.NeighborID] = n
 	}
 	return out, rows.Err()
-}
-
-// NeighborPaymentTerm returns the effective payment term for one neighbor:
-// their override when set, otherwise the company default handed in.
-func (s *Store) NeighborPaymentTerm(ctx context.Context, neighborID int64, companyDefault int) (int, error) {
-	var override sql.NullInt64
-	err := s.db.QueryRowContext(ctx,
-		`SELECT payment_term_days FROM neighbors WHERE id=$1`, neighborID).Scan(&override)
-	if errors.Is(err, sql.ErrNoRows) {
-		return companyDefault, ErrNotFound
-	}
-	if err != nil {
-		return companyDefault, err
-	}
-	if override.Valid {
-		return int(override.Int64), nil
-	}
-	return companyDefault, nil
 }

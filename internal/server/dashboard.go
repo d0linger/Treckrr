@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	netmail "net/mail"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -269,6 +270,15 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// The IBAN is a matcher key for the bank import, so it is stored normalized
+	// (no spaces, upper case) and shape-checked — a typo would otherwise just
+	// silently never match a credit.
+	iban := strings.ToUpper(strings.ReplaceAll(trimmed(r, "iban"), " ", ""))
+	if iban != "" && !ibanShape.MatchString(iban) {
+		s.setFlash(w, r, "error", "Ungültige IBAN.")
+		redirect(w, r, neighborReturnURL(r, id))
+		return
+	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
 	// Leeres Feld = Firmenstandard (NULL), sonst 0-365 Tage.
 	var paymentTerm *int
@@ -277,17 +287,27 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 			paymentTerm = &n
 		}
 	}
-	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email, paymentTerm); err != nil {
+	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email, iban, paymentTerm); err != nil {
 		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")
 	} else {
 		detail := name
 		if before != nil {
-			if d := diffFields(
+			d := diffFields(
 				fieldChange{"Name", before.Name, name},
 				fieldChange{"Notiz", before.Note, note},
 				fieldChange{"Adresse", before.Address, address},
 				fieldChange{"UID/Steuernr.", before.TaxID, taxID},
-			); d != "" {
+			)
+			// Masked like the company IBAN: the audit log keeps only the change
+			// marker, never the full account number.
+			if m := ibanChangeMarker(before.IBAN, iban); m != "" {
+				if d == "" {
+					d = m
+				} else {
+					d += " · " + m
+				}
+			}
+			if d != "" {
 				detail = d
 			}
 		}
@@ -296,6 +316,9 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	redirect(w, r, neighborReturnURL(r, id))
 }
+
+// ibanShape is the light structural IBAN check (country, check digits, BBAN).
+var ibanShape = regexp.MustCompile(`^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$`)
 
 // neighborReturnURL points back to the central neighbor page when the request
 // originated there, otherwise to the neighbor within the current year.
