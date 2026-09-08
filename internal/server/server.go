@@ -240,6 +240,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /neighbors/{id}/mahnung", s.auth(s.handleNeighborMahnung))
 	mux.Handle("GET /neighbors/{id}/mahnung.pdf", s.auth(s.handleMahnungPDF))
 	mux.Handle("POST /neighbors/{id}/mahnung/email", s.auth(s.handleMahnungEmail))
+	mux.Handle("POST /neighbors/{id}/mahnung/mark-sent", s.auth(s.handleMahnungMarkSent))
+	mux.Handle("POST /mahnwesen/batch-email", s.auth(s.handleMahnwesenBatchEmail))
 	mux.Handle("GET /neighbors/{id}/mahnung/epc-qr.png", s.auth(s.handleMahnungEpcQR))
 
 	// Admin only.

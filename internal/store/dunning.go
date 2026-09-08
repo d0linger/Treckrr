@@ -13,11 +13,14 @@ import (
 // remaining payable is still positive and whose due date (issue date + payment
 // term) has passed.
 type DunningRow struct {
+	YearID      int64
+	YearNo      int
 	NeighborID  int64
 	Name        string
 	InvoiceNo   string
 	IssuedOn    time.Time
 	DueOn       time.Time
+	TermDays    int // effective term: the neighbor's override or the company default
 	DaysOverdue int
 	Open        decimal.Decimal // remaining payable on the issued invoice (> 0)
 }
@@ -29,27 +32,32 @@ type DunningRow struct {
 // reminder and both QR codes always agree (a net/bookings figure would drop the
 // VAT for pauschal/regel companies). Only issued (not canceled) invoices count —
 // you can't dun an amount you never invoiced.
+// yearID 0 means ALL years — the cross-year open-items list (Altersstaffel).
+// The term is per row: a neighbor's payment_term_days override wins over the
+// company default handed in.
 func (s *Store) DunningRows(ctx context.Context, yearID int64, termDays int, asOf time.Time) ([]DunningRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		WITH inv AS (
-		  SELECT iv.neighbor_id, n.name, iv.number, iv.issued_on,
+		  SELECT iv.billing_year_id, y.year AS year_no, iv.neighbor_id, n.name, iv.number, iv.issued_on,
+		    COALESCE(n.payment_term_days, $2) AS term_days,
 		    COALESCE(iv.gross, 0)
 		    + COALESCE((SELECT SUM(g.gross) FROM invoices g
-		                 WHERE g.billing_year_id = $1 AND g.neighbor_id = iv.neighbor_id
+		                 WHERE g.billing_year_id = iv.billing_year_id AND g.neighbor_id = iv.neighbor_id
 		                   AND g.kind = 'gutschrift' AND g.status = 'issued'), 0)
 		    + COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
-		                 WHERE l.billing_year_id = $1 AND l.neighbor_id = iv.neighbor_id
+		                 WHERE l.billing_year_id = iv.billing_year_id AND l.neighbor_id = iv.neighbor_id
 		                   AND NOT l.voided), 0)
 		    - COALESCE((SELECT SUM(p.amount) FROM payments p
-		                 WHERE p.billing_year_id = $1 AND p.neighbor_id = iv.neighbor_id AND p.deleted_at IS NULL), 0) AS open_amt
+		                 WHERE p.billing_year_id = iv.billing_year_id AND p.neighbor_id = iv.neighbor_id AND p.deleted_at IS NULL), 0) AS open_amt
 		  FROM invoices iv
 		  JOIN neighbors n ON n.id = iv.neighbor_id
-		  WHERE iv.billing_year_id = $1 AND iv.kind = 'invoice' AND iv.status = 'issued'
+		  JOIN billing_years y ON y.id = iv.billing_year_id
+		  WHERE ($1 = 0 OR iv.billing_year_id = $1) AND iv.kind = 'invoice' AND iv.status = 'issued'
 		)
-		SELECT neighbor_id, name, number, issued_on, open_amt
+		SELECT billing_year_id, year_no, neighbor_id, name, number, issued_on, term_days, open_amt
 		FROM inv
 		WHERE open_amt > 0
-		  AND $3::timestamptz > issued_on + make_interval(days => $2)
+		  AND $3::timestamptz > issued_on + make_interval(days => term_days)
 		ORDER BY issued_on, name`, yearID, termDays, asOf)
 	if err != nil {
 		return nil, err
@@ -58,10 +66,10 @@ func (s *Store) DunningRows(ctx context.Context, yearID int64, termDays int, asO
 	var out []DunningRow
 	for rows.Next() {
 		var r DunningRow
-		if err := rows.Scan(&r.NeighborID, &r.Name, &r.InvoiceNo, &r.IssuedOn, &r.Open); err != nil {
+		if err := rows.Scan(&r.YearID, &r.YearNo, &r.NeighborID, &r.Name, &r.InvoiceNo, &r.IssuedOn, &r.TermDays, &r.Open); err != nil {
 			return nil, err
 		}
-		r.DueOn = r.IssuedOn.AddDate(0, 0, termDays)
+		r.DueOn = r.IssuedOn.AddDate(0, 0, r.TermDays)
 		// Whole-day, DST-safe overdue count (shared with the Beleg due-date line via
 		// calc.DaysBetween), so the dunning list, CSV export and Beleg all agree.
 		if d := calc.DaysBetween(r.DueOn, asOf); d > 0 {

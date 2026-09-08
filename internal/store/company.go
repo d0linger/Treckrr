@@ -19,16 +19,20 @@ import (
 func (s *Store) GetCompany(ctx context.Context) (models.Company, error) {
 	var c models.Company
 	err := s.db.QueryRowContext(ctx,
-		`SELECT name, address, tax_id, tax_note, tax_mode, vat_rate, iban, payment_term_days FROM company WHERE id=1`).
-		Scan(&c.Name, &c.Address, &c.TaxID, &c.TaxNote, &c.TaxMode, &c.VATRate, &c.IBAN, &c.PaymentTermDays)
+		`SELECT name, address, tax_id, tax_note, tax_mode, vat_rate, iban, payment_term_days,
+		        dunning_fee_1, dunning_fee_2, dunning_grace_days FROM company WHERE id=1`).
+		Scan(&c.Name, &c.Address, &c.TaxID, &c.TaxNote, &c.TaxMode, &c.VATRate, &c.IBAN, &c.PaymentTermDays,
+			&c.DunningFee1, &c.DunningFee2, &c.DunningGraceDays)
 	return c, err
 }
 
 // UpdateCompany saves the company (Absender) settings.
 func (s *Store) UpdateCompany(ctx context.Context, c models.Company) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE company SET name=$1, address=$2, tax_id=$3, tax_note=$4, tax_mode=$5, vat_rate=$6, iban=$7, payment_term_days=$8 WHERE id=1`,
-		c.Name, c.Address, c.TaxID, c.TaxNote, c.TaxMode, c.VATRate, c.IBAN, c.PaymentTermDays)
+		`UPDATE company SET name=$1, address=$2, tax_id=$3, tax_note=$4, tax_mode=$5, vat_rate=$6, iban=$7,
+		        payment_term_days=$8, dunning_fee_1=$9, dunning_fee_2=$10, dunning_grace_days=$11 WHERE id=1`,
+		c.Name, c.Address, c.TaxID, c.TaxNote, c.TaxMode, c.VATRate, c.IBAN, c.PaymentTermDays,
+		c.DunningFee1, c.DunningFee2, c.DunningGraceDays)
 	return err
 }
 

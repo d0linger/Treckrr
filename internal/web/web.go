@@ -93,6 +93,17 @@ func Templates() (map[string]*template.Template, error) {
 
 func funcMap() template.FuncMap {
 	return template.FuncMap{
+		// stageName maps a dunning stage to its German label (list + history).
+		"stageName": func(stage int) string {
+			switch stage {
+			case 1:
+				return "1. Mahnung"
+			case 2:
+				return "2. Mahnung"
+			default:
+				return "Zahlungserinnerung"
+			}
+		},
 		"money": Money,
 		"num":   Num,
 		// numInput formats a decimal for an <input type="number"> value: a plain

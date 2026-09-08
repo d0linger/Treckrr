@@ -22,7 +22,11 @@ type MahnungData struct {
 	DueOn         time.Time // zero = omit
 	Open          decimal.Decimal
 	Paid          decimal.Decimal
-	Today         time.Time
+	// Fee is the Mahnspesen for this stage (0 = no fee line). GraceUntil is the
+	// Nachfrist ("zahlbar bis"); zero = omit.
+	Fee        decimal.Decimal
+	GraceUntil time.Time
+	Today      time.Time
 }
 
 // RenderMahnung builds an A4 reminder PDF.
@@ -82,12 +86,27 @@ func RenderMahnung(m MahnungData) ([]byte, error) {
 		y = 56
 	}
 	// amount box
+	total := m.Open.Add(m.Fee)
 	gtext(pdf, marginL, y, 11, true, "Offener Betrag")
 	gtextR(pdf, right, y, 13, true, money(m.Open))
 	y += 18
 	if m.Paid.IsPositive() {
 		gtext(pdf, marginL, y, 9.5, false, "Bereits bezahlt")
 		gtextR(pdf, right, y, 9.5, false, money(m.Paid))
+		y += 16
+	}
+	if m.Fee.IsPositive() {
+		gtext(pdf, marginL, y, 9.5, false, "Mahnspesen")
+		gtextR(pdf, right, y, 9.5, false, money(m.Fee))
+		y += 16
+		gtext(pdf, marginL, y, 11, true, "Zu zahlen gesamt")
+		gtextR(pdf, right, y, 13, true, money(total))
+		y += 18
+	}
+	if !m.GraceUntil.IsZero() {
+		// The Nachfrist is what makes a Mahnung legally usable: it names the new
+		// deadline instead of only pointing at the missed one.
+		gtext(pdf, marginL, y, 10, true, "Zahlbar bis "+m.GraceUntil.Format("02.01.2006"))
 		y += 16
 	}
 	y += 10
@@ -101,7 +120,7 @@ func RenderMahnung(m MahnungData) ([]byte, error) {
 		}
 		gtext(pdf, marginL, y, 9.5, false, line)
 		y += 14
-		gtext(pdf, marginL, y, 9.5, false, "Betrag: "+money(m.Open))
+		gtext(pdf, marginL, y, 9.5, false, "Betrag: "+money(total))
 	}
 
 	gfooter(pdf, m.IssuerName, m.IssuerAddress, "", m.IssuerIBAN)

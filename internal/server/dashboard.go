@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	netmail "net/mail"
+	"strconv"
 	"strings"
 
 	"github.com/shopspring/decimal"
@@ -269,7 +270,14 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
-	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email); err != nil {
+	// Leeres Feld = Firmenstandard (NULL), sonst 0-365 Tage.
+	var paymentTerm *int
+	if v := strings.TrimSpace(r.FormValue("payment_term_days")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 365 {
+			paymentTerm = &n
+		}
+	}
+	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email, paymentTerm); err != nil {
 		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")
 	} else {
 		detail := name

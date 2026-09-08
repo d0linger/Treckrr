@@ -41,6 +41,17 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 	default:
 		c.TaxMode = "pauschal"
 	}
+	// Mahnspesen: nie negativ; leer/ungültig bleibt 0 (keine Spesenzeile).
+	if f := formDecimal(r, "dunning_fee_1"); f.IsPositive() {
+		c.DunningFee1 = f
+	}
+	if f := formDecimal(r, "dunning_fee_2"); f.IsPositive() {
+		c.DunningFee2 = f
+	}
+	c.DunningGraceDays = 14
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("dunning_grace_days"))); err == nil && v >= 0 && v <= 365 {
+		c.DunningGraceDays = v
+	}
 	// Zahlungsziel: clamp to a sane 0–365 days; blank/invalid falls back to 14.
 	c.PaymentTermDays = 14
 	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("payment_term_days"))); err == nil && v >= 0 && v <= 365 {

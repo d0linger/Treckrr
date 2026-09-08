@@ -43,6 +43,7 @@ type itEnv struct {
 	tractorID, loadID    int64
 	machineID, gespannID int64
 	adminPass            string
+	uname                string
 }
 
 func newItEnv(t *testing.T) *itEnv {
@@ -71,6 +72,7 @@ func newItEnv(t *testing.T) *itEnv {
 	// above it with room to spare.
 	e.year = 6100 + os.Getpid()%500
 	uname := fmt.Sprintf("ithandler%d_%s", os.Getpid(), sanitizeTestName(t.Name()))
+	e.uname = uname
 
 	// This env creates an ADMIN user, and TestLastAdminGuardIntegration in the
 	// store package asserts a globally-scoped invariant ("is this the last
@@ -107,7 +109,7 @@ func newItEnv(t *testing.T) *itEnv {
 	// CreateNeighbor's second argument is the note, not the address — and § 11
 	// requires a recipient address before a number may be frozen.
 	if err := st.UpdateNeighbor(ctx, e.neighborID, "IT-Nachbar "+uname, "",
-		"Feldweg 1, 4710 Testdorf", "", ""); err != nil {
+		"Feldweg 1, 4710 Testdorf", "", "", nil); err != nil {
 		t.Fatalf("neighbor address: %v", err)
 	}
 	if err := st.AddNeighborToYear(ctx, e.yearID64, e.neighborID); err != nil {
@@ -144,6 +146,11 @@ func newItEnv(t *testing.T) *itEnv {
 		AdminUsername: uname,
 		AdminPassword: e.adminPass,
 		BackupKeep:    7,
+		// SMTP points at a port nothing listens on: MailEnabled() is true, every
+		// send fails instantly, and the outbox fallback becomes testable.
+		SMTPHost: "127.0.0.1",
+		SMTPPort: "1",
+		SMTPFrom: "it@example.invalid",
 	}
 	srvObj, err := New(cfg, st, backup.New(backup.Options{}, pool))
 	if err != nil {
@@ -195,6 +202,8 @@ func sanitizeTestName(s string) string {
 // between the financial tables and their parents, so order matters.
 func (e *itEnv) purge(uname string) {
 	for _, q := range []string{
+		`DELETE FROM mail_outbox WHERE billing_year_id IN (SELECT id FROM billing_years WHERE year=$1)`,
+		`DELETE FROM dunning_notices WHERE billing_year_id IN (SELECT id FROM billing_years WHERE year=$1)`,
 		`DELETE FROM payments WHERE billing_year_id IN (SELECT id FROM billing_years WHERE year=$1)`,
 		`DELETE FROM invoices WHERE billing_year_id IN (SELECT id FROM billing_years WHERE year=$1)`,
 		`DELETE FROM beleg_sends WHERE billing_year_id IN (SELECT id FROM billing_years WHERE year=$1)`,

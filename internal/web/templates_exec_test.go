@@ -219,6 +219,8 @@ func TestCompanyPageRenders(t *testing.T) {
 		"Company": map[string]any{
 			"Name": "Hof Bergmann", "Address": "Feldweg 3\n4780 Schärding", "TaxID": "ATU12345678",
 			"TaxNote": "§ 22 UStG", "TaxMode": "pauschal", "VATRate": d(0),
+			"PaymentTermDays": 14, "DunningGraceDays": 14,
+			"DunningFee1": d(0), "DunningFee2": d(0),
 		},
 	})
 }

@@ -51,7 +51,20 @@ func (s *Server) handleMahnwesen(w http.ResponseWriter, r *http.Request) {
 	if term < 0 {
 		term = 14
 	}
-	rows, err := s.store.DunningRows(r.Context(), year.ID, term, time.Now())
+	// scope=alle switches to the cross-year open-items list (Nr. 37): the same
+	// overdue definition, but yearID 0 pulls every year and the rows carry their
+	// year so the Altersstaffel (30/60/90 tags in the template) means something.
+	scopeYear := year.ID
+	allYears := r.URL.Query().Get("scope") == "alle"
+	if allYears {
+		scopeYear = 0
+	}
+	rows, err := s.store.DunningRows(r.Context(), scopeYear, term, time.Now())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	lastNotices, err := s.store.LastDunningNotices(r.Context(), year.ID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -61,6 +74,9 @@ func (s *Server) handleMahnwesen(w http.ResponseWriter, r *http.Request) {
 	data["Year"] = year
 	data["Rows"] = rows
 	data["Term"] = term
+	data["AllYears"] = allYears
+	data["LastNotices"] = lastNotices
+	data["MailEnabled"] = s.cfg.MailEnabled()
 	s.render(w, r, "mahnwesen", data)
 }
 
@@ -126,8 +142,12 @@ type mahnungView struct {
 	Title, Intro string
 	Stage        int
 	Open, Paid   decimal.Decimal
-	DueOn        time.Time
-	HasEpcQR     bool
+	// Fee is the stage's Mahnspesen (0 = none), TotalDue = Open + Fee, and
+	// GraceUntil is the Nachfrist printed as "zahlbar bis".
+	Fee, TotalDue decimal.Decimal
+	GraceUntil    time.Time
+	DueOn         time.Time
+	HasEpcQR      bool
 }
 
 // buildMahnungData resolves a reminder for a neighbor+year+stage. ok=false when
@@ -173,11 +193,30 @@ func (s *Server) buildMahnungData(r *http.Request, neighborID, yearID int64, sta
 	if term < 0 {
 		term = 14
 	}
+	// The neighbor's own payment term wins over the company default (Nr. 36).
+	if neighbor.PaymentTermDays != nil {
+		term = *neighbor.PaymentTermDays
+	}
 	v := &mahnungView{
 		Neighbor: neighbor, Year: year, Company: company, Invoice: iv,
 		Title: title, Intro: intro, Stage: stage, Open: open, Paid: paid,
 		HasEpcQR: strings.TrimSpace(company.IBAN) != "" && open.IsPositive(),
 	}
+	// Mahnspesen per stage (default 0 = letter unchanged); the reminder (stage 0)
+	// never charges. TotalDue is what the payment block asks for.
+	switch stage {
+	case 1:
+		v.Fee = company.DunningFee1
+	case 2:
+		v.Fee = company.DunningFee2
+	}
+	v.TotalDue = open.Add(v.Fee)
+	// Nachfrist: a Mahnung without a new deadline only points at the missed one.
+	grace := company.DunningGraceDays
+	if grace <= 0 {
+		grace = 14
+	}
+	v.GraceUntil = time.Now().AddDate(0, 0, grace)
 	if !iv.IssuedOn.IsZero() {
 		v.DueOn = iv.IssuedOn.AddDate(0, 0, term)
 	}
@@ -216,6 +255,9 @@ func (s *Server) handleNeighborMahnung(w http.ResponseWriter, r *http.Request) {
 	data["Stage"] = v.Stage
 	data["Open"] = v.Open
 	data["Paid"] = v.Paid
+	data["Fee"] = v.Fee
+	data["TotalDue"] = v.TotalDue
+	data["GraceUntil"] = v.GraceUntil
 	data["InvoiceNo"] = v.Invoice.Number
 	data["IssuedOn"] = v.Invoice.IssuedOn
 	if !v.DueOn.IsZero() {
@@ -233,7 +275,8 @@ func (v *mahnungView) toPDF() ([]byte, error) {
 		IssuerName: v.Company.Name, IssuerAddress: v.Company.Address, IssuerIBAN: v.Company.IBAN,
 		RecipientName: v.Neighbor.Name, RecipientAddr: v.Neighbor.Address,
 		Title: v.Title, Intro: v.Intro, InvoiceNo: v.Invoice.Number,
-		IssuedOn: v.Invoice.IssuedOn, DueOn: v.DueOn, Open: v.Open, Paid: v.Paid, Today: time.Now(),
+		IssuedOn: v.Invoice.IssuedOn, DueOn: v.DueOn, Open: v.Open, Paid: v.Paid,
+		Fee: v.Fee, GraceUntil: v.GraceUntil, Today: time.Now(),
 	})
 }
 
@@ -321,6 +364,13 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	// Delivery succeeded; the send-trail marker is secondary — mirror handleBelegEmail:
 	// log a failed write and tell the user the reminder went out but wasn't recorded.
+	if err := s.store.RecordDunningNotice(r.Context(), store.DunningNotice{
+		BillingYearID: v.Invoice.BillingYearID, NeighborID: v.Neighbor.ID,
+		InvoiceNumber: v.Invoice.Number, Stage: v.Stage, Channel: "e-mail",
+		GraceUntil: v.GraceUntil, Fee: v.Fee,
+	}); err != nil {
+		slog.Error("record dunning notice failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
+	}
 	if err := s.store.RecordBelegSend(r.Context(), v.Year.ID, v.Neighbor.ID, "mahnung"); err != nil {
 		slog.Error("record beleg send failed", "kind", "mahnung", "year", v.Year.ID, "neighbor", v.Neighbor.ID, "err", err)
 		s.audit(r, "mahnung_email", "neighbor", v.Neighbor.ID, v.Neighbor.Name+" · E-Mail · "+v.Title+" "+v.Invoice.Number)
@@ -376,4 +426,138 @@ func (s *Server) handleMahnungEpcQR(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(png)
+}
+
+// handleMahnungMarkSent records a reminder that left the house OUTSIDE the app
+// (printed and posted, handed over in person). Without it the history only knew
+// about e-mails, and the list's "Zuletzt:" line lied for everyone who prints.
+func (s *Server) handleMahnungMarkSent(w http.ResponseWriter, r *http.Request) {
+	neighborID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	yearID := formInt64(r, "year")
+	back := fmt.Sprintf("/mahnwesen?year=%d", yearID)
+	v, ok, err := s.buildMahnungData(r, neighborID, yearID, formInt(r, "stufe"))
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.RecordDunningNotice(r.Context(), store.DunningNotice{
+		BillingYearID: v.Invoice.BillingYearID, NeighborID: v.Neighbor.ID,
+		InvoiceNumber: v.Invoice.Number, Stage: v.Stage, Channel: "manuell",
+		GraceUntil: v.GraceUntil, Fee: v.Fee,
+	}); err != nil {
+		s.serverError(w, "mahnung mark-sent", err)
+		return
+	}
+	s.audit(r, "mahnung_marked_sent", "neighbor", v.Neighbor.ID,
+		v.Neighbor.Name+" · "+v.Title+" · Rechnung "+v.Invoice.Number)
+	s.setFlash(w, r, "success", v.Title+" für "+v.Neighbor.Name+" im Verlauf vermerkt.")
+	redirect(w, r, back)
+}
+
+// handleMahnwesenBatchEmail sends one chosen stage to every overdue neighbor
+// with an e-mail address (Nr. 35). Neighbors without one are skipped and named
+// in the summary; a failed send is parked in the outbox like the single-send
+// path, so the batch never silently loses anyone.
+func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	yearID := formInt64(r, "year")
+	stage := formInt(r, "stufe")
+	back := fmt.Sprintf("/mahnwesen?year=%d", yearID)
+	if !s.cfg.MailEnabled() {
+		s.setFlash(w, r, "error", "E-Mail-Versand ist nicht konfiguriert (SMTP_HOST/SMTP_FROM).")
+		redirect(w, r, back)
+		return
+	}
+	company, err := s.store.GetCompany(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	term := company.PaymentTermDays
+	if term < 0 {
+		term = 14
+	}
+	rows, err := s.store.DunningRows(r.Context(), yearID, term, time.Now())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+
+	var sent, queued, skipped int
+	for _, row := range rows {
+		v, ok, err := s.buildMahnungData(r, row.NeighborID, yearID, stage)
+		if err != nil {
+			s.serverError(w, "mahnwesen batch", err)
+			return
+		}
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(v.Neighbor.Email) == "" {
+			skipped++
+			continue
+		}
+		blob, err := v.toPDF()
+		if err != nil {
+			s.serverError(w, "mahnwesen batch: pdf", err)
+			return
+		}
+		from := strings.TrimSpace(v.Company.Name)
+		if from == "" {
+			from = "Ihr Maschinenring"
+		}
+		body := "Guten Tag " + v.Neighbor.Name + ",\n\nanbei " + v.Title + " zur Rechnung " + v.Invoice.Number + " als PDF.\n\nMit freundlichen Grüßen\n" + from
+		att := mail.Attachment{Filename: "Mahnung_" + sanitizeFilename(v.Invoice.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
+		if err := mail.Send(r.Context(), s.cfg, v.Neighbor.Email, v.Title+" · Rechnung "+v.Invoice.Number, body, []mail.Attachment{att}); err != nil {
+			metrics.Inc(metrics.MailFailed)
+			s.audit(r, "mahnung_email_failed", "neighbor", v.Neighbor.ID,
+				v.Neighbor.Name+" · "+v.Title+" · Rechnung "+v.Invoice.Number+" · "+err.Error())
+			if qerr := s.store.EnqueueMail(r.Context(), store.OutboxMail{
+				Kind: "mahnung", NeighborID: v.Neighbor.ID, BillingYearID: v.Invoice.BillingYearID,
+				Recipient: v.Neighbor.Email, Subject: v.Title + " · Rechnung " + v.Invoice.Number, Body: body,
+				AttName: att.Filename, AttType: att.ContentType, AttData: att.Data,
+			}); qerr != nil {
+				slog.Error("mahnwesen batch: enqueue failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(qerr.Error()))
+				skipped++
+				continue
+			}
+			queued++
+			continue
+		}
+		if err := s.store.RecordDunningNotice(r.Context(), store.DunningNotice{
+			BillingYearID: v.Invoice.BillingYearID, NeighborID: v.Neighbor.ID,
+			InvoiceNumber: v.Invoice.Number, Stage: v.Stage, Channel: "e-mail",
+			GraceUntil: v.GraceUntil, Fee: v.Fee,
+		}); err != nil {
+			slog.Error("mahnwesen batch: record notice failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
+		}
+		s.audit(r, "mahnung_email", "neighbor", v.Neighbor.ID,
+			v.Neighbor.Name+" · "+v.Title+" · Rechnung "+v.Invoice.Number+" (Sammellauf)")
+		sent++
+	}
+
+	msg := fmt.Sprintf("Sammel-Mahnlauf: %d gesendet", sent)
+	if queued > 0 {
+		msg += fmt.Sprintf(", %d zur Wiederholung eingeplant", queued)
+	}
+	if skipped > 0 {
+		msg += fmt.Sprintf(", %d ohne E-Mail-Adresse übersprungen", skipped)
+	}
+	s.setFlash(w, r, "success", msg+".")
+	redirect(w, r, back)
 }

@@ -37,7 +37,7 @@
 		<div class="beleg__payinfo">
 			<div class="beleg__payinfo-txt">
 				<span class="beleg__payinfo-k">Zahlung</span>
-				<span class="beleg__payinfo-v">Bitte überweisen Sie <strong>{{money .Open}}</strong>{{if .InvoiceNo}} unter Angabe der Referenz <strong>{{.InvoiceNo}}</strong>{{end}}.{{with .Company.IBAN}} IBAN <strong>{{.}}</strong>.{{end}}</span>
+				<span class="beleg__payinfo-v">Bitte überweisen Sie <strong>{{money .TotalDue}}</strong>{{if .Fee.IsPositive}} (inkl. {{money .Fee}} Mahnspesen){{end}}{{if .InvoiceNo}} unter Angabe der Referenz <strong>{{.InvoiceNo}}</strong>{{end}}{{if .GraceUntil}} bis <strong>{{date .GraceUntil}}</strong>{{end}}.{{with .Company.IBAN}} IBAN <strong>{{.}}</strong>.{{end}}</span>
 			</div>
 			{{if .HasEpcQR}}<img class="beleg__epcqr" src="/neighbors/{{.Neighbor.ID}}/mahnung/epc-qr.png?year={{.Year.ID}}" width="118" height="118" alt="EPC-QR-Code zum Bezahlen des offenen Betrags (GiroCode)" loading="lazy">{{end}}
 		</div>

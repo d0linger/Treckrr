@@ -214,13 +214,16 @@ type Gespann struct {
 
 // Neighbor (Nachbar) is billed for booked work per year.
 type Neighbor struct {
-	ID       int64
-	Name     string
-	Note     string
-	Address  string // optional, for the invoice recipient block
-	TaxID    string // optional recipient UID/tax number (§ 11 on invoices > 10k)
-	Email    string // optional, for sending the Beleg/Rechnung by e-mail
-	Archived bool
+	ID      int64
+	Name    string
+	Note    string
+	Address string // optional, for the invoice recipient block
+	TaxID   string // optional recipient UID/tax number (§ 11 on invoices > 10k)
+	Email   string // optional, for sending the Beleg/Rechnung by e-mail
+	// PaymentTermDays overrides the company payment term for this neighbor
+	// (nil = company default) — individual terms between neighbors are common.
+	PaymentTermDays *int
+	Archived        bool
 	// Anonymized marks a neighbor whose live personal data was erased (DSGVO
 	// Art. 17) while retained invoice snapshots stay intact. Such rows are also
 	// archived and cannot be edited or re-anonymized.
@@ -328,7 +331,15 @@ type Company struct {
 	IBAN    string // optional issuer bank account for a payable invoice
 	// PaymentTermDays is the Zahlungsziel: an invoice is due this many days after
 	// its issue date. Used only to flag overdue invoices in the dunning list.
+	// A neighbor's own payment_term_days overrides it.
 	PaymentTermDays int
+	// DunningFee1/2 are the Mahnspesen for the 1st and 2nd Mahnung. Default 0 =
+	// no fee line on the letter. Verzugszinsen are deliberately not modeled —
+	// the statutory rate is a moving legal target and belongs to the operator.
+	DunningFee1 decimal.Decimal
+	DunningFee2 decimal.Decimal
+	// DunningGraceDays is the Nachfrist printed on a Mahnung ("zahlbar bis").
+	DunningGraceDays int
 }
 
 // InvoiceParty is a frozen issuer/recipient block on an invoice snapshot.
