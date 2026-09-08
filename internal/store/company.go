@@ -20,20 +20,30 @@ func (s *Store) GetCompany(ctx context.Context) (models.Company, error) {
 	var c models.Company
 	err := s.db.QueryRowContext(ctx,
 		`SELECT name, address, tax_id, tax_note, tax_mode, vat_rate, iban, payment_term_days,
-		        dunning_fee_1, dunning_fee_2, dunning_grace_days, skonto_pct, skonto_days FROM company WHERE id=1`).
+		        dunning_fee_1, dunning_fee_2, dunning_grace_days, skonto_pct, skonto_days,
+		        invoice_prefix, invoice_start, small_business_limit FROM company WHERE id=1`).
 		Scan(&c.Name, &c.Address, &c.TaxID, &c.TaxNote, &c.TaxMode, &c.VATRate, &c.IBAN, &c.PaymentTermDays,
-			&c.DunningFee1, &c.DunningFee2, &c.DunningGraceDays, &c.SkontoPct, &c.SkontoDays)
+			&c.DunningFee1, &c.DunningFee2, &c.DunningGraceDays, &c.SkontoPct, &c.SkontoDays,
+			&c.InvoicePrefix, &c.InvoiceStart, &c.SmallBusinessLimit)
 	return c, err
 }
 
 // UpdateCompany saves the company (Absender) settings.
 func (s *Store) UpdateCompany(ctx context.Context, c models.Company) error {
+	// Callers that never saw the 0046 settings pass a zero InvoiceStart; the
+	// column's CHECK demands >= 1, so normalize instead of failing every legacy
+	// UpdateCompany call.
+	if c.InvoiceStart < 1 {
+		c.InvoiceStart = 1
+	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE company SET name=$1, address=$2, tax_id=$3, tax_note=$4, tax_mode=$5, vat_rate=$6, iban=$7,
 		        payment_term_days=$8, dunning_fee_1=$9, dunning_fee_2=$10, dunning_grace_days=$11,
-		        skonto_pct=$12, skonto_days=$13 WHERE id=1`,
+		        skonto_pct=$12, skonto_days=$13, invoice_prefix=$14, invoice_start=$15,
+		        small_business_limit=$16 WHERE id=1`,
 		c.Name, c.Address, c.TaxID, c.TaxNote, c.TaxMode, c.VATRate, c.IBAN, c.PaymentTermDays,
-		c.DunningFee1, c.DunningFee2, c.DunningGraceDays, c.SkontoPct, c.SkontoDays)
+		c.DunningFee1, c.DunningFee2, c.DunningGraceDays, c.SkontoPct, c.SkontoDays,
+		c.InvoicePrefix, c.InvoiceStart, c.SmallBusinessLimit)
 	return err
 }
 
@@ -279,7 +289,7 @@ func (s *Store) BackfillInvoiceSnapshots(ctx context.Context) (int, error) {
 // sequential per-year number and stores it, or returns the existing active
 // invoice if one is already issued (idempotent). Content and number are fixed
 // once, so the document stays stable regardless of later booking/price changes.
-func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year int) (models.Invoice, error) {
+func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year int, issuedOn time.Time) (models.Invoice, error) {
 	if iv, err := s.GetInvoice(ctx, yearID, neighborID); err == nil {
 		return iv, nil
 	} else if !errors.Is(err, ErrNotFound) {
@@ -322,19 +332,47 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return models.Invoice{}, err
 	}
-	// Next sequence = highest existing invoice suffix + 1 (robust to gaps). Only
+	// Rechnungsdatum (Nr. 48): default today; never in the future, and never
+	// before the youngest document already in this year's Nummernkreis — § 11
+	// numbers must stay chronologically consistent within their sequence. The
+	// check runs under the same lock that serializes numbering.
+	if issuedOn.IsZero() {
+		issuedOn = time.Now()
+	}
+	const day = "2006-01-02"
+	if issuedOn.Format(day) > time.Now().Format(day) {
+		return models.Invoice{}, ErrIssueDateInvalid
+	}
+	var last sql.NullTime
+	if err := tx.QueryRowContext(ctx,
+		`SELECT MAX(issued_on) FROM invoices WHERE billing_year_id=$1`, yearID).Scan(&last); err != nil {
+		return models.Invoice{}, err
+	}
+	if last.Valid && issuedOn.Format(day) < last.Time.Format(day) {
+		return models.Invoice{}, ErrIssueDateInvalid
+	}
+	// Nummernkreis (Nr. 49): optional prefix and start number from the company
+	// settings. The prefix is alphanumeric by CHECK constraint — a separator
+	// inside it would break the split_part sequence scan below.
+	prefix, start := "", 1
+	if err := tx.QueryRowContext(ctx,
+		`SELECT invoice_prefix, invoice_start FROM company WHERE id=1`).Scan(&prefix, &start); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return models.Invoice{}, err
+	}
+	// Next sequence = highest existing invoice suffix + 1 (robust to gaps), but
+	// at least the configured start (continuing an external Nummernkreis). Only
 	// numeric suffixes of kind='invoice' are counted, so storno/gutschrift
 	// suffixes (…-S / …-G) can't skew or crash the ::int cast.
 	var seq int
 	if err := tx.QueryRowContext(ctx,
-		`SELECT COALESCE(MAX(split_part(number,'-',2)::int), 0)+1
+		`SELECT GREATEST(COALESCE(MAX(split_part(number,'-',2)::int), 0)+1, $2)
 		   FROM invoices
 		  WHERE billing_year_id=$1 AND kind='invoice' AND split_part(number,'-',2) ~ '^[0-9]+$'`,
-		yearID).Scan(&seq); err != nil {
+		yearID, start).Scan(&seq); err != nil {
 		return models.Invoice{}, err
 	}
-	number := fmt.Sprintf("%d-%03d", year, seq)
-	iv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, number, "invoice", nil, content)
+	number := fmt.Sprintf("%s%d-%03d", prefix, year, seq)
+	iv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, number, "invoice", nil, issuedOn, content)
 	if err != nil {
 		return models.Invoice{}, err
 	}

@@ -367,6 +367,14 @@ type Company struct {
 	// a taken Skonto at payment time exists independently of this.
 	SkontoPct  decimal.Decimal
 	SkontoDays int
+	// InvoicePrefix/InvoiceStart configure the Nummernkreis: number =
+	// prefix + JAHR-NNN, sequence starting at InvoiceStart (continuing an
+	// external sequence). Defaults ''/1 keep the historical format.
+	InvoicePrefix string
+	InvoiceStart  int
+	// SmallBusinessLimit is the Kleinunternehmer revenue ceiling to warn
+	// against (0 = monitoring off).
+	SmallBusinessLimit decimal.Decimal
 }
 
 // InvoiceParty is a frozen issuer/recipient block on an invoice snapshot.

@@ -34,6 +34,11 @@ var ErrGutschriftTooLarge = errors.New("gutschrift exceeds invoice")
 // not satisfy the § 11 UStG mandatory fields (a store-side backstop to the UI).
 var ErrInvoiceIncomplete = errors.New("invoice content incomplete (§11)")
 
+// ErrIssueDateInvalid rejects a chosen Rechnungsdatum that lies in the future
+// or before the youngest document of the year's Nummernkreis (§ 11: numbers
+// must stay chronologically consistent within their sequence).
+var ErrIssueDateInvalid = errors.New("issue date out of sequence")
+
 // ErrLastAdmin is returned when a role/delete change would leave no admin user.
 var ErrLastAdmin = errors.New("cannot remove the last admin")
 

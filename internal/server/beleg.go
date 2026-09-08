@@ -921,6 +921,7 @@ func (s *Server) handleInvoiceConfirm(w http.ResponseWriter, r *http.Request) {
 	data["CanIssue"] = len(content.MissingMandatory()) == 0
 	data["Content"] = content
 	data["BackURL"] = back
+	data["Today"] = time.Now().Format("2006-01-02")
 	s.render(w, r, "invoice_confirm", data)
 }
 
@@ -958,10 +959,23 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 	}
 	// A formal Rechnung needs a sender: don't fix an invoice number against empty
 	// Betriebsdaten — send the user to fill them in first.
-	if company, err := s.store.GetCompany(r.Context()); err != nil || strings.TrimSpace(company.Name) == "" {
+	company, err := s.store.GetCompany(r.Context())
+	if err != nil || strings.TrimSpace(company.Name) == "" {
 		s.setFlash(w, r, "error", "Bitte zuerst die Betriebsdaten (Absender) ausfüllen.")
 		redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
 		return
+	}
+	// Rechnungsdatum (Nr. 48): optional; empty = today. The store validates the
+	// § 11 sequence under its numbering lock.
+	var issuedOn time.Time
+	if raw := strings.TrimSpace(r.FormValue("issued_on")); raw != "" {
+		d, perr := time.Parse("2006-01-02", raw)
+		if perr != nil {
+			s.setFlash(w, r, "error", "Ungültiges Rechnungsdatum.")
+			redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
+			return
+		}
+		issuedOn = d
 	}
 	// § 11 UStG: only fix a number once every mandatory field is present. Build the
 	// content that will be frozen and block issuance if anything is missing, listing
@@ -981,14 +995,18 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, "invoice: lookup", err)
 		return
 	}
-	iv, err := s.store.IssueInvoice(r.Context(), yearID, neighborID, year.Year)
+	iv, err := s.store.IssueInvoice(r.Context(), yearID, neighborID, year.Year, issuedOn)
 	if err != nil {
-		s.setFlash(w, r, "error", "Rechnung konnte nicht ausgestellt werden.")
+		msg := "Rechnung konnte nicht ausgestellt werden."
+		if errors.Is(err, store.ErrIssueDateInvalid) {
+			msg = "Rechnungsdatum unzulässig: nicht in der Zukunft und nicht vor dem jüngsten Dokument des Jahres."
+		}
+		s.setFlash(w, r, "error", msg)
 		redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
 		return
 	}
 	s.audit(r, "invoice_issue", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Rechnung "+iv.Number)
-	s.setFlash(w, r, "success", "Rechnung "+iv.Number+" ausgestellt.")
+	s.setFlash(w, r, "success", "Rechnung "+iv.Number+" ausgestellt."+s.kuIssueNote(r, company, iv.IssuedOn.Year()))
 	redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID))
 }
 

@@ -1,0 +1,88 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/?year={{.Year.ID}}" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
+		<h1 class="pagehead__t">Rechnungsjournal · {{.Year.Year}}</h1>
+		{{if .Rows}}<a class="btn btn--ghost btn--sm pagehead__action" href="/rechnungsjournal/export.csv?year={{.Year.ID}}">{{template "ic-copy"}} Export CSV</a>{{end}}
+	</div>
+	<p class="muted small">Alle ausgestellten Dokumente des Jahres mit Netto, USt und Brutto — die Grundlage für Buchhaltung und Steuerberater. Stornierte Rechnungen bleiben sichtbar; die Summe zählt Rechnung und Storno gegeneinander.</p>
+
+	{{if .KULimit}}
+	<div class="card">
+		<strong>Kleinunternehmergrenze (Kalenderjahr {{.Year.Year}}):</strong>
+		{{money .KUSum}} von {{money .KULimit}} ({{num .KUPct}} %).
+		{{if .KUNear}}<span class="tag tag--open">Grenze im Blick behalten</span>{{end}}
+	</div>
+	{{end}}
+
+	{{if .Rows}}
+	<div class="tablewrap">
+		<table class="dtable">
+			<thead><tr><th>Nummer</th><th>Datum</th><th>Art</th><th>Nachbar</th><th class="num">Netto</th><th class="num">USt</th><th class="num">Brutto</th></tr></thead>
+			<tbody>
+				{{range .Rows}}
+				<tr class="{{if eq .Status "canceled"}}dtable__row--bad{{end}}">
+					<td>{{.Number}}</td>
+					<td>{{date .IssuedOn}}</td>
+					<td>
+						{{if eq .Kind "invoice"}}Rechnung{{else if eq .Kind "storno"}}Storno{{else if eq .Kind "gutschrift"}}Gutschrift{{else}}{{.Kind}}{{end}}
+						{{if eq .Status "canceled"}}<span class="tag">storniert</span>{{end}}
+					</td>
+					<td><a href="/neighbors/{{.NeighborID}}/beleg?year={{$.Year.ID}}&rechnung=1">{{.NeighborName}}</a></td>
+					<td class="num">{{money .Net}}</td>
+					<td class="num">{{money .VATAmount}}</td>
+					<td class="num">{{money .Gross}}</td>
+				</tr>
+				{{end}}
+			</tbody>
+			<tfoot>
+				<tr>
+					<th colspan="4">Summe (Storni gegengerechnet)</th>
+					<th class="num">{{money .TotalNet}}</th>
+					<th class="num">{{money .TotalVAT}}</th>
+					<th class="num">{{money .TotalGross}}</th>
+				</tr>
+			</tfoot>
+		</table>
+	</div>
+
+	<div class="btnrow">
+		<a class="btn btn--ghost btn--sm" href="/rechnungsjournal/archiv.zip?year={{.Year.ID}}">Belegarchiv (ZIP: alle PDFs + Journal)</a>
+	</div>
+
+	{{if .UVAPeriods}}
+	<h2 class="section-title">{{if .ShowUVA}}UVA-Grundlage je Monat{{else}}Summen je Monat{{end}}</h2>
+	{{if .ShowUVA}}<p class="muted small">Bemessungsgrundlage (Netto) und Umsatzsteuer je Ausstellungsmonat — die Basis für das U30-Formular bei Regelbesteuerung.</p>{{end}}
+	<div class="tablewrap">
+		<table class="dtable">
+			<thead><tr><th>Monat</th><th class="num">Bemessungsgrundlage (Netto)</th><th class="num">USt</th><th class="num">Brutto</th></tr></thead>
+			<tbody>
+				{{range .UVAPeriods}}
+				<tr><td>{{.Label}}</td><td class="num">{{money .Net}}</td><td class="num">{{money .VAT}}</td><td class="num">{{money .Gross}}</td></tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	{{if gt (len .UVARates) 1}}
+	<h2 class="section-title">Summen je USt-Satz</h2>
+	<div class="tablewrap">
+		<table class="dtable">
+			<thead><tr><th>USt-Satz</th><th class="num">Netto</th><th class="num">USt</th></tr></thead>
+			<tbody>
+				{{range .UVARates}}
+				<tr><td>{{num .Rate}} %</td><td class="num">{{money .Net}}</td><td class="num">{{money .VAT}}</td></tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	{{end}}
+	{{end}}
+
+	{{else}}
+	<div class="empty">
+		<span class="empty__title">Noch keine Dokumente</span>
+		<span class="muted small">In diesem Jahr wurde noch keine Rechnung festgeschrieben.</span>
+	</div>
+	{{end}}
+</section>
+{{end}}

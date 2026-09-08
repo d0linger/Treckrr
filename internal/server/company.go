@@ -3,6 +3,7 @@ package server
 import (
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -22,6 +23,9 @@ func (s *Server) handleCompany(w http.ResponseWriter, r *http.Request) {
 	data["Company"] = c
 	s.render(w, r, "company", data)
 }
+
+// prefixShape guards the Nummernkreis prefix (see 0046's CHECK constraint).
+var prefixShape = regexp.MustCompile(`^[A-Za-z0-9]{0,10}$`)
 
 // handleCompanySave persists the Betriebsdaten.
 func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +53,24 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 	}
 	if f := formDecimal(r, "dunning_fee_2"); f.IsPositive() {
 		c.DunningFee2 = f
+	}
+	// Nummernkreis (Nr. 49): Präfix strikt alphanumerisch — ein Trennzeichen im
+	// Präfix würde die Sequenz-Erkennung (split_part) brechen, deshalb harte
+	// Ablehnung statt stillem Verwerfen.
+	prefix := trimmed(r, "invoice_prefix")
+	if !prefixShape.MatchString(prefix) {
+		s.setFlash(w, r, "error", "Rechnungs-Präfix: nur Buchstaben/Ziffern, max. 10 Zeichen.")
+		redirect(w, r, "/admin/company")
+		return
+	}
+	c.InvoicePrefix = prefix
+	c.InvoiceStart = 1
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("invoice_start"))); err == nil && v >= 1 && v <= 999999 {
+		c.InvoiceStart = v
+	}
+	// Kleinunternehmergrenze (Nr. 55): 0 = Überwachung aus.
+	if f := formDecimal(r, "small_business_limit"); f.IsPositive() {
+		c.SmallBusinessLimit = f
 	}
 	// Skonto-Angebot: 0-10 %% / 0-90 Tage; beides 0 = keine Klausel.
 	if f := formDecimal(r, "skonto_pct"); f.IsPositive() && f.LessThanOrEqual(decimal.NewFromInt(10)) {

@@ -222,7 +222,16 @@ func TestCompanyPageRenders(t *testing.T) {
 			"PaymentTermDays": 14, "DunningGraceDays": 14,
 			"DunningFee1": d(0), "DunningFee2": d(0),
 			"SkontoPct": d(0), "SkontoDays": 0,
+			"InvoicePrefix": "", "InvoiceStart": 1, "SmallBusinessLimit": d(0),
 		},
+	})
+}
+
+func TestRechnungsjournalRenders(t *testing.T) {
+	// Empty state (no documents yet) — the rich path runs in the integration test.
+	execPage(t, "rechnungsjournal", map[string]any{
+		"Title": "Rechnungsjournal",
+		"Year":  map[string]any{"ID": int64(1), "Year": 2026},
 	})
 }
 

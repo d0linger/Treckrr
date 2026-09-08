@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -17,7 +18,7 @@ import (
 // gutschrift) with its frozen content and returns it. The document number is used
 // as the payment reference. refID links a storno/gutschrift to the invoice it
 // corrects (nil for a plain invoice).
-func insertInvoiceDoc(ctx context.Context, tx *sql.Tx, yearID, neighborID int64, number, kind string, refID *int64, c models.InvoiceContent) (models.Invoice, error) {
+func insertInvoiceDoc(ctx context.Context, tx *sql.Tx, yearID, neighborID int64, number, kind string, refID *int64, issuedOn time.Time, c models.InvoiceContent) (models.Invoice, error) {
 	issuerJSON, _ := json.Marshal(c.Issuer)
 	recipientJSON, _ := json.Marshal(c.Recipient)
 	linesJSON, _ := json.Marshal(c.Lines)
@@ -25,12 +26,12 @@ func insertInvoiceDoc(ctx context.Context, tx *sql.Tx, yearID, neighborID int64,
 		INSERT INTO invoices
 		  (billing_year_id, neighbor_id, number, kind, status, references_invoice_id, payment_reference,
 		   net, vat_rate, vat_amount, gross, show_vat, tax_mode, tax_note,
-		   service_from, service_to, issuer, recipient, lines, content_hash)
-		VALUES ($1,$2,$3,$4,'issued',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+		   service_from, service_to, issuer, recipient, lines, content_hash, issued_on)
+		VALUES ($1,$2,$3,$4,'issued',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		RETURNING `+invoiceCols,
 		yearID, neighborID, number, kind, refID, number,
 		c.Net, c.VATRate, c.VATAmount, c.Gross, c.ShowVAT, c.TaxMode, c.TaxNote,
-		nullDate(c.ServiceFrom), nullDate(c.ServiceTo), issuerJSON, recipientJSON, linesJSON, c.Hash))
+		nullDate(c.ServiceFrom), nullDate(c.ServiceTo), issuerJSON, recipientJSON, linesJSON, c.Hash, issuedOn))
 }
 
 // reverseContent mirrors an invoice's frozen substance into a Storno: the net,
@@ -85,7 +86,7 @@ func (s *Store) StornoInvoice(ctx context.Context, yearID, neighborID int64, rea
 	if err != nil {
 		return models.Invoice{}, err
 	}
-	sv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+"-S", "storno", &orig.ID, reverseContent(content, orig.Number, reason))
+	sv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+"-S", "storno", &orig.ID, time.Now(), reverseContent(content, orig.Number, reason))
 	if err != nil {
 		return models.Invoice{}, err
 	}
@@ -183,7 +184,7 @@ func (s *Store) GutschriftInvoice(ctx context.Context, yearID, neighborID int64,
 	if cnt > 0 {
 		suffix = fmt.Sprintf("-G%d", cnt+1)
 	}
-	gv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+suffix, "gutschrift", &orig.ID, credit)
+	gv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+suffix, "gutschrift", &orig.ID, time.Now(), credit)
 	if err != nil {
 		return models.Invoice{}, err
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -136,7 +137,7 @@ func (s *Server) handleBatchIssueCommit(w http.ResponseWriter, r *http.Request) 
 			skipped++
 			continue
 		}
-		iv, err := s.store.IssueInvoice(r.Context(), yearID, row.Neighbor.ID, year.Year)
+		iv, err := s.store.IssueInvoice(r.Context(), yearID, row.Neighbor.ID, year.Year, time.Time{})
 		if err != nil {
 			// One failure doesn't roll back the others (each invoice is its own
 			// festgeschriebenes document); report progress and stop.
