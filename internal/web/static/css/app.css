@@ -1807,6 +1807,13 @@ span.paychip { cursor: default; }
 	.list, .bookcards, .logcards, .yearcards, .yearstats {
 		display: grid; grid-template-columns: 1fr 1fr; align-items: start;
 	}
+	/* Grid items refuse to shrink below their content's min-content width, and
+	   .list__sub is nowrap — one long line (a session's user agent) would blow
+	   both 1fr tracks out to ~900px each and push the second column off-screen.
+	   min-width: 0 restores the ellipsis instead. */
+	.list > .list__row, .list > .disclosure--row, .bookcards > *, .logcards > *, .yearcards > *, .yearstats > * {
+		min-width: 0;
+	}
 	/* Opt back out of two columns (admin users list, audit log): these read
 	   better as a single top-to-bottom column. Placed after the rule above so
 	   it wins the cascade. */
