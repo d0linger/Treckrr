@@ -102,16 +102,33 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Base"] = base
 	data["Neighbor"] = neighbor
 	data["Entries"] = entries
-	// Reverse side of the pair link: which machine bookings carry a linked
-	// Mannstunden companion, so BOTH rows can show the connection. Computed from
-	// the rows already loaded — companions always live in the same neighbor+year.
+	// Pair links: LinkedFrom gives each machine booking its companion's id (the
+	// reverse of the stored direction), PairLabel names the OTHER half for each
+	// side — task and hours, so with several pairs on one day the operator sees
+	// WHICH booking a link means, not just that one exists. Computed from the
+	// rows already loaded — companions always live in the same neighbor+year.
 	linkedFrom := map[int64]int64{}
+	pairLabel := map[int64]string{}
+	byID := map[int64]models.Entry{}
 	for _, e := range entries {
-		if e.LinkedEntryID != nil {
-			linkedFrom[*e.LinkedEntryID] = e.ID
+		byID[e.ID] = e
+	}
+	for _, e := range entries {
+		if e.LinkedEntryID == nil {
+			continue
 		}
+		machine, ok := byID[*e.LinkedEntryID]
+		if !ok {
+			continue // partner deleted or filtered — chip falls back to the plain text
+		}
+		linkedFrom[machine.ID] = e.ID
+		// German decimal comma, matching every other number on the page.
+		de := func(d decimal.Decimal) string { return strings.ReplaceAll(d.String(), ".", ",") }
+		pairLabel[e.ID] = fmt.Sprintf("%s · %s h", machine.TaskLabel, de(machine.Hours))
+		pairLabel[machine.ID] = fmt.Sprintf("%s · %s h", e.TaskLabel, de(e.Quantity))
 	}
 	data["LinkedFrom"] = linkedFrom
+	data["PairLabel"] = pairLabel
 	data["TotalCost"] = cost
 	data["TotalHours"] = hours
 	data["Ledger"] = ledger
@@ -805,6 +822,31 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "update", "entry", id, s.neighborName(r, existing.NeighborID)+" · "+entryUpdateDetail(existing, entry))
+	// Linked pair: mirror the edited hours onto the partner when the edit form's
+	// checkbox asked for it — machine and Mannstunden of one Einsatz share the
+	// same hours, each priced at its own frozen rate.
+	if r.FormValue("sync_pair") == "1" {
+		hours := entry.Hours
+		if entry.Unit != "" && entry.Unit != "h" {
+			hours = entry.Quantity
+		}
+		if pid, err := s.store.LinkedPartnerID(r.Context(), id); err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		} else if pid != 0 && hours.IsPositive() {
+			cost, err := s.store.SyncPairHours(r.Context(), pid, hours)
+			if err != nil {
+				s.setFlash(w, r, "error", "Buchung aktualisiert, aber die verknüpfte Buchung konnte nicht angepasst werden.")
+				redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
+				return
+			}
+			s.audit(r, "update", "entry", pid, fmt.Sprintf("%s · verknüpft angeglichen: %s h, %s €",
+				s.neighborName(r, existing.NeighborID), hours.String(), cost.StringFixed(2)))
+			s.setFlash(w, r, "success", "Buchung und verknüpfte Buchung aktualisiert.")
+			redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
+			return
+		}
+	}
 	s.setFlash(w, r, "success", "Buchung aktualisiert.")
 	redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
 }
@@ -836,14 +878,47 @@ func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	nb := s.neighborName(r, entry.NeighborID)
+	// Linked pair: mirror the action onto the partner only on the confirm
+	// dialog's explicit choice. Void is reversible, so two separate updates are
+	// acceptable — a failure between them stays visible and re-clickable.
+	partnerID := int64(0)
+	if r.FormValue("cascade") == "1" {
+		if pid, err := s.store.LinkedPartnerID(r.Context(), id); err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		} else {
+			partnerID = pid
+		}
+	}
 	if err := s.store.SetEntryVoided(r.Context(), id, void, reason); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
-	} else if void {
-		s.audit(r, "void", "entry", id, fmt.Sprintf("%s · %s € %s", nb, entry.Cost.StringFixed(2), reason))
-		s.setFlash(w, r, "success", "Buchung storniert.")
 	} else {
-		s.audit(r, "unvoid", "entry", id, fmt.Sprintf("%s · %s €", nb, entry.Cost.StringFixed(2)))
-		s.setFlash(w, r, "success", "Stornierung aufgehoben.")
+		suffix := ""
+		if partnerID != 0 {
+			if err := s.store.SetEntryVoided(r.Context(), partnerID, void, reason); err != nil {
+				s.setFlash(w, r, "error", "Verknüpfte Buchung konnte nicht angepasst werden.")
+				redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
+				return
+			}
+			suffix = " (verknüpftes Paar)"
+		}
+		if void {
+			s.audit(r, "void", "entry", id, fmt.Sprintf("%s · %s € %s%s", nb, entry.Cost.StringFixed(2), reason, suffix))
+			if partnerID != 0 {
+				s.audit(r, "void", "entry", partnerID, fmt.Sprintf("%s · %s%s", nb, reason, suffix))
+				s.setFlash(w, r, "success", "Buchung und verknüpfte Buchung storniert.")
+			} else {
+				s.setFlash(w, r, "success", "Buchung storniert.")
+			}
+		} else {
+			s.audit(r, "unvoid", "entry", id, fmt.Sprintf("%s · %s €%s", nb, entry.Cost.StringFixed(2), suffix))
+			if partnerID != 0 {
+				s.audit(r, "unvoid", "entry", partnerID, nb+suffix)
+				s.setFlash(w, r, "success", "Stornierung beider Buchungen aufgehoben.")
+			} else {
+				s.setFlash(w, r, "success", "Stornierung aufgehoben.")
+			}
+		}
 	}
 	redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
 }
@@ -1210,6 +1285,16 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	data["UnitIsCustom"] = unitIsCustom(entry.Unit)
 	data["IsQtyEntry"] = entry.Unit != "" && entry.Unit != "h"
 	data["NextWeek"] = time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+	// Linked pair: name the partner so the form can offer to mirror edited hours.
+	if pid, err := s.store.LinkedPartnerID(r.Context(), id); err == nil && pid != 0 {
+		if partner, err := s.store.GetEntry(r.Context(), pid); err == nil {
+			label := partner.TaskLabel
+			if label == "" {
+				label = "verknüpfte Buchung"
+			}
+			data["PairPartnerLabel"] = label
+		}
+	}
 	s.render(w, r, "entry_edit", data)
 }
 
@@ -1495,11 +1580,39 @@ func (s *Server) handleEntryDelete(w http.ResponseWriter, r *http.Request) {
 	if !s.entryYearOpen(w, r, entry, "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr gelöscht werden.") {
 		return
 	}
+	// Linked pair (person booked with the Gespann): the confirm dialog offered a
+	// "delete both" checkbox; cascade only on that explicit choice.
+	partnerID := int64(0)
+	if r.FormValue("cascade") == "1" {
+		if pid, err := s.store.LinkedPartnerID(r.Context(), id); err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		} else {
+			partnerID = pid
+		}
+	}
+	nb := s.neighborName(r, entry.NeighborID)
+	if partnerID != 0 {
+		partner, perr := s.store.GetEntry(r.Context(), partnerID)
+		if err := s.store.DeleteEntryPair(r.Context(), id, partnerID); err != nil {
+			s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
+		} else {
+			s.audit(r, "delete", "entry", id, fmt.Sprintf("%s · %s, %s h, %s € (verknüpftes Paar)",
+				nb, entry.TractorLabel, entry.Hours.StringFixed(2), entry.Cost.StringFixed(2)))
+			if perr == nil {
+				s.audit(r, "delete", "entry", partnerID, fmt.Sprintf("%s · %s, %s € (verknüpftes Paar)",
+					nb, partner.TaskLabel, partner.Cost.StringFixed(2)))
+			}
+			s.setFlash(w, r, "success", "Buchung und verknüpfte Buchung gelöscht.")
+		}
+		redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
+		return
+	}
 	if err := s.store.DeleteEntry(r.Context(), id); err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
 		s.audit(r, "delete", "entry", id, fmt.Sprintf("%s · %s, %s h, %s €",
-			s.neighborName(r, entry.NeighborID), entry.TractorLabel,
+			nb, entry.TractorLabel,
 			entry.Hours.StringFixed(2), entry.Cost.StringFixed(2)))
 		s.setFlash(w, r, "success", "Buchung gelöscht.")
 	}

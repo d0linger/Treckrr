@@ -272,6 +272,13 @@
 	var msgEl = modal ? modal.querySelector("[data-modal-msg]") : null;
 	var inputEl = modal ? modal.querySelector("[data-modal-input]") : null;
 	var okBtn = modal ? modal.querySelector("[data-modal-ok]") : null;
+	// Optional checkbox row (data-confirm-check): "also apply to the linked
+	// booking?" — the answer lands in the form field named by
+	// data-confirm-check-name ("1" = yes, "" = no).
+	var checkWrap = modal ? modal.querySelector("[data-modal-check]") : null;
+	var checkInput = modal ? modal.querySelector("[data-modal-check-input]") : null;
+	var checkLabel = modal ? modal.querySelector("[data-modal-check-label]") : null;
+	var pendingCheckName = null;
 	var pendingForm = null;
 
 	if (modal && typeof modal.showModal === "function") {
@@ -283,6 +290,11 @@
 				if (inputEl && !inputEl.hidden) {
 					var target = form.querySelector("input[name='reason']");
 					if (target) target.value = inputEl.value.trim();
+				}
+				// Copy the checkbox answer (e.g. cascade over a linked booking).
+				if (checkWrap && !checkWrap.hidden && pendingCheckName) {
+					var ct = form.querySelector("input[name='" + pendingCheckName + "']");
+					if (ct) ct.value = (checkInput && checkInput.checked) ? "1" : "";
 				}
 				form.dataset.confirmed = "1";
 				// form.submit() fires no submit event, so the double-submit lock
@@ -296,6 +308,7 @@
 			}
 			// Never leak a typed reason (or its label) into the next modal.
 			if (inputEl) inputEl.value = "";
+			pendingCheckName = null;
 		});
 		// Enter inside the reason field must CONFIRM: the dialog's implicit
 		// submission picks its FIRST submit button, which is "Abbrechen" — the
@@ -337,11 +350,15 @@
 			return {
 				message: submitter.getAttribute("data-confirm"),
 				reason: submitter.getAttribute("data-confirm-reason"),
+				check: submitter.getAttribute("data-confirm-check"),
+				checkName: submitter.getAttribute("data-confirm-check-name"),
 			};
 		}
 		return {
 			message: form.getAttribute("data-confirm"),
 			reason: form.getAttribute("data-confirm-reason"),
+			check: form.getAttribute("data-confirm-check"),
+			checkName: form.getAttribute("data-confirm-check-name"),
 		};
 	}
 
@@ -381,6 +398,11 @@
 					var target = form.querySelector("input[name='reason']");
 					if (target) target.value = v.trim();
 				}
+				// Checkbox question: OK = also apply to the linked booking.
+				if (attrs.check) {
+					var ctf = form.querySelector("input[name='" + (attrs.checkName || "cascade") + "']");
+					if (ctf) ctf.value = window.confirm(attrs.check) ? "1" : "";
+				}
 				return;
 			}
 			e.preventDefault();
@@ -404,6 +426,19 @@
 					inputEl.value = "";
 				} else {
 					inputEl.hidden = true;
+				}
+			}
+			if (checkWrap) {
+				if (attrs.check) {
+					checkWrap.hidden = false;
+					if (checkLabel) checkLabel.textContent = attrs.check;
+					// Checked by default: the pair was booked as ONE Einsatz, so
+					// acting on both is the expected case; unticking narrows it.
+					if (checkInput) checkInput.checked = true;
+					pendingCheckName = attrs.checkName || "cascade";
+				} else {
+					checkWrap.hidden = true;
+					pendingCheckName = null;
 				}
 			}
 			modal.returnValue = "";

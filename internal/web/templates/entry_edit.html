@@ -102,6 +102,12 @@
 		<label class="field"><span>Notiz (optional)</span>
 			<input class="input" type="text" name="note" value="{{.Entry.Note}}"></label>
 
+		{{if and .PairPartnerLabel (not .Copy)}}
+		<label class="check">
+			<input type="checkbox" name="sync_pair" value="1" checked>
+			<span>Stunden der verknüpften Buchung ({{.PairPartnerLabel}}) mit anpassen</span>
+		</label>
+		{{end}}
 		<button class="btn btn--primary btn--block" type="submit" title="Strg + Enter">{{if .Copy}}Buchung anlegen{{else}}Änderungen speichern{{end}}</button>
 	</form>
 

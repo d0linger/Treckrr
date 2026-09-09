@@ -89,6 +89,14 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 			`UPDATE payments SET note = '' WHERE neighbor_id = $1 AND note <> ''`,
 			`DELETE FROM mail_outbox WHERE neighbor_id = $1`,
 			`DELETE FROM beleg_shares WHERE neighbor_id = $1`,
+			// Ratenplan notes are operator-typed free text about the person
+			// ("zahlt monatlich, Sohn holt das Geld") — the same class as the
+			// booking notes above.
+			`UPDATE payment_plans SET note = '' WHERE neighbor_id = $1 AND note <> ''`,
+			// Recurring rules carry the person's task/note frozen in their
+			// template AND would keep materializing new bookings for an erased
+			// person — delete them outright, not just their text.
+			`DELETE FROM recurring_entries WHERE neighbor_id = $1`,
 		} {
 			if _, err := tx.ExecContext(ctx, q, id); err != nil {
 				return err
@@ -293,6 +301,65 @@ func (s *Store) CreateEntryPair(ctx context.Context, e *models.Entry, machineIDs
 		return 0, 0, err
 	}
 	return mainID, companionID, tx.Commit()
+}
+
+// LinkedPartnerID returns the id of the entry paired with this one — the
+// machine entry a companion points at, or the companion pointing at this
+// machine entry. 0 when the entry is unpaired.
+func (s *Store) LinkedPartnerID(ctx context.Context, id int64) (int64, error) {
+	var partner sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(
+		  (SELECT linked_entry_id FROM entries WHERE id = $1),
+		  (SELECT id FROM entries WHERE linked_entry_id = $1 LIMIT 1))`, id).Scan(&partner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if !partner.Valid {
+		return 0, nil
+	}
+	return partner.Int64, nil
+}
+
+// DeleteEntryPair removes a linked pair in one transaction: deleting only half
+// would misreport the work as unmanned or as hours without a machine, and the
+// operator confirmed both.
+func (s *Store) DeleteEntryPair(ctx context.Context, id, partnerID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Companion first (it carries the FK); order still works either way since the
+	// link is ON DELETE SET NULL, but stating it avoids relying on that.
+	for _, eid := range []int64{partnerID, id} {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM entries WHERE id=$1`, eid); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// SyncPairHours mirrors an edited booking's hours onto its linked partner: the
+// machine entry (unit 'h') gets hours/quantity + cost at its frozen hourly
+// rate, the Mannstunden companion gets quantity + cost at its person rate. One
+// statement handles both directions via the unit.
+func (s *Store) SyncPairHours(ctx context.Context, partnerID int64, hours decimal.Decimal) (decimal.Decimal, error) {
+	var cost decimal.Decimal
+	err := s.db.QueryRowContext(ctx, `
+		UPDATE entries SET
+		  hours    = CASE WHEN unit = 'h' THEN $2::numeric ELSE hours END,
+		  quantity = $2::numeric,
+		  cost     = round($2::numeric * CASE WHEN unit = 'h' THEN hourly_rate ELSE unit_price END, 2)
+		WHERE id = $1
+		RETURNING cost`, partnerID, hours).Scan(&cost)
+	if errors.Is(err, sql.ErrNoRows) {
+		return decimal.Zero, ErrNotFound
+	}
+	return cost, err
 }
 
 // DeleteEntry removes an entry.

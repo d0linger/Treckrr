@@ -241,6 +241,7 @@
 				<span class="bcard__date">{{date .Date}}</span>
 				<span class="bcard__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}</span>
 				{{$eid := .ID}}
+				{{$pl := index $.PairLabel .ID}}
 				{{if or .Voided (index $.Stale .ID) (index $.PhotoCounts .ID)}}
 				<span class="bcard__badges">
 					{{if .Voided}}<span class="chip2 chip2--void"><span class="chip2__g">{{template "ic-void"}}</span>Storniert</span>{{end}}
@@ -251,12 +252,14 @@
 				<span class="bcard__cost">{{money .Cost}}</span>
 			</div>
 			<div class="bcard__foot">
-				<span class="bcard__detail">{{if eq .Unit "h"}}{{num .Hours}} h × {{money .HourlyRate}}/h{{if .TractorLabel}} · {{.TractorLabel}} · {{.LoadLabel}}{{else}} · ohne Traktor{{end}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{else}}{{num .Quantity}} {{.Unit}} × {{money .UnitPrice}}/{{.Unit}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}{{if .LinkedEntryID}} · <a class="bcard__link" href="#entry-{{.LinkedEntryID}}">↳ zur Maschinenbuchung</a>{{end}}{{with (index $.LinkedFrom .ID)}} · <a class="bcard__link" href="#entry-{{.}}">＋ Mannstunden verknüpft</a>{{end}}</span>
+				<span class="bcard__detail">{{if eq .Unit "h"}}{{num .Hours}} h × {{money .HourlyRate}}/h{{if .TractorLabel}} · {{.TractorLabel}} · {{.LoadLabel}}{{else}} · ohne Traktor{{end}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{else}}{{num .Quantity}} {{.Unit}} × {{money .UnitPrice}}/{{.Unit}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}{{if .LinkedEntryID}} · <a class="bcard__link" href="#entry-{{.LinkedEntryID}}" title="Zur verknüpften Maschinenbuchung springen">↳ {{if $pl}}{{$pl}}{{else}}zur Maschinenbuchung{{end}}</a>{{end}}{{with (index $.LinkedFrom .ID)}} · <a class="bcard__link" href="#entry-{{.}}" title="Zur verknüpften Mannstunden-Buchung springen">＋ {{if $pl}}{{$pl}}{{else}}Mannstunden verknüpft{{end}}</a>{{end}}</span>
 				{{if not $.Completed}}
 				<span class="bcard__acts">
 					{{if .Voided}}
-					<form method="post" action="/entries/{{.ID}}/void">
+					<form method="post" action="/entries/{{.ID}}/void"
+						{{if $pl}}data-confirm="Stornierung aufheben?" data-confirm-check="Verknüpfte Buchung ({{$pl}}) ebenfalls wiederherstellen" data-confirm-check-name="cascade"{{end}}>
 						<input type="hidden" name="voided" value="false">
+						<input type="hidden" name="cascade" value="">
 						<button class="iconact" type="submit" title="Stornierung aufheben" aria-label="Stornierung aufheben">{{template "ic-undo"}}</button>
 					</form>
 					{{else}}
@@ -264,12 +267,17 @@
 					<a class="iconact" href="/entries/{{.ID}}/copy" title="Als neue Buchung kopieren" aria-label="Kopieren">{{template "ic-copy"}}</a>
 					<form method="post" action="/entries/{{.ID}}/void"
 						data-confirm-danger data-confirm="Buchung vom {{date .Date}} über {{money .Cost}} stornieren? (bleibt sichtbar, zählt nicht mehr)"
-						data-confirm-reason="Grund der Stornierung (optional)">
+						data-confirm-reason="Grund der Stornierung (optional)"
+						{{if $pl}}data-confirm-check="Verknüpfte Buchung ({{$pl}}) ebenfalls stornieren" data-confirm-check-name="cascade"{{end}}>
 						<input type="hidden" name="voided" value="true">
 						<input type="hidden" name="reason" value="">
+						<input type="hidden" name="cascade" value="">
 						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">{{template "ic-void"}}</button>
 					</form>
-					<form method="post" action="/entries/{{.ID}}/delete" data-confirm-danger data-confirm="Buchung vom {{date .Date}}{{if .TaskLabel}} ({{.TaskLabel}}){{end}} über {{money .Cost}} endgültig löschen?">
+					<form method="post" action="/entries/{{.ID}}/delete" data-confirm-danger
+						data-confirm="Buchung vom {{date .Date}}{{if .TaskLabel}} ({{.TaskLabel}}){{end}} über {{money .Cost}} endgültig löschen?{{if $pl}} Sie ist mit {{$pl}} verknüpft.{{end}}"
+						{{if $pl}}data-confirm-check="Verknüpfte Buchung ({{$pl}}) ebenfalls löschen" data-confirm-check-name="cascade"{{end}}>
+						<input type="hidden" name="cascade" value="">
 						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
 					{{end}}

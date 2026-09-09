@@ -517,6 +517,12 @@ em { font-style: normal; color: var(--muted); }
    one submit): quiet inline anchor jumping to the other card. */
 .bcard__link { color: var(--accent-text, var(--muted)); text-decoration: none; white-space: nowrap; }
 .bcard__link:hover { text-decoration: underline; }
+/* Jumping between the halves of a pair: the target card gets a visible ring —
+   with several pairs on one day, scrolling alone leaves the operator guessing
+   which card the link meant. scroll-margin keeps it clear of the app bar. */
+.bcard { scroll-margin-top: 4.5rem; }
+.bcard:target { outline: 2px solid var(--accent-text, var(--accent, #8a5e12)); outline-offset: 2px; }
+.modal__check { margin-top: .65rem; display: flex; gap: .5rem; align-items: center; }
 .list__actions form { margin: 0; }
 .list__main--link { text-decoration: none; color: inherit; flex: 1 1 auto; min-width: 0; }
 .list__row--plain { padding: 0; }
