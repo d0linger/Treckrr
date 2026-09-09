@@ -111,6 +111,15 @@
 			<input class="input" type="number" step="0.001" min="0" name="hours"
 				inputmode="decimal" data-hours required></label>
 
+		{{if .Persons}}
+		<label class="field"><span>Person (optional)</span>
+			<select class="select" name="person_id">
+				<option value="">— keine —</option>
+				{{range .Persons}}<option value="{{.ID}}">{{.Name}} ({{money .HourlyRate}}/h)</option>{{end}}
+			</select>
+			<span class="muted small">Bucht zusätzlich Mannstunden über dieselben Stunden — als verknüpfte eigene Position.</span></label>
+		{{end}}
+
 		<div class="rate-preview" data-rate-preview aria-live="polite" aria-atomic="true">
 			<span class="rate-preview__main">
 				<span class="rate-preview__lbl">Kosten</span>
@@ -227,7 +236,7 @@
 	<h2 class="section-title">Gesamtübersicht Buchungen</h2>
 	<div class="bookcards">
 		{{range .Entries}}
-		<div class="bcard {{if .Voided}}bcard--void{{end}}">
+		<div class="bcard {{if .Voided}}bcard--void{{end}}" id="entry-{{.ID}}">
 			<div class="bcard__head">
 				<span class="bcard__date">{{date .Date}}</span>
 				<span class="bcard__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}</span>
@@ -242,7 +251,7 @@
 				<span class="bcard__cost">{{money .Cost}}</span>
 			</div>
 			<div class="bcard__foot">
-				<span class="bcard__detail">{{if eq .Unit "h"}}{{num .Hours}} h × {{money .HourlyRate}}/h{{if .TractorLabel}} · {{.TractorLabel}} · {{.LoadLabel}}{{else}} · ohne Traktor{{end}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{else}}{{num .Quantity}} {{.Unit}} × {{money .UnitPrice}}/{{.Unit}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
+				<span class="bcard__detail">{{if eq .Unit "h"}}{{num .Hours}} h × {{money .HourlyRate}}/h{{if .TractorLabel}} · {{.TractorLabel}} · {{.LoadLabel}}{{else}} · ohne Traktor{{end}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{else}}{{num .Quantity}} {{.Unit}} × {{money .UnitPrice}}/{{.Unit}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}{{if .LinkedEntryID}} · <a class="bcard__link" href="#entry-{{.LinkedEntryID}}">↳ zur Maschinenbuchung</a>{{end}}{{with (index $.LinkedFrom .ID)}} · <a class="bcard__link" href="#entry-{{.}}">＋ Mannstunden verknüpft</a>{{end}}</span>
 				{{if not $.Completed}}
 				<span class="bcard__acts">
 					{{if .Voided}}

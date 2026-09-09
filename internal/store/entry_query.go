@@ -119,7 +119,7 @@ func (s *Store) FilterEntries(ctx context.Context, f EntryFilter) ([]EntryRow, i
 	q := `SELECT e.id, e.neighbor_id, e.billing_year_id, e.entry_date, e.task_label, e.gespann_id,
 		e.tractor_id, e.load_level_id, e.tractor_label, e.load_label, e.machine_labels,
 		e.hours, e.hourly_rate, e.cost, e.note, e.voided, e.void_reason, e.created_at,
-		e.unit, e.quantity, e.unit_price, e.person_id, n.name
+		e.unit, e.quantity, e.unit_price, e.person_id, e.linked_entry_id, n.name
 		FROM entries e JOIN neighbors n ON n.id = e.neighbor_id` + where +
 		entryFilterOrder(f.Sort, f.Desc) +
 		" LIMIT $" + strconv.Itoa(len(args)-1) + " OFFSET $" + strconv.Itoa(len(args))

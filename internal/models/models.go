@@ -270,6 +270,11 @@ type Entry struct {
 	// PersonID attributes a Mannstunden booking to a helper (nil for machine
 	// bookings and everything booked before the Personenstamm existed).
 	PersonID *int64
+	// LinkedEntryID connects a companion booking to the machine booking it was
+	// created with (person booked alongside the Gespann): the Mannstunden entry
+	// points at the machine entry. Nil for everything else. The link is
+	// informational — storno/delete of one side never cascades to the other.
+	LinkedEntryID *int64
 }
 
 // WebauthnCredential is a registered passkey (public key only).

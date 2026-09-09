@@ -1022,6 +1022,9 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, store.ErrIssueDateInvalid) {
 			msg = "Rechnungsdatum unzulässig: nicht in der Zukunft und nicht vor dem jüngsten Dokument des Jahres."
 		}
+		if errors.Is(err, store.ErrGutschriftTooLarge) {
+			msg = "Bereits erteilte Gutschriften übersteigen die Rechnungssumme — bitte zuerst die Gutschrift stornieren."
+		}
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
 		return

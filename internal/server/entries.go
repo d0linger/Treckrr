@@ -102,6 +102,16 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Base"] = base
 	data["Neighbor"] = neighbor
 	data["Entries"] = entries
+	// Reverse side of the pair link: which machine bookings carry a linked
+	// Mannstunden companion, so BOTH rows can show the connection. Computed from
+	// the rows already loaded — companions always live in the same neighbor+year.
+	linkedFrom := map[int64]int64{}
+	for _, e := range entries {
+		if e.LinkedEntryID != nil {
+			linkedFrom[*e.LinkedEntryID] = e.ID
+		}
+	}
+	data["LinkedFrom"] = linkedFrom
 	data["TotalCost"] = cost
 	data["TotalHours"] = hours
 	data["Ledger"] = ledger
@@ -482,10 +492,55 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	entry.BillingYearID = year.ID
 	entry.IdempotencyKey = idempotencyKey
 
-	newID, err := s.store.CreateEntry(r.Context(), entry, machineIDs)
+	// Person alongside the rig (optional): one submit books the machine AND the
+	// helper's Mannstunden as a linked companion entry. Hour bookings only — a
+	// quantity booking (ha, Ballen, …) carries no hours the helper's time could
+	// be derived from; those book their Mannstunden through the dedicated form.
+	var companion *models.Entry
+	if pid := formInt64(r, "person_id"); pid != 0 && (entry.Unit == "" || entry.Unit == "h") {
+		// Quantity bookings (ha, Ballen, …) silently drop a leftover person value:
+		// the select lives in the hours-only panel, so on that path it was hidden
+		// (and entry-form.js clears it) — a stale value is UI state, not intent,
+		// and rejecting would discard everything else the user typed.
+		person, err := s.store.GetPerson(r.Context(), pid)
+		if errors.Is(err, store.ErrNotFound) {
+			reject(http.StatusUnprocessableEntity, "Unbekannte Person.", neighborURL(neighborID, yearID))
+			return
+		} else if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+		if !person.HourlyRate.IsPositive() {
+			reject(http.StatusUnprocessableEntity, "Für "+person.Name+" ist kein Stundensatz hinterlegt — bitte im Personenstamm ergänzen.", neighborURL(neighborID, yearID))
+			return
+		}
+		companion = &models.Entry{
+			NeighborID: neighborID, BillingYearID: year.ID,
+			Date: entry.Date, TaskLabel: "Mannstunden " + person.Name,
+			Unit: unitMannstunde, Quantity: entry.Hours, UnitPrice: person.HourlyRate,
+			Cost:     entry.Hours.Mul(person.HourlyRate).Round(2),
+			PersonID: &person.ID,
+			// Derived, deterministic key so a replayed pair no-ops on both halves.
+			// The base key is capped at maxNameLen upstream; trim before the
+			// suffix so the derived key stays inside the column's contract.
+			IdempotencyKey: companionKey(idempotencyKey),
+		}
+	}
+
+	var newID, companionID int64
+	if companion != nil {
+		newID, companionID, err = s.store.CreateEntryPair(r.Context(), entry, machineIDs, companion)
+	} else {
+		newID, err = s.store.CreateEntry(r.Context(), entry, machineIDs)
+	}
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
+	}
+	if companionID != 0 {
+		s.audit(r, "create", "entry", companionID, fmt.Sprintf("%s · Mannstunden (verknüpft), %s h × %s = %s €",
+			s.neighborName(r, neighborID), companion.Quantity.String(),
+			companion.UnitPrice.StringFixed(2), companion.Cost.StringFixed(2)))
 	}
 	if newID == 0 { // duplicate replay of an offline booking — already recorded
 		if replay {
@@ -511,8 +566,26 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	s.setFlash(w, r, "success", "Buchung gespeichert.")
+	if companionID != 0 {
+		s.setFlash(w, r, "success", "Buchung + Mannstunden gespeichert.")
+	} else {
+		s.setFlash(w, r, "success", "Buchung gespeichert.")
+	}
 	redirect(w, r, neighborURL(neighborID, yearID))
+}
+
+// companionKey derives the companion entry's idempotency key from the machine
+// entry's key ("" stays "" — online submits carry no key). Deterministic, so a
+// replayed pair resolves to the same two keys; trimmed so the suffix never
+// pushes a maxNameLen-length base key over the column's contract.
+func companionKey(base string) string {
+	if base == "" {
+		return ""
+	}
+	if len(base) > maxNameLen-2 {
+		base = base[:maxNameLen-2]
+	}
+	return base + "-p"
 }
 
 // resolveEntryFromForm reads the booking form fields, resolves the tractor,

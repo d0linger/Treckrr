@@ -135,6 +135,12 @@
 		var hours = isHours();
 		if (hOnly) hOnly.hidden = !hours;
 		if (qtyOnly) qtyOnly.hidden = hours;
+		// A hidden select still submits: a person picked on the hours path would
+		// ride along into a quantity booking the user can no longer see it on.
+		if (!hours) {
+			var personSel = form.querySelector('select[name="person_id"]');
+			if (personSel) personSel.value = "";
+		}
 		// The hours field is `required`, but on the quantity path it's inside the
 		// display:none panel; a required non-focusable field makes Chromium abort the
 		// submit silently ("invalid form control is not focusable"). Only require it

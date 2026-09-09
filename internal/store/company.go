@@ -375,6 +375,21 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 		yearID, start).Scan(&seq); err != nil {
 		return models.Invoice{}, err
 	}
+	// Credits issued BEFORE the invoice (free Gutschriften) count against it the
+	// moment it exists — InvoiceRemaining subtracts them all. An invoice below
+	// what was already credited would be born with a negative balance, i.e. a
+	// payout-able Guthaben no money ever backed. Refuse; the operator stornos the
+	// Gutschrift first (see ErrGutschriftTooLarge).
+	var credited decimal.Decimal
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COALESCE(-SUM(gross), 0) FROM invoices
+		  WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='gutschrift' AND status='issued'`,
+		yearID, neighborID).Scan(&credited); err != nil {
+		return models.Invoice{}, err
+	}
+	if credited.GreaterThan(content.Gross) {
+		return models.Invoice{}, ErrGutschriftTooLarge
+	}
 	number := fmt.Sprintf("%s%d-%03d", prefix, year, seq)
 	iv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, number, "invoice", nil, issuedOn, content)
 	if err != nil {

@@ -119,6 +119,33 @@ func (s *Store) FreeGutschrift(ctx context.Context, yearID, neighborID int64, ye
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, yearID); err != nil {
 		return models.Invoice{}, err
 	}
+	// Same cap as the attached credit note (see ErrGutschriftTooLarge): while an
+	// issued invoice exists, the neighbor+year's credits — attached and free
+	// together — must not exceed its gross. Without an invoice there is nothing
+	// to cap against yet; IssueInvoice then refuses to issue below what was
+	// already credited, which closes the loop from the other side.
+	var invGross decimal.Decimal
+	err = tx.QueryRowContext(ctx,
+		`SELECT gross FROM invoices
+		  WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='invoice' AND status='issued' FOR UPDATE`,
+		yearID, neighborID).Scan(&invGross)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		// pre-invoice credit — allowed, bounded at issue time
+	case err != nil:
+		return models.Invoice{}, err
+	default:
+		var credited decimal.Decimal
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COALESCE(-SUM(gross), 0) FROM invoices
+			  WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='gutschrift' AND status='issued'`,
+			yearID, neighborID).Scan(&credited); err != nil {
+			return models.Invoice{}, err
+		}
+		if gross.GreaterThan(invGross.Sub(credited)) {
+			return models.Invoice{}, ErrGutschriftTooLarge
+		}
+	}
 	number, err := docSeqNumber(ctx, tx, yearID, year, "G")
 	if err != nil {
 		return models.Invoice{}, err

@@ -211,31 +211,26 @@ func ensureUnit(e *models.Entry) {
 	}
 }
 
-func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []int64) (int64, error) {
+// insertEntryTx writes one entry inside the caller's transaction. Returns 0
+// (and no error) when the entry's idempotency key already exists — a replayed
+// offline booking is a safe no-op, not a failure.
+func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs []int64) (int64, error) {
 	ensureUnit(e)
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	var id int64
-	err = tx.QueryRowContext(ctx,
+	err := tx.QueryRowContext(ctx,
 		`INSERT INTO entries
 		   (neighbor_id, billing_year_id, entry_date, task_label, gespann_id, tractor_id, load_level_id,
 		    tractor_label, load_label, machine_labels, hours, hourly_rate, cost, note,
-		    unit, quantity, unit_price, idempotency_key, person_id)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+		    unit, quantity, unit_price, idempotency_key, person_id, linked_entry_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		 ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
 		 RETURNING id`,
 		e.NeighborID, e.BillingYearID, e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID),
 		nullInt(e.LoadLevelID), e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours,
 		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey),
-		nullInt(e.PersonID)).Scan(&id)
+		nullInt(e.PersonID), nullInt(e.LinkedEntryID)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		// A replayed offline booking whose key already exists: a safe no-op. Commit
-		// the empty tx and return 0 to signal "already recorded".
-		return 0, tx.Commit()
+		return 0, nil
 	}
 	if err != nil {
 		return 0, err
@@ -246,7 +241,58 @@ func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 			return 0, err
 		}
 	}
+	return id, nil
+}
+
+func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []int64) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	id, err := insertEntryTx(ctx, tx, e, machineIDs)
+	if err != nil {
+		return 0, err
+	}
 	return id, tx.Commit()
+}
+
+// CreateEntryPair books a machine entry and its companion (the helper's
+// Mannstunden booked alongside the Gespann) in ONE transaction, linking the
+// companion to the machine entry. One transaction, because a pair where only
+// one half exists misreports the work either as unmanned or as hours without a
+// machine — and the operator was told "gespeichert" for both.
+//
+// Idempotent per half via each entry's own key: on a replay the machine entry's
+// insert no-ops, its id is looked up by key so the companion still links to the
+// right row, and the companion's own key makes its insert a no-op too. Returns
+// (0, 0, nil) when both halves were already recorded.
+func (s *Store) CreateEntryPair(ctx context.Context, e *models.Entry, machineIDs []int64, companion *models.Entry) (mainID, companionID int64, err error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	mainID, err = insertEntryTx(ctx, tx, e, machineIDs)
+	if err != nil {
+		return 0, 0, err
+	}
+	linkID := mainID
+	if linkID == 0 && e.IdempotencyKey != "" {
+		// Replay: the machine entry already exists — link against the stored row.
+		if err := tx.QueryRowContext(ctx,
+			`SELECT id FROM entries WHERE idempotency_key=$1`, e.IdempotencyKey).Scan(&linkID); err != nil {
+			return 0, 0, err
+		}
+	}
+	if linkID != 0 {
+		companion.LinkedEntryID = &linkID
+	}
+	companionID, err = insertEntryTx(ctx, tx, companion, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	return mainID, companionID, tx.Commit()
 }
 
 // DeleteEntry removes an entry.
@@ -520,7 +566,7 @@ func (s *Store) SetEntryVoided(ctx context.Context, id int64, voided bool, reaso
 const entrySelect = `SELECT id, neighbor_id, billing_year_id, entry_date, task_label, gespann_id,
 	tractor_id, load_level_id, tractor_label, load_label, machine_labels,
 	hours, hourly_rate, cost, note, voided, void_reason, created_at,
-	unit, quantity, unit_price, person_id FROM entries`
+	unit, quantity, unit_price, person_id, linked_entry_id FROM entries`
 
 func collectEntries(rows *sql.Rows) ([]models.Entry, error) {
 	var out []models.Entry
@@ -554,12 +600,13 @@ func scanEntryInto(sc scanner, name *string) (models.Entry, error) {
 		tractor sql.NullInt64
 		load    sql.NullInt64
 		person  sql.NullInt64
+		linked  sql.NullInt64
 		date    time.Time
 	)
 	dest := []any{&e.ID, &e.NeighborID, &e.BillingYearID, &date, &e.TaskLabel, &gespann,
 		&tractor, &load, &e.TractorLabel, &e.LoadLabel, &e.MachineLabels,
 		&e.Hours, &e.HourlyRate, &e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created,
-		&e.Unit, &e.Quantity, &e.UnitPrice, &person}
+		&e.Unit, &e.Quantity, &e.UnitPrice, &person, &linked}
 	if name != nil {
 		dest = append(dest, name)
 	}
@@ -568,6 +615,9 @@ func scanEntryInto(sc scanner, name *string) (models.Entry, error) {
 	}
 	if person.Valid {
 		e.PersonID = &person.Int64
+	}
+	if linked.Valid {
+		e.LinkedEntryID = &linked.Int64
 	}
 	e.Date = date
 	if gespann.Valid {

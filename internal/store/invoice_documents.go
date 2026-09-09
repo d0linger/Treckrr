@@ -139,11 +139,16 @@ func (s *Store) GutschriftInvoice(ctx context.Context, yearID, neighborID int64,
 	}
 
 	// A Gutschrift may not exceed the invoice's remaining (uncredited) gross.
+	// Counted over ALL issued credit notes of the neighbor+year, not just the
+	// ones attached to this invoice: free Gutschriften (references NULL) reduce
+	// InvoiceRemaining exactly the same way, and ignoring them here allowed
+	// total credits above the invoice gross — a phantom Guthaben the payout
+	// button would have paid out in cash (see ErrGutschriftTooLarge).
 	var creditedGross decimal.Decimal
 	if err := tx.QueryRowContext(ctx,
 		`SELECT COALESCE(-SUM(gross), 0) FROM invoices
-		  WHERE references_invoice_id=$1 AND kind='gutschrift' AND status='issued'`,
-		orig.ID).Scan(&creditedGross); err != nil {
+		  WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='gutschrift' AND status='issued'`,
+		yearID, neighborID).Scan(&creditedGross); err != nil {
 		return models.Invoice{}, err
 	}
 	if grossReduction.GreaterThan(base.Gross.Sub(creditedGross)) {

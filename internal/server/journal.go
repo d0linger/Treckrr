@@ -313,6 +313,8 @@ func (s *Server) handleFreeGutschrift(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, store.ErrAmountRequired):
 		s.setFlash(w, r, "error", "Bitte einen Betrag größer 0 eingeben.")
+	case errors.Is(err, store.ErrGutschriftTooLarge):
+		s.setFlash(w, r, "error", "Gutschrift übersteigt den noch nicht gutgeschriebenen Rechnungsbetrag.")
 	case err != nil:
 		s.setFlash(w, r, "error", "Gutschrift fehlgeschlagen.")
 	default:
