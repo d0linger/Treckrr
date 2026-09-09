@@ -11,6 +11,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,27 @@ func (t *Txn) setHash() {
 	t.Hash = hex.EncodeToString(sum[:])
 }
 
+// disambiguateDuplicateHashes re-hashes the 2nd, 3rd, … occurrence of an
+// identical hash with its occurrence index. Two legitimately identical credits
+// in one statement (same payer, day, amount and text — routine for split
+// transfers) would otherwise collapse to one hash, and ImportPayment's
+// ON CONFLICT would silently drop the second: money received but never booked,
+// shown forever as "bereits importiert". Statements list transactions in a
+// stable order, so a re-import of the same file reproduces the same suffixes
+// and de-duplication still works; the first occurrence keeps its historical
+// hash, so statements imported before this fix stay recognized.
+func disambiguateDuplicateHashes(txns []Txn) {
+	seen := make(map[string]int, len(txns))
+	for i := range txns {
+		h := txns[i].Hash
+		if n := seen[h]; n > 0 {
+			sum := sha256.Sum256([]byte(h + "#dup" + strconv.Itoa(n)))
+			txns[i].Hash = hex.EncodeToString(sum[:])
+		}
+		seen[h]++
+	}
+}
+
 // parseAmount accepts German ("1.234,56") or plain ("1234.56") decimals.
 func parseAmount(raw string) (decimal.Decimal, bool) {
 	s := strings.TrimSpace(raw)
@@ -41,10 +63,19 @@ func parseAmount(raw string) (decimal.Decimal, bool) {
 	if s == "" {
 		return decimal.Zero, false
 	}
-	// German grouping+comma: strip thousands dots, comma→dot. Detect by a comma
-	// present with a dot before it, or a comma as the decimal sep.
-	if strings.Contains(s, ",") {
+	// Which separator is the decimal one? The LAST of the two decides:
+	// "1.234,56" (German) vs "1,234.56" (en-US bank exports) — treating every
+	// comma as German silently divided an en-US amount by 1000 and booked the
+	// wrong figure with nothing to warn anyone. A lone comma stays the German
+	// decimal comma (the dominant case for AT statements).
+	di, ci := strings.LastIndex(s, "."), strings.LastIndex(s, ",")
+	switch {
+	case ci >= 0 && di >= 0 && ci > di: // German: 1.234,56
 		s = strings.ReplaceAll(s, ".", "")
+		s = strings.ReplaceAll(s, ",", ".")
+	case ci >= 0 && di >= 0: // en-US: 1,234.56
+		s = strings.ReplaceAll(s, ",", "")
+	case ci >= 0: // 12,5
 		s = strings.ReplaceAll(s, ",", ".")
 	}
 	d, err := decimal.NewFromString(s)
@@ -125,6 +156,7 @@ func ParseCSV(data []byte) ([]Txn, error) {
 	if len(out) == 0 {
 		return nil, fmt.Errorf("keine Zahlungseingänge (Gutschriften) gefunden")
 	}
+	disambiguateDuplicateHashes(out)
 	return out, nil
 }
 
@@ -266,6 +298,7 @@ func ParseCamt(data []byte) ([]Txn, error) {
 	if len(out) == 0 {
 		return nil, fmt.Errorf("keine Zahlungseingänge in der camt-Datei")
 	}
+	disambiguateDuplicateHashes(out)
 	return out, nil
 }
 
@@ -396,6 +429,7 @@ func ParseMT940(data []byte) ([]Txn, error) {
 	if len(out) == 0 {
 		return nil, fmt.Errorf("keine Zahlungseingänge in der MT940-Datei")
 	}
+	disambiguateDuplicateHashes(out)
 	return out, nil
 }
 

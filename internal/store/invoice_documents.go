@@ -26,12 +26,14 @@ func insertInvoiceDoc(ctx context.Context, tx *sql.Tx, yearID, neighborID int64,
 		INSERT INTO invoices
 		  (billing_year_id, neighbor_id, number, kind, status, references_invoice_id, payment_reference,
 		   net, vat_rate, vat_amount, gross, show_vat, tax_mode, tax_note,
-		   service_from, service_to, issuer, recipient, lines, content_hash, issued_on)
-		VALUES ($1,$2,$3,$4,'issued',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+		   service_from, service_to, issuer, recipient, lines, content_hash, issued_on,
+		   skonto_pct, skonto_until)
+		VALUES ($1,$2,$3,$4,'issued',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
 		RETURNING `+invoiceCols,
 		yearID, neighborID, number, kind, refID, number,
 		c.Net, c.VATRate, c.VATAmount, c.Gross, c.ShowVAT, c.TaxMode, c.TaxNote,
-		nullDate(c.ServiceFrom), nullDate(c.ServiceTo), issuerJSON, recipientJSON, linesJSON, c.Hash, issuedOn))
+		nullDate(c.ServiceFrom), nullDate(c.ServiceTo), issuerJSON, recipientJSON, linesJSON, c.Hash, issuedOn,
+		nullSkonto(c.SkontoPct), nullDate(c.SkontoUntil)))
 }
 
 // reverseContent mirrors an invoice's frozen substance into a Storno: the net,
@@ -53,6 +55,10 @@ func reverseContent(c models.InvoiceContent, origNumber, reason string) models.I
 		note += " Grund: " + reason + "."
 	}
 	rev.TaxNote = strings.TrimSpace(note + " " + c.TaxNote)
+	// A reversal offers no payment terms — carrying the original's Skonto clause
+	// onto a Storno would print a discount on a document that asks for nothing.
+	rev.SkontoPct = decimal.Decimal{}
+	rev.SkontoUntil = time.Time{}
 	rev.Hash = invoiceContentHash(rev)
 	return rev
 }

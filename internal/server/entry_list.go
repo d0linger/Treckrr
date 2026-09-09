@@ -19,7 +19,11 @@ const entryPageSize = 50
 // "no bound" rather than today, so a typo widens the list instead of silently
 // hiding everything.
 func parseDay(v string) time.Time {
-	d, err := time.Parse("2006-01-02", strings.TrimSpace(v))
+	// ParseInLocation, not Parse: the value is a LOCAL calendar day. Against the
+	// entries DATE column only Y/M/D travel either way, but the audit filter
+	// compares ::timestamptz — UTC midnight would shift every day window by the
+	// UTC offset and drop the first hours of each day from the §132 export.
+	d, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(v), time.Local)
 	if err != nil {
 		return time.Time{}
 	}

@@ -39,6 +39,36 @@ func (s *Store) RecordDunningNotice(ctx context.Context, n DunningNotice) error 
 // The map holds POINTERS so the template's {{with (index . id)}} stays false for
 // a neighbor without any notice — a zero struct value would be truthy and render
 // an empty "Zuletzt:" line for everyone.
+// ListDunningNotices returns a neighbor's full dunning history in a year,
+// oldest first — the Art. 15 Auskunft must include it: which Mahnstufe was
+// sent when, through which channel, with what fee, is personal data — arguably
+// the most sensitive record Treckrr holds about a neighbor.
+func (s *Store) ListDunningNotices(ctx context.Context, yearID, neighborID int64) ([]DunningNotice, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, billing_year_id, neighbor_id, invoice_number, stage, channel, sent_at,
+		       COALESCE(grace_until, '0001-01-01'::date), fee
+		  FROM dunning_notices
+		 WHERE billing_year_id = $1 AND neighbor_id = $2
+		 ORDER BY sent_at, id`, yearID, neighborID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DunningNotice
+	for rows.Next() {
+		var n DunningNotice
+		if err := rows.Scan(&n.ID, &n.BillingYearID, &n.NeighborID, &n.InvoiceNumber,
+			&n.Stage, &n.Channel, &n.SentAt, &n.GraceUntil, &n.Fee); err != nil {
+			return nil, err
+		}
+		if n.GraceUntil.Year() <= 1 { // NULL sentinel, same as LastDunningNotices
+			n.GraceUntil = time.Time{}
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) LastDunningNotices(ctx context.Context, yearID int64) (map[int64]*DunningNotice, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT DISTINCT ON (neighbor_id) id, billing_year_id, neighbor_id, invoice_number,

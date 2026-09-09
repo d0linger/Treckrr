@@ -111,6 +111,137 @@ func TestCreateEntryPairIntegration(t *testing.T) {
 	if n != 2 {
 		t.Fatalf("after replay: %d entries, want exactly 2", n)
 	}
+
+	// Partner lookup works from BOTH sides.
+	if pid, err := st.LinkedPartnerID(ctx, mainID); err != nil || pid != compID {
+		t.Fatalf("partner of machine = %d (%v), want %d", pid, err, compID)
+	}
+	if pid, err := st.LinkedPartnerID(ctx, compID); err != nil || pid != mainID {
+		t.Fatalf("partner of companion = %d (%v), want %d", pid, err, mainID)
+	}
+
+	// Hour sync: 3 h -> 5 h on the companion re-prices at ITS rate (5 x 28.50).
+	cost, err := st.SyncPairHours(ctx, compID, dec("5"))
+	if err != nil {
+		t.Fatalf("sync companion: %v", err)
+	}
+	if cost.StringFixed(2) != "142.50" {
+		t.Fatalf("companion cost after sync = %s, want 142.50", cost.StringFixed(2))
+	}
+	// And on the machine side at the frozen hourly rate (5 x 40).
+	cost, err = st.SyncPairHours(ctx, mainID, dec("5"))
+	if err != nil {
+		t.Fatalf("sync machine: %v", err)
+	}
+	if cost.StringFixed(2) != "200.00" {
+		t.Fatalf("machine cost after sync = %s, want 200.00", cost.StringFixed(2))
+	}
+	var mh string
+	if err := pool.QueryRowContext(ctx, `SELECT hours::text FROM entries WHERE id=$1`, mainID).Scan(&mh); err != nil {
+		t.Fatalf("read hours: %v", err)
+	}
+	if dec(mh).Cmp(dec("5")) != 0 {
+		t.Fatalf("machine hours after sync = %s, want 5", mh)
+	}
+
+	// Pair delete removes both atomically.
+	if err := st.DeleteEntryPair(ctx, mainID, compID); err != nil {
+		t.Fatalf("pair delete: %v", err)
+	}
+	if err := pool.QueryRowContext(ctx,
+		`SELECT count(*) FROM entries WHERE billing_year_id=$1 AND neighbor_id=$2`, yearID, nid).Scan(&n); err != nil {
+		t.Fatalf("count after delete: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("after pair delete: %d entries, want 0", n)
+	}
+}
+
+// TestSkontoFrozenIntoSnapshotIntegration: the Skonto clause is part of the
+// invoice's payment terms, so it freezes WITH the § 11 snapshot at issuance —
+// deadline anchored on the issue date — instead of being recomputed live from
+// the company row (which the PDF never saw and the Beleg dropped after expiry).
+func TestSkontoFrozenIntoSnapshotIntegration(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping DB integration test")
+	}
+	ctx := context.Background()
+	pool, err := db.Connect(ctx, url)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	st := store.New(pool, "test-encryption-secret")
+	lockCompanyRow(t, ctx, pool)
+
+	f := fixtures{Years: []int{2105}, NeighborNames: []string{"Skonto Nachbar 2105"}}
+	purgeFixtures(t, ctx, pool, f)
+	t.Cleanup(func() { purgeFixtures(t, ctx, pool, f) })
+
+	baseID, err := st.CreateEmptyBase(ctx, 2105, "Skonto-Basis")
+	if err != nil {
+		t.Fatalf("base: %v", err)
+	}
+	yearID, err := st.CreateBillingYear(ctx, 2105, baseID, "Skonto-Jahr")
+	if err != nil {
+		t.Fatalf("year: %v", err)
+	}
+	nid, err := st.CreateNeighbor(ctx, "Skonto Nachbar 2105", "")
+	if err != nil {
+		t.Fatalf("neighbor: %v", err)
+	}
+	if _, err := pool.ExecContext(ctx, `UPDATE neighbors SET address='Dorfstraße 1, 4780' WHERE id=$1`, nid); err != nil {
+		t.Fatalf("neighbor address: %v", err)
+	}
+	if err := st.AddNeighborToYear(ctx, yearID, nid); err != nil {
+		t.Fatalf("add neighbor: %v", err)
+	}
+	if err := st.UpdateCompany(ctx, models.Company{
+		Name: "Hof Skonto", Address: "Feldweg 3", TaxID: "ATU123",
+		TaxNote: "Kleinunternehmer", TaxMode: "kleinunternehmer", VATRate: dec("0"),
+		SkontoPct: dec("2"), SkontoDays: 14,
+	}); err != nil {
+		t.Fatalf("company: %v", err)
+	}
+	if _, err := st.CreateEntry(ctx, &models.Entry{
+		NeighborID: nid, BillingYearID: yearID, Date: day(2105, 5, 9), TaskLabel: "Mähen",
+		Unit: "h", Hours: dec("2"), HourlyRate: dec("40"), Cost: dec("80.00"),
+	}, nil); err != nil {
+		t.Fatalf("entry: %v", err)
+	}
+	iv, err := st.IssueInvoice(ctx, yearID, nid, 2105, time.Time{})
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if iv.Content == nil {
+		t.Fatal("no snapshot")
+	}
+	if iv.Content.SkontoPct.Cmp(dec("2")) != 0 {
+		t.Fatalf("frozen SkontoPct = %s, want 2", iv.Content.SkontoPct)
+	}
+	wantUntil := iv.IssuedOn.AddDate(0, 0, 14).Format("2006-01-02")
+	if got := iv.Content.SkontoUntil.Format("2006-01-02"); got != wantUntil {
+		t.Fatalf("frozen SkontoUntil = %s, want %s (issue date + 14)", got, wantUntil)
+	}
+	// Changing the company terms afterwards must not move the frozen clause.
+	if err := st.UpdateCompany(ctx, models.Company{
+		Name: "Hof Skonto", Address: "Feldweg 3", TaxID: "ATU123",
+		TaxNote: "Kleinunternehmer", TaxMode: "kleinunternehmer", VATRate: dec("0"),
+		SkontoPct: dec("5"), SkontoDays: 30,
+	}); err != nil {
+		t.Fatalf("company update: %v", err)
+	}
+	iv2, err := st.GetInvoice(ctx, yearID, nid)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if iv2.Content.SkontoPct.Cmp(dec("2")) != 0 || iv2.Content.SkontoUntil.Format("2006-01-02") != wantUntil {
+		t.Fatalf("snapshot moved after company change: %s / %s", iv2.Content.SkontoPct, iv2.Content.SkontoUntil)
+	}
 }
 
 // TestCreditCapAllCreditsIntegration proves Variante A of the credit cap: the

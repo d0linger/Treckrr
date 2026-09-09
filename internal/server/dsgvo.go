@@ -49,6 +49,19 @@ type dsgvoYear struct {
 	Sends        []dsgvoSend        `json:"sends,omitempty"`
 	ShareLinks   []dsgvoShare       `json:"share_links,omitempty"`
 	Installments []dsgvoInstallment `json:"installments,omitempty"`
+	// The dunning history is personal data too — arguably the most sensitive
+	// record held about a neighbor: which Mahnstufe went out when, through which
+	// channel, with what fee. An Auskunft omitting it is incomplete.
+	Dunning []dsgvoDunning `json:"dunning_notices,omitempty"`
+}
+
+type dsgvoDunning struct {
+	SentAt     time.Time       `json:"sent_at"`
+	Stage      int             `json:"stage"`
+	Channel    string          `json:"channel"`
+	Invoice    string          `json:"invoice,omitempty"`
+	GraceUntil *time.Time      `json:"grace_until,omitempty"`
+	Fee        decimal.Decimal `json:"fee"`
 }
 
 type dsgvoPayment struct {
@@ -204,8 +217,13 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
+		dunning, err := s.store.ListDunningNotices(r.Context(), y.ID, n.ID)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
 		if len(entries) == 0 && len(invoices) == 0 && len(payments) == 0 && len(ledger) == 0 &&
-			len(photos) == 0 && len(sends) == 0 && len(shares) == 0 && len(plans) == 0 {
+			len(photos) == 0 && len(sends) == 0 && len(shares) == 0 && len(plans) == 0 && len(dunning) == 0 {
 			continue // a year with no data for this person adds nothing.
 		}
 		dy := dsgvoYear{Year: y.Year}
@@ -247,6 +265,15 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 			dy.Installments = append(dy.Installments, dsgvoInstallment{
 				DueOn: pl.DueOn, Amount: pl.Amount, Note: pl.Note,
 			})
+		}
+		for _, dn := range dunning {
+			d := dsgvoDunning{SentAt: dn.SentAt, Stage: dn.Stage, Channel: dn.Channel,
+				Invoice: dn.InvoiceNumber, Fee: dn.Fee}
+			if !dn.GraceUntil.IsZero() {
+				g := dn.GraceUntil
+				d.GraceUntil = &g
+			}
+			dy.Dunning = append(dy.Dunning, d)
 		}
 		out.BillingYears = append(out.BillingYears, dy)
 	}

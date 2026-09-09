@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -132,6 +133,32 @@ type ledgerBar struct {
 	Bar    decimal.Decimal
 	Half   string // bar width = magnitude/max * 50%
 	OweX   string // left edge for an "owe" bar = 50% − Half
+}
+
+// filterPeriodDays keeps the entries whose calendar day falls inside the
+// inclusive [from, to] window, comparing formatted days so the DATE column's
+// UTC midnight and parseDay's local midnight can never disagree.
+func filterPeriodDays(entries []models.Entry, from, to time.Time) []models.Entry {
+	const day = "2006-01-02"
+	fromDay, toDay := "", ""
+	if !from.IsZero() {
+		fromDay = from.Format(day)
+	}
+	if !to.IsZero() {
+		toDay = to.Format(day)
+	}
+	kept := entries[:0]
+	for _, e := range entries {
+		d := e.Date.Format(day)
+		if fromDay != "" && d < fromDay {
+			continue
+		}
+		if toDay != "" && d > toDay {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	return kept
 }
 
 // aggregate groups entries by the key returned from keyFn, summing hours/cost,
@@ -337,17 +364,12 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	// and unit aggregations below take the same bounds in SQL.
 	from, to := parseDay(r.URL.Query().Get("from")), parseDay(r.URL.Query().Get("to"))
 	if !from.IsZero() || !to.IsZero() {
-		kept := entries[:0]
-		for _, e := range entries {
-			if !from.IsZero() && e.Date.Before(from) {
-				continue
-			}
-			if !to.IsZero() && e.Date.After(to) {
-				continue
-			}
-			kept = append(kept, e)
-		}
-		entries = kept
+		// Compare calendar DAYS, not instants: e.Date scans from the DATE column
+		// as midnight UTC while parseDay yields LOCAL midnight (the audit filter
+		// needs the local instant) — an instant comparison would drop every
+		// booking on the inclusive "to" day, while the SQL aggregates below
+		// ($::date, <=) keep it, and the page would disagree with itself.
+		entries = filterPeriodDays(entries, from, to)
 	}
 
 	// Neighbor id -> name for the by-neighbor aggregation.
@@ -575,14 +597,7 @@ func (s *Server) handleStatsExport(w http.ResponseWriter, r *http.Request) {
 	}
 	from, to := parseDay(r.URL.Query().Get("from")), parseDay(r.URL.Query().Get("to"))
 	if !from.IsZero() || !to.IsZero() {
-		kept := entries[:0]
-		for _, e := range entries {
-			if (!from.IsZero() && e.Date.Before(from)) || (!to.IsZero() && e.Date.After(to)) {
-				continue
-			}
-			kept = append(kept, e)
-		}
-		entries = kept
+		entries = filterPeriodDays(entries, from, to) // day-based; see handleStats
 	}
 	names := map[int64]string{}
 	if ns, err := s.store.ListNeighbors(r.Context()); err == nil {

@@ -408,16 +408,15 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	data["InvCredits"] = invCredits // negative sum of credit notes
 	data["HasCredits"] = invCredits.IsNegative()
 	data["InvRest"] = invRest
-	// Skonto-Angebot (Nr. 42): nur bei aktiver Klausel UND festgeschriebener
-	// Rechnung — die Frist laeuft ab dem Rechnungsdatum, ohne Rechnung gibt es
-	// kein Datum, an dem sie haengen koennte. Eine abgelaufene Frist zeigt keine
-	// Klausel mehr: ein Versprechen, das nicht mehr gilt, gehoert nicht aufs Blatt.
-	if company.SkontoPct.IsPositive() && company.SkontoDays > 0 && hasInvoice && !invoice.IssuedOn.IsZero() {
-		until := invoice.IssuedOn.AddDate(0, 0, company.SkontoDays)
-		if !time.Now().After(until) {
-			data["SkontoUntil"] = until
-			data["SkontoPct"] = company.SkontoPct
-		}
+	// Skonto clause (Nr. 42): rendered from the FROZEN snapshot, so Beleg, PDF
+	// and share link show the same promise and it never changes after
+	// Festschreibung. No expiry check: what the issued document offered stays on
+	// the issued document — the old time.Now() comparison also mixed a UTC
+	// midnight DATE with local wall time and dropped the clause hours early.
+	// Pre-snapshot invoices carry no clause (their PDF never had one either).
+	if hasInvoice && invoice.Content != nil && invoice.Content.SkontoPct.IsPositive() && !invoice.Content.SkontoUntil.IsZero() {
+		data["SkontoUntil"] = invoice.Content.SkontoUntil
+		data["SkontoPct"] = invoice.Content.SkontoPct
 	}
 	// Due date + countdown for the invoice: same definition as the Mahnwesen list
 	// (issue date + company payment term). Only meaningful while something is still

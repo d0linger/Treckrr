@@ -124,9 +124,19 @@ func TestSkontoClauseOnBelegIntegration(t *testing.T) {
 		t.Errorf("skonto clause missing on the issued invoice")
 	}
 
-	// Switched off -> gone.
+	// Switched off AFTERWARDS: the clause is frozen into the § 11 snapshot at
+	// issuance — the issued document keeps the promise it was issued with. (The
+	// old live rendering dropped it here, and the PDF never showed it at all.)
 	setSkonto("0", "0")
+	if page := e.get(belegURL); !strings.Contains(page, "% Skonto") {
+		t.Errorf("frozen skonto clause vanished after the company offer changed")
+	}
+
+	// A NEW invoice issued while the offer is off carries no clause: storno the
+	// current one and re-issue.
+	e.post(fmt.Sprintf("/neighbors/%d/invoice/storno", nid), url.Values{"year_id": {itoa64(yid)}, "reason": {"skonto test"}})
+	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{"year_id": {itoa64(yid)}})
 	if page := e.get(belegURL); strings.Contains(page, "% Skonto") {
-		t.Errorf("skonto clause shown although the offer is off")
+		t.Errorf("skonto clause shown on an invoice issued while the offer is off")
 	}
 }

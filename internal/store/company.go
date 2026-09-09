@@ -56,7 +56,8 @@ func (s *Store) UpdateCompany(ctx context.Context, c models.Company) error {
 const invoiceCols = `id, billing_year_id, neighbor_id, number, issued_on, created_at,
 	kind, status, references_invoice_id, payment_reference,
 	net, vat_rate, vat_amount, gross, show_vat, tax_mode, tax_note,
-	service_from, service_to, issuer, recipient, lines, content_hash`
+	service_from, service_to, issuer, recipient, lines, content_hash,
+	skonto_pct, skonto_until`
 
 // scanInvoice reads a full invoice row. The snapshot columns are NULL for legacy
 // rows issued before Festschreibung, in which case Content stays nil.
@@ -68,11 +69,14 @@ func scanInvoice(sc scanner) (models.Invoice, error) {
 	var taxMode, taxNote, hash string
 	var sFrom, sTo sql.NullTime
 	var issuer, recipient, lines []byte
+	var skontoPct decimal.NullDecimal
+	var skontoUntil sql.NullTime
 	if err := sc.Scan(
 		&iv.ID, &iv.BillingYearID, &iv.NeighborID, &iv.Number, &iv.IssuedOn, &iv.Created,
 		&iv.Kind, &iv.Status, &refID, &iv.PaymentReference,
 		&net, &vatRate, &vatAmt, &gross, &showVAT, &taxMode, &taxNote,
 		&sFrom, &sTo, &issuer, &recipient, &lines, &hash,
+		&skontoPct, &skontoUntil,
 	); err != nil {
 		return iv, err
 	}
@@ -90,6 +94,12 @@ func scanInvoice(sc scanner) (models.Invoice, error) {
 		}
 		if sTo.Valid {
 			c.ServiceTo = sTo.Time
+		}
+		if skontoPct.Valid {
+			c.SkontoPct = skontoPct.Decimal
+		}
+		if skontoUntil.Valid {
+			c.SkontoUntil = skontoUntil.Time
 		}
 		if err := json.Unmarshal(issuer, &c.Issuer); err != nil {
 			return iv, fmt.Errorf("scan invoice %d: issuer: %w", iv.ID, err)
@@ -213,6 +223,15 @@ func nullDate(t time.Time) any {
 		return nil
 	}
 	return t
+}
+
+// nullSkonto stores a zero Skonto percentage as NULL — "no clause", matching
+// the pre-0051 rows, rather than a stored 0.
+func nullSkonto(d decimal.Decimal) any {
+	if !d.IsPositive() {
+		return nil
+	}
+	return d
 }
 
 // InvoicedNeighborIDs returns the set of neighbor IDs that have an active issued
@@ -359,9 +378,19 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 	// settings. The prefix is alphanumeric by CHECK constraint — a separator
 	// inside it would break the split_part sequence scan below.
 	prefix, start := "", 1
+	var skontoPct decimal.Decimal
+	var skontoDays int
 	if err := tx.QueryRowContext(ctx,
-		`SELECT invoice_prefix, invoice_start FROM company WHERE id=1`).Scan(&prefix, &start); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		`SELECT invoice_prefix, invoice_start, skonto_pct, skonto_days FROM company WHERE id=1`).
+		Scan(&prefix, &start, &skontoPct, &skontoDays); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return models.Invoice{}, err
+	}
+	// Skonto terms freeze WITH the invoice (see InvoiceContent.SkontoPct): the
+	// deadline anchors on the issue date, which only exists from here on.
+	if skontoPct.IsPositive() && skontoDays > 0 {
+		content.SkontoPct = skontoPct
+		content.SkontoUntil = issuedOn.AddDate(0, 0, skontoDays)
+		content.Hash = invoiceContentHash(content)
 	}
 	// Next sequence = highest existing invoice suffix + 1 (robust to gaps), but
 	// at least the configured start (continuing an external Nummernkreis). Only

@@ -269,3 +269,60 @@ func TestParseMT940_Remittance60Continuation(t *testing.T) {
 		t.Errorf("payer = %q / %q", txns[0].Name, txns[0].IBAN)
 	}
 }
+
+// TestParseAmountSeparators pins the last-separator rule: both "1.234,56"
+// (German) and "1,234.56" (en-US bank exports) must read as 1234.56 — the old
+// any-comma-is-German path stripped the en-US dot and booked 1.23456.
+func TestParseAmountSeparators(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+		ok   bool
+	}{
+		{"1.234,56", "1234.56", true},
+		{"1,234.56", "1234.56", true},
+		{"1234.56", "1234.56", true},
+		{"12,5", "12.5", true},
+		{"2.000,00", "2000", true},
+		{"12,345,678.90", "12345678.9", true},
+		{"", "0", false},
+	}
+	for _, c := range cases {
+		got, ok := parseAmount(c.in)
+		if ok != c.ok {
+			t.Errorf("parseAmount(%q) ok = %v, want %v", c.in, ok, c.ok)
+			continue
+		}
+		if ok && got.String() != c.want {
+			t.Errorf("parseAmount(%q) = %s, want %s", c.in, got, c.want)
+		}
+	}
+}
+
+// TestParseMT940_DuplicateCreditsKeepDistinctHashes: two legitimately identical
+// credits in one statement (same payer, day, amount, text — routine for split
+// transfers) must import as TWO payments. Their hashes differ via the
+// occurrence suffix, and a re-parse reproduces the same hashes so the
+// de-duplication against earlier imports still works.
+func TestParseMT940_DuplicateCreditsKeepDistinctHashes(t *testing.T) {
+	line := ":61:2606060606C250,00NTRFNONREF\r\n" +
+		":86:166?00GUTSCHRIFT?20SVWZ+Anzahlung Maier?32Maier Josef\r\n"
+	data := ":20:STMT2\r\n:25:AT611904300234573201\r\n:28C:1/1\r\n" + line + line + "-\r\n"
+	txns, err := ParseMT940([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(txns) != 2 {
+		t.Fatalf("got %d credits, want 2", len(txns))
+	}
+	if txns[0].Hash == txns[1].Hash {
+		t.Fatalf("identical hashes %s — the second credit would be silently dropped on import", txns[0].Hash)
+	}
+	again, err := ParseMT940([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again[0].Hash != txns[0].Hash || again[1].Hash != txns[1].Hash {
+		t.Fatal("hashes not stable across re-parse — re-imported statements would double-book")
+	}
+}

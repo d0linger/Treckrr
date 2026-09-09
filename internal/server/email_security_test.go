@@ -66,6 +66,7 @@ func (r *mockEmailRows) Columns() []string {
 			"kind", "status", "references_invoice_id", "payment_reference",
 			"net", "vat_rate", "vat_amount", "gross", "show_vat", "tax_mode", "tax_note",
 			"service_period_from", "service_period_to", "issuer_json", "recipient_json", "lines_json", "content_hash",
+			"skonto_pct", "skonto_until", // 0051
 		}
 	case strings.Contains(q, "payments p"):
 		return []string{"net", "paid"}
@@ -114,6 +115,8 @@ func (r *mockEmailRows) Next(dest []driver.Value) error {
 		dest[20] = []byte(`{}`)
 		dest[21] = []byte(`[]`)
 		dest[22] = "hash"
+		dest[23] = nil // skonto_pct (0051)
+		dest[24] = nil // skonto_until
 	case strings.Contains(q, "payments p"):
 		dest[0] = "100.00"
 		dest[1] = "0.00"

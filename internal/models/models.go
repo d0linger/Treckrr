@@ -447,6 +447,14 @@ type InvoiceContent struct {
 	Issuer      InvoiceParty    `json:"issuer"`
 	Recipient   InvoiceParty    `json:"recipient"`
 	Lines       []InvoiceLine   `json:"lines"`
+	// Skonto terms FROZEN at issuance (zero = no clause): the discount is part of
+	// the invoice's payment terms, so it must appear identically on the Beleg,
+	// the PDF and the share link, and must never change after Festschreibung.
+	// Rendering it live from the company row did neither — the PDF omitted it
+	// and the on-screen clause vanished once time.Now() passed the deadline.
+	// Snapshots from before this field simply carry no clause.
+	SkontoPct   decimal.Decimal `json:"skonto_pct,omitempty"`
+	SkontoUntil time.Time       `json:"skonto_until,omitempty"`
 	Hash        string          `json:"-"` // sha256 over the canonical content
 }
 
