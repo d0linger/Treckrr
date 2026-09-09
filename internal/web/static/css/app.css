@@ -513,6 +513,10 @@ em { font-style: normal; color: var(--muted); }
 /* When the row wraps, the payment chip/toggle keeps right alignment on its own line. */
 .list__row > .paytoggle, .list__row > .paychip { margin-left: auto; }
 .list__actions { display: flex; gap: .4rem; align-items: center; }
+/* Pair link between a machine booking and its Mannstunden companion (booked in
+   one submit): quiet inline anchor jumping to the other card. */
+.bcard__link { color: var(--accent-text, var(--muted)); text-decoration: none; white-space: nowrap; }
+.bcard__link:hover { text-decoration: underline; }
 .list__actions form { margin: 0; }
 .list__main--link { text-decoration: none; color: inherit; flex: 1 1 auto; min-width: 0; }
 .list__row--plain { padding: 0; }
@@ -2015,12 +2019,33 @@ span.paychip { cursor: default; }
 	   the Beleg print treatment). */
 	.stack--statement {
 		--surface: #fff; --surface-2: #f4f6f2; --text: #191c1a; --muted: #5b655d; --border: #dfe4dd;
+		--card-grad: #fff; --card-hairline: rgba(20, 40, 30, .07); --card-shadow: none;
 		-webkit-print-color-adjust: exact; print-color-adjust: exact;
 	}
 	.stack--statement, .stack--statement * { color: #111 !important; }
 	.stack--statement .statement-head__meta, .stack--statement .muted { color: #666 !important; }
-	.stack--statement .yearcard, .stack--statement .summary-card { break-inside: avoid; box-shadow: none; }
+	.stack--statement .yearcard, .stack--statement .summary-card, .stack--statement .card { break-inside: avoid; box-shadow: none; }
 	.stack--statement .yearcard { background: #fff !important; border-color: #dfe4dd !important; }
+	/* The hero and the trend cards paint their own dark surfaces (primary
+	   gradient / --card-grad), which the token pinning above cannot reach — under
+	   the flat #111 text rule they printed dark-on-dark. Same treatment as the
+	   Beleg hero: a light tint with full-ink text. */
+	.stack--statement .card { background: #fff !important; border-color: #dfe4dd !important; }
+	/* After the .card rule: the hero carries BOTH classes (summary-card card),
+	   and at equal specificity the later background would win. */
+	.stack--statement .summary-card { background: #e9efe9 !important; border: 1px solid #dfe4dd; }
+	.stack--statement .summary-card * { color: #10241a !important; opacity: 1; }
+	/* Bars draw at full width immediately — a print snapshot must not catch the
+	   entrance animation at 0 width. */
+	.stack--statement .bchart__fill { animation: none !important; }
+	/* The track token stays dark in dark mode — a zero-value year then printed as
+	   one solid dark bar, indistinguishable from a full one. */
+	.stack--statement { --data-track: #e7ebe5; }
+	/* The bar gradient's stops are classed elements under :root, out of reach of
+	   the token pinning above — under data-theme="dark" they kept the dark-theme
+	   mint. Print always uses the light-theme greens. */
+	.gs-strong { stop-color: #0f5233 !important; }
+	.gs-data, .gs-pay { stop-color: #58c286 !important; }
 }
 
 /* Standalone error page (404/500). Token-based; follows system theme. */
