@@ -1262,6 +1262,11 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	dates := r.Form["q_date"]
 	gespanne := r.Form["q_gespann"]
 	hoursList := r.Form["q_hours"]
+	// Offline replay (Ausbaukarte 100): the client sends one key PER ROW, since
+	// one submit becomes N bookings and a single key would let a replay create
+	// only the first of them. Absent for an online submit, which keeps the
+	// previous behavior exactly.
+	keys := r.Form["q_key"]
 	created := 0
 	for i := range gespanne {
 		gid, _ := strconv.ParseInt(strings.TrimSpace(gespanne[i]), 10, 64)
@@ -1282,9 +1287,23 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 		}
 		entry.NeighborID = neighborID
 		entry.BillingYearID = year.ID
-		if _, err := s.store.CreateEntry(r.Context(), entry, machineIDs); err == nil {
+		if i < len(keys) {
+			key := strings.TrimSpace(keys[i])
+			if len(key) <= maxNameLen {
+				entry.IdempotencyKey = key
+			}
+		}
+		id, err := s.store.CreateEntry(r.Context(), entry, machineIDs)
+		if err == nil && id != 0 {
 			created++
 		}
+	}
+	// An offline replay gets an explicit status, never a redirect: the client
+	// reads it with redirect:"manual", so a 303 arrives as an opaque response
+	// and the item would sit in the queue forever, retried on every page load.
+	if r.Header.Get("X-Offline-Replay") == "1" {
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
 	if created == 0 {
 		s.setFlash(w, r, "error", "Keine gültigen Zeilen (Gespann und Stunden erforderlich).")

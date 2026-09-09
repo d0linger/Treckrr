@@ -107,9 +107,14 @@
 			var token = csrf();
 			return items.reduce(function (p, item) {
 				return p.then(function () {
-					var body = new URLSearchParams(item.data);
+					var body = new URLSearchParams();
+					if (item.data && item.data.__pairs) {
+						item.data.__pairs.forEach(function (p) { body.append(p[0], p[1]); });
+					} else {
+						Object.keys(item.data || {}).forEach(function (k) { body.set(k, item.data[k]); });
+					}
 					if (token) body.set("csrf_token", token);
-					return fetch("/entries", {
+					return fetch(item.path || "/entries", {
 						method: "POST", credentials: "same-origin", redirect: "manual",
 						// The server answers a replay with an explicit status (not a redirect):
 						// 2xx = stored, 422/400 = permanent rejection, 401 = login needed.
@@ -158,6 +163,41 @@
 		}, true);
 	}
 
+	// ---- Schnellerfassung offline (Ausbaukarte 100) ------------------------
+	// The idempotency infrastructure carried exactly one form. The quick-entry
+	// table posts to /entries/quick and becomes N bookings, so each row gets its
+	// OWN key — one key for the whole submit would let a replay create the first
+	// booking and silently drop the rest.
+	var quick = document.querySelector("[data-quick-form]");
+	if (quick) {
+		var stampKeys = function () {
+			quick.querySelectorAll("[data-quick-key]").forEach(function (f) {
+				if (!f.value) f.value = uuid();
+			});
+		};
+		stampKeys();
+		quick.addEventListener("submit", function (e) {
+			if (navigator.onLine) return;
+			e.preventDefault();
+			e.stopPropagation();
+			stampKeys();
+			var data = {};
+			// Repeated field names must survive: FormData keeps every row, a plain
+			// object would keep only the last one. The replay posts them back with
+			// URLSearchParams, which handles repeats the same way.
+			var pairs = [];
+			new FormData(quick).forEach(function (v, key) {
+				if (key !== "csrf_token") pairs.push([String(key), String(v)]);
+			});
+			data.__pairs = pairs;
+			put({ id: uuid(), data: data, user: currentUser(), path: "/entries/quick" }).then(function () {
+				quick.querySelectorAll("[data-quick-key]").forEach(function (f) { f.value = uuid(); });
+				refreshBadge();
+				toast("Offline gespeichert – wird bei Verbindung gesendet.");
+			});
+		}, true);
+	}
+
 	// ---- Warteschlange sichtbar machen (Ausbaukarte 72) --------------------
 	// The badge was a dead counter: a booking that kept failing to send could
 	// sit there indefinitely with no way to look at it, fix it or drop it.
@@ -175,11 +215,22 @@
 		meta.className = "offlineq__meta";
 		var d = item.data || {};
 		var title = document.createElement("strong");
-		var qty = d.unit && d.unit !== "h" ? (d.quantity || "?") + " " + d.unit : (d.hours || "?") + " h";
-		title.textContent = (d.task_label || "Buchung") + " · " + qty;
 		var sub = document.createElement("span");
 		sub.className = "muted small";
-		sub.textContent = (d.entry_date || "ohne Datum") + (d.note ? " · " + d.note : "");
+		if (d.__pairs) {
+			// A quick-entry submit: several rows in one item, so it is described
+			// by how many rows it carries rather than by one booking's fields.
+			var rows = d.__pairs.filter(function (p) {
+				return p[0] === "q_hours" && String(p[1]).trim() !== "";
+			}).length;
+			title.textContent = "Schnellerfassung · " + rows + " Zeile(n)";
+			var firstDate = d.__pairs.find(function (p) { return p[0] === "q_date"; });
+			sub.textContent = firstDate ? firstDate[1] : "ohne Datum";
+		} else {
+			var qty = d.unit && d.unit !== "h" ? (d.quantity || "?") + " " + d.unit : (d.hours || "?") + " h";
+			title.textContent = (d.task_label || "Buchung") + " · " + qty;
+			sub.textContent = (d.entry_date || "ohne Datum") + (d.note ? " · " + d.note : "");
+		}
 		meta.appendChild(title);
 		meta.appendChild(sub);
 		var drop = document.createElement("button");

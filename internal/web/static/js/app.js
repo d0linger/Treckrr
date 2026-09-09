@@ -224,13 +224,33 @@
 		el.addEventListener("change", clear);
 	});
 
+	// A submit button that carries a name only reaches the server while it is
+	// enabled and while the submission carries a submitter. Both of those get
+	// broken below — the busy state disables the button, and the confirm modal
+	// re-sends with form.submit() — so the pair is parked in a hidden field
+	// instead. Without this, a form with several named actions (the bulk
+	// storno/delete row) arrives with no action at all.
+	function carrySubmitter(form, submitter) {
+		var old = form.querySelector("input[data-submitter]");
+		if (old) old.remove();
+		if (!submitter || !submitter.name) return;
+		var h = document.createElement("input");
+		h.type = "hidden";
+		h.name = submitter.name;
+		h.value = submitter.value;
+		h.setAttribute("data-submitter", "");
+		form.appendChild(h);
+	}
+
 	// Submit feedback: a POST form that passes validation shows a spinning state
 	// on its primary button. Submission still proceeds; the server redirects.
 	// Skipped for data-confirm forms (the modal drives those via form.submit()).
 	document.querySelectorAll("form").forEach(function (form) {
 		if ((form.getAttribute("method") || "").toLowerCase() !== "post") return;
 		form.addEventListener("submit", function (e) {
-			if (form.hasAttribute("data-confirm") && form.dataset.confirmed !== "1") return;
+			var asksFirst = form.hasAttribute("data-confirm") ||
+				(e.submitter && e.submitter.hasAttribute && e.submitter.hasAttribute("data-confirm"));
+			if (asksFirst && form.dataset.confirmed !== "1") return;
 			// Block a second submission (double-click or double-Enter) while the
 			// first POST is in flight — the server redirects, so this navigates away.
 			if (form.dataset.submitting === "1") { e.preventDefault(); return; }
@@ -241,6 +261,7 @@
 			var btn = (e.submitter && e.submitter.tagName === "BUTTON")
 				? e.submitter
 				: form.querySelector("button[type='submit']");
+			carrySubmitter(form, e.submitter);
 			if (btn) { btn.classList.add("is-submitting"); btn.setAttribute("aria-busy", "true"); btn.disabled = true; }
 		});
 	});
@@ -308,11 +329,29 @@
 		});
 	});
 
-	document.querySelectorAll("form[data-confirm]").forEach(function (form) {
+	// The message and the optional reason prompt come from the SUBMITTER when it
+	// carries them, otherwise from the form — so one form can ask a different
+	// question per action.
+	function confirmAttrs(form, submitter) {
+		if (submitter && submitter.hasAttribute && submitter.hasAttribute("data-confirm")) {
+			return {
+				message: submitter.getAttribute("data-confirm"),
+				reason: submitter.getAttribute("data-confirm-reason"),
+			};
+		}
+		return {
+			message: form.getAttribute("data-confirm"),
+			reason: form.getAttribute("data-confirm-reason"),
+		};
+	}
+
+	document.querySelectorAll("form[data-confirm], form:has(button[data-confirm])").forEach(function (form) {
 		form.addEventListener("submit", function (e) {
 			if (form.dataset.confirmed === "1") return;
-			var message = form.getAttribute("data-confirm");
-			var reasonLabel = form.getAttribute("data-confirm-reason");
+			var attrs = confirmAttrs(form, e.submitter);
+			if (!attrs.message) return; // this action asks nothing
+			var message = attrs.message;
+			var reasonLabel = attrs.reason;
 			if (!modal || typeof modal.showModal !== "function") {
 				if (!window.confirm(message)) { e.preventDefault(); return; }
 				// Native fallback: prompt for the reason if one was requested;
@@ -327,6 +366,7 @@
 				return;
 			}
 			e.preventDefault();
+			carrySubmitter(form, e.submitter);
 			pendingForm = form;
 			if (msgEl) msgEl.textContent = message;
 			if (okBtn) {

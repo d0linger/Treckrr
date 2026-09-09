@@ -3,6 +3,7 @@ package server
 import (
 	"log/slog"
 	"net/http"
+	netmail "net/mail"
 	"regexp"
 	"strconv"
 	"strings"
@@ -67,6 +68,23 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 	c.InvoiceStart = 1
 	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("invoice_start"))); err == nil && v >= 1 && v <= 999999 {
 		c.InvoiceStart = v
+	}
+	// E-Mail-Vorlage und Kopie-Empfänger (Nr. 99). Eine ungültige CC-Adresse
+	// wird abgewiesen statt still verworfen — sonst glaubt der Betrieb, der
+	// Steuerberater bekomme Kopien, und niemand merkt das Gegenteil.
+	c.MailSignature = trimmed(r, "mail_signature")
+	c.MailCC = trimmed(r, "mail_cc")
+	if c.MailCC != "" {
+		if _, err := netmail.ParseAddress(c.MailCC); err != nil {
+			s.setFlash(w, r, "error", "Ungültige CC-Adresse für den Mail-Versand.")
+			redirect(w, r, "/admin/company")
+			return
+		}
+	}
+	if s.tooLong(w, r, "Signatur", c.MailSignature, maxNoteLen) ||
+		s.tooLong(w, r, "CC-Adresse", c.MailCC, maxNameLen) {
+		redirect(w, r, "/admin/company")
+		return
 	}
 	// Anfahrt (Nr. 58): 0 = kein Zuschlag, das Formular bleibt verborgen.
 	if f := formDecimal(r, "travel_flat"); f.IsPositive() {

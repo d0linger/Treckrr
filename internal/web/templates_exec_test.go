@@ -226,6 +226,7 @@ func TestCompanyPageRenders(t *testing.T) {
 			"SkontoPct": d(0), "SkontoDays": 0,
 			"InvoicePrefix": "", "InvoiceStart": 1, "SmallBusinessLimit": d(0),
 			"TravelFlat": d(0), "TravelPerKm": d(0),
+			"MailSignature": "", "MailCC": "",
 		},
 	})
 }

@@ -22,11 +22,11 @@ func (s *Store) GetCompany(ctx context.Context) (models.Company, error) {
 		`SELECT name, address, tax_id, tax_note, tax_mode, vat_rate, iban, payment_term_days,
 		        dunning_fee_1, dunning_fee_2, dunning_grace_days, skonto_pct, skonto_days,
 		        invoice_prefix, invoice_start, small_business_limit,
-		        travel_flat, travel_per_km FROM company WHERE id=1`).
+		        travel_flat, travel_per_km, mail_signature, mail_cc FROM company WHERE id=1`).
 		Scan(&c.Name, &c.Address, &c.TaxID, &c.TaxNote, &c.TaxMode, &c.VATRate, &c.IBAN, &c.PaymentTermDays,
 			&c.DunningFee1, &c.DunningFee2, &c.DunningGraceDays, &c.SkontoPct, &c.SkontoDays,
 			&c.InvoicePrefix, &c.InvoiceStart, &c.SmallBusinessLimit,
-			&c.TravelFlat, &c.TravelPerKm)
+			&c.TravelFlat, &c.TravelPerKm, &c.MailSignature, &c.MailCC)
 	return c, err
 }
 
@@ -42,10 +42,12 @@ func (s *Store) UpdateCompany(ctx context.Context, c models.Company) error {
 		`UPDATE company SET name=$1, address=$2, tax_id=$3, tax_note=$4, tax_mode=$5, vat_rate=$6, iban=$7,
 		        payment_term_days=$8, dunning_fee_1=$9, dunning_fee_2=$10, dunning_grace_days=$11,
 		        skonto_pct=$12, skonto_days=$13, invoice_prefix=$14, invoice_start=$15,
-		        small_business_limit=$16, travel_flat=$17, travel_per_km=$18 WHERE id=1`,
+		        small_business_limit=$16, travel_flat=$17, travel_per_km=$18,
+		        mail_signature=$19, mail_cc=$20 WHERE id=1`,
 		c.Name, c.Address, c.TaxID, c.TaxNote, c.TaxMode, c.VATRate, c.IBAN, c.PaymentTermDays,
 		c.DunningFee1, c.DunningFee2, c.DunningGraceDays, c.SkontoPct, c.SkontoDays,
-		c.InvoicePrefix, c.InvoiceStart, c.SmallBusinessLimit, c.TravelFlat, c.TravelPerKm)
+		c.InvoicePrefix, c.InvoiceStart, c.SmallBusinessLimit, c.TravelFlat, c.TravelPerKm,
+		c.MailSignature, c.MailCC)
 	return err
 }
 

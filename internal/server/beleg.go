@@ -792,9 +792,10 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	if from == "" {
 		from = "Ihr Maschinenring"
 	}
-	body := "Guten Tag " + neighbor.Name + ",\n\nanbei die Rechnung " + iv.Number + " als PDF.\n\nMit freundlichen Grüßen\n" + from
+	body := mailBody(company, neighbor.Name, "anbei die Rechnung "+iv.Number+" als PDF.", from)
 	att := mail.Attachment{Filename: "Rechnung_" + sanitizeFilename(iv.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
-	if err := mail.Send(r.Context(), s.cfg, neighbor.Email, "Rechnung "+iv.Number, body, []mail.Attachment{att}); err != nil {
+	subject := "Rechnung " + iv.Number
+	if err := mail.Send(r.Context(), s.cfg, neighbor.Email, subject, body, []mail.Attachment{att}); err != nil {
 		metrics.Inc(metrics.MailFailed)
 		slog.Error("beleg email send failed", "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))
 		s.audit(r, "beleg_email_failed", "neighbor", neighbor.ID,
@@ -816,7 +817,10 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
-	// Delivery succeeded; the send-trail marker is secondary. If recording it fails
+	// Delivery succeeded — send the configured CC its copy (Nr. 99) before the
+	// bookkeeping below; best-effort, it must not turn a good send into an error.
+	s.sendMailCopy(r.Context(), company, subject, body, []mail.Attachment{att})
+	// The send-trail marker is secondary. If recording it fails
 	// don't fail the request — log it and tell the user the send worked but the
 	// history entry didn't, so "zuletzt versendet am …" being absent isn't a mystery.
 	if err := s.store.RecordBelegSend(r.Context(), year.ID, neighbor.ID, "e-mail"); err != nil {

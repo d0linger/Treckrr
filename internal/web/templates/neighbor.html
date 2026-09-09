@@ -150,7 +150,7 @@
 
 	<details class="card disclosure">
 		<summary>Schnellerfassung (mehrere Zeilen)</summary>
-		<form method="post" action="/entries/quick" class="form">
+		<form method="post" action="/entries/quick" class="form" data-quick-form>
 			<input type="hidden" name="year_id" value="{{.Year.ID}}">
 			<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
 			<p class="muted small">Je Zeile ein festes Gespann und die Stunden. Leere Zeilen werden ignoriert.</p>
@@ -167,7 +167,8 @@
 									{{range $.Gespanne}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
 								</select>
 							</td>
-							<td><input class="input" name="q_hours" inputmode="decimal" placeholder="0"></td>
+							<td><input class="input" name="q_hours" inputmode="decimal" placeholder="0">
+							<input type="hidden" name="q_key" value="" data-quick-key></td>
 						</tr>
 						{{end}}
 					</tbody>

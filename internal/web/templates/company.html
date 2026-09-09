@@ -37,6 +37,10 @@
 			<input class="input" name="travel_flat" inputmode="decimal" value="{{num .TravelFlat}}"></label>
 		<label class="field"><span>Kilometergeld (€ je km, 0 = kein Zuschlag)</span>
 			<input class="input" name="travel_per_km" inputmode="decimal" value="{{num .TravelPerKm}}"></label>
+		<label class="field"><span>E-Mail-Signatur (leer = „Mit freundlichen Grüßen“ + Betriebsname)</span>
+			<textarea class="input" name="mail_signature" rows="3" placeholder="Mit freundlichen Grüßen&#10;Hof Bergmann&#10;Tel. 0664 …">{{.MailSignature}}</textarea></label>
+		<label class="field"><span>Kopie an (CC bei Beleg- und Mahnungs-Mails, optional)</span>
+			<input class="input" type="email" name="mail_cc" value="{{.MailCC}}" placeholder="steuerberater@example.at" autocomplete="off"></label>
 		<label class="field"><span>Besteuerung</span>
 			<select class="select" name="tax_mode">
 				<option value="kleinunternehmer" {{if eq .TaxMode "kleinunternehmer"}}selected{{end}}>Kleinunternehmer – kein USt-Ausweis</option>

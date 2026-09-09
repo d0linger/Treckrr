@@ -387,6 +387,12 @@ type Company struct {
 	// stays hidden.
 	TravelFlat  decimal.Decimal
 	TravelPerKm decimal.Decimal
+	// MailSignature replaces the built-in closing under outgoing mails; empty
+	// keeps "Mit freundlichen Grüßen / <Betriebsname>". MailCC receives a copy
+	// of every Beleg and Mahnung (Steuerberater, second person on the farm);
+	// empty = no copy (Ausbaukarte 99).
+	MailSignature string
+	MailCC        string
 }
 
 // Person is a helper with an own hourly rate (Ausbaukarte 57). The ÖKL

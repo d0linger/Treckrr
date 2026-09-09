@@ -409,3 +409,42 @@ func (s *Server) handleDocumentStorno(w http.ResponseWriter, r *http.Request) {
 	s.setFlash(w, r, "success", "Beleg storniert ("+sv.Number+").")
 	redirect(w, r, back)
 }
+
+// handleJournalPDF serves every invoice of a year as ONE document, a page each
+// (Ausbaukarte 98) — what an operator hands to the tax adviser or prints in one
+// go. The ZIP next to it (Nr. 50) stays the archive of separate files.
+func (s *Server) handleJournalPDF(w http.ResponseWriter, r *http.Request) {
+	year, ok := s.resolveYear(w, r)
+	if !ok {
+		return
+	}
+	docs, err := s.store.ListInvoiceDocs(r.Context(), year.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	// Invoices only: a Sammel-PDF of the year's invoices is what is asked for,
+	// and mixing storni and credit notes into the same stack would make the
+	// stack unusable as a set of documents to hand over.
+	list := make([]*models.Invoice, 0, len(docs))
+	for i := range docs {
+		if docs[i].Kind == "invoice" {
+			list = append(list, &docs[i])
+		}
+	}
+	blob, skipped, err := pdf.RenderInvoices(list)
+	if err != nil {
+		s.setFlash(w, r, "error", "Keine festgeschriebene Rechnung mit Snapshot in diesem Jahr.")
+		redirect(w, r, "/rechnungsjournal?year="+itoa64(year.ID))
+		return
+	}
+	if len(skipped) > 0 {
+		// Legacy rows without a reconstructible snapshot: say so rather than
+		// letting the operator believe the stack is complete.
+		slog.Warn("sammel-pdf skipped documents without a snapshot",
+			"year", year.Year, "numbers", sanitizeLog(strings.Join(skipped, ",")))
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"rechnungen-%d.pdf\"", year.Year))
+	_, _ = w.Write(blob)
+}

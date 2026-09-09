@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/shopspring/decimal"
+	"github.com/signintech/gopdf"
 
 	"github.com/d0linger/treckrr/internal/models"
 )
@@ -51,11 +52,58 @@ func RenderInvoice(iv *models.Invoice) ([]byte, error) {
 	if iv == nil || iv.Content == nil {
 		return nil, fmt.Errorf("kein Rechnungs-Snapshot vorhanden")
 	}
-	c := iv.Content
 	pdf, err := newDoc()
 	if err != nil {
 		return nil, err
 	}
+	if err := invoicePage(pdf, iv); err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if _, err := pdf.WriteTo(&buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// RenderInvoices paints SEVERAL invoices into one document, a page each
+// (Ausbaukarte 98). A Sammel-PDF is what an operator hands to the tax adviser
+// or prints in one go; the ZIP of separate files (Nr. 50) is the archive.
+// Documents without a frozen snapshot are skipped and reported by name, never
+// silently dropped.
+func RenderInvoices(invoices []*models.Invoice) ([]byte, []string, error) {
+	pdf, err := newDoc()
+	if err != nil {
+		return nil, nil, err
+	}
+	var skipped []string
+	pages := 0
+	for _, iv := range invoices {
+		if iv == nil || iv.Content == nil {
+			if iv != nil {
+				skipped = append(skipped, iv.Number)
+			}
+			continue
+		}
+		if err := invoicePage(pdf, iv); err != nil {
+			skipped = append(skipped, iv.Number)
+			continue
+		}
+		pages++
+	}
+	if pages == 0 {
+		return nil, skipped, fmt.Errorf("keine Rechnung mit Snapshot vorhanden")
+	}
+	var buf bytes.Buffer
+	if _, err := pdf.WriteTo(&buf); err != nil {
+		return nil, skipped, err
+	}
+	return buf.Bytes(), skipped, nil
+}
+
+// invoicePage paints one invoice onto a fresh page of an existing document.
+func invoicePage(pdf *gopdf.GoPdf, iv *models.Invoice) error {
+	c := iv.Content
 	pdf.AddPage()
 	y := 48.0
 
@@ -199,11 +247,7 @@ func RenderInvoice(iv *models.Invoice) ([]byte, error) {
 	}
 
 	gfooter(pdf, c.Issuer.Name, c.Issuer.Address, c.Issuer.TaxID, c.Issuer.IBAN)
-	var buf bytes.Buffer
-	if _, err := pdf.WriteTo(&buf); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return nil
 }
 
 func firstNonEmpty(vals ...string) string {

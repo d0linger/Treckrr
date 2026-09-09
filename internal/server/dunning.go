@@ -344,9 +344,10 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 	if from == "" {
 		from = "Ihr Maschinenring"
 	}
-	body := "Guten Tag " + v.Neighbor.Name + ",\n\nanbei " + v.Title + " zur Rechnung " + v.Invoice.Number + " als PDF.\n\nMit freundlichen Grüßen\n" + from
+	body := mailBody(v.Company, v.Neighbor.Name, "anbei "+v.Title+" zur Rechnung "+v.Invoice.Number+" als PDF.", from)
 	att := mail.Attachment{Filename: "Mahnung_" + sanitizeFilename(v.Invoice.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
-	if err := mail.Send(r.Context(), s.cfg, v.Neighbor.Email, v.Title+" · Rechnung "+v.Invoice.Number, body, []mail.Attachment{att}); err != nil {
+	subject := v.Title + " · Rechnung " + v.Invoice.Number
+	if err := mail.Send(r.Context(), s.cfg, v.Neighbor.Email, subject, body, []mail.Attachment{att}); err != nil {
 		metrics.Inc(metrics.MailFailed)
 		s.audit(r, "mahnung_email_failed", "neighbor", v.Neighbor.ID,
 			v.Neighbor.Name+" · "+v.Title+" · Rechnung "+v.Invoice.Number+" · "+err.Error())
@@ -364,6 +365,8 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	// Delivery succeeded; the send-trail marker is secondary — mirror handleBelegEmail:
 	// log a failed write and tell the user the reminder went out but wasn't recorded.
+	// The configured CC gets its copy (Nr. 99), best-effort.
+	s.sendMailCopy(r.Context(), v.Company, subject, body, []mail.Attachment{att})
 	if err := s.store.RecordDunningNotice(r.Context(), store.DunningNotice{
 		BillingYearID: v.Invoice.BillingYearID, NeighborID: v.Neighbor.ID,
 		InvoiceNumber: v.Invoice.Number, Stage: v.Stage, Channel: "e-mail",
@@ -521,9 +524,10 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 		if from == "" {
 			from = "Ihr Maschinenring"
 		}
-		body := "Guten Tag " + v.Neighbor.Name + ",\n\nanbei " + v.Title + " zur Rechnung " + v.Invoice.Number + " als PDF.\n\nMit freundlichen Grüßen\n" + from
+		body := mailBody(v.Company, v.Neighbor.Name, "anbei "+v.Title+" zur Rechnung "+v.Invoice.Number+" als PDF.", from)
 		att := mail.Attachment{Filename: "Mahnung_" + sanitizeFilename(v.Invoice.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
-		if err := mail.Send(r.Context(), s.cfg, v.Neighbor.Email, v.Title+" · Rechnung "+v.Invoice.Number, body, []mail.Attachment{att}); err != nil {
+		subject := v.Title + " · Rechnung " + v.Invoice.Number
+		if err := mail.Send(r.Context(), s.cfg, v.Neighbor.Email, subject, body, []mail.Attachment{att}); err != nil {
 			metrics.Inc(metrics.MailFailed)
 			s.audit(r, "mahnung_email_failed", "neighbor", v.Neighbor.ID,
 				v.Neighbor.Name+" · "+v.Title+" · Rechnung "+v.Invoice.Number+" · "+err.Error())
@@ -539,6 +543,8 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 			queued++
 			continue
 		}
+		// Delivered — the configured CC gets its copy (Nr. 99), best-effort.
+		s.sendMailCopy(r.Context(), v.Company, subject, body, []mail.Attachment{att})
 		if err := s.store.RecordDunningNotice(r.Context(), store.DunningNotice{
 			BillingYearID: v.Invoice.BillingYearID, NeighborID: v.Neighbor.ID,
 			InvoiceNumber: v.Invoice.Number, Stage: v.Stage, Channel: "e-mail",

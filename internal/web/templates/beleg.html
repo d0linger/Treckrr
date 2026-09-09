@@ -279,8 +279,11 @@
 		{{with .LastSend}}
 		<p class="beleg__sent muted small">{{template "ic-check"}} Zuletzt versendet am {{.SentAt.Format "02.01.2006, 15:04"}} Uhr ({{.Channel}})</p>
 		{{end}}
-		{{if and (not .HasInvoice) (not .Shared)}}
+		{{if and (not .HasInvoice) (not .Shared) (not .Completed)}}
 		<a class="btn btn--primary btn--block" href="/neighbors/{{.Neighbor.ID}}/invoice/confirm?year={{.Year.ID}}">Rechnung ausstellen &amp; festschreiben</a>
+		{{end}}
+		{{if and .Completed (not .Shared)}}
+		<p class="muted small">Das Abrechnungsjahr ist abgeschlossen — Belege sind gesperrt. Für eine Korrektur das Jahr unter „Jahre“ mit Begründung wieder öffnen.</p>
 		{{end}}
 		{{if and .Anzahlungen (not .Shared)}}
 		<div class="beleg__doclist">
