@@ -383,6 +383,17 @@ func (s *Server) handleNeighborAnonymize(w http.ResponseWriter, r *http.Request)
 		http.NotFound(w, r)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	// Ausbaukarte 88: typed confirmation, like the restore. This deletes free
+	// text and photos for good; a mis-aimed click must not be enough.
+	if strings.TrimSpace(r.FormValue("confirm")) != "ANONYMISIEREN" {
+		s.setFlash(w, r, "error", "Zum Anonymisieren bitte ANONYMISIEREN eintippen (Großschreibung beachten).")
+		redirect(w, r, "/neighbors")
+		return
+	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
 	if before != nil && before.Anonymized {
 		s.setFlash(w, r, "error", "Nachbar ist bereits anonymisiert.")

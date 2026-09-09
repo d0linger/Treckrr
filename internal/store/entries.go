@@ -51,10 +51,28 @@ func (s *Store) GetNeighbor(ctx context.Context, id int64) (*models.Neighbor, er
 // AnonymizeNeighbor erases the live personal data of a neighbor (DSGVO Art. 17)
 // while keeping the row and its bookings/invoices for the legal retention period.
 // The name is replaced with a stable non-identifying placeholder (kept unique for
-// the UNIQUE(name) constraint), and the neighbor is archived. Frozen invoice
-// snapshots are deliberately untouched. No-op if already anonymized.
+// the UNIQUE(name) constraint), and the neighbor is archived. No-op if already
+// anonymized.
+//
+// Since Ausbaukarte 87 it reaches beyond the master record, because the operator
+// types free text all over the app and any of it can name a person: booking notes
+// and task labels, ledger descriptions, payment notes, and the receipt photos —
+// a Wiegeschein shows names and plates. All of that is live working data with no
+// retention claim of its own once the person is erased.
+//
+// What stays, deliberately: the FROZEN invoice snapshots and the amounts. They
+// are the tax record (§ 132 BAO, seven years), and scrubbing the live row while
+// the snapshot keeps the same text would be theater rather than erasure.
+//
+// Everything runs in ONE transaction: a half-anonymised person is worse than
+// none, because the operator would believe the erasure happened.
 func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
-	res, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	res, err := tx.ExecContext(ctx,
 		`UPDATE neighbors
 		    SET name = 'anonymisiert #' || id,
 		        note = '', address = '', tax_id = '', email = '', iban = '',
@@ -63,7 +81,25 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	if n, _ := res.RowsAffected(); n > 0 {
+		for _, q := range []string{
+			`DELETE FROM entry_photos WHERE entry_id IN (SELECT id FROM entries WHERE neighbor_id = $1)`,
+			`UPDATE entries SET note = '', task_label = '' WHERE neighbor_id = $1 AND (note <> '' OR task_label <> '')`,
+			`UPDATE neighbor_ledger SET description = '' WHERE neighbor_id = $1 AND description <> ''`,
+			`UPDATE payments SET note = '' WHERE neighbor_id = $1 AND note <> ''`,
+			`DELETE FROM mail_outbox WHERE neighbor_id = $1`,
+			`DELETE FROM beleg_shares WHERE neighbor_id = $1`,
+		} {
+			if _, err := tx.ExecContext(ctx, q, id); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	{
 		// Either the neighbor is gone or was already anonymized; distinguish so the
 		// handler can 404 vs. treat it as a no-op.
 		var exists bool

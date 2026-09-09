@@ -83,8 +83,10 @@
 						<button class="btn btn--danger btn--sm" type="submit">Löschen</button>
 					</form>
 					{{else}}
-					<form method="post" action="/neighbors/{{.Neighbor.ID}}/anonymize"
-						data-confirm-danger data-confirm="{{.Neighbor.Name}} anonymisieren? Personenbezogene Daten werden unwiderruflich gelöscht. Buchungen und Rechnungen bleiben erhalten.">
+					<form method="post" action="/neighbors/{{.Neighbor.ID}}/anonymize" class="form">
+						<p class="muted small">{{.Neighbor.Name}} anonymisieren löscht Stammdaten, Notizen, Tätigkeitstexte und Belegfotos unwiderruflich. Beträge und festgeschriebene Rechnungen bleiben aufbewahrungspflichtig erhalten.</p>
+						<label class="field"><span>Zum Ausführen <code>ANONYMISIEREN</code> eintippen</span>
+							<input class="input" name="confirm" autocomplete="off" placeholder="ANONYMISIEREN"></label>
 						<button class="btn btn--danger btn--sm" type="submit">Anonymisieren</button>
 					</form>
 					{{end}}
