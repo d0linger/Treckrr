@@ -124,7 +124,7 @@ func newItEnv(t *testing.T) *itEnv {
 	if err != nil {
 		t.Fatalf("tractor: %v", err)
 	}
-	e.machineID, err = st.CreateMachine(ctx, e.baseID64, "IT-Maschine", decimal.RequireFromString("2"), decimal.RequireFromString("5"), "IT", 1)
+	e.machineID, err = st.CreateMachine(ctx, e.baseID64, "IT-Maschine", decimal.RequireFromString("2"), decimal.RequireFromString("5"), "IT", 1, decimal.Zero)
 	if err != nil {
 		t.Fatalf("machine: %v", err)
 	}

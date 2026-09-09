@@ -196,6 +196,10 @@ type Machine struct {
 	Active       bool
 	Category     string
 	SortOrder    int
+	// SelfCostPerH is what running this machine COSTS per hour (Ausbaukarte 83).
+	// The rate above is what it earns; without this there is only turnover and
+	// no Deckungsbeitrag. 0 = not configured, and the margin stays hidden.
+	SelfCostPerH decimal.Decimal
 }
 
 // HourlyRate returns the machine's contribution to a Gespann's hourly rate.

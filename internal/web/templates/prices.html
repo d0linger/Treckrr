@@ -162,6 +162,7 @@
 					<label class="field"><span>€ / AB·h</span><input class="input" name="cost_per_ab" inputmode="decimal" value="{{num .Machine.CostPerAB}}" required></label>
 					<label class="field"><span>Kategorie</span><input class="input" name="category" value="{{.Machine.Category}}" list="machine-cats" placeholder="z. B. Mähen"></label>
 					<label class="field"><span>Reihenfolge</span><input class="input" type="number" name="sort_order" value="{{.Machine.SortOrder}}"></label>
+					<label class="field"><span>Selbstkosten €/h (optional, 0 = keine Auswertung)</span><input class="input" name="self_cost_per_h" inputmode="decimal" value="{{num .Machine.SelfCostPerH}}"></label>
 				</div>
 				<div class="btnrow">
 					<button class="btn btn--primary btn--sm" type="submit">Speichern</button>
@@ -193,6 +194,7 @@
 				<label class="field"><span>€ / AB·h</span><input class="input" name="cost_per_ab" inputmode="decimal" placeholder="5" required></label>
 				<label class="field"><span>Kategorie</span><input class="input" name="category" list="machine-cats" placeholder="z. B. Mähen"></label>
 				<label class="field"><span>Reihenfolge</span><input class="input" type="number" name="sort_order" value="0"></label>
+				<label class="field"><span>Selbstkosten €/h (optional)</span><input class="input" name="self_cost_per_h" inputmode="decimal" placeholder="0"></label>
 			</div>
 			<button class="btn btn--primary" type="submit">Hinzufügen</button>
 		</form>

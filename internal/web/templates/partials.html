@@ -36,7 +36,8 @@
 		{{$max := .Max}}{{$money := .Money}}
 		{{range .Rows}}
 		<div class="barchart__row">
-			<span class="barchart__label" title="{{.Label}}">{{.Label}}</span>
+			{{if .URL}}<a class="barchart__label" href="{{.URL}}" title="Buchungen zu {{.Label}} anzeigen">{{.Label}}</a>
+			{{else}}<span class="barchart__label" title="{{.Label}}">{{.Label}}</span>{{end}}
 			<svg class="bchart" preserveAspectRatio="none">
 				<title>{{.Label}} · {{if $money}}{{money .Cost}}{{else}}{{num .Hours}} h{{end}}</title>
 				<rect class="bchart__track" x="0" y="0" width="100%" height="10" rx="5"></rect>

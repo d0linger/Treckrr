@@ -55,7 +55,7 @@ func TestMoneyRoundTripIntegration(t *testing.T) {
 
 	width := decimal.RequireFromString("3.06")
 	ab := decimal.RequireFromString("12")
-	if _, err := st.CreateMachine(ctx, baseID, "Mäher", width, ab, "", 0); err != nil {
+	if _, err := st.CreateMachine(ctx, baseID, "Mäher", width, ab, "", 0, decimal.Zero); err != nil {
 		t.Fatalf("create machine: %v", err)
 	}
 	machines, err := st.ListMachines(ctx, baseID)

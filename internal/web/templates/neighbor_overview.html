@@ -43,6 +43,19 @@
 	<div class="bcard__summary"><span class="muted">Gesamt · {{num .TotalHours}} h</span><span>{{money .TotalCost}}</span></div>
 	{{end}}
 
+	{{if .HasTrend}}
+	<h2 class="section-title">Verlauf über die Jahre</h2>
+	<p class="muted small">Leistungen und Stunden je Jahr — ein Klick auf ein Jahr öffnet es.</p>
+	<div class="card">
+		<h3 class="section-title">Leistungen</h3>
+		{{template "bar-chart" (dict "Rows" .CostTrend "Max" .CostTrendMax "Money" true)}}
+	</div>
+	<div class="card">
+		<h3 class="section-title">Stunden</h3>
+		{{template "bar-chart" (dict "Rows" .HoursTrend "Max" .HoursTrendMax "Money" false)}}
+	</div>
+	{{end}}
+
 	<h2 class="section-title">Zahlungen</h2>
 	{{if .Payments}}
 	<div class="tablewrap">

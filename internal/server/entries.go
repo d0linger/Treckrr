@@ -220,6 +220,34 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 	data["TotalHours"] = totalHours
 	data["Payments"] = payments
 	data["PaidTotal"] = paidTotal
+	// Mehrjahresverlauf (Ausbaukarte 85): the tiles said what each year was,
+	// never where the relationship is going. Same bar-chart partial as the
+	// statistics page, one row per year.
+	series, err := s.store.NeighborYearSeries(r.Context(), neighbor.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	costTrend := make([]aggRow, 0, len(series))
+	hoursTrend := make([]aggRow, 0, len(series))
+	var costMax, hoursMax decimal.Decimal
+	for _, p := range series {
+		label := strconv.Itoa(p.Year)
+		costTrend = append(costTrend, aggRow{Label: label, Cost: p.Cost,
+			URL: fmt.Sprintf("/neighbors/%d?year=%d", neighbor.ID, p.YearID)})
+		hoursTrend = append(hoursTrend, aggRow{Label: label, Hours: p.Hours})
+		if p.Cost.GreaterThan(costMax) {
+			costMax = p.Cost
+		}
+		if p.Hours.GreaterThan(hoursMax) {
+			hoursMax = p.Hours
+		}
+	}
+	data["CostTrend"] = costTrend
+	data["CostTrendMax"] = costMax
+	data["HoursTrend"] = hoursTrend
+	data["HoursTrendMax"] = hoursMax
+	data["HasTrend"] = len(series) > 1
 	data["Company"] = company
 	data["Today"] = time.Now()
 	s.render(w, r, "neighbor_overview", data)

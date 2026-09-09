@@ -173,6 +173,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /recurring/{id}/run-now", s.auth(s.handleRecurringRunNow))
 	mux.Handle("GET /ledger/{id}/copy", s.auth(s.handleLedgerCopy))
 	mux.Handle("GET /payments/{id}/copy", s.auth(s.handlePaymentCopy))
+	mux.Handle("GET /stats/export.csv", s.auth(s.handleStatsExport))
 	mux.Handle("GET /buchungen", s.auth(s.handleEntryList))
 	mux.Handle("POST /buchungen/bulk", s.auth(s.handleEntryBulk))
 	mux.Handle("GET /personen", s.auth(s.handlePersons))
