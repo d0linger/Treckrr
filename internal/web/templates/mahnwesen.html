@@ -44,10 +44,13 @@
 					{{else if ge .DaysOverdue 60}}<span class="tag tag--open">60+</span>
 					{{else if ge .DaysOverdue 30}}<span class="tag">30+</span>{{end}}
 				</span>
+				{{if not $.AllYears}}
+				{{/* LastNotices is loaded for the SELECTED year and keyed by neighbor alone,
+				     so in the cross-year view it would claim this year's Mahnung for a row
+				     belonging to another year's invoice. */}}
 				{{with (index $.LastNotices .NeighborID)}}
 				<span class="list__sub muted">Zuletzt: {{stageName .Stage}} am {{date .SentAt}} ({{.Channel}})</span>
 				{{end}}
-				{{if not $.AllYears}}
 				<span class="btnrow">
 					<a class="btn btn--ghost btn--sm" href="/neighbors/{{.NeighborID}}/mahnung?year={{$.Year.ID}}&stufe=0">Erinnerung</a>
 					<a class="btn btn--ghost btn--sm" href="/neighbors/{{.NeighborID}}/mahnung?year={{$.Year.ID}}&stufe=1">1. Mahnung</a>

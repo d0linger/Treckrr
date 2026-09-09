@@ -242,3 +242,30 @@ func TestParseCSV_IBANColumn(t *testing.T) {
 		t.Errorf("the IBAN column leaked into the payer name: %q", txns[0].Name)
 	}
 }
+
+// German banks continue a long Verwendungszweck in ?60-?63 once ?20-?29 are
+// used up. Those fields were ignored, so an invoice number that landed in the
+// tail was dropped from the reference and the credit matched nothing.
+func TestParseMT940_Remittance60Continuation(t *testing.T) {
+	data := ":20:STMT1\r\n" +
+		":25:AT611904300234573201\r\n" +
+		":28C:1/1\r\n" +
+		":61:2606030603C150,00NTRFNONREF\r\n" +
+		":86:166?00GUTSCHRIFT?20SVWZ+Zahlung fuer?21 Leistungen laut?22 Aufstellung" +
+		"?60Rechnung 2026-004?61 Restbetrag?31AT483200000012345864?32Huber Franz\r\n" +
+		"-\r\n"
+	txns, err := ParseMT940([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(txns) != 1 {
+		t.Fatalf("got %d credits, want 1", len(txns))
+	}
+	want := "Zahlung fuer Leistungen laut Aufstellung Rechnung 2026-004 Restbetrag"
+	if txns[0].Reference != want {
+		t.Errorf("remittance = %q, want %q", txns[0].Reference, want)
+	}
+	if txns[0].Name != "Huber Franz" || txns[0].IBAN != "AT483200000012345864" {
+		t.Errorf("payer = %q / %q", txns[0].Name, txns[0].IBAN)
+	}
+}

@@ -345,7 +345,25 @@
 		};
 	}
 
-	document.querySelectorAll("form[data-confirm], form:has(button[data-confirm])").forEach(function (form) {
+	// Auto-submitting selects (the Preisvergleich basis picker). Dropped by
+	// accident in the filter rewrite while the attribute stayed in the markup.
+	document.querySelectorAll("select[data-autosubmit]").forEach(function (sel) {
+		sel.addEventListener("change", function () {
+			if (sel.form) sel.form.submit();
+		});
+	});
+
+	// The question sits either on the form or on one of its buttons (one form,
+	// several actions asking different things). Collected by hand rather than with
+	// ":has()": an engine without it rejects the whole selector list as a
+	// SyntaxError, which aborts this file and takes every confirmation with it —
+	// including the irreversible Festschreibung, which would then submit silently.
+	var confirmForms = [];
+	document.querySelectorAll("form[data-confirm], button[data-confirm]").forEach(function (el) {
+		var f = el.tagName === "FORM" ? el : el.form;
+		if (f && confirmForms.indexOf(f) < 0) confirmForms.push(f);
+	});
+	confirmForms.forEach(function (form) {
 		form.addEventListener("submit", function (e) {
 			if (form.dataset.confirmed === "1") return;
 			var attrs = confirmAttrs(form, e.submitter);

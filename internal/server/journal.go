@@ -139,8 +139,12 @@ func writeJournalCSV(w *csv.Writer, rows []store.JournalRow) {
 	kinds := map[string]string{"invoice": "Rechnung", "storno": "Storno", "gutschrift": "Gutschrift", "anzahlung": "Abschlag"}
 	status := map[string]string{"issued": "ausgestellt", "canceled": "storniert"}
 	for _, j := range rows {
+		// csvSafe on the free-text columns, like every other export: a neighbor
+		// name or invoice number starting with = + - @ would otherwise be
+		// evaluated as a formula by the spreadsheet this file is opened in.
+		// Amount columns stay raw — a quote would break the negative sign.
 		_ = w.Write([]string{
-			j.Number, j.IssuedOn.Format("02.01.2006"), orKey(kinds, j.Kind), orKey(status, j.Status), j.NeighborName,
+			csvSafe(j.Number), j.IssuedOn.Format("02.01.2006"), orKey(kinds, j.Kind), orKey(status, j.Status), csvSafe(j.NeighborName),
 			deDecimal(j.Net), deDecimal(j.VATRate), deDecimal(j.VATAmount), deDecimal(j.Gross),
 		})
 	}
@@ -396,6 +400,11 @@ func (s *Server) handleDocumentStorno(w http.ResponseWriter, r *http.Request) {
 	sv, err := s.store.StornoDocument(r.Context(), id, reason)
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
+		return
+	}
+	if errors.Is(err, store.ErrYearCompleted) {
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen — für eine Korrektur bitte zuerst wieder öffnen.")
+		redirect(w, r, "/")
 		return
 	}
 	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", sv.NeighborID, sv.BillingYearID)

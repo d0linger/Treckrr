@@ -41,6 +41,8 @@ type JournalRow struct {
 //     was never added.
 //   - gutschrift: only while issued. One canceled by the full-Storno cascade
 //     has no reversal document of its own, so it must simply drop out.
+//
+// KUCalendarYearGross re-states this rule in SQL; change both together.
 func (r JournalRow) CountsForRevenue() bool {
 	switch r.Kind {
 	case "invoice":
@@ -118,14 +120,17 @@ func (s *Store) ListInvoiceDocs(ctx context.Context, yearID int64) ([]models.Inv
 // UStG) is measured against. Same counting rule as CountsForRevenue.
 func (s *Store) KUCalendarYearGross(ctx context.Context, calYear int) (decimal.Decimal, error) {
 	var sum decimal.Decimal
-	// Mirrors JournalRow.CountsForRevenue in SQL: invoices always, Abschläge
-	// never, a Storno only when it reverses something that counted.
+	// Mirrors JournalRow.CountsForRevenue in SQL, case for case, so the two
+	// cannot drift: invoice always; anzahlung never; storno only while issued
+	// and only when it reverses something that counted; everything else
+	// (gutschrift) while issued. Keep this switch and that one in step — they
+	// are the same rule, and the ceiling this feeds is a tax figure.
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COALESCE(SUM(iv.gross),0)
 		   FROM invoices iv LEFT JOIN invoices ref ON ref.id = iv.references_invoice_id
 		  WHERE EXTRACT(YEAR FROM iv.issued_on) = $1
-		    AND iv.kind <> 'anzahlung'
 		    AND (iv.kind = 'invoice'
-		         OR (iv.status = 'issued' AND COALESCE(ref.kind,'') <> 'anzahlung'))`, calYear).Scan(&sum)
+		         OR (iv.kind = 'storno' AND iv.status = 'issued' AND COALESCE(ref.kind,'') <> 'anzahlung')
+		         OR (iv.kind NOT IN ('invoice','storno','anzahlung') AND iv.status = 'issued'))`, calYear).Scan(&sum)
 	return sum, err
 }

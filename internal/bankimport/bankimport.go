@@ -307,9 +307,9 @@ func splitBatch(e camtEntry, bookg time.Time) []Txn {
 // then the comma-decimal amount.
 var mt61 = regexp.MustCompile(`^(\d{6})(\d{4})?(R?[CD])[A-Z]?(\d+,\d*)`)
 
-// parse86 splits a structured SEPA :86: text (?20-?29 remittance, ?32/?33 payer
-// name, ?31 payer IBAN) into its parts. Unstructured text passes through as the
-// reference.
+// parse86 splits a structured SEPA :86: text (?20-?29 plus ?60-?63 remittance,
+// ?32/?33 payer name, ?31 payer IBAN) into its parts. Unstructured text passes
+// through as the reference.
 func parse86(s string) (ref, name, iban string) {
 	if !strings.Contains(s, "?") {
 		return strings.TrimSpace(s), "", ""
@@ -321,7 +321,11 @@ func parse86(s string) (ref, name, iban string) {
 		}
 		code, text := part[:2], strings.TrimSpace(part[2:])
 		switch {
-		case code >= "20" && code <= "29":
+		// ?20-?29 hold the Verwendungszweck and ?60-?63 CONTINUE it — German
+		// banks spill into the 60s as soon as the text outgrows ten fields.
+		// Dropping them truncated exactly the tail an invoice number lands in,
+		// so a long remittance text matched nothing.
+		case (code >= "20" && code <= "29") || (code >= "60" && code <= "63"):
 			text = strings.TrimPrefix(text, "SVWZ+")
 			if text != "" {
 				refs = append(refs, text)

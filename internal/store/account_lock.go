@@ -129,3 +129,39 @@ func (s *Store) CarryForwardRemaining(ctx context.Context, neighborID, fromYearI
 	}
 	return remaining, tx.Commit()
 }
+
+// PayoutCredit books a neighbor's credit balance (a negative open amount) as
+// paid out and returns the amount booked; a zero return means there was no
+// credit to pay out.
+//
+// Like SettleRemaining the amount is recomputed under the account lock rather
+// than passed in from a read the caller made earlier. Without that, two
+// concurrent "Guthaben auszahlen" clicks each see the same credit and each post
+// it, paying the neighbor out twice — the same read-then-write race that turned
+// a EUR 200 balance into EUR 10,400 of postings before CarryForwardRemaining
+// was locked.
+func (s *Store) PayoutCredit(ctx context.Context, yearID, neighborID int64, when time.Time, description string) (decimal.Decimal, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	ok, err := lockAccount(ctx, tx, yearID, neighborID)
+	if err != nil || !ok {
+		return decimal.Zero, err
+	}
+	remaining, err := remainingLocked(ctx, tx, yearID, neighborID)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	if !remaining.IsNegative() {
+		return decimal.Zero, tx.Commit()
+	}
+	amount := remaining.Neg()
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO neighbor_ledger (billing_year_id, neighbor_id, amount, description, posting_date)
+		 VALUES ($1,$2,$3,$4,$5)`, yearID, neighborID, amount, description, when); err != nil {
+		return decimal.Zero, err
+	}
+	return amount, tx.Commit()
+}

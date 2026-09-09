@@ -52,6 +52,26 @@
 	function uuid() { return crypto.randomUUID ? crypto.randomUUID() : (Date.now() + "-" + Math.random().toString(16).slice(2)); }
 	function csrf() { var i = document.querySelector('input[name="csrf_token"]'); return i ? i.value : ""; }
 
+	// app.js arms a double-submit lock on EVERY post form: it sets
+	// dataset.submitting="1" and disables the button, and only a navigation (or a
+	// bfcache restore) clears it. An offline capture prevents that navigation, so
+	// without releasing the lock here the form would swallow every further submit
+	// and the button would stay disabled — one offline booking per page load.
+	// Mirrors entry-form.js's releaseButton(), which exists for the same reason.
+	function releaseSubmitLock(form) {
+		form.dataset.submitting = "";
+		form.dataset.checking = "";
+		// is-submitting is the marker app.js sets on whichever button it disabled
+		// (the submitter, which need not carry type="submit"); the second selector
+		// covers the plain case. Both are safe to re-enable — no submit button in
+		// this app is disabled for any other reason.
+		form.querySelectorAll("button.is-submitting, button[type='submit']").forEach(function (b) {
+			b.classList.remove("is-submitting");
+			b.removeAttribute("aria-busy");
+			b.disabled = false;
+		});
+	}
+
 	// The queue lives in origin-wide IndexedDB, not per user. On a shared browser
 	// profile that meant a booking queued offline by one user was replayed — and
 	// audited — under whoever happened to be logged in next. Stamping the owner at
@@ -145,12 +165,18 @@
 			k.type = "hidden"; k.name = "idempotency_key"; k.value = uuid();
 			form.appendChild(k);
 		}
-		// Capture phase so this runs BEFORE entry-form.js's precheck interceptor,
-		// whose fetch would otherwise fail offline.
+		// Registered before entry-form.js loads, so this runs first. At the event
+		// TARGET the capture flag does not order listeners — registration order
+		// does — and stopPropagation() would not stop the later listeners on this
+		// same form either. stopImmediatePropagation() is what keeps
+		// entry-form.js's precheck from running: its fetch fails offline and its
+		// fail-open path calls requestSubmit(), which would queue this booking a
+		// SECOND time under a freshly stamped key.
 		form.addEventListener("submit", function (e) {
 			if (navigator.onLine) return;
 			e.preventDefault();
-			e.stopPropagation();
+			e.stopImmediatePropagation();
+			releaseSubmitLock(form);
 			var data = {};
 			new FormData(form).forEach(function (v, key) { if (key !== "csrf_token") data[String(key)] = v; });
 			var id = data.idempotency_key || uuid();
@@ -179,7 +205,8 @@
 		quick.addEventListener("submit", function (e) {
 			if (navigator.onLine) return;
 			e.preventDefault();
-			e.stopPropagation();
+			e.stopImmediatePropagation();
+			releaseSubmitLock(quick);
 			stampKeys();
 			var data = {};
 			// Repeated field names must survive: FormData keeps every row, a plain

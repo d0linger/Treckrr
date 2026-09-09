@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -108,10 +110,30 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 	}
 
 	for _, m := range due {
+		// Claim the row before dialing SMTP. Selecting and then sending leaves a
+		// window in which a second app instance — or a tick that overlaps a slow
+		// SMTP dialog — reads the same still-pending row and delivers the same
+		// invoice twice. This one statement both counts the attempt and pushes
+		// next_attempt_at past now(), so the row stops being due the moment it is
+		// claimed; whoever loses the race updates nothing and skips it.
+		attempts := m.Attempts + 1
+		var claimed int64
+		claimErr := s.db.QueryRowContext(ctx,
+			`UPDATE mail_outbox SET attempts=$2, next_attempt_at=$3
+			  WHERE id=$1 AND status='pending' AND next_attempt_at <= now()
+			  RETURNING id`,
+			m.ID, attempts, time.Now().Add(outboxBackoff(attempts+1))).Scan(&claimed)
+		if errors.Is(claimErr, sql.ErrNoRows) {
+			continue // another worker got there first
+		}
+		if claimErr != nil {
+			return delivered, exhausted, claimErr
+		}
+
 		sendErr := send(ctx, m.Recipient, m.Subject, m.Body, m.AttName, m.AttType, m.AttData)
 		if sendErr == nil {
 			if _, err := s.db.ExecContext(ctx,
-				`UPDATE mail_outbox SET status='sent', sent_at=now(), attempts=attempts+1, last_error='' WHERE id=$1`,
+				`UPDATE mail_outbox SET status='sent', sent_at=now(), last_error='' WHERE id=$1`,
 				m.ID); err != nil {
 				return delivered, exhausted, err
 			}
@@ -128,11 +150,12 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 			continue
 		}
 
-		attempts := m.Attempts + 1
+		// attempts and next_attempt_at were already written by the claim above;
+		// only the outcome of THIS attempt still has to be recorded.
 		if attempts >= outboxMaxAttempts {
 			if _, err := s.db.ExecContext(ctx,
-				`UPDATE mail_outbox SET status='failed', attempts=$2, last_error=$3 WHERE id=$1`,
-				m.ID, attempts, sendErr.Error()); err != nil {
+				`UPDATE mail_outbox SET status='failed', last_error=$2 WHERE id=$1`,
+				m.ID, sendErr.Error()); err != nil {
 				return delivered, exhausted, err
 			}
 			exhausted++
@@ -144,8 +167,7 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 			continue
 		}
 		if _, err := s.db.ExecContext(ctx,
-			`UPDATE mail_outbox SET attempts=$2, last_error=$3, next_attempt_at=$4 WHERE id=$1`,
-			m.ID, attempts, sendErr.Error(), time.Now().Add(outboxBackoff(attempts+1))); err != nil {
+			`UPDATE mail_outbox SET last_error=$2 WHERE id=$1`, m.ID, sendErr.Error()); err != nil {
 			return delivered, exhausted, err
 		}
 	}

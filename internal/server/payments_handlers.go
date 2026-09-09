@@ -382,8 +382,17 @@ func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	before := p.Amount
-	if err := s.store.UpdatePayment(r.Context(), id, amount, parsePaidOn(r.FormValue("paid_on")), note, paymentMethod(r)); err != nil {
+	updated, err := s.store.UpdatePayment(r.Context(), id, amount, parsePaidOn(r.FormValue("paid_on")), note, paymentMethod(r))
+	if err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+		redirect(w, r, back)
+		return
+	}
+	// The row is soft-deleted (GetPayment sees those, the UPDATE does not), so
+	// nothing changed. Auditing and flashing success here would record an edit
+	// that never happened — and a later Restore would bring back the old amount.
+	if !updated {
+		s.setFlash(w, r, "error", "Diese Zahlung ist gelöscht — bitte zuerst wiederherstellen.")
 		redirect(w, r, back)
 		return
 	}
@@ -514,20 +523,18 @@ func (s *Server) handleCreditPayout(w http.ResponseWriter, r *http.Request) {
 	if !s.requireOpenYear(w, r, yearID, back) {
 		return
 	}
-	remaining, err := s.neighborRemaining(r.Context(), yearID, neighborID)
+	// The amount is derived from the balance, so it must be recomputed under the
+	// account lock inside the writing transaction — reading it here and posting
+	// it afterwards is the read-then-write race that lets two concurrent clicks
+	// pay the same credit out twice (see store.PayoutCredit).
+	amount, err := s.store.PayoutCredit(r.Context(), yearID, neighborID, time.Now(), "Guthaben ausbezahlt")
 	if err != nil {
-		s.serverError(w, "credit payout: remaining", err)
-		return
-	}
-	if !remaining.IsNegative() {
-		s.setFlash(w, r, "info", "Kein Guthaben vorhanden.")
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 		redirect(w, r, back)
 		return
 	}
-	amount := remaining.Neg()
-	if _, err := s.store.AddNeighborLedger(r.Context(), yearID, neighborID, amount,
-		"Guthaben ausbezahlt", time.Now()); err != nil {
-		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+	if amount.IsZero() {
+		s.setFlash(w, r, "info", "Kein Guthaben vorhanden.")
 		redirect(w, r, back)
 		return
 	}

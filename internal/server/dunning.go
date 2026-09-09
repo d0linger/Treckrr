@@ -387,8 +387,10 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMahnungEpcQR serves the EPC/GiroCode QR for a reminder, encoding the
-// remaining payable on the issued invoice (gross less credits/ledger/payments) —
-// the same amount the invoice's own EPC-QR uses, so both codes agree.
+// remaining payable on the issued invoice (gross less credits/ledger/payments)
+// PLUS the stage's Mahnspesen, i.e. the same figure the letter and the PDF ask
+// for. Encoding the bare open amount would hand the debtor a code that pays less
+// than the document beside it demands, leaving the fee open after they paid.
 func (s *Server) handleMahnungEpcQR(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
@@ -421,7 +423,15 @@ func (s *Server) handleMahnungEpcQR(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	png, err := qrPNG(epcPayload(company.Name, company.IBAN, open, iv.Number))
+	// Same stage → same fee as buildMahnungData; stage 0 (Erinnerung) never charges.
+	total := open
+	switch formInt(r, "stufe") {
+	case 1:
+		total = total.Add(company.DunningFee1)
+	case 2:
+		total = total.Add(company.DunningFee2)
+	}
+	png, err := qrPNG(epcPayload(company.Name, company.IBAN, total, iv.Number))
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return

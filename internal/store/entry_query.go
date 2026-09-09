@@ -49,9 +49,12 @@ func entryFilterWhere(f EntryFilter) (string, []any) {
 	}
 	if t := strings.TrimSpace(f.Task); t != "" {
 		// One placeholder used twice: append the arg once, reference it twice.
-		args = append(args, "%"+strings.ToLower(t)+"%")
+		// likeEscape (search.go) both escapes the LIKE wildcards and adds the
+		// surrounding %: the typed text is a literal, so searching for "50%" or
+		// "a_b" must not quietly match half the year.
+		args = append(args, likeEscape(strings.ToLower(t)))
 		p := "$" + strconv.Itoa(len(args))
-		where = append(where, "(lower(e.task_label) LIKE "+p+" OR lower(e.note) LIKE "+p+")")
+		where = append(where, "(lower(e.task_label) LIKE "+p+" ESCAPE '\\' OR lower(e.note) LIKE "+p+" ESCAPE '\\')")
 	}
 	if u := strings.TrimSpace(f.Unit); u != "" {
 		add("e.unit = ?", u)

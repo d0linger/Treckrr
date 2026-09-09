@@ -40,8 +40,11 @@ CREATE INDEX IF NOT EXISTS idx_byn_neighbor ON billing_year_neighbors (neighbor_
 
 CREATE INDEX IF NOT EXISTS idx_recurring_neighbor ON recurring_entries (neighbor_id);
 
--- Retention guard rails: the handler validates these, but a direct SQL edit
--- could silently disable rotation (volume_keep 0 means "keep nothing checked").
--- Existing rows satisfy both (defaults 7 and 0).
+-- Retention guard rails: a volume_keep of 0 means "keep nothing checked" and
+-- silently disables rotation. The admin form accepted 0 until now (clampAtoi
+-- rejects only negatives) and BACKUP_KEEP=0 seeded it, so a live row may hold
+-- it — normalize first, or this ALTER aborts and the app cannot boot at all,
+-- since migrations run on startup.
+UPDATE backup_settings SET volume_keep = 7 WHERE volume_keep < 1;
 ALTER TABLE backup_settings ADD CONSTRAINT backup_settings_volume_keep_min CHECK (volume_keep >= 1);
 ALTER TABLE backup_settings ADD CONSTRAINT backup_settings_s3_keep_min CHECK (s3_keep >= 0);

@@ -142,7 +142,12 @@ func (s *Server) handleEntryPhotoUpload(w http.ResponseWriter, r *http.Request) 
 		redirect(w, r, back)
 		return
 	}
+	// Anything over the cap is reported, never silently dropped: the operator
+	// picked those files and would otherwise read "10 Foto(s) angehängt" and
+	// believe the Wiegeschein was complete.
+	dropped := 0
 	if len(files) > maxPhotosPerUpload {
+		dropped = len(files) - maxPhotosPerUpload
 		files = files[:maxPhotosPerUpload]
 	}
 	added, failed := 0, 0
@@ -179,11 +184,20 @@ func (s *Server) handleEntryPhotoUpload(w http.ResponseWriter, r *http.Request) 
 	if added > 0 {
 		s.audit(r, "photo_add", "entry", entryID, fmt.Sprintf("%s · %d Foto(s)", s.neighborName(r, entry.NeighborID), added))
 	}
+	over := ""
+	if dropped > 0 {
+		over = fmt.Sprintf(" %d weitere(s) Bild(er) über dem Limit von %d wurden nicht übernommen — bitte einzeln nachreichen.",
+			dropped, maxPhotosPerUpload)
+	}
 	switch {
 	case added == 0:
-		s.setFlash(w, r, "error", orDefault(lastMsg, "Kein gültiges Bild."))
-	case failed > 0:
-		s.setFlash(w, r, "info", fmt.Sprintf("%d Foto(s) angehängt, %d abgelehnt: %s", added, failed, lastMsg))
+		s.setFlash(w, r, "error", orDefault(lastMsg, "Kein gültiges Bild.")+over)
+	case failed > 0 || dropped > 0:
+		msg := fmt.Sprintf("%d Foto(s) angehängt.", added)
+		if failed > 0 {
+			msg = fmt.Sprintf("%d Foto(s) angehängt, %d abgelehnt: %s", added, failed, lastMsg)
+		}
+		s.setFlash(w, r, "info", msg+over)
 	default:
 		s.setFlash(w, r, "success", fmt.Sprintf("%d Foto(s) angehängt.", added))
 	}

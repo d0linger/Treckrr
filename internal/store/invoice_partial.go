@@ -38,11 +38,18 @@ func docSeqNumber(ctx context.Context, tx *sql.Tx, yearID int64, year int, lette
 	// The sequence is per letter class and independent of the invoice numbers:
 	// an Anzahlung is not an invoice, and a gap in one class must not shift the
 	// other. substring() pulls the digits after the letter of THIS class only.
+	//
+	// references_invoice_id IS NULL is what separates a standalone document from
+	// an ATTACHED credit note, which GutschriftInvoice numbers <invoice>-G2, -G3 …
+	// — those also end in G+digits, so without this filter the first standalone
+	// Gutschrift after an attached -G2 would be numbered G003 and skip G001/G002,
+	// leaving a permanent gap in a numbered tax sequence.
 	var seq int
 	if err := tx.QueryRowContext(ctx,
 		`SELECT COALESCE(MAX(substring(number from '`+letter+`([0-9]+)$')::int), 0) + 1
 		   FROM invoices
-		  WHERE billing_year_id = $1 AND number ~ ('`+letter+`[0-9]+$')`,
+		  WHERE billing_year_id = $1 AND references_invoice_id IS NULL
+		    AND number ~ ('`+letter+`[0-9]+$')`,
 		yearID).Scan(&seq); err != nil {
 		return "", err
 	}
@@ -207,6 +214,18 @@ func (s *Store) StornoDocument(ctx context.Context, id int64, reason string) (mo
 	}
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, orig.BillingYearID); err != nil {
 		return models.Invoice{}, err
+	}
+	// A closed year takes no new documents. The handler cannot pre-check this —
+	// it only knows the document id — and every sibling path (StornoInvoice via
+	// requireOpenYear, CreateAnzahlung, FreeGutschrift) refuses a completed year,
+	// so the guard belongs here, inside the transaction that writes.
+	var ystatus string
+	if err := tx.QueryRowContext(ctx,
+		`SELECT status FROM billing_years WHERE id=$1 FOR UPDATE`, orig.BillingYearID).Scan(&ystatus); err != nil {
+		return models.Invoice{}, err
+	}
+	if ystatus == models.YearCompleted {
+		return models.Invoice{}, ErrYearCompleted
 	}
 	if orig.Content == nil {
 		return models.Invoice{}, fmt.Errorf("storno: kein Snapshot vorhanden")

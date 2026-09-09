@@ -622,24 +622,28 @@ func (s *Server) handleStatsExport(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	_ = cw.Write([]string{"Auswertung", "Bezeichnung", "Einheit", "Menge", "Stunden", "Betrag (€)", "je Einheit (€)"})
+	// csvSafe on every free-text column, like every other export: a neighbor,
+	// task or machine name starting with = + - @ would otherwise be evaluated as
+	// a formula by the spreadsheet this file is opened in. Amount columns stay
+	// raw — a quote would break the negative sign.
 	writeAgg := func(section string, rows []aggRow) {
 		for _, row := range rows {
-			_ = cw.Write([]string{section, row.Label, "", "", deDecimal(row.Hours), deDecimal(row.Cost), ""})
+			_ = cw.Write([]string{section, csvSafe(row.Label), "", "", deDecimal(row.Hours), deDecimal(row.Cost), ""})
 		}
 	}
 	writeAgg("Nachbar", byNeighbor)
 	writeAgg("Tätigkeit", byTask)
 	writeAgg("Traktor", byTractor)
 	for _, m := range machines {
-		_ = cw.Write([]string{"Maschine", m.Name, "h", deDecimal(m.Hours), deDecimal(m.Hours),
+		_ = cw.Write([]string{"Maschine", csvSafe(m.Name), "h", deDecimal(m.Hours), deDecimal(m.Hours),
 			deDecimal(m.Revenue), deDecimal(m.Rate)})
 		if m.HasMargin() {
-			_ = cw.Write([]string{"Maschine · Deckungsbeitrag", m.Name, "h", deDecimal(m.Hours), "",
+			_ = cw.Write([]string{"Maschine · Deckungsbeitrag", csvSafe(m.Name), "h", deDecimal(m.Hours), "",
 				deDecimal(m.Margin), deDecimal(m.SelfCost)})
 		}
 	}
 	for _, u := range units {
-		_ = cw.Write([]string{"Kennzahl", u.Task, u.Unit, deDecimal(u.Quantity), "",
+		_ = cw.Write([]string{"Kennzahl", csvSafe(u.Task), csvSafe(u.Unit), deDecimal(u.Quantity), "",
 			deDecimal(u.Cost), deDecimal(u.PerUnit)})
 	}
 }

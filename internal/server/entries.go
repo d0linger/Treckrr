@@ -390,24 +390,6 @@ func (s *Server) handlePricingAPI(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
-// neighborInYearOrRedirect guards booking creation against orphan rows: a
-// booking for a neighbor not in the year is invisible on the (membership-driven)
-// dashboard yet counted by stats/CSV, skewing the year's totals. Ledger and
-// payment creation already enforce the same membership check.
-func (s *Server) neighborInYearOrRedirect(w http.ResponseWriter, r *http.Request, yearID, neighborID int64) bool {
-	in, err := s.store.NeighborInYear(r.Context(), yearID, neighborID)
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return false
-	}
-	if !in {
-		s.setFlash(w, r, "error", "Nachbar ist diesem Abrechnungsjahr nicht zugeordnet.")
-		redirect(w, r, dashboardURL(yearID))
-		return false
-	}
-	return true
-}
-
 // invoiceLocked reports whether a festgeschriebene (issued) Rechnung exists for
 // this neighbor+year. While one does, the neighbor's bookings and ledger for that
 // year are locked (BAO §131 Unveränderbarkeit): corrections go through a
@@ -1221,6 +1203,20 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	}
 	neighborID := formInt64(r, "neighbor_id")
 	yearID := formInt64(r, "year_id")
+	// An offline replay wants a machine-readable status, not a redirect — same
+	// contract as handleEntryCreate. The client reads the response with
+	// redirect:"manual", so a 303 arrives as an opaque status 0 that is neither
+	// success nor permanent rejection: the batch would sit in the queue forever,
+	// re-POSTed on every page load, with the badge stuck.
+	replay := r.Header.Get("X-Offline-Replay") == "1"
+	reject := func(status int, msg, redirectTo string) {
+		if replay {
+			http.Error(w, msg, status)
+			return
+		}
+		s.setFlash(w, r, "error", msg)
+		redirect(w, r, redirectTo)
+	}
 	// Every accepted row costs five database round trips — GetGespann, GetTractor,
 	// GetLoadLevel and MachinesByIDs inside buildGespannEntry, then CreateEntry —
 	// and the loop below is driven purely by how many q_gespann keys arrive. The
@@ -1235,8 +1231,7 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	// check sits ahead of every store call so an abusive submit costs no queries
 	// at all.
 	if n := len(r.Form["q_gespann"]); n > maxQuickEntries {
-		s.setFlash(w, r, "error", fmt.Sprintf("Zu viele Zeilen auf einmal (%d). Es können höchstens %d Zeilen gespeichert werden.", n, maxQuickEntries))
-		redirect(w, r, neighborURL(neighborID, yearID))
+		reject(http.StatusUnprocessableEntity, fmt.Sprintf("Zu viele Zeilen auf einmal (%d). Es können höchstens %d Zeilen gespeichert werden.", n, maxQuickEntries), neighborURL(neighborID, yearID))
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
@@ -1248,14 +1243,31 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if year.Completed() {
-		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
-		redirect(w, r, neighborURL(neighborID, yearID))
+		reject(http.StatusUnprocessableEntity, "Das Abrechnungsjahr ist abgeschlossen.", neighborURL(neighborID, yearID))
 		return
 	}
-	if !s.neighborInYearOrRedirect(w, r, year.ID, neighborID) {
+	// Inlined rather than routed through a w,r-writing helper (as invoiceLocked
+	// still is elsewhere) so these gates can answer a replay with a status code —
+	// the same reason handleEntryCreate inlines them. The interactive messages and
+	// redirect targets are unchanged.
+	//
+	// The membership check guards against orphan rows: a booking for a neighbor not
+	// in the year is invisible on the (membership-driven) dashboard yet counted by
+	// stats/CSV, skewing the year's totals.
+	if in, err := s.store.NeighborInYear(r.Context(), year.ID, neighborID); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	} else if !in {
+		reject(http.StatusUnprocessableEntity, "Nachbar ist diesem Abrechnungsjahr nicht zugeordnet.", dashboardURL(yearID))
 		return
 	}
-	if s.invoiceLocked(w, r, year.ID, neighborID) {
+	if iv, err := s.store.GetInvoice(r.Context(), year.ID, neighborID); err == nil {
+		reject(http.StatusUnprocessableEntity, "Rechnung "+iv.Number+" ist festgeschrieben – Buchungen und Verrechnungen für diesen Nachbarn sind gesperrt. Für Korrekturen bitte die Rechnung stornieren.", neighborURL(neighborID, yearID))
+		return
+	} else if !errors.Is(err, store.ErrNotFound) {
+		// A real store failure is transient — 500 so a replay retries instead of
+		// dropping the rows as a permanent 422.
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 
@@ -1268,6 +1280,7 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	// previous behavior exactly.
 	keys := r.Form["q_key"]
 	created := 0
+	var createErr error
 	for i := range gespanne {
 		gid, _ := strconv.ParseInt(strings.TrimSpace(gespanne[i]), 10, 64)
 		hours := decimal.Zero
@@ -1294,21 +1307,42 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		id, err := s.store.CreateEntry(r.Context(), entry, machineIDs)
-		if err == nil && id != 0 {
+		switch {
+		case err != nil:
+			// Joined, not last-wins: a partly failing batch should log every reason,
+			// not just the reason the final row failed.
+			createErr = errors.Join(createErr, err)
+		case id != 0:
 			created++
 		}
 	}
-	// An offline replay gets an explicit status, never a redirect: the client
-	// reads it with redirect:"manual", so a 303 arrives as an opaque response
-	// and the item would sit in the queue forever, retried on every page load.
-	if r.Header.Get("X-Offline-Replay") == "1" {
+	// Audit before answering, replay included: a replayed batch is a booking like
+	// any other, and its § 132 BAO trail must not depend on how it reached us.
+	if created > 0 {
+		s.audit(r, "quick_create", "entry", 0, fmt.Sprintf("%d Buchungen für %s", created, s.neighborName(r, neighborID)))
+	}
+	// A store failure is transient, not a business rejection: answer 500 so a
+	// replay retries later. Rows that did save carry their idempotency key, so the
+	// retry adds only what is missing.
+	if createErr != nil {
+		s.serverError(w, "quick entries: create", createErr)
+		return
+	}
+	// An offline replay gets an explicit status, never a redirect (see above).
+	// 204 only for rows that actually landed: answering it for a batch where every
+	// row was rejected would make the client delete the queue item, and a day of
+	// captured work would be gone with no flash, no audit line and no log entry.
+	if replay {
+		if created == 0 {
+			http.Error(w, "Keine gültigen Zeilen (Gespann und Stunden erforderlich).", http.StatusUnprocessableEntity)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	if created == 0 {
 		s.setFlash(w, r, "error", "Keine gültigen Zeilen (Gespann und Stunden erforderlich).")
 	} else {
-		s.audit(r, "quick_create", "entry", 0, fmt.Sprintf("%d Buchungen für %s", created, s.neighborName(r, neighborID)))
 		s.setFlash(w, r, "success", fmt.Sprintf("%d Buchungen gespeichert.", created))
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))

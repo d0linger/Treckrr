@@ -33,11 +33,18 @@ func (s *Store) AddPayment(ctx context.Context, yearID, neighborID int64, amount
 // UpdatePayment corrects a payment's amount, date, note and method in place —
 // the alternative was delete-and-retype, which loses the created_at ordering
 // and, with it, any sense of when the money actually arrived.
-func (s *Store) UpdatePayment(ctx context.Context, id int64, amount decimal.Decimal, paidOn time.Time, note, method string) error {
-	_, err := s.db.ExecContext(ctx,
+// Reports whether a row was actually changed: the WHERE excludes soft-deleted
+// payments, and GetPayment (by id) still returns them, so a caller that only
+// checked the error would audit and report a change that never happened.
+func (s *Store) UpdatePayment(ctx context.Context, id int64, amount decimal.Decimal, paidOn time.Time, note, method string) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE payments SET amount=$2, paid_on=$3, note=$4, method=$5 WHERE id=$1 AND deleted_at IS NULL`,
 		id, amount, paidOn, note, method)
-	return err
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // ListPayments returns a neighbor's payments for a year, oldest first.
