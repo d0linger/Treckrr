@@ -142,7 +142,11 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data["Installments"] = installmentViews(plans, paidSum)
-	remaining := cost.Add(ledgerSum).Sub(paidSum)
+	remaining, err := s.store.AccountRemaining(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		s.serverError(w, "neighbor: payable balance", err)
+		return
+	}
 	data["Remaining"] = remaining
 	// The credit shown on the payout/carry buttons: the negative rest, made
 	// positive for display ("Guthaben (45,00 €)").
@@ -1043,8 +1047,6 @@ func (s *Server) handleLedgerAdd(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.store.AddNeighborLedger(r.Context(), yearID, neighborID, amount, description, date); err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	} else {
-		s.audit(r, "ledger_add", "neighbor", neighborID,
-			s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID)+" · "+amount.StringFixed(2)+" € "+description)
 		s.setFlash(w, r, "success", "Position hinzugefügt.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
@@ -1109,8 +1111,6 @@ func (s *Server) handleLedgerUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.UpdateNeighborLedger(r.Context(), id, amount, description, date); err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	} else {
-		s.audit(r, "ledger_update", "neighbor", neighborID,
-			s.neighborName(r, neighborID)+" · "+amount.StringFixed(2)+" € "+description)
 		s.setFlash(w, r, "success", "Position aktualisiert.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
@@ -1151,10 +1151,8 @@ func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
 		if err := s.store.SetLedgerVoidedTransfer(r.Context(), e.TransferID, void, reason); err != nil {
 			s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 		} else if void {
-			s.audit(r, "ledger_void", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Übertrag storniert (beide Seiten)")
 			s.setFlash(w, r, "success", "Übertrag storniert — beide Seiten aufgehoben.")
 		} else {
-			s.audit(r, "ledger_unvoid", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Übertrag wiederhergestellt")
 			s.setFlash(w, r, "success", "Übertrags-Stornierung aufgehoben.")
 		}
 		redirect(w, r, neighborURL(neighborID, yearID))
@@ -1163,12 +1161,8 @@ func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SetLedgerVoided(r.Context(), id, void, reason); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if void {
-		s.audit(r, "ledger_void", "neighbor", neighborID,
-			s.neighborName(r, neighborID)+" · "+e.Amount.StringFixed(2)+" € "+reason)
 		s.setFlash(w, r, "success", "Position storniert.")
 	} else {
-		s.audit(r, "ledger_unvoid", "neighbor", neighborID,
-			s.neighborName(r, neighborID)+" · "+e.Amount.StringFixed(2)+" €")
 		s.setFlash(w, r, "success", "Stornierung aufgehoben.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
@@ -1198,7 +1192,6 @@ func (s *Server) handleLedgerDelete(w http.ResponseWriter, r *http.Request) {
 		if err := s.store.DeleteLedgerTransfer(r.Context(), e.TransferID); err != nil {
 			s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 		} else {
-			s.audit(r, "ledger_delete", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Übertrag rückgängig")
 			s.setFlash(w, r, "success", "Übertrag rückgängig gemacht — der Rest ist im anderen Jahr wieder offen.")
 		}
 		redirect(w, r, neighborURL(neighborID, yearID))
@@ -1207,8 +1200,6 @@ func (s *Server) handleLedgerDelete(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.DeleteNeighborLedger(r.Context(), id); err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
-		s.audit(r, "ledger_delete", "neighbor", neighborID,
-			s.neighborName(r, neighborID)+" · "+e.Amount.StringFixed(2)+" € "+e.Description)
 		s.setFlash(w, r, "success", "Position entfernt.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))

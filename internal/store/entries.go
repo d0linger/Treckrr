@@ -51,8 +51,8 @@ func (s *Store) GetNeighbor(ctx context.Context, id int64) (*models.Neighbor, er
 // AnonymizeNeighbor erases the live personal data of a neighbor (DSGVO Art. 17)
 // while keeping the row and its bookings/invoices for the legal retention period.
 // The name is replaced with a stable non-identifying placeholder (kept unique for
-// the UNIQUE(name) constraint), and the neighbor is archived. No-op if already
-// anonymized.
+// the UNIQUE(name) constraint), and the neighbor is archived. Repeated requests
+// recheck the live scrub surfaces, including rows created by older versions.
 //
 // Since Ausbaukarte 87 it reaches beyond the master record, because the operator
 // types free text all over the app and any of it can name a person: booking notes
@@ -77,15 +77,21 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 		    SET name = 'anonymisiert #' || id,
 		        note = '', address = '', tax_id = '', email = '', iban = '',
 		        archived = TRUE, anonymized = TRUE
-		  WHERE id = $1 AND NOT anonymized`, id)
+		  WHERE id = $1`, id)
 	if err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n > 0 {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n > 0 {
 		for _, q := range []string{
 			`DELETE FROM entry_photos WHERE entry_id IN (SELECT id FROM entries WHERE neighbor_id = $1)`,
-			`UPDATE entries SET note = '', task_label = '' WHERE neighbor_id = $1 AND (note <> '' OR task_label <> '')`,
-			`UPDATE neighbor_ledger SET description = '' WHERE neighbor_id = $1 AND description <> ''`,
+			`UPDATE entries SET note = '', task_label = '', void_reason = ''
+			 WHERE neighbor_id = $1 AND (note <> '' OR task_label <> '' OR void_reason <> '')`,
+			`UPDATE neighbor_ledger SET description = '', void_reason = ''
+			 WHERE neighbor_id = $1 AND (description <> '' OR void_reason <> '')`,
 			`UPDATE payments SET note = '' WHERE neighbor_id = $1 AND note <> ''`,
 			`DELETE FROM mail_outbox WHERE neighbor_id = $1`,
 			`DELETE FROM beleg_shares WHERE neighbor_id = $1`,
@@ -104,27 +110,25 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 		}
 		return tx.Commit()
 	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	{
-		// Either the neighbor is gone or was already anonymized; distinguish so the
-		// handler can 404 vs. treat it as a no-op.
-		var exists bool
-		if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM neighbors WHERE id=$1)`, id).Scan(&exists); err != nil {
-			return err
-		}
-		if !exists {
-			return ErrNotFound
-		}
-	}
-	return nil
+	return ErrNotFound
 }
 
 // SetNeighborArchived archives or reactivates a neighbor.
 func (s *Store) SetNeighborArchived(ctx context.Context, id int64, archived bool) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE neighbors SET archived=$1 WHERE id=$2`, archived, id)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if !archived {
+		if err := lockPersonalDataNeighbor(ctx, tx, id); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE neighbors SET archived=$1 WHERE id=$2`, archived, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SimilarEntryExists reports whether a non-voided booking with the same named
@@ -239,6 +243,16 @@ func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey),
 		nullInt(e.PersonID), nullInt(e.LinkedEntryID)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
+		var neighborID, yearID int64
+		if err := tx.QueryRowContext(ctx,
+			`SELECT neighbor_id, billing_year_id FROM entries WHERE idempotency_key=$1`,
+			e.IdempotencyKey,
+		).Scan(&neighborID, &yearID); err != nil {
+			return 0, err
+		}
+		if neighborID != e.NeighborID || yearID != e.BillingYearID {
+			return 0, ErrIdempotencyConflict
+		}
 		return 0, nil
 	}
 	if err != nil {
@@ -253,12 +267,56 @@ func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 	return id, nil
 }
 
+func existingEntryForReplay(
+	ctx context.Context,
+	tx *sql.Tx,
+	key string,
+	yearID, neighborID int64,
+) (id int64, linkedID *int64, exists bool, err error) {
+	if key == "" {
+		return 0, nil, false, nil
+	}
+	var linked sql.NullInt64
+	var storedYearID, storedNeighborID int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, billing_year_id, neighbor_id, linked_entry_id
+		  FROM entries WHERE idempotency_key=$1`, key).
+		Scan(&id, &storedYearID, &storedNeighborID, &linked)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil, false, nil
+	}
+	if err != nil {
+		return 0, nil, false, err
+	}
+	if storedYearID != yearID || storedNeighborID != neighborID {
+		return 0, nil, false, ErrIdempotencyConflict
+	}
+	if linked.Valid {
+		linkedID = &linked.Int64
+	}
+	return id, linkedID, true, nil
+}
+
 func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []int64) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if _, _, exists, err := existingEntryForReplay(
+		ctx,
+		tx,
+		e.IdempotencyKey,
+		e.BillingYearID,
+		e.NeighborID,
+	); err != nil {
+		return 0, err
+	} else if exists {
+		return 0, tx.Commit()
+	}
+	if err := lockMutableBookingAccount(ctx, tx, e.BillingYearID, e.NeighborID); err != nil {
+		return 0, err
+	}
 	id, err := insertEntryTx(ctx, tx, e, machineIDs)
 	if err != nil {
 		return 0, err
@@ -279,11 +337,40 @@ func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 // If only the machine was deleted, its FK was set to NULL on the surviving
 // companion; restoring the machine also restores that link, not its pricing.
 func (s *Store) CreateEntryPair(ctx context.Context, e *models.Entry, machineIDs []int64, companion *models.Entry) (mainID, companionID int64, err error) {
+	if companion == nil || companion.NeighborID != e.NeighborID || companion.BillingYearID != e.BillingYearID {
+		return 0, 0, ErrNotFound
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	storedMainID, _, mainExists, err := existingEntryForReplay(
+		ctx,
+		tx,
+		e.IdempotencyKey,
+		e.BillingYearID,
+		e.NeighborID,
+	)
+	if err != nil {
+		return 0, 0, err
+	}
+	_, storedCompanionLink, companionExists, err := existingEntryForReplay(
+		ctx,
+		tx,
+		companion.IdempotencyKey,
+		companion.BillingYearID,
+		companion.NeighborID,
+	)
+	if err != nil {
+		return 0, 0, err
+	}
+	if mainExists && companionExists && storedCompanionLink != nil && *storedCompanionLink == storedMainID {
+		return 0, 0, tx.Commit()
+	}
+	if err := lockMutableBookingAccount(ctx, tx, e.BillingYearID, e.NeighborID); err != nil {
+		return 0, 0, err
+	}
 	mainID, err = insertEntryTx(ctx, tx, e, machineIDs)
 	if err != nil {
 		return 0, 0, err
@@ -291,8 +378,10 @@ func (s *Store) CreateEntryPair(ctx context.Context, e *models.Entry, machineIDs
 	linkID := mainID
 	if linkID == 0 && e.IdempotencyKey != "" {
 		// Replay: the machine entry already exists — link against the stored row.
-		if err := tx.QueryRowContext(ctx,
-			`SELECT id FROM entries WHERE idempotency_key=$1`, e.IdempotencyKey).Scan(&linkID); err != nil {
+		if err := tx.QueryRowContext(ctx, `
+			SELECT id FROM entries
+			 WHERE idempotency_key=$1 AND neighbor_id=$2 AND billing_year_id=$3`,
+			e.IdempotencyKey, e.NeighborID, e.BillingYearID).Scan(&linkID); err != nil {
 			return 0, 0, err
 		}
 	}
@@ -303,15 +392,16 @@ func (s *Store) CreateEntryPair(ctx context.Context, e *models.Entry, machineIDs
 	if err != nil {
 		return 0, 0, err
 	}
-	if mainID != 0 && companionID == 0 && companion.IdempotencyKey != "" {
-		// Only repair alongside a newly restored machine, so an ordinary replay
-		// stays a no-op. Never steal a helper from an existing pair or change its
-		// captured values. It still counts as an existing row (companionID == 0).
+	if linkID != 0 && companionID == 0 && companion.IdempotencyKey != "" {
+		// Repair a surviving helper whose machine was recreated, and historical
+		// pairs that lost only their link. The account/year predicates prevent a
+		// replay key from reconnecting another account. A correctly linked replay
+		// returned before the mutable-account guard above and remains a true no-op.
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE entries SET linked_entry_id=$1
 			WHERE idempotency_key=$2 AND linked_entry_id IS NULL
 			  AND neighbor_id=$3 AND billing_year_id=$4 AND unit='Mannstunde'`,
-			mainID, companion.IdempotencyKey, e.NeighborID, e.BillingYearID); err != nil {
+			linkID, companion.IdempotencyKey, e.NeighborID, e.BillingYearID); err != nil {
 			return 0, 0, err
 		}
 	}
@@ -343,11 +433,25 @@ func (s *Store) LinkedPartnerID(ctx context.Context, id int64) (int64, error) {
 // would misreport the work as unmanned or as hours without a machine, and the
 // operator confirmed both.
 func (s *Store) DeleteEntryPair(ctx context.Context, id, partnerID int64) error {
+	yearID, neighborID, err := s.entryAccount(ctx, id)
+	if err != nil {
+		return err
+	}
+	partnerYearID, partnerNeighborID, err := s.entryAccount(ctx, partnerID)
+	if err != nil {
+		return err
+	}
+	if partnerYearID != yearID || partnerNeighborID != neighborID {
+		return ErrNotFound
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
+		return err
+	}
 	// Lock/delete in ascending ID order, matching recurring template creation
 	// regardless of which half's delete button was used. The link is ON DELETE
 	// SET NULL, so removing the machine first is safe.
@@ -367,8 +471,20 @@ func (s *Store) DeleteEntryPair(ctx context.Context, id, partnerID int64) error 
 // rate, the Mannstunden companion gets quantity + cost at its person rate. One
 // statement handles both directions via the unit.
 func (s *Store) SyncPairHours(ctx context.Context, partnerID int64, hours decimal.Decimal) (decimal.Decimal, error) {
+	yearID, neighborID, err := s.entryAccount(ctx, partnerID)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
+		return decimal.Zero, err
+	}
 	var cost decimal.Decimal
-	err := s.db.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		UPDATE entries SET
 		  hours    = CASE WHEN unit = 'h' THEN $2::numeric ELSE hours END,
 		  quantity = $2::numeric,
@@ -378,13 +494,45 @@ func (s *Store) SyncPairHours(ctx context.Context, partnerID int64, hours decima
 	if errors.Is(err, sql.ErrNoRows) {
 		return decimal.Zero, ErrNotFound
 	}
-	return cost, err
+	if err != nil {
+		return decimal.Zero, err
+	}
+	return cost, tx.Commit()
 }
 
 // DeleteEntry removes an entry.
 func (s *Store) DeleteEntry(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM entries WHERE id=$1`, id)
-	return err
+	yearID, neighborID, err := s.entryAccount(ctx, id)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM entries WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit()
+}
+
+func (s *Store) entryAccount(ctx context.Context, id int64) (yearID, neighborID int64, err error) {
+	err = s.db.QueryRowContext(ctx,
+		`SELECT billing_year_id, neighbor_id FROM entries WHERE id=$1`, id).Scan(&yearID, &neighborID)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = ErrNotFound
+	}
+	return
 }
 
 // EntryMachineIDs returns the machine ids linked to an entry (for edit prefill).
@@ -479,39 +627,51 @@ func (s *Store) NeighborTotal(ctx context.Context, neighborID, yearID int64) (co
 
 // YearPaymentTotals returns the received (paid) and outstanding (open) totals for
 // a billing year in a single query: paid = the sum of recorded payments, open =
-// the sum of each neighbor's remaining balance (net − payments). Replaces a
+// the sum of each neighbor's payable balance. Issued invoices use frozen gross;
+// accounts without one use live booking net. Replaces a
 // per-neighbor fan-out of NeighborTotal calls.
 func (s *Store) YearPaymentTotals(ctx context.Context, yearID int64) (paid, open, credit decimal.Decimal, err error) {
-	// Per neighbor: net = work bookings + signed ledger postings; paid = recorded
+	// Per neighbor: payable = frozen invoice gross (or live bookings before
+	// issuance) plus credits and ledger postings; paid = recorded
 	// payments. Aggregate each side in scalar subqueries first so joining can't
 	// multiply rows. "open" clamps each neighbor's remainder at 0 (GREATEST) so a
 	// credit does not silently cancel another neighbor's genuine debt; the netted
 	// credit is returned separately as "credit".
 	err = s.db.QueryRowContext(ctx,
-		`WITH per_neighbor AS (`+perNeighborNetPaid+`
+		`WITH per_neighbor AS (`+perNeighborPayablePaid+`
 		  WHERE byn.billing_year_id = $1
 		)
 		SELECT COALESCE(SUM(paid), 0),
-		       COALESCE(SUM(GREATEST(net - paid, 0)), 0),
-		       COALESCE(SUM(GREATEST(paid - net, 0)), 0)
+		       COALESCE(SUM(GREATEST(payable - paid, 0)), 0),
+		       COALESCE(SUM(GREATEST(paid - payable, 0)), 0)
 		FROM per_neighbor`, yearID).Scan(&paid, &open, &credit)
 	return
 }
 
-// perNeighborNetPaid yields one row per (billing year, neighbor) with the net
-// amount owed and the amount actually paid. Shared verbatim by the single-year
+// perNeighborPayablePaid yields one row per (billing year, neighbor) with the
+// payable amount and the amount actually paid. Shared verbatim by the single-year
 // and all-years roll-ups so the two can never drift apart — it is a compile-time
 // constant, never built from input.
-const perNeighborNetPaid = `
+const perNeighborPayablePaid = `
 		  SELECT byn.billing_year_id AS year_id,
-		    COALESCE((SELECT SUM(e.cost) FROM entries e
-		               WHERE e.neighbor_id = byn.neighbor_id
-		                 AND e.billing_year_id = byn.billing_year_id
-		                 AND NOT e.voided), 0)
+		    COALESCE(
+		      (SELECT iv.gross FROM invoices iv
+		        WHERE iv.neighbor_id = byn.neighbor_id
+		          AND iv.billing_year_id = byn.billing_year_id
+		          AND iv.kind='invoice' AND iv.status='issued'),
+		      (SELECT COALESCE(SUM(e.cost),0) FROM entries e
+		        WHERE e.neighbor_id = byn.neighbor_id
+		          AND e.billing_year_id = byn.billing_year_id
+		          AND NOT e.voided),
+		      0)
+		    + COALESCE((SELECT SUM(iv.gross) FROM invoices iv
+		                 WHERE iv.neighbor_id = byn.neighbor_id
+		                   AND iv.billing_year_id = byn.billing_year_id
+		                   AND iv.kind='gutschrift' AND iv.status='issued'), 0)
 		    + COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
 		                 WHERE l.neighbor_id = byn.neighbor_id
 		                   AND l.billing_year_id = byn.billing_year_id
-		                   AND NOT l.voided), 0) AS net,
+		                   AND NOT l.voided), 0) AS payable,
 		    COALESCE((SELECT SUM(p.amount) FROM payments p
 		               WHERE p.neighbor_id = byn.neighbor_id
 		                 AND p.billing_year_id = byn.billing_year_id AND p.deleted_at IS NULL), 0) AS paid
@@ -531,12 +691,12 @@ type YearPaymentTotal struct {
 // the zero value is the correct answer for them.
 func (s *Store) AllYearPaymentTotals(ctx context.Context) (map[int64]YearPaymentTotal, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`WITH per_neighbor AS (`+perNeighborNetPaid+`
+		`WITH per_neighbor AS (`+perNeighborPayablePaid+`
 		)
 		SELECT year_id,
 		       COALESCE(SUM(paid), 0),
-		       COALESCE(SUM(GREATEST(net - paid, 0)), 0),
-		       COALESCE(SUM(GREATEST(paid - net, 0)), 0)
+		       COALESCE(SUM(GREATEST(payable - paid, 0)), 0),
+		       COALESCE(SUM(GREATEST(paid - payable, 0)), 0)
 		FROM per_neighbor
 		GROUP BY year_id`)
 	if err != nil {
@@ -564,7 +724,8 @@ type YearNeighborSummary struct {
 	Hours      decimal.Decimal
 	Entries    int
 	PaidAmount decimal.Decimal // sum of recorded payments
-	Remaining  decimal.Decimal // Cost − PaidAmount
+	Payable    decimal.Decimal // frozen gross or live net, plus credits and ledger
+	Remaining  decimal.Decimal // Payable − PaidAmount
 	Paid       bool            // fully settled (Remaining <= 0)
 }
 
@@ -582,6 +743,20 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 		  + COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
 		               WHERE l.neighbor_id = n.id AND l.billing_year_id = byn.billing_year_id
 		                 AND NOT l.voided), 0) AS net,
+		  COALESCE(
+		    (SELECT iv.gross FROM invoices iv
+		      WHERE iv.neighbor_id = n.id AND iv.billing_year_id = byn.billing_year_id
+		        AND iv.kind='invoice' AND iv.status='issued'),
+		    (SELECT COALESCE(SUM(e.cost),0) FROM entries e
+		      WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id
+		        AND NOT e.voided),
+		    0)
+		  + COALESCE((SELECT SUM(iv.gross) FROM invoices iv
+		               WHERE iv.neighbor_id = n.id AND iv.billing_year_id = byn.billing_year_id
+		                 AND iv.kind='gutschrift' AND iv.status='issued'), 0)
+		  + COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
+		               WHERE l.neighbor_id = n.id AND l.billing_year_id = byn.billing_year_id
+		                 AND NOT l.voided), 0) AS payable,
 		  COALESCE((SELECT SUM(e.hours) FROM entries e
 		             WHERE e.neighbor_id = n.id AND e.billing_year_id = byn.billing_year_id
 		               AND NOT e.voided), 0) AS hours,
@@ -600,10 +775,18 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 	var out []YearNeighborSummary
 	for rows.Next() {
 		var r YearNeighborSummary
-		if err := rows.Scan(&r.NeighborID, &r.Name, &r.Cost, &r.Hours, &r.Entries, &r.PaidAmount); err != nil {
+		if err := rows.Scan(
+			&r.NeighborID,
+			&r.Name,
+			&r.Cost,
+			&r.Payable,
+			&r.Hours,
+			&r.Entries,
+			&r.PaidAmount,
+		); err != nil {
 			return nil, err
 		}
-		r.Remaining = r.Cost.Sub(r.PaidAmount)
+		r.Remaining = r.Payable.Sub(r.PaidAmount)
 		r.Paid = !r.Remaining.IsPositive() // fully settled when nothing remains
 		out = append(out, r)
 	}
@@ -614,21 +797,34 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 // and its machine links.
 func (s *Store) UpdateEntry(ctx context.Context, e *models.Entry, machineIDs []int64) error {
 	ensureUnit(e)
+	yearID, neighborID, err := s.entryAccount(ctx, e.ID)
+	if err != nil {
+		return err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
+		return err
+	}
 
-	if _, err := tx.ExecContext(ctx, `
+	res, err := tx.ExecContext(ctx, `
 		UPDATE entries SET entry_date=$1, task_label=$2, gespann_id=$3, tractor_id=$4,
 			load_level_id=$5, tractor_label=$6, load_label=$7, machine_labels=$8,
 			hours=$9, hourly_rate=$10, cost=$11, note=$12,
 			unit=$13, quantity=$14, unit_price=$15 WHERE id=$16`,
 		e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID), nullInt(e.LoadLevelID),
 		e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours, e.HourlyRate, e.Cost, e.Note,
-		e.Unit, e.Quantity, e.UnitPrice, e.ID); err != nil {
+		e.Unit, e.Quantity, e.UnitPrice, e.ID)
+	if err != nil {
 		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return ErrNotFound
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM entry_machines WHERE entry_id=$1`, e.ID); err != nil {
 		return err
@@ -644,9 +840,29 @@ func (s *Store) UpdateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 
 // SetEntryVoided cancels or restores an entry (kept for traceability).
 func (s *Store) SetEntryVoided(ctx context.Context, id int64, voided bool, reason string) error {
-	_, err := s.db.ExecContext(ctx,
+	yearID, neighborID, err := s.entryAccount(ctx, id)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx,
 		`UPDATE entries SET voided=$1, void_reason=$2 WHERE id=$3`, voided, reason, id)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit()
 }
 
 // entryCols is THE entry column list — scanEntryInto knows its order, and

@@ -26,11 +26,14 @@ type User struct {
 	IsAdmin            bool // derived: Role == admin (kept for templates/handlers)
 	MustChangePassword bool
 	TotpEnabled        bool
+	Disabled           bool
 	CreatedAt          time.Time
 }
 
-// CanWrite reports whether the user may modify data (not a viewer).
-func (u User) CanWrite() bool { return u.Role != RoleViewer }
+// CanWrite permits only active users with an explicitly recognized write role.
+func (u User) CanWrite() bool {
+	return !u.Disabled && (u.Role == RoleAdmin || u.Role == RoleEditor)
+}
 
 // RoleLabel returns a German label for the user's role.
 func (u User) RoleLabel() string {
@@ -290,7 +293,7 @@ type Neighbor struct {
 	Archived bool
 	// Anonymized marks a neighbor whose live personal data was erased (DSGVO
 	// Art. 17) while retained invoice snapshots stay intact. Such rows are also
-	// archived and cannot be edited or re-anonymized.
+	// archived and cannot be edited. Repeated erasure scrubs any legacy live text.
 	Anonymized bool
 	Created    time.Time
 }

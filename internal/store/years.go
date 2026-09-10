@@ -99,8 +99,18 @@ func (s *Store) DeleteBillingYear(ctx context.Context, id int64) error {
 
 // SetYearStatus sets the workflow status of a billing year.
 func (s *Store) SetYearStatus(ctx context.Context, id int64, status string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE billing_years SET status=$1 WHERE id=$2`, status, id)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE billing_years SET status=$1 WHERE id=$2`, status, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ResetYearPayments sets every neighbor of a year back to "open" (unpaid).

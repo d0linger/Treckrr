@@ -35,6 +35,11 @@ type RotateResult struct {
 //     whole operation resumable: run it again after fixing whatever failed.
 func (s *Service) RotateKey(ctx context.Context, oldSecret string) (RotateResult, error) {
 	var res RotateResult
+	ctx, release, err := s.AcquireWork(ctx)
+	if err != nil {
+		return res, err
+	}
+	defer release()
 	if !s.Enabled() {
 		return res, ErrDisabled
 	}
@@ -53,7 +58,7 @@ func (s *Service) RotateKey(ctx context.Context, oldSecret string) (RotateResult
 
 	for _, path := range files {
 		name := filepath.Base(path)
-		enc, err := os.ReadFile(path) // #nosec G304 -- path comes from our own glob of the backup dir
+		enc, err := s.readFile(path)
 		if err != nil {
 			res.Skipped = append(res.Skipped, name+": "+err.Error())
 			continue

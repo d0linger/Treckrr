@@ -59,10 +59,16 @@ type mockPaymentRows struct {
 }
 
 func (r *mockPaymentRows) Columns() []string {
-	if strings.Contains(r.query, "SELECT EXISTS") {
+	switch {
+	case strings.Contains(r.query, "SELECT status"):
+		return []string{"status"}
+	case strings.Contains(r.query, "SELECT anonymized"):
+		return []string{"anonymized"}
+	case strings.Contains(r.query, "SELECT EXISTS"):
 		return []string{"exists"}
+	default:
+		return []string{"id"}
 	}
-	return []string{"id"}
 }
 
 func (r *mockPaymentRows) Close() error { return nil }
@@ -72,9 +78,14 @@ func (r *mockPaymentRows) Next(dest []driver.Value) error {
 		return io.EOF
 	}
 	r.hasRead = true
-	if strings.Contains(r.query, "SELECT EXISTS") {
+	switch {
+	case strings.Contains(r.query, "SELECT status"):
+		dest[0] = "active"
+	case strings.Contains(r.query, "SELECT anonymized"):
+		dest[0] = false
+	case strings.Contains(r.query, "SELECT EXISTS"):
 		dest[0] = true // NeighborInYear membership exists
-	} else {
+	default:
 		dest[0] = int64(1)
 	}
 	return nil

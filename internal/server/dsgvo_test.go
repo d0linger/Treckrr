@@ -28,10 +28,13 @@ func TestDsgvoEntryFromIncludesVoided(t *testing.T) {
 }
 
 func TestDsgvoExportJSONShape(t *testing.T) {
+	paymentTermDays := 14
 	out := dsgvoExport{
 		ExportedAt: time.Now(),
 		Notice:     "test",
-		Subject:    dsgvoSubjectFromNeighbor(&models.Neighbor{ID: 7, Name: "Hof Berg", Address: "Weg 1", TaxID: "ATU123"}),
+		Subject: dsgvoSubjectFromNeighbor(&models.Neighbor{
+			ID: 7, Name: "Hof Berg", Address: "Weg 1", TaxID: "ATU123", PaymentTermDays: &paymentTermDays,
+		}),
 		BillingYears: []dsgvoYear{{
 			Year:     2026,
 			Entries:  []dsgvoEntry{dsgvoEntryFrom(models.Entry{TaskLabel: "Pflügen", Unit: "ha", Cost: decimal.RequireFromString("50")})},
@@ -43,6 +46,9 @@ func TestDsgvoExportJSONShape(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	js := string(b)
+	if !strings.Contains(js, `"payment_term_days":14`) {
+		t.Fatal("individual payment terms missing from subject export")
+	}
 	for _, want := range []string{`"subject"`, `"id":7`, `"tax_id":"ATU123"`, `"billing_years"`, `"year":2026`, `"number":"2026-007"`, `"task":"Pflügen"`} {
 		if !strings.Contains(js, want) {
 			t.Errorf("export JSON missing %s\n%s", want, js)

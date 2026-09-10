@@ -4,12 +4,14 @@ package server
 import (
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"html/template"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -34,14 +36,16 @@ const (
 
 // Server holds shared dependencies for the HTTP handlers.
 type Server struct {
-	cfg         *config.Config
-	store       *store.Store
-	backup      *backup.Service
-	templates   map[string]*template.Template
-	logins      *loginLimiter
-	wa          *webauthn.WebAuthn
-	started     time.Time
-	maintenance atomic.Bool // set during a restore: the gate serves 503 for normal traffic
+	cfg          *config.Config
+	store        *store.Store
+	backup       *backup.Service
+	templates    map[string]*template.Template
+	logins       *loginLimiter
+	wa           *webauthn.WebAuthn
+	started      time.Time
+	maintenance  atomic.Bool  // set during a restore: the gate serves 503 for normal traffic
+	activity     sync.RWMutex // drains requests and background maintenance before restore
+	restoreLease func(context.Context) (func() error, error)
 	// photoSlots bounds concurrent image decodes; see maxConcurrentPhotoDecodes.
 	photoSlots chan struct{}
 }
@@ -296,15 +300,21 @@ func (s *Server) Handler() http.Handler {
 
 	// securityHeaders wraps maintenanceGate so even the 503 maintenance page carries
 	// the nosniff/frame/CSP headers (the gate returns before inner handlers run).
-	// userCache is outermost so limitBody, auth/admin, the handler and accessLog all
-	// share ONE session resolution instead of repeating the SELECT+UPDATE.
-	return s.userCacheMW(s.limitBody(s.accessLog(s.recoverPanic(s.securityHeaders(s.maintenanceGate(s.csrf(mux)))))))
+	// Drain admission wraps userCache so session SELECT/UPDATE cannot cross a
+	// restore boundary. Inner handlers still share one cached user resolution.
+	return s.securityHeaders(s.maintenanceGate(s.userCacheMW(s.limitBody(s.accessLog(s.recoverPanic(s.csrf(mux)))))))
 }
 
 // userCacheMW installs the per-request session memo (see currentUser).
 func (s *Server) userCacheMW(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, withUserCache(r))
+		r = withUserCache(r)
+		if isMaintenanceExempt(r.URL.Path) {
+			// Static files/liveness bypass drain; access logging must not resolve
+			// a session (including its sliding-expiry UPDATE) for these routes.
+			r.Context().Value(userCacheKey).(*userCache).done = true
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -326,6 +336,22 @@ func (s *Server) maintenanceGate(next http.Handler) http.Handler {
 			writeErrorPage(w, http.StatusServiceUnavailable, "Wartung",
 				"Eine Wiederherstellung läuft gerade. Bitte in Kürze erneut versuchen.")
 			return
+		}
+		// Restore preflight (including session resolution) participates in drain.
+		// beginRestore releases only its own read admission before upgrading.
+		isRestore := r.Method == http.MethodPost && r.URL.Path == "/admin/backup/restore"
+		if !isMaintenanceExempt(r.URL.Path) {
+			s.activity.RLock()
+			var once sync.Once
+			release := func() { once.Do(s.activity.RUnlock) }
+			defer release()
+			if s.maintenance.Load() {
+				http.Error(w, "Wartung: bitte später erneut versuchen.", http.StatusServiceUnavailable)
+				return
+			}
+			if isRestore {
+				r = r.WithContext(context.WithValue(r.Context(), restoreAdmissionKey{}, release))
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -368,7 +394,8 @@ const maxRequestBody = 1 << 20 // 1 MiB
 // still leaves orders of magnitude over a real dump of this single-tenant
 // database including its bytea receipt photos. It is not a hard ceiling on what
 // can be restored either way: `treckrr restore <file>` reads from BACKUP_DIR and
-// never passes through this path.
+// never passes through this HTTP path, but defaults to the same archive cap.
+// Larger offline restores require BACKUP_CLI_MAX_BYTES and provisioned memory.
 const maxBackupUpload = 128 << 20 // 128 MiB
 
 // limitBody wraps the request body in an http.MaxBytesReader so a client cannot
@@ -381,11 +408,30 @@ const maxBackupUpload = 128 << 20 // 128 MiB
 // closes the connection rather than reusing it.
 func (s *Server) limitBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.backup != nil && isMemoryBackupPath(r.URL.Path) {
+			if u := s.currentUser(r); u == nil || !u.IsAdmin {
+				http.Error(w, "Zugriff verweigert", http.StatusForbidden)
+				return
+			}
+			ctx, release, err := s.backup.AcquireWork(r.Context())
+			if err != nil {
+				w.Header().Set("Retry-After", "60")
+				http.Error(w, "Eine Backup-Operation läuft bereits. Bitte später erneut versuchen.", http.StatusServiceUnavailable)
+				return
+			}
+			defer release()
+			r = r.WithContext(ctx)
+			defer func() {
+				if r.MultipartForm != nil {
+					_ = r.MultipartForm.RemoveAll()
+				}
+			}()
+		}
 		if r.Body != nil && r.Body != http.NoBody {
 			limit := int64(maxRequestBody)
 			// Restore uploads a full encrypted dump — exempt those exact routes.
 			if isBackupUploadPath(r.URL.Path) {
-				// The 512 MiB allowance is for authenticated admins only. Resolve the
+				// The 128 MiB allowance is for authenticated admins only. Resolve the
 				// session here — outermost, before the large body is read and before
 				// CSRF's FormValue would parse it — and reject anyone else, so an
 				// unauthenticated client can't drive a memory-exhaustion parse (T-02).
@@ -453,6 +499,7 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 			return
 		}
 		ctx := context.WithValue(r.Context(), userCtxKey, user)
+		ctx = store.WithAuditActor(ctx, store.AuditActor{UserID: &user.ID, Username: user.Username, IP: s.clientIP(r)})
 		h(w, r.WithContext(ctx))
 	})
 }
@@ -483,6 +530,7 @@ func (s *Server) admin(h http.HandlerFunc) http.Handler {
 		}
 		s.refreshSessionCookie(w, r)
 		ctx := context.WithValue(r.Context(), userCtxKey, user)
+		ctx = store.WithAuditActor(ctx, store.AuditActor{UserID: &user.ID, Username: user.Username, IP: s.clientIP(r)})
 		h(w, r.WithContext(ctx))
 	})
 }
@@ -604,8 +652,23 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 // this path explicitly (see csrf.go) — without that every report was answered
 // with 403 and the channel this policy advertises never worked.
 func (s *Server) handleCSPReport(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<10)) // reports are small
-	slog.Warn("csp violation", "report", sanitizeLog(strings.TrimSpace(string(body))), "ua", sanitizeLog(r.UserAgent()))
+	// Reports can contain bearer URLs, referrers and script samples. Decode only
+	// diagnostic fields and log a fixed directive allowlist, never the raw body.
+	var report struct {
+		CSP struct {
+			Directive string `json:"effective-directive"`
+			Line      int    `json:"line-number"`
+			Column    int    `json:"column-number"`
+		} `json:"csp-report"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&report); err == nil {
+		directive := "unknown"
+		switch report.CSP.Directive {
+		case "default-src", "script-src", "script-src-elem", "script-src-attr", "style-src", "style-src-elem", "style-src-attr", "img-src", "font-src", "connect-src", "frame-src", "frame-ancestors", "object-src", "base-uri", "form-action", "worker-src", "manifest-src", "media-src":
+			directive = report.CSP.Directive
+		}
+		slog.Warn("csp violation", "directive", directive, "line", report.CSP.Line, "column", report.CSP.Column)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

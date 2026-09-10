@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -86,7 +87,17 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// which the per-IP limit alone cannot. NOTE: a temporary account block is a
 	// deliberate trade-off; it is time-bounded and self-healing, and passkey
 	// login (a separate route) is unaffected, so it is not an unrecoverable lockout.
-	if s.logins.blocked(r.Context(), rlKey) || (accountLimited && s.logins.accountBlocked(r.Context(), username)) {
+	allowed, failed := s.admitVerification(w, r, rlKey, loginMaxFails, loginWindow)
+	if failed {
+		return
+	}
+	if allowed && accountLimited {
+		allowed, failed = s.admitVerification(w, r, accountKey(username), accountMaxFails, accountWindow)
+		if failed {
+			return
+		}
+	}
+	if !allowed {
 		metrics.Inc(metrics.LoginBlocked)
 		s.auditLogin(r, username, "login_blocked", "zu viele Fehlversuche")
 		s.setFlash(w, r, "error", "Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen.")
@@ -96,10 +107,6 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	user, err := s.store.AuthenticateUser(r.Context(), username, password)
 	if errors.Is(err, store.ErrNotFound) {
-		s.logins.fail(r.Context(), rlKey)
-		if accountLimited {
-			s.logins.accountFail(r.Context(), username)
-		}
 		metrics.Inc(metrics.LoginFailed)
 		s.auditLogin(r, username, "login_failed", "falsche Zugangsdaten")
 		s.setFlash(w, r, "error", "Benutzername oder Passwort falsch.")
@@ -156,17 +163,21 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 	}
 	// Mitigation: Enforce per-user rate limiting on the 2FA step to protect
 	// against distributed brute-force attacks on the 6-digit TOTP code.
-	if s.sensitiveBlocked(w, r, userID, "/login") {
+	if !s.sensitiveAdmit(w, r, userID, "/login") {
 		return
 	}
 	rlKey := s.clientIP(r)
-	if s.logins.blocked(r.Context(), rlKey) {
+	allowed, failed := s.admitVerification(w, r, rlKey, loginMaxFails, loginWindow)
+	if failed {
+		return
+	}
+	if !allowed {
 		s.setFlash(w, r, "error", "Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen.")
 		redirect(w, r, "/login")
 		return
 	}
 	user, err := s.store.GetUser(r.Context(), userID)
-	if err != nil {
+	if err != nil || user.Disabled || !user.TotpEnabled {
 		s.clearPending2FA(w, r)
 		redirect(w, r, "/login")
 		return
@@ -194,10 +205,6 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		s.auditLogin(r, user.Username, "login_recovery", itoa(remaining)+" Codes übrig")
 		s.setFlash(w, r, "info", "Mit Wiederherstellungscode angemeldet. Noch "+itoa(remaining)+" Code(s) übrig.")
 	default:
-		s.logins.fail(r.Context(), rlKey)
-		// Mitigation: Record a failure in the per-user limiter to prevent
-		// brute-forcing across multiple IP addresses.
-		s.sensitiveFail(r, userID)
 		s.auditLogin(r, user.Username, "login_2fa_failed", "")
 		s.setFlash(w, r, "error", "Code ungültig. Bitte erneut versuchen.")
 		redirect(w, r, "/login") // pending cookie stays -> 2FA step shown again
@@ -238,11 +245,6 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 		Value:  token,
 		MaxAge: int(sessionTTL.Seconds()),
 	})
-	if err := s.store.AddAudit(r.Context(), &user.ID, user.Username, "login", "auth", "", "", s.clientIP(r)); err != nil {
-		// The login itself must not fail on this, but a dropped auth event is
-		// exactly what an incident review needs — leave a trace.
-		slog.Warn("audit write failed", "action", "login", "err", sanitizeLog(err.Error()))
-	}
 	return true
 }
 
@@ -294,15 +296,17 @@ func (s *Server) clearPending2FA(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+	defer cancel()
 	if u := s.currentUser(r); u != nil {
-		if err := s.store.AddAudit(r.Context(), &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r)); err != nil {
+		if err := s.store.AddAudit(ctx, &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r)); err != nil {
 			slog.Warn("audit write failed", "action", "logout", "err", sanitizeLog(err.Error()))
 		}
 	}
 	if c, err := s.cookie(r, sessionCookie); err == nil && c.Value != "" {
 		// Invalidate the server-side session, not just the cookie: if this fails the
 		// token stays valid server-side, so a captured token would still authenticate.
-		if err := s.store.DeleteSession(r.Context(), c.Value); err != nil {
+		if err := s.store.DeleteSession(ctx, c.Value); err != nil {
 			slog.Error("logout: delete session failed", "err", sanitizeLog(err.Error()))
 		}
 	}

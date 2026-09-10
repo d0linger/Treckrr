@@ -13,11 +13,26 @@ type EntryPhoto struct {
 
 // AddEntryPhoto stores a re-encoded image for a booking and returns its id.
 func (s *Store) AddEntryPhoto(ctx context.Context, entryID int64, image []byte, contentType string) (int64, error) {
+	_, neighborID, err := s.entryAccount(ctx, entryID)
+	if err != nil {
+		return 0, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if err := lockPersonalDataNeighbor(ctx, tx, neighborID); err != nil {
+		return 0, err
+	}
 	var id int64
-	err := s.db.QueryRowContext(ctx,
+	err = tx.QueryRowContext(ctx,
 		`INSERT INTO entry_photos (entry_id, image, content_type) VALUES ($1,$2,$3) RETURNING id`,
 		entryID, image, contentType).Scan(&id)
-	return id, err
+	if err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
 }
 
 // ListEntryPhotos returns the photo metadata for a booking (newest first).

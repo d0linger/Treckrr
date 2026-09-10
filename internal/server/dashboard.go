@@ -399,9 +399,7 @@ func (s *Server) handleNeighborAnonymize(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
-	if before != nil && before.Anonymized {
-		s.setFlash(w, r, "error", "Nachbar ist bereits anonymisiert.")
-	} else if err := s.store.AnonymizeNeighbor(r.Context(), id); err != nil {
+	if err := s.store.AnonymizeNeighbor(r.Context(), id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			http.NotFound(w, r)
 			return

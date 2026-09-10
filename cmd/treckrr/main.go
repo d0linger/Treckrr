@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -25,27 +26,20 @@ import (
 	"github.com/d0linger/treckrr/internal/store"
 )
 
-// paymentUndoGrace is how long a soft-deleted payment stays restorable before the
-// maintenance loop purges it for good.
-const paymentUndoGrace = 7 * 24 * time.Hour
-
-// Audit-log retention windows in calendar years (staggered): short covers pure
-// security/auth/ops events (kept only as long as useful for incident review, per
-// DSGVO data minimisation); long covers business- and tax-relevant events, matching
-// the Austrian § 132 BAO 7-year bookkeeping-record retention. Expressed in years and
-// applied with time.AddDate so the cutoff lands on the true calendar anniversary —
-// a fixed 365-day duration drifts by the leap days in the window and would purge a
-// record 1–2 days before its legal 7-year date.
+// Audit retention separates routine security events from business records.
+// Business records retain seven complete calendar years after their event year.
+// This default is not a substitute for operator-managed legal holds.
 const (
 	auditRetentionShortYears = 1
 	auditRetentionLongYears  = 7
 )
 
 // auditRetentionCutoffs returns the (short, long) purge cutoffs for a given
-// reference time, using calendar-year arithmetic so each cutoff lands on the true
-// anniversary date regardless of leap days in between.
+// reference time. Business retention starts at the year boundary, not the
+// individual record's anniversary, so no part of that event year expires early.
 func auditRetentionCutoffs(now time.Time) (short, long time.Time) {
-	return now.AddDate(-auditRetentionShortYears, 0, 0), now.AddDate(-auditRetentionLongYears, 0, 0)
+	return now.AddDate(-auditRetentionShortYears, 0, 0),
+		time.Date(now.Year()-auditRetentionLongYears, time.January, 1, 0, 0, 0, 0, now.Location())
 }
 
 func main() {
@@ -91,14 +85,16 @@ func setupLogging() {
 
 // newBackup builds the backup service. The schedule is read live from the DB
 // (GUI-editable) via SettingsFn, falling back to the BACKUP_* env.
-func newBackup(cfg *config.Config, pool *sql.DB, st *store.Store) *backup.Service {
+func newBackup(cfg *config.Config, pool *sql.DB, st *store.Store, maxBytes int64, cli bool) *backup.Service {
 	return backup.New(backup.Options{
-		DatabaseURL: cfg.DatabaseURL,
-		EncKey:      cfg.BackupEncryptionKey,
-		Dir:         cfg.BackupDir,
-		StatusFile:  cfg.BackupStatusFile,
-		Keep:        cfg.BackupKeep,
-		RehearseURL: cfg.BackupRehearseURL,
+		DatabaseURL:        cfg.DatabaseURL,
+		EncKey:             cfg.BackupEncryptionKey,
+		Dir:                cfg.BackupDir,
+		StatusFile:         cfg.BackupStatusFile,
+		Keep:               cfg.BackupKeep,
+		MaxBytes:           maxBytes,
+		SkipStartupCleanup: cli,
+		RehearseURL:        cfg.BackupRehearseURL,
 		S3: backup.S3Options{
 			Endpoint:  cfg.S3Endpoint,
 			Bucket:    cfg.S3Bucket,
@@ -141,6 +137,11 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
+	appLease, err := db.AcquireApplicationLease(ctx, pool)
+	if err != nil {
+		return err
+	}
+	defer appLease.Close()
 
 	if err := db.Migrate(ctx, pool); err != nil {
 		return err
@@ -179,7 +180,6 @@ func run() error {
 	// status='sent' write fail on the closed pool, and the next boot re-sent it.
 	var purgeWG sync.WaitGroup
 	purgeWG.Add(1)
-	go func() { defer purgeWG.Done(); purgeLoop(ctx, cfg, st) }()
 
 	// Encrypted backups: scheduled writer (in-app) + on-demand download handler.
 	// Seed the schedule from env on first boot; thereafter it is GUI-editable.
@@ -191,7 +191,7 @@ func run() error {
 	}); err != nil {
 		return err
 	}
-	bk := newBackup(cfg, pool, st)
+	bk := newBackup(cfg, pool, st, 0, false)
 	var bkWG sync.WaitGroup
 	if bk.Enabled() {
 		slog.Info("encrypted backups enabled (schedule via GUI)", "dir", cfg.BackupDir)
@@ -205,6 +205,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	srv.SetRestoreLease(appLease.Exclusive)
+	go func() { defer purgeWG.Done(); purgeLoop(ctx, cfg, st, srv) }()
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -265,88 +267,86 @@ func waitTimeout(wg *sync.WaitGroup, d time.Duration) bool {
 
 // purgeLoop periodically removes expired sessions and stale rate-limit rows until
 // ctx is canceled. It runs one purge shortly after boot, then on a fixed tick.
-func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store) {
+func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store, srv *server.Server) {
 	purge := func() {
-		bg, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
-		metrics.Inc(metrics.MaintenanceRuns)
-		if err := st.PurgeExpiredSessions(bg); err != nil {
-			metrics.Inc(metrics.MaintenanceFails)
-			slog.Error("purge sessions", "err", err)
-		}
-		if err := st.PurgeStaleRateLimits(bg); err != nil {
-			slog.Error("purge rate limits", "err", err)
-		}
-		if err := st.PurgeExpiredWebauthnCeremonies(bg); err != nil {
-			slog.Error("purge webauthn ceremonies", "err", err)
-		}
-		// Hard-delete payments soft-deleted more than the undo grace window ago.
-		if err := st.PurgeDeletedPayments(bg, time.Now().Add(-paymentUndoGrace)); err != nil {
-			slog.Error("purge deleted payments", "err", err)
-		}
-		// Materialize any due recurring bookings (idempotent).
-		if n, err := st.RunDueRecurring(bg); err != nil {
-			metrics.Inc(metrics.MaintenanceFails)
-			slog.Error("recurring generation", "err", err)
-		} else if n > 0 {
-			metrics.Add(metrics.RecurringCreated, int64(n))
-			slog.Info("recurring bookings created", "count", n)
-			// These are system-created bookings (no HTTP request / user), so record a
-			// system-actor audit line — otherwise the entries appear in the DB with no
-			// trail explaining who created them. Best-effort: a missing line must not
-			// abort the maintenance tick.
-			detail := fmt.Sprintf("%d Buchung(en) aus fälligen Serien erzeugt", n)
-			if err := st.AddAudit(bg, nil, "system", "recurring_run", "recurring", "", detail, ""); err != nil {
-				slog.Error("audit recurring run", "err", err)
-			}
-		}
-		// Staggered audit-log retention: pure security/auth/ops noise expires after the
-		// short window (DSGVO Art. 5(1)(e) data minimisation); business- and tax-relevant
-		// events are kept for the long window (§ 132 BAO, 7 years). The classification
-		// lives in the store (shortLivedAuditActions); everything not listed defaults to
-		// the long window, so a new action is never dropped early by omission.
-		// Deliver parked mail (failed synchronous sends). The sender is injected so
-		// the store stays free of a config dependency; each delivery gets its own
-		// bounded context so one slow SMTP dialog cannot eat the whole tick.
-		if cfg.MailEnabled() {
-			// The LOOP ctx, not bg: between mails it is the shutdown stop signal,
-			// while each mail runs on its own detached 45s budget inside the
-			// store — the old shared 1-minute bg could expire between a
-			// successful SMTP dialog and the status='sent' write, and the next
-			// tick re-sent a delivered invoice.
-			sent, gaveUp, err := st.ProcessMailOutbox(ctx, func(ctx context.Context, to, subject, body, attName, attType string, attData []byte) error {
-				sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				defer cancel()
-				var atts []mail.Attachment
-				if attName != "" {
-					atts = append(atts, mail.Attachment{Filename: attName, ContentType: attType, Data: attData})
-				}
-				return mail.Send(sctx, cfg, to, subject, body, atts)
-			})
-			if err != nil {
+		srv.Background(ctx, func() {
+			bg, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			metrics.Inc(metrics.MaintenanceRuns)
+			if err := st.PurgeExpiredSessions(bg); err != nil {
 				metrics.Inc(metrics.MaintenanceFails)
-				slog.Error("mail outbox", "err", err)
+				slog.Error("purge sessions", "err", err)
 			}
-			if sent > 0 {
-				metrics.Add(metrics.MailSent, int64(sent))
-				slog.Info("mail outbox delivered", "count", sent)
+			if err := st.PurgeStaleRateLimits(bg); err != nil {
+				slog.Error("purge rate limits", "err", err)
 			}
-			if gaveUp > 0 {
-				metrics.Add(metrics.MailFailed, int64(gaveUp))
-				slog.Warn("mail outbox gave up", "count", gaveUp)
+			if err := st.PurgeExpiredWebauthnCeremonies(bg); err != nil {
+				slog.Error("purge webauthn ceremonies", "err", err)
 			}
-		}
-		if err := st.PurgeSentMail(bg, time.Now().Add(-30*24*time.Hour)); err != nil {
-			slog.Error("purge sent mail", "err", err)
-		}
-		shortCutoff, longCutoff := auditRetentionCutoffs(time.Now())
-		if n, err := st.PurgeAuditLog(bg, shortCutoff, longCutoff); err != nil {
-			metrics.Inc(metrics.MaintenanceFails)
-			slog.Error("purge audit log", "err", err)
-		} else if n > 0 {
-			metrics.Add(metrics.AuditPurged, n)
-			slog.Info("audit log purged", "count", n)
-		}
+			// Materialize any due recurring bookings (idempotent).
+			if n, err := st.RunDueRecurring(bg); err != nil {
+				metrics.Inc(metrics.MaintenanceFails)
+				slog.Error("recurring generation", "err", err)
+			} else if n > 0 {
+				metrics.Add(metrics.RecurringCreated, int64(n))
+				slog.Info("recurring bookings created", "count", n)
+				// These are system-created bookings (no HTTP request / user), so record a
+				// system-actor audit line — otherwise the entries appear in the DB with no
+				// trail explaining who created them. Best-effort: a missing line must not
+				// abort the maintenance tick.
+				detail := fmt.Sprintf("%d Buchung(en) aus fälligen Serien erzeugt", n)
+				if err := st.AddAudit(bg, nil, "system", "recurring_run", "recurring", "", detail, ""); err != nil {
+					slog.Error("audit recurring run", "err", err)
+				}
+			}
+			// Staggered audit-log retention: pure security/auth/ops noise expires after the
+			// short window (DSGVO Art. 5(1)(e) data minimisation); business- and tax-relevant
+			// events are kept for the long window (§ 132 BAO, 7 years). The classification
+			// lives in the store (shortLivedAuditActions); everything not listed defaults to
+			// the long window, so a new action is never dropped early by omission.
+			// Deliver parked mail (failed synchronous sends). The sender is injected so
+			// the store stays free of a config dependency; each delivery gets its own
+			// bounded context so one slow SMTP dialog cannot eat the whole tick.
+			if cfg.MailEnabled() {
+				// The LOOP ctx, not bg: between mails it is the shutdown stop signal,
+				// while each mail runs on its own detached 45s budget inside the
+				// store — the old shared 1-minute bg could expire between a
+				// successful SMTP dialog and the status='sent' write, and the next
+				// tick re-sent a delivered invoice.
+				sent, gaveUp, err := st.ProcessMailOutbox(ctx, func(ctx context.Context, to, subject, body, attName, attType string, attData []byte) error {
+					sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+					defer cancel()
+					var atts []mail.Attachment
+					if attName != "" {
+						atts = append(atts, mail.Attachment{Filename: attName, ContentType: attType, Data: attData})
+					}
+					return mail.Send(sctx, cfg, to, subject, body, atts)
+				})
+				if err != nil {
+					metrics.Inc(metrics.MaintenanceFails)
+					slog.Error("mail outbox", "err", err)
+				}
+				if sent > 0 {
+					metrics.Add(metrics.MailSent, int64(sent))
+					slog.Info("mail outbox delivered", "count", sent)
+				}
+				if gaveUp > 0 {
+					metrics.Add(metrics.MailFailed, int64(gaveUp))
+					slog.Warn("mail outbox gave up", "count", gaveUp)
+				}
+			}
+			if err := st.PurgeSentMail(bg, time.Now().Add(-30*24*time.Hour)); err != nil {
+				slog.Error("purge sent mail", "err", err)
+			}
+			shortCutoff, longCutoff := auditRetentionCutoffs(time.Now())
+			if n, err := st.PurgeAuditLog(bg, shortCutoff, longCutoff); err != nil {
+				metrics.Inc(metrics.MaintenanceFails)
+				slog.Error("purge audit log", "err", err)
+			} else if n > 0 {
+				metrics.Add(metrics.AuditPurged, n)
+				slog.Info("audit log purged", "count", n)
+			}
+		})
 	}
 	purge()
 	ticker := time.NewTicker(15 * time.Minute)
@@ -361,8 +361,8 @@ func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store) {
 	}
 }
 
-// runCommand dispatches CLI subcommands. Restore is deliberately CLI-only (it
-// overwrites the live database) with a typed confirmation — never a UI button.
+// runCommand dispatches CLI subcommands. Destructive restore requires typed
+// confirmation and an offline database lease; the GUI has its own drain gate.
 func runCommand(cmd string, args []string) error {
 	switch cmd {
 	case "restore":
@@ -389,7 +389,12 @@ func openBackup() (*config.Config, *sql.DB, *backup.Service, error) {
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	bk := newBackup(cfg, pool, store.New(pool, cfg.EncryptionSecret))
+	maxBytes, err := backupCLIMaxBytes(os.Getenv("BACKUP_CLI_MAX_BYTES"))
+	if err != nil {
+		_ = pool.Close()
+		return nil, nil, nil, err
+	}
+	bk := newBackup(cfg, pool, store.New(pool, cfg.EncryptionSecret), maxBytes, true)
 	if !bk.Enabled() {
 		_ = pool.Close()
 		return nil, nil, nil, fmt.Errorf("backups are not configured (set BACKUP_ENCRYPTION_KEY)")
@@ -419,7 +424,8 @@ func runRestore(args []string) error {
 		return err
 	}
 	defer pool.Close()
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
 
 	if test {
 		rep, err := bk.TestRestore(ctx, file)
@@ -438,8 +444,17 @@ func runRestore(args []string) error {
 	if strings.TrimSpace(answer) != "RESTORE" {
 		return fmt.Errorf("aborted")
 	}
+	lease, err := db.AcquireOfflineRestoreLease(ctx, pool)
+	if err != nil {
+		return err
+	}
+	defer lease.Close()
 	if err := bk.Restore(ctx, file, cfg.DatabaseURL); err != nil {
 		return err
+	}
+	st := store.New(pool, cfg.EncryptionSecret)
+	if err := st.ReconcileAfterRestore(ctx); err != nil {
+		return fmt.Errorf("restore completed but reconciliation failed; keep the app stopped: %w", err)
 	}
 	slog.Info("restore complete", "file", file)
 	return nil
@@ -492,7 +507,21 @@ func runRotateKeyCLI(args []string) error {
 		return err
 	}
 	slog.Info("key rotation finished", "rotated", len(res.Rotated), "skipped", len(res.Skipped))
+	if bk.S3Enabled() {
+		slog.Warn("only local backups were rotated; keep the previous key in secure recovery storage for older S3 archives")
+	}
 	return nil
+}
+
+func backupCLIMaxBytes(raw string) (int64, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 1<<20 || n > 16<<30 {
+		return 0, fmt.Errorf("BACKUP_CLI_MAX_BYTES must be between 1 MiB and 16 GiB; provision offline memory accordingly")
+	}
+	return n, nil
 }
 
 // runRehearseCLI restores the newest dump into a scratch database and queries it

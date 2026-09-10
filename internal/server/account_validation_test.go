@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/d0linger/treckrr/internal/auth"
 	"github.com/d0linger/treckrr/internal/config"
@@ -63,7 +62,7 @@ type mockAccountRows struct {
 var testAccountPasswordHash string
 
 func (r *mockAccountRows) Columns() []string {
-	return []string{"id", "username", "email", "role", "is_admin", "must_change_password", "totp_enabled", "created_at", "password_hash"}
+	return []string{"value"}
 }
 
 func (r *mockAccountRows) Close() error { return nil }
@@ -74,15 +73,16 @@ func (r *mockAccountRows) Next(dest []driver.Value) error {
 	}
 	r.hasRead = true
 
-	dest[0] = int64(123)
-	dest[1] = "testuser"
-	dest[2] = "test@example.com"
-	dest[3] = "editor"
-	dest[4] = false
-	dest[5] = false
-	dest[6] = false
-	dest[7] = time.Now()
-	dest[8] = testAccountPasswordHash
+	switch {
+	case strings.Contains(r.query, "INSERT INTO login_attempts"):
+		dest[0] = int64(1)
+	case strings.Contains(r.query, "SELECT password_hash"):
+		dest[0] = testAccountPasswordHash
+	case strings.Contains(r.query, "SELECT EXISTS"):
+		dest[0] = true
+	default:
+		return io.EOF
+	}
 
 	return nil
 }
@@ -120,6 +120,7 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/account/password", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: "original-session"})
 		rr := httptest.NewRecorder()
 
 		// Inject user context directly
@@ -149,6 +150,7 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/account/password", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: "original-session"})
 		rr := httptest.NewRecorder()
 
 		ctx := context.WithValue(req.Context(), userCtxKey, &models.User{
@@ -166,6 +168,15 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 		flashCookie := flashText(t, s, rr)
 		if !strings.Contains(flashCookie, "Passwort geändert. Andere Sitzungen wurden beendet.") {
 			t.Errorf("expected success password change, got cookie: %q", flashCookie)
+		}
+		found := false
+		for _, cookie := range rr.Result().Cookies() {
+			if cookie.Name == sessionCookie && cookie.Value != "" && cookie.Value != "original-session" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("fresh session cookie missing after password change")
 		}
 	})
 }

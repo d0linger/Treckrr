@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"errors"
+	"strconv"
 
 	"github.com/d0linger/treckrr/internal/models"
 )
@@ -23,7 +24,7 @@ func (s *Store) WebauthnHandle(ctx context.Context, userID int64) ([]byte, error
 	var handle []byte
 	err := s.db.QueryRowContext(ctx,
 		`UPDATE users SET webauthn_handle = COALESCE(webauthn_handle, $1)
-		  WHERE id=$2 RETURNING webauthn_handle`, fresh, userID).Scan(&handle)
+		  WHERE id=$2 AND NOT disabled RETURNING webauthn_handle`, fresh, userID).Scan(&handle)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -37,7 +38,7 @@ func (s *Store) WebauthnHandle(ctx context.Context, userID int64) ([]byte, error
 // / discoverable login).
 func (s *Store) UserByWebauthnHandle(ctx context.Context, handle []byte) (*models.User, error) {
 	u, err := scanUser(s.db.QueryRowContext(ctx,
-		`SELECT `+userCols+` FROM users WHERE webauthn_handle=$1`, handle))
+		`SELECT `+userCols+` FROM users WHERE webauthn_handle=$1 AND NOT disabled`, handle))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -74,13 +75,31 @@ func (s *Store) ListWebauthnCredentials(ctx context.Context, userID int64) ([]mo
 
 // AddWebauthnCredential stores a newly registered passkey.
 func (s *Store) AddWebauthnCredential(ctx context.Context, userID int64, c models.WebauthnCredential) error {
-	_, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	res, err := tx.ExecContext(ctx,
 		`INSERT INTO webauthn_credentials
 		   (user_id, credential_id, public_key, aaguid, sign_count, transports, name, backup_eligible, backup_state)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		 SELECT id,$2,$3,$4,$5,$6,$7,$8,$9 FROM users WHERE id=$1 AND NOT disabled FOR SHARE`,
 		userID, c.CredentialID, c.PublicKey, c.AAGUID, int64(c.SignCount), c.Transports, c.Name,
 		c.BackupEligible, c.BackupState)
-	return err
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	if err := addAuditTx(ctx, tx, "passkey_add", "user", strconv.FormatInt(userID, 10), c.Name); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // TouchWebauthnCredential updates the signature counter, current backup state
@@ -99,10 +118,21 @@ func (s *Store) TouchWebauthnCredential(ctx context.Context, credentialID []byte
 // so the caller can name it in the audit trail. ErrNotFound when no such credential
 // belongs to the user.
 func (s *Store) DeleteWebauthnCredential(ctx context.Context, userID, id int64) (name string, err error) {
-	err = s.db.QueryRowContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	err = tx.QueryRowContext(ctx,
 		`DELETE FROM webauthn_credentials WHERE id=$1 AND user_id=$2 RETURNING name`, id, userID).Scan(&name)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrNotFound
 	}
-	return name, err
+	if err != nil {
+		return "", err
+	}
+	if err := addAuditTx(ctx, tx, "passkey_delete", "user", strconv.FormatInt(userID, 10), name); err != nil {
+		return "", err
+	}
+	return name, tx.Commit()
 }

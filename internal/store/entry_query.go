@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"strconv"
 	"strings"
 	"time"
@@ -163,6 +164,38 @@ func (s *Store) EntryUnitsInYear(ctx context.Context, yearID int64) ([]string, e
 
 // ---- Sammelaktionen (Ausbaukarte 64) ---------------------------------------
 
+func lockMutableEntryAccounts(ctx context.Context, tx *sql.Tx, ids []int64) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT DISTINCT e.billing_year_id, e.neighbor_id
+		  FROM entries e
+		  JOIN billing_year_neighbors byn
+		    ON byn.billing_year_id = e.billing_year_id AND byn.neighbor_id = e.neighbor_id
+		 WHERE e.id = ANY($1)
+		 ORDER BY e.billing_year_id, e.neighbor_id`, ids)
+	if err != nil {
+		return err
+	}
+	accounts := []accountKey{}
+	for rows.Next() {
+		var account accountKey
+		if err := rows.Scan(&account.yearID, &account.neighborID); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		accounts = append(accounts, account)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	// Bulk actions deliberately skip locked accounts instead of failing the
+	// entire selection. Lock every referenced account first, then let the
+	// mutation below filter on the protected year/invoice/privacy state.
+	return lockSettlementAccounts(ctx, tx, accounts...)
+}
+
 // VoidEntries marks several bookings as canceled in one transaction, skipping
 // ids that belong to a closed year or to a neighbor whose invoice is already
 // festgeschrieben — the same two locks a single void obeys, enforced here in
@@ -171,12 +204,25 @@ func (s *Store) VoidEntries(ctx context.Context, ids []int64, void bool, reason 
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	res, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockMutableEntryAccounts(ctx, tx, ids); err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, `
 		UPDATE entries e SET voided = $2, void_reason = CASE WHEN $2 THEN $3 ELSE '' END
 		 WHERE e.id = ANY($1)
 		   AND e.voided <> $2
+		   AND EXISTS (SELECT 1 FROM billing_year_neighbors byn
+		                WHERE byn.billing_year_id = e.billing_year_id
+		                  AND byn.neighbor_id = e.neighbor_id)
 		   AND EXISTS (SELECT 1 FROM billing_years y
 		                WHERE y.id = e.billing_year_id AND y.status <> 'completed')
+		   AND EXISTS (SELECT 1 FROM neighbors n
+		                WHERE n.id = e.neighbor_id AND NOT n.anonymized)
 		   AND NOT EXISTS (SELECT 1 FROM invoices iv
 		                    WHERE iv.billing_year_id = e.billing_year_id
 		                      AND iv.neighbor_id = e.neighbor_id
@@ -186,7 +232,7 @@ func (s *Store) VoidEntries(ctx context.Context, ids []int64, void bool, reason 
 		return 0, err
 	}
 	n, _ := res.RowsAffected()
-	return int(n), nil
+	return int(n), tx.Commit()
 }
 
 // DeleteEntries removes several bookings under the same two locks. A booking
@@ -195,11 +241,24 @@ func (s *Store) DeleteEntries(ctx context.Context, ids []int64) (int, error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	res, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockMutableEntryAccounts(ctx, tx, ids); err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, `
 		DELETE FROM entries e
 		 WHERE e.id = ANY($1)
+		   AND EXISTS (SELECT 1 FROM billing_year_neighbors byn
+		                WHERE byn.billing_year_id = e.billing_year_id
+		                  AND byn.neighbor_id = e.neighbor_id)
 		   AND EXISTS (SELECT 1 FROM billing_years y
 		                WHERE y.id = e.billing_year_id AND y.status <> 'completed')
+		   AND EXISTS (SELECT 1 FROM neighbors n
+		                WHERE n.id = e.neighbor_id AND NOT n.anonymized)
 		   AND NOT EXISTS (SELECT 1 FROM invoices iv
 		                    WHERE iv.billing_year_id = e.billing_year_id
 		                      AND iv.neighbor_id = e.neighbor_id
@@ -208,5 +267,5 @@ func (s *Store) DeleteEntries(ctx context.Context, ids []int64) (int, error) {
 		return 0, err
 	}
 	n, _ := res.RowsAffected()
-	return int(n), nil
+	return int(n), tx.Commit()
 }

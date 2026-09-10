@@ -13,22 +13,11 @@ import (
 	"github.com/d0linger/treckrr/internal/store"
 )
 
-// neighborRemaining is the open balance for a neighbor in a year:
-// bookings + signed ledger − recorded payments.
+// neighborRemaining is the payable balance used by every cash action. Once an
+// invoice exists this is its frozen gross (plus credits/ledger, less payments),
+// otherwise it falls back to the live booking net.
 func (s *Server) neighborRemaining(ctx context.Context, yearID, neighborID int64) (decimal.Decimal, error) {
-	cost, _, err := s.store.NeighborTotal(ctx, neighborID, yearID)
-	if err != nil {
-		return decimal.Zero, err
-	}
-	ledger, err := s.store.NeighborLedgerSum(ctx, yearID, neighborID)
-	if err != nil {
-		return decimal.Zero, err
-	}
-	paid, err := s.store.NeighborPaymentSum(ctx, yearID, neighborID)
-	if err != nil {
-		return decimal.Zero, err
-	}
-	return cost.Add(ledger).Sub(paid), nil
+	return s.store.AccountRemaining(ctx, yearID, neighborID)
 }
 
 // parsePaidOn parses the yyyy-mm-dd payment date, defaulting to today.
@@ -108,8 +97,6 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	s.audit(r, "payment_add", "neighbor", neighborID,
-		s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID)+" · "+amount.StringFixed(2)+" €")
 	msg := "Zahlung erfasst."
 	// Optional Skonto (§ 16 UStG): a percentage of the issued invoice's gross,
 	// booked as a credit note (net + USt split) alongside the payment. Skipped when
@@ -132,8 +119,6 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 					redirect(w, r, neighborURL(neighborID, yearID))
 					return
 				}
-				s.audit(r, "invoice_gutschrift", "neighbor", neighborID,
-					s.neighborName(r, neighborID)+" · Skonto "+g.Number+" · "+skGross.StringFixed(2)+" €")
 				msg = "Zahlung + Skonto-Gutschrift " + g.Number + " (" + skGross.StringFixed(2) + " €) erfasst."
 			}
 		}
@@ -159,8 +144,6 @@ func (s *Server) handlePaymentDelete(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	case deleted:
-		s.audit(r, "payment_delete", "neighbor", p.NeighborID,
-			s.neighborName(r, p.NeighborID)+" · "+p.Amount.StringFixed(2)+" €")
 		s.setFlashUndo(w, r, "success", "Zahlung gelöscht.", "/payments/"+itoa64(id)+"/restore")
 	default: // already deleted (e.g. a double-submit): no state change, no audit
 		s.setFlash(w, r, "info", "Zahlung war bereits gelöscht.")
@@ -185,8 +168,6 @@ func (s *Server) handlePaymentRestore(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.setFlash(w, r, "error", "Wiederherstellen fehlgeschlagen.")
 	case restored:
-		s.audit(r, "payment_restore", "neighbor", p.NeighborID,
-			s.neighborName(r, p.NeighborID)+" · "+p.Amount.StringFixed(2)+" €")
 		s.setFlash(w, r, "success", "Zahlung wiederhergestellt.")
 	default: // already active (e.g. a double-submit): no state change, no audit
 		s.setFlash(w, r, "info", "Zahlung war bereits aktiv.")
@@ -217,8 +198,6 @@ func (s *Server) handleNeighborSettle(w http.ResponseWriter, r *http.Request) {
 	case booked.IsZero():
 		s.setFlash(w, r, "info", "Konto ist bereits ausgeglichen.")
 	default:
-		s.audit(r, "payment_settle", "year", yearID,
-			s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID)+" · "+booked.StringFixed(2)+" €")
 		s.setFlash(w, r, "success", "Restbetrag als bezahlt verbucht.")
 	}
 	redirect(w, r, dashboardURL(yearID))
@@ -290,8 +269,6 @@ func (s *Server) handleNeighborCarryForward(w http.ResponseWriter, r *http.Reque
 	case moved.IsZero():
 		s.setFlash(w, r, "info", "Kein offener Rest zum Übernehmen.")
 	default:
-		s.audit(r, "carry_forward", "neighbor", neighborID,
-			s.neighborName(r, neighborID)+" · "+moved.StringFixed(2)+" € → "+itoa(year.Year+1))
 		s.setFlash(w, r, "success", "Rest ins Folgejahr übernommen.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
@@ -367,7 +344,6 @@ func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
-	before := p.Amount
 	updated, err := s.store.UpdatePayment(r.Context(), id, amount, parsePaidOn(r.FormValue("paid_on")), note, paymentMethod(r))
 	if err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
@@ -382,8 +358,6 @@ func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
-	s.audit(r, "payment_update", "neighbor", p.NeighborID,
-		s.neighborName(r, p.NeighborID)+" · "+before.StringFixed(2)+" € → "+amount.StringFixed(2)+" €")
 	s.setFlash(w, r, "success", "Zahlung aktualisiert.")
 	redirect(w, r, back)
 }
@@ -523,8 +497,6 @@ func (s *Server) handleCreditPayout(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
-	s.audit(r, "credit_payout", "neighbor", neighborID,
-		s.neighborName(r, neighborID)+" · "+amount.StringFixed(2)+" € Guthaben ausbezahlt")
 	s.setFlash(w, r, "success", "Guthaben von "+amount.StringFixed(2)+" € als ausbezahlt verbucht.")
 	redirect(w, r, back)
 }

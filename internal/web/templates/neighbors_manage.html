@@ -25,7 +25,7 @@
 	{{end}}
 	<div class="list">
 		{{range .Stats}}
-		<div class="card stack stack--tight {{if .Neighbor.Archived}}is-inactive{{end}}" data-nb-item>
+		<div class="card stack stack--tight {{if and .Neighbor.Archived (not .Neighbor.Anonymized)}}is-inactive{{end}}" data-nb-item>
 			<div class="list__row list__row--plain">
 				<div class="list__main">
 					<span class="list__title">{{.Neighbor.Name}}{{if .Neighbor.Anonymized}}<span class="pill-off">anonymisiert</span>{{else if .Neighbor.Archived}}<span class="pill-off">inaktiv</span>{{end}}</span>
@@ -42,6 +42,12 @@
 				<summary>Bearbeiten</summary>
 				{{if .Neighbor.Anonymized}}
 				<p class="muted small">Personenbezogene Daten wurden anonymisiert (DSGVO Art. 17). Buchungen und festgeschriebene Rechnungen bleiben aufbewahrungspflichtig erhalten.</p>
+				<form method="post" action="/neighbors/{{.Neighbor.ID}}/anonymize" class="form">
+					<p class="muted">Erneut anonymisieren entfernt noch vorhandene personenbezogene Texte und Fotos aus den laufenden Arbeitsdaten unwiderruflich. Beträge, festgeschriebene Rechnungen und aufbewahrte Audit-Einträge bleiben unverändert.</p>
+					<label class="field"><span>Zum erneuten Ausführen <code>ANONYMISIEREN</code> eintippen</span>
+						<input class="input" name="confirm" autocomplete="off" placeholder="ANONYMISIEREN"></label>
+					<button class="btn btn--danger btn--sm" type="submit">Erneut anonymisieren</button>
+				</form>
 				{{else}}
 				<form method="post" action="/neighbors/{{.Neighbor.ID}}/update" class="form">
 					<input type="hidden" name="origin" value="manage">

@@ -3,7 +3,10 @@ package backup
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -37,8 +40,16 @@ const rehearsalTimeout = 10 * time.Minute
 // same database as opt.DatabaseURL is refused outright.
 func (s *Service) RehearseRestore(ctx context.Context, enc []byte) (Rehearsal, error) {
 	var rep Rehearsal
+	ctx, release, err := s.AcquireWork(ctx)
+	if err != nil {
+		return rep, err
+	}
+	defer release()
 	if s.opt.RehearseURL == "" {
 		return rep, ErrRehearsalDisabled
+	}
+	if int64(len(enc)) > s.maxBytes() {
+		return rep, errors.New("rehearsal archive exceeds configured memory budget")
 	}
 	raw, err := decrypt(enc, s.secret)
 	if err != nil {
@@ -66,13 +77,15 @@ func (s *Service) RehearseRestore(ctx context.Context, enc []byte) (Rehearsal, e
 	}
 	defer admin.Close()
 
-	// Drop first: a previous run killed mid-flight leaves the scratch database
-	// behind, and CREATE would then fail forever.
-	dropScratch(ctx, admin, scratch)
+	// Never drop an existing database to recover from a name collision.
 	if _, err := admin.ExecContext(ctx, `CREATE DATABASE "`+scratch+`"`); err != nil {
 		return rep, fmt.Errorf("rehearsal: create scratch db: %w", err)
 	}
-	defer dropScratch(context.WithoutCancel(ctx), admin, scratch)
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		dropScratch(cleanupCtx, admin, scratch)
+	}()
 
 	tmp, cleanup, err := writeTemp(raw)
 	if err != nil {
@@ -81,7 +94,10 @@ func (s *Service) RehearseRestore(ctx context.Context, enc []byte) (Rehearsal, e
 	defer cleanup()
 
 	targetURL := withDatabase(s.opt.RehearseURL, scratch)
-	dbURL, env := dbURLEnv(targetURL)
+	dbURL, env, err := dbURLEnv(targetURL)
+	if err != nil {
+		return rep, err
+	}
 	start := time.Now()
 	// No --clean here: the database is empty by construction. --single-transaction
 	// still applies, so a partial load cannot be mistaken for a success.
@@ -89,7 +105,7 @@ func (s *Service) RehearseRestore(ctx context.Context, enc []byte) (Rehearsal, e
 		"--no-owner", "--single-transaction", "--dbname="+dbURL, tmp)
 	cmd.Env = env
 	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
+	cmd.Stderr = &limitedWriter{w: &errBuf, remaining: 1 << 20}
 	if err := cmd.Run(); err != nil {
 		return rep, fmt.Errorf("rehearsal: pg_restore: %w: %s", err, strings.TrimSpace(errBuf.String()))
 	}
@@ -123,7 +139,26 @@ func (s *Service) RehearseRestore(ctx context.Context, enc []byte) (Rehearsal, e
 	}
 	rep.Duration = time.Since(start)
 	rep.At = time.Now()
+	if err := s.recordRehearsal(rep); err != nil {
+		return rep, fmt.Errorf("rehearsal succeeded but status was not saved: %w", err)
+	}
 	return rep, nil
+}
+
+func (s *Service) recordRehearsal(rep Rehearsal) error {
+	if s.opt.StatusFile == "" {
+		return nil // callers without a status destination receive the report only
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.readStatus()
+	st.RestoreTested = rep.At
+	st.RehearsalNote = fmt.Sprintf("Restored and queried %d tables in %s", rep.Tables, rep.Duration.Round(time.Millisecond))
+	b, err := json.Marshal(st)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(s.opt.StatusFile, b)
 }
 
 // Rehearsal is the result of a successful restore rehearsal.
@@ -148,20 +183,23 @@ func dropScratch(ctx context.Context, admin *sql.DB, name string) {
 // the rehearsal at the live database.
 func scratchTarget(rehearseURL, liveURL string) (adminURL, scratch string, err error) {
 	ru, err := url.Parse(rehearseURL)
-	if err != nil {
-		return "", "", fmt.Errorf("rehearsal: bad URL: %w", err)
+	if err != nil || (ru.Scheme != "postgres" && ru.Scheme != "postgresql") {
+		return "", "", errors.New("rehearsal: a valid PostgreSQL URL is required")
 	}
-	// A fixed, recognizable name — an operator finding it knows what it is, and a
-	// leftover from a crash is reused rather than multiplied.
-	scratch = "treckrr_restore_rehearsal"
+	// The prefix stays recognizable; ownership is unique to this invocation.
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return "", "", err
+	}
+	scratch = "treckrr_rehearsal_" + hex.EncodeToString(nonce[:])
 	if lu, lerr := url.Parse(liveURL); lerr == nil {
 		if strings.EqualFold(lu.Host, ru.Host) && strings.TrimPrefix(lu.Path, "/") == scratch {
 			return "", "", errors.New("rehearsal: the rehearsal database must not be the live database")
 		}
 	}
-	au := *ru
-	au.Path = "/postgres" // maintenance DB: CREATE/DROP DATABASE cannot run inside the target
-	return au.String(), scratch, nil
+	// CREATE/DROP DATABASE must use the maintenance DB. Query-string dbname
+	// must not override the path and silently target an operator's existing DB.
+	return withDatabase(rehearseURL, "postgres"), scratch, nil
 }
 
 func withDatabase(rawURL, dbName string) string {
@@ -170,5 +208,8 @@ func withDatabase(rawURL, dbName string) string {
 		return rawURL
 	}
 	u.Path = "/" + dbName
+	q := u.Query()
+	q.Set("dbname", dbName)
+	u.RawQuery = q.Encode()
 	return u.String()
 }

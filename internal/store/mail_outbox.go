@@ -79,13 +79,26 @@ func (s *Store) EnqueueMail(ctx context.Context, m OutboxMail) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if m.NeighborID != 0 {
+		if err := lockPersonalDataNeighbor(ctx, tx, m.NeighborID); err != nil {
+			return err
+		}
+	}
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO mail_outbox (kind, neighbor_id, billing_year_id, recipient, subject, body,
 		                          att_name, att_type, att_data, next_attempt_at, meta)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
 		m.Kind, nullable(m.NeighborID), nullable(m.BillingYearID), m.Recipient, m.Subject, m.Body,
 		m.AttName, m.AttType, m.AttData, time.Now().Add(outboxBackoff(1)), meta)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // PendingMailCount reports how many mails are parked (for /metrics).

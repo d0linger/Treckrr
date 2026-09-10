@@ -9,6 +9,32 @@ import (
 	"github.com/d0linger/treckrr/internal/models"
 )
 
+// AuditActor identifies the authenticated initiator without retaining credentials.
+type AuditActor struct {
+	UserID       *int64
+	Username, IP string
+}
+
+type auditActorKey struct{}
+
+// WithAuditActor attaches the actor to mutations that write a transactional audit.
+func WithAuditActor(ctx context.Context, actor AuditActor) context.Context {
+	if actor.UserID != nil {
+		id := *actor.UserID
+		actor.UserID = &id
+	}
+	return context.WithValue(ctx, auditActorKey{}, actor)
+}
+
+func addAuditTx(ctx context.Context, tx *sql.Tx, action, entity, entityID, detail string) error {
+	actor, _ := ctx.Value(auditActorKey{}).(AuditActor)
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO audit_log (user_id, username, action, entity, entity_id, detail, ip)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		nullInt(actor.UserID), actor.Username, action, entity, entityID, detail, actor.IP)
+	return err
+}
+
 // AddAudit records one action in the audit trail.
 func (s *Store) AddAudit(ctx context.Context, userID *int64, username, action, entity, entityID, detail, ip string) error {
 	_, err := s.db.ExecContext(ctx, `

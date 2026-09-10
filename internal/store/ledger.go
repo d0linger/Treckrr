@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -99,7 +101,8 @@ type NeighborYearHistoryRow struct {
 	Net        decimal.Decimal // Cost + Ledger
 	Hours      decimal.Decimal
 	PaidAmount decimal.Decimal // sum of recorded payments
-	Remaining  decimal.Decimal // Net − PaidAmount
+	Payable    decimal.Decimal // frozen invoice gross, or live booking net before issuance
+	Remaining  decimal.Decimal // Payable + Ledger - PaidAmount
 	Paid       bool            // fully settled (Remaining <= 0)
 }
 
@@ -124,7 +127,15 @@ func (s *Store) NeighborYearHistory(ctx context.Context, neighborID int64) ([]Ne
 		               AND NOT l.voided), 0) AS ledger,
 		  COALESCE((SELECT SUM(p.amount) FROM payments p
 		             WHERE p.neighbor_id = byn.neighbor_id
-		               AND p.billing_year_id = byn.billing_year_id AND p.deleted_at IS NULL), 0) AS paid
+		               AND p.billing_year_id = byn.billing_year_id AND p.deleted_at IS NULL), 0) AS paid,
+		  COALESCE((SELECT gross FROM invoices iv
+		             WHERE iv.neighbor_id = byn.neighbor_id
+		               AND iv.billing_year_id = byn.billing_year_id
+		               AND iv.kind = 'invoice' AND iv.status = 'issued'),
+		           (SELECT SUM(e.cost) FROM entries e
+		             WHERE e.neighbor_id = byn.neighbor_id
+		               AND e.billing_year_id = byn.billing_year_id
+		               AND NOT e.voided), 0) AS payable
 		FROM billing_year_neighbors byn
 		JOIN billing_years y ON y.id = byn.billing_year_id
 		WHERE byn.neighbor_id = $1
@@ -136,11 +147,11 @@ func (s *Store) NeighborYearHistory(ctx context.Context, neighborID int64) ([]Ne
 	var out []NeighborYearHistoryRow
 	for rows.Next() {
 		var r NeighborYearHistoryRow
-		if err := rows.Scan(&r.YearID, &r.Year, &r.Status, &r.Cost, &r.Hours, &r.Ledger, &r.PaidAmount); err != nil {
+		if err := rows.Scan(&r.YearID, &r.Year, &r.Status, &r.Cost, &r.Hours, &r.Ledger, &r.PaidAmount, &r.Payable); err != nil {
 			return nil, err
 		}
 		r.Net = r.Cost.Add(r.Ledger)
-		r.Remaining = r.Net.Sub(r.PaidAmount)
+		r.Remaining = r.Payable.Add(r.Ledger).Sub(r.PaidAmount)
 		r.Paid = !r.Remaining.IsPositive()
 		out = append(out, r)
 	}
@@ -195,26 +206,129 @@ func (s *Store) YearlyTotals(ctx context.Context) ([]YearTotal, error) {
 
 // AddNeighborLedger records a manual posting and returns its id.
 func (s *Store) AddNeighborLedger(ctx context.Context, yearID, neighborID int64, amount decimal.Decimal, description string, date time.Time) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockOpenAccount(ctx, tx, yearID, neighborID); err != nil {
+		return 0, err
+	}
 	var id int64
-	err := s.db.QueryRowContext(ctx,
+	err = tx.QueryRowContext(ctx,
 		`INSERT INTO neighbor_ledger (billing_year_id, neighbor_id, amount, description, posting_date)
 		 VALUES ($1,$2,$3,$4,$5) RETURNING id`, yearID, neighborID, amount, description, date).Scan(&id)
-	return id, err
+	if err != nil {
+		return 0, err
+	}
+	if err := addAuditTx(ctx, tx, "ledger_add", "ledger", strconv.FormatInt(id, 10), ledgerAuditState(amount, date, false)); err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
 }
 
 // UpdateNeighborLedger edits a posting's amount, description and date.
 func (s *Store) UpdateNeighborLedger(ctx context.Context, id int64, amount decimal.Decimal, description string, date time.Time) error {
-	_, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	yearID, neighborID, err := ledgerAccount(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if err := lockOpenAccount(ctx, tx, yearID, neighborID); err != nil {
+		return err
+	}
+	before, err := ledgerForUpdate(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx,
 		`UPDATE neighbor_ledger SET amount=$1, description=$2, posting_date=$3 WHERE id=$4`,
 		amount, description, date, id)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return err
+	}
+	detail := "before{" + ledgerAuditState(before.Amount, before.Date, before.Voided) + "} after{" +
+		ledgerAuditState(amount, date, before.Voided) + "}"
+	if err := addAuditTx(ctx, tx, "ledger_update", "ledger", strconv.FormatInt(id, 10), detail); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SetLedgerVoided marks a posting as voided (or restores it).
 func (s *Store) SetLedgerVoided(ctx context.Context, id int64, voided bool, reason string) error {
-	_, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	yearID, neighborID, err := ledgerAccount(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if err := lockOpenAccount(ctx, tx, yearID, neighborID); err != nil {
+		return err
+	}
+	before, err := ledgerForUpdate(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if before.Voided == voided {
+		return tx.Commit()
+	}
+	res, err := tx.ExecContext(ctx,
 		`UPDATE neighbor_ledger SET voided=$1, void_reason=$2 WHERE id=$3`, voided, reason, id)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return err
+	}
+	action := "ledger_unvoid"
+	if voided {
+		action = "ledger_void"
+	}
+	if err := addAuditTx(ctx, tx, action, "ledger", strconv.FormatInt(id, 10), ledgerAuditState(before.Amount, before.Date, voided)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+type ledgerMutationRow struct {
+	Amount decimal.Decimal
+	Date   time.Time
+	Voided bool
+}
+
+func ledgerAccount(ctx context.Context, tx *sql.Tx, id int64) (yearID, neighborID int64, err error) {
+	err = tx.QueryRowContext(ctx,
+		`SELECT billing_year_id, neighbor_id FROM neighbor_ledger WHERE id=$1`, id).Scan(&yearID, &neighborID)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = ErrNotFound
+	}
+	return
+}
+
+func ledgerForUpdate(ctx context.Context, tx *sql.Tx, id int64) (ledgerMutationRow, error) {
+	var row ledgerMutationRow
+	err := tx.QueryRowContext(ctx,
+		`SELECT amount, posting_date, voided FROM neighbor_ledger WHERE id=$1 FOR UPDATE`, id).
+		Scan(&row.Amount, &row.Date, &row.Voided)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = ErrNotFound
+	}
+	return row, err
+}
+
+func ledgerAuditState(amount decimal.Decimal, date time.Time, voided bool) string {
+	return fmt.Sprintf("amount=%s; posting_date=%s; voided=%t", amount.StringFixed(2), date.Format("2006-01-02"), voided)
 }
 
 // GetLedgerEntry returns a posting with its owning year/neighbor (used to
@@ -232,8 +346,33 @@ func (s *Store) GetLedgerEntry(ctx context.Context, id int64) (yearID, neighborI
 
 // DeleteNeighborLedger removes a posting.
 func (s *Store) DeleteNeighborLedger(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM neighbor_ledger WHERE id=$1`, id)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	yearID, neighborID, err := ledgerAccount(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if err := lockOpenAccount(ctx, tx, yearID, neighborID); err != nil {
+		return err
+	}
+	before, err := ledgerForUpdate(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM neighbor_ledger WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return err
+	}
+	if err := addAuditTx(ctx, tx, "ledger_delete", "ledger", strconv.FormatInt(id, 10), ledgerAuditState(before.Amount, before.Date, before.Voided)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // LedgerTransferYearIDs returns the distinct billing years a transfer touches
@@ -268,8 +407,33 @@ func (s *Store) DeleteLedgerTransfer(ctx context.Context, transferID string) err
 	if transferID == "" {
 		return errors.New("empty transfer id")
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM neighbor_ledger WHERE transfer_id=$1`, transferID)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	accounts, err := ledgerTransferAccounts(ctx, tx, transferID)
+	if err != nil {
+		return err
+	}
+	if err := lockOpenAccounts(ctx, tx, accounts...); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM neighbor_ledger WHERE transfer_id=$1`, transferID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	if err := addAuditTx(ctx, tx, "ledger_delete", "ledger_transfer", transferID, fmt.Sprintf("postings=%d", n)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SetLedgerVoidedTransfer voids (or restores) both sides of a carry-forward. An
@@ -279,7 +443,63 @@ func (s *Store) SetLedgerVoidedTransfer(ctx context.Context, transferID string, 
 	if transferID == "" {
 		return errors.New("empty transfer id")
 	}
-	_, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	accounts, err := ledgerTransferAccounts(ctx, tx, transferID)
+	if err != nil {
+		return err
+	}
+	if err := lockOpenAccounts(ctx, tx, accounts...); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx,
 		`UPDATE neighbor_ledger SET voided=$1, void_reason=$2 WHERE transfer_id=$3`, voided, reason, transferID)
-	return err
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	action := "ledger_unvoid"
+	if voided {
+		action = "ledger_void"
+	}
+	if err := addAuditTx(ctx, tx, action, "ledger_transfer", transferID, fmt.Sprintf("postings=%d; voided=%t", n, voided)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func ledgerTransferAccounts(ctx context.Context, tx *sql.Tx, transferID string) ([]accountKey, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT DISTINCT billing_year_id, neighbor_id
+		  FROM neighbor_ledger
+		 WHERE transfer_id=$1
+		 ORDER BY billing_year_id, neighbor_id`, transferID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var accounts []accountKey
+	for rows.Next() {
+		var account accountKey
+		if err := rows.Scan(&account.yearID, &account.neighborID); err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, account)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(accounts) == 0 {
+		return nil, ErrNotFound
+	}
+	return accounts, nil
 }

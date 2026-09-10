@@ -135,22 +135,23 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 			t.Fatalf("snapshot gross = %s", iv.Content.Gross.StringFixed(2))
 		}
 
-		// Change the basis AFTER issuing: add a 100.00 booking.
+		// The issued document freezes the account's booking basis. A late booking
+		// must be rejected rather than letting live data diverge from the snapshot.
 		if _, err := st.CreateEntry(ctx, &models.Entry{
 			NeighborID: nid, BillingYearID: yearID, Date: day(2091, 10, 1), TaskLabel: "Nachtrag",
 			Unit: "h", Hours: dec("2.5"), HourlyRate: dec("40"), Cost: dec("100.00"),
-		}, nil); err != nil {
-			t.Fatalf("late entry: %v", err)
+		}, nil); !errors.Is(err, store.ErrInvoiceLocked) {
+			t.Fatalf("late entry = %v, want ErrInvoiceLocked", err)
 		}
-		// The live computation now differs …
+		// The live computation therefore remains equal to the frozen snapshot.
 		c2, err := st.BuildInvoiceContent(ctx, yearID, nid)
 		if err != nil {
 			t.Fatalf("build after change: %v", err)
 		}
-		if c2.Net.StringFixed(2) != "318.00" {
-			t.Fatalf("live after change should be 318.00, got %s", c2.Net.StringFixed(2))
+		if c2.Net.StringFixed(2) != "218.00" {
+			t.Fatalf("live after rejected change should be 218.00, got %s", c2.Net.StringFixed(2))
 		}
-		// … but the frozen snapshot is unchanged.
+		// The frozen snapshot is unchanged as well.
 		frozen, err := st.GetInvoice(ctx, yearID, nid)
 		if err != nil {
 			t.Fatalf("get: %v", err)

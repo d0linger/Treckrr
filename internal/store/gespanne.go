@@ -27,14 +27,37 @@ func (s *Store) ListGespanne(ctx context.Context, baseID int64) ([]models.Gespan
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return out, nil
+	}
+	// Finish the first result before fetching every link in one bounded query;
+	// the query count stays at two regardless of the number of rigs.
+	ids := make([]int64, len(out))
+	positions := make(map[int64]int, len(out))
 	for i := range out {
-		ids, err := s.gespannMachineIDs(ctx, out[i].ID)
-		if err != nil {
+		ids[i] = out[i].ID
+		positions[out[i].ID] = i
+	}
+	links, err := s.db.QueryContext(ctx,
+		`SELECT gespann_id, machine_id FROM gespann_machines
+		  WHERE gespann_id=ANY($1) AND machine_id IS NOT NULL ORDER BY gespann_id, machine_id`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer links.Close()
+	for links.Next() {
+		var rigID, machineID int64
+		if err := links.Scan(&rigID, &machineID); err != nil {
 			return nil, err
 		}
-		out[i].MachineIDs = ids
+		if i, ok := positions[rigID]; ok {
+			out[i].MachineIDs = append(out[i].MachineIDs, machineID)
+		}
 	}
-	return out, nil
+	return out, links.Err()
 }
 
 // GetGespann returns a single gespann with its machine ids.
