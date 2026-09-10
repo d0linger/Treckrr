@@ -30,8 +30,9 @@ jobs:
       - name: Run deadcode
         # deadcode always exits 0, so fail the job explicitly on any finding.
         # -test keeps functions reachable only from tests from being flagged.
+        # Include integration tests, which are the callers of DB-only helpers.
         run: |
-          out=$(deadcode -test ./...)
+          out=$(deadcode -test -tags=integration ./...)
           if [ -n "$out" ]; then
             echo "Dead code found:"
             echo "$out"

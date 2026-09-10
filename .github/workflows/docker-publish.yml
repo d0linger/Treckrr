@@ -60,6 +60,10 @@ jobs:
         run: go mod verify
       - name: Vet
         run: go vet -tags=integration ./...
+      - name: Install matching PostgreSQL client
+        env:
+          PG_MAJOR: "16"
+        run: bash .github/scripts/setup-postgres-client.sh
       # The same guard ci.yml carries, and it matters more here: this job decides
       # whether an image is published. Without it, a Postgres service that failed
       # to start would let every DB-backed test skip, the job would report green,

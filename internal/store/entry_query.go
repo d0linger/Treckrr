@@ -115,9 +115,9 @@ func (s *Store) FilterEntries(ctx context.Context, f EntryFilter) ([]EntryRow, i
 	// holds only "$n" placeholders (entryFilterWhere passes the values as args),
 	// entryFilterOrder returns one of three constants, and the LIMIT/OFFSET
 	// placeholders are numbers derived from len(args).
-	//nolint:gosec // G202: no user input reaches the query string
 	// entryColsE derives from entryCols (entries.go): a new entry column now
 	// reaches this query automatically instead of being the third hand-edit.
+	// #nosec G202 -- columns and ordering are trusted; filter and pagination values are bound parameters.
 	q := `SELECT ` + entryColsE + `, n.name
 		FROM entries e JOIN neighbors n ON n.id = e.neighbor_id` + where +
 		entryFilterOrder(f.Sort, f.Desc) +

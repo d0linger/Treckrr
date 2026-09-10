@@ -66,6 +66,10 @@ jobs:
           git diff --exit-code -- go.mod go.sum
       - name: Vet
         run: go vet -tags=integration ./...
+      - name: Install matching PostgreSQL client
+        env:
+          PG_MAJOR: ${{ matrix.pgver }}
+        run: bash .github/scripts/setup-postgres-client.sh
       # Fails loudly if the service or the variable ever disappears again, rather
       # than letting the DB-backed tests quietly skip.
       - name: Verify the integration database is reachable
