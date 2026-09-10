@@ -59,7 +59,12 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 	if kind != "weekly" && kind != "monthly" {
 		kind = "weekly"
 	}
-	start, perr := time.Parse("2006-01-02", trimmed(r, "next_run"))
+	nextRun := trimmed(r, "next_run")
+	if s.tooLong(w, r, "Startdatum", nextRun, 50) {
+		redirect(w, r, "/recurring")
+		return
+	}
+	start, perr := time.Parse("2006-01-02", nextRun)
 	if perr != nil {
 		start = time.Now().AddDate(0, 0, 7)
 	}
