@@ -17,6 +17,8 @@
 # Project-local agent configuration and linked memory never belong in images.
 /.agents/
 /.claude/
+/.impeccable/
+/graphify-out/
 Dockerfile
 docker-compose.yml
 docker-compose.ghcr.yml

@@ -11,6 +11,7 @@
 @font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/jetbrainsmono-700.woff2') format('woff2');}
 
 :root {
+	color-scheme: light;
 	--font-body: 'Hanken Grotesk', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 	--font-display: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -54,7 +55,7 @@
 	/* Text variants: the fills above sit at ~4.0:1 on the page ground, which is
 	   fine for a bar but under AA's 4.5:1 for text. Measured 4.84 / 4.77 on the
 	   page and better on cards. */
-	--pay-text: #2a764e;
+	--pay-text: #28734b;
 	--owe-text: #ac4d2f;
 	/* Chassis — the machine frame: app bar + nav rail/tab bar stay this dark
 	   green-black in BOTH themes (a deliberate constant, like the white appbar
@@ -113,7 +114,7 @@
 	   stand on the chrome itself — where mint reaches 1.63:1. The desktop rail does
 	   not need this: there the whole item IS the chip, so mint stays correct. */
 	--chassis-accent-bar: #1f4d38;
-	--btn-glow: rgba(224, 89, 16, .22);
+	--btn-glow: rgba(21, 31, 25, .16);
 	--brand-grad: linear-gradient(135deg, var(--signal), var(--signal-press));
 	--tap: 44px;
 	--maxw: 720px;
@@ -124,6 +125,7 @@
    user forced light), and always when the user forced dark. */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme="light"]) {
+		color-scheme: dark;
 		--bg: #0c1511;
 		--surface: #19221d;
 		--surface-2: #232c28;
@@ -139,7 +141,7 @@
 		--on-signal: #201005;
 		--signal-tint: rgba(255, 129, 66, .16);
 		--signal-text: #ff9a68;
-		--danger: #e04b55; /* crimson — clearly apart from the #ff8142 signal */
+		--danger: #b82f3a; /* deep crimson — white stays AA on filled danger actions */
 		--danger-text: #e66f77; /* the fill is 4.12 on a card; this clears 4.5 on card and tint */
 		--danger-tint: #341a1c;
 		--accent: #e0a640;
@@ -182,10 +184,11 @@
 		--card-shadow: 0 1px 2px rgba(0, 0, 0, .3);
 		--glow: none;
 		--glass: rgba(16, 26, 21, .94);
-		--btn-glow: rgba(255, 129, 66, .25);
+		--btn-glow: rgba(0, 0, 0, .34);
 	}
 }
 :root[data-theme="dark"] {
+	color-scheme: dark;
 	--bg: #0c1511;
 	--surface: #19221d;
 	--surface-2: #232c28;
@@ -201,7 +204,7 @@
 	--on-signal: #201005;
 	--signal-tint: rgba(255, 129, 66, .16);
 	--signal-text: #ff9a68;
-	--danger: #e04b55; /* crimson — clearly apart from the #ff8142 signal */
+	--danger: #b82f3a; /* deep crimson — white stays AA on filled danger actions */
 	--danger-text: #e66f77; /* the fill is 4.12 on a card; this clears 4.5 on card and tint */
 	--danger-tint: #341a1c;
 	--accent: #e0a640;
@@ -237,7 +240,7 @@
 	--card-shadow: 0 1px 2px rgba(0, 0, 0, .3);
 	--glow: none;
 	--glass: rgba(16, 26, 21, .94);
-	--btn-glow: rgba(255, 129, 66, .25);
+	--btn-glow: rgba(0, 0, 0, .34);
 	/* Chart-mark tokens must be redeclared here too: forcing dark via the theme
 	   toggle on a light system does not match the prefers-dark media query, so
 	   without these the bars/tracks/sparklines fall back to light values. */
@@ -250,6 +253,11 @@
 }
 
 * { box-sizing: border-box; }
+
+::selection { background: rgba(224, 89, 16, .28); background: color-mix(in srgb, var(--signal) 28%, transparent); color: var(--text); }
+html { scrollbar-color: var(--primary) var(--surface-2); }
+input, textarea { caret-color: var(--signal); }
+a, button, summary, input, select, textarea { touch-action: manipulation; }
 
 html, body {
 	margin: 0;
@@ -383,6 +391,9 @@ em { font-style: normal; color: var(--muted); }
 @media (max-width: 480px) {
 	.appbar__brand > span { display: none; }
 	.appbar__title { font-size: .98rem; }
+	/* The same theme control remains available in the drawer; remove the duplicate
+	   here so long titles retain breathing room on narrow phones. */
+	.appbar__icon.appbar__theme { display: none; }
 }
 .appbar__icon {
 	flex: none;
@@ -435,11 +446,11 @@ em { font-style: normal; color: var(--muted); }
 }
 .drawer__item:hover { background: var(--surface-2); }
 .drawer__item.is-active { background: var(--primary-tint); color: var(--primary-strong); font-weight: 700; }
-.drawer__item--danger { color: var(--danger); }
+.drawer__item--danger { color: var(--danger-text); }
 .drawer__ico { width: 1.4rem; display: grid; place-items: center; }
 .drawer__ico svg { width: 20px; height: 20px; display: block; color: var(--muted); }
 .drawer__item.is-active .drawer__ico svg { color: var(--primary-strong); }
-.drawer__item--danger .drawer__ico svg { color: var(--danger); }
+.drawer__item--danger .drawer__ico svg { color: var(--danger-text); }
 .backlink { color: var(--primary); font-weight: 600; font-size: .9rem; display: inline-block; }
 
 /* ---- Base selector ---------------------------------------------------- */
@@ -827,7 +838,7 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 /* ---- Flash ------------------------------------------------------------ */
 .flash { padding: .7rem 1rem; border-radius: var(--radius-sm); font-size: .9rem; font-weight: 500; }
 .flash--success { background: var(--primary-tint); color: var(--primary-strong); }
-.flash--error { background: var(--danger-tint); color: var(--danger); }
+.flash--error { background: var(--danger-tint); color: var(--danger-text); }
 .flash--info { background: var(--surface-2); color: var(--muted); }
 
 /* ---- Auth ------------------------------------------------------------- */
@@ -913,6 +924,18 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 }
 .yearpill.is-active { background: var(--chassis-pill); color: var(--chassis-on-pill); border-color: var(--chassis-pill); font-weight: 700; }
 .yearpill--manage { font-weight: 700; color: var(--chassis-muted); }
+
+/* Field use means coarse pointers and narrow phones need forgiving controls.
+   Inline text links remain naturally sized; reusable actions meet the 44px floor. */
+@media (max-width: 640px), (pointer: coarse) {
+	.appbar__brand, .appbar__icon, .appbar__offline, .yearpill,
+	.btn--sm, .btn--xs, .iconact, .backbtn, .subtab,
+	.disclosure > summary, .bkp__more > summary, .bkp__seg button {
+		min-height: var(--tap);
+	}
+	.appbar__brand { min-width: var(--tap); justify-content: center; }
+	.appbar__icon, .iconact, .backbtn { width: var(--tap); height: var(--tap); }
+}
 
 /* ---- Basis workspace header ------------------------------------------- */
 .workspace {
@@ -1009,12 +1032,12 @@ span.paychip { cursor: default; }
 .rowactions form { margin: 0; }
 .is-invalid { border-color: var(--danger) !important; box-shadow: 0 0 0 2px var(--danger-tint); }
 /* Inline validation error (created by app.js; wired via aria-describedby). */
-.field__err { display: block; font-size: var(--fs-xs); color: var(--danger); font-weight: 600; margin-top: .15rem; }
+.field__err { display: block; font-size: var(--fs-xs); color: var(--danger-text); font-weight: 600; margin-top: .15rem; }
 /* Required-field marker — CSS-only via :has, no per-template change. */
 /* :required covers input/select/textarea in one selector; scoped to the FIRST
    span (the label by convention, see .field > span:first-child above) so the
    pw-match live region cannot grow a stray asterisk. */
-.field:has(:required) > span:first-child::after { content: " *"; color: var(--danger); font-weight: 800; }
+.field:has(:required) > span:first-child::after { content: " *"; color: var(--danger-text); font-weight: 800; }
 /* Submit "saving" state: keeps the label, adds a spinner. currentColor matches
    the button text (white on a primary button). */
 .btn.is-submitting { opacity: .85; pointer-events: none; }
@@ -1119,7 +1142,7 @@ span.paychip { cursor: default; }
 .dchart__sw--pay { background: var(--pay); }
 @media (prefers-reduced-motion: reduce) { .bchart__fill, .dchart__fill { animation: none; } }
 
-.diff-up { color: var(--danger); font-weight: 700; }
+.diff-up { color: var(--danger-text); font-weight: 700; }
 .diff-down { color: var(--primary-strong); font-weight: 700; }
 .breakdown { list-style: none; margin: .4rem 0 0; padding: 0; }
 .breakdown li { display: flex; justify-content: space-between; gap: 1rem; padding: .15rem 0; font-size: .85rem; }
@@ -1182,7 +1205,7 @@ span.paychip { cursor: default; }
 	border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: .95rem;
 	cursor: pointer; text-decoration: none; }
 .iconact:hover { background: var(--surface-2); color: var(--text); }
-.iconact--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.iconact--danger { color: var(--danger-text); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
 /* Inline SVG icon (see ic-* partials): inherits colour and follows the text
    size, so control icons match the theme, hover and focus states. */
 .ic { width: 1.15em; height: 1.15em; display: inline-block; vertical-align: -.18em; flex: 0 0 auto; }
@@ -1448,7 +1471,7 @@ span.paychip { cursor: default; }
 .cfm-check--ok .cfm-mk { background: var(--primary); color: var(--on-primary, #fff); }
 .cfm-check--bad .cfm-mk { background: var(--danger); color: #fff; }
 .cfm-lbl { font-weight: 600; font-size: .9rem; }
-.cfm-check--bad .cfm-lbl { color: var(--danger); }
+.cfm-check--bad .cfm-lbl { color: var(--danger-text); }
 .cfm-det { font-family: var(--font-mono); font-size: .8rem; color: var(--muted); text-align: right; }
 .cfm-prev { display: flex; flex-direction: column; gap: .1rem; }
 .cfm-prev-row { display: flex; justify-content: space-between; gap: 1rem; padding: .22rem 0; }
@@ -1489,8 +1512,8 @@ span.paychip { cursor: default; }
 .beleg__inv-no { font-weight: 700; }
 .beleg__inv-due { font-family: var(--font-mono); font-size: .76rem; color: var(--muted); margin: -.25rem 0 .55rem; }
 .beleg__inv-due strong { color: var(--text); font-weight: 700; }
-.beleg__inv-due--over { color: var(--danger); }
-.beleg__inv-due--over strong { color: var(--danger); }
+.beleg__inv-due--over { color: var(--danger-text); }
+.beleg__inv-due--over strong { color: var(--danger-text); }
 .beleg__inv-pp { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; font-size: .84rem; align-items: start; }
 .beleg__inv-k { font-family: var(--font-mono); font-size: .6rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: .1rem; }
 .beleg__inv-addr { white-space: pre-line; }
@@ -1570,14 +1593,14 @@ span.paychip { cursor: default; }
 	box-shadow: 0 10px 26px rgba(0, 0, 0, .22);
 	animation: toast-in .22s ease-out; }
 .toast__msg { flex: 1 1 auto; min-width: 0; }
-.toast__close { flex: 0 0 auto; width: 26px; height: 26px; border: 0; border-radius: 6px; padding: 0;
+.toast__close { flex: 0 0 auto; width: var(--tap); height: var(--tap); border: 0; border-radius: 8px; padding: 0;
 	background: transparent; color: inherit; font-size: .95rem; line-height: 1; cursor: pointer; opacity: .65; }
 .toast__close:hover { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
 .toast::before { content: "✓"; flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
 	display: grid; place-items: center; font-size: .75rem; font-weight: 800;
 	background: color-mix(in srgb, var(--pay) 18%, transparent); color: var(--pay); }
 .toast--error { border-left-color: var(--danger); }
-.toast--error::before { content: "!"; background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+.toast--error::before { content: "!"; background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
 .toast--info { border-left-color: var(--accent); }
 .toast--info::before { content: "i"; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-text); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } }
@@ -1698,9 +1721,9 @@ span.paychip { cursor: default; }
 .bkp__off .input--num { display: none !important; }
 .bkp__s3-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
 .bkp__files a.bkp__dl { flex: 0 0 auto; white-space: nowrap; }
-.bkp__files--compact a.bkp__dl { min-height: 30px; padding: .22rem .6rem; font-size: .78rem; }
+.bkp__files--compact a.bkp__dl { min-height: var(--tap); padding: .22rem .6rem; font-size: .78rem; }
 .bkp--restore .field span code, .bkp__do code { font-size: .82em; }
-.bkp__sec--danger { color: var(--owe); }
+.bkp__sec--danger { color: var(--danger-text); }
 .bkp__restore-row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
 .bkp__restore-file { flex: 1 1 15rem; min-width: 0; }
 .bkp__restore-key { flex: 0 1 13rem; }
@@ -1848,7 +1871,7 @@ span.paychip { cursor: default; }
 .pw-toggle .ic { width: 18px; height: 18px; }
 .pw-match { display: block; font-size: var(--fs-xs); font-weight: 700; margin-top: .15rem; min-height: 1em; }
 .pw-match--ok { color: var(--pay); } .pw-match--ok::before { content: "\2713\00a0"; }
-.pw-match--no { color: var(--danger); } .pw-match--no::before { content: "\2715\00a0"; }
+.pw-match--no { color: var(--danger-text); } .pw-match--no::before { content: "\2715\00a0"; }
 
 .savedcheck { margin: .4rem 0 .6rem; }
 .btn.is-disabled { opacity: .5; pointer-events: none; }
@@ -1889,12 +1912,12 @@ span.paychip { cursor: default; }
 .dangerzone { margin-top: 1.15rem; padding-top: 1rem;
 	border-top: 1px dashed color-mix(in srgb, var(--danger) 40%, var(--border)); }
 .dangerzone__lbl { display: flex; align-items: center; gap: .35rem; font-size: var(--fs-xs); font-weight: 800;
-	letter-spacing: .05em; text-transform: uppercase; color: var(--danger); margin-bottom: .55rem; }
+	letter-spacing: .05em; text-transform: uppercase; color: var(--danger-text); margin-bottom: .55rem; }
 .dangerzone__lbl .ic { width: 1em; height: 1em; }
 .arow-d--danger > summary.arow { background: color-mix(in srgb, var(--danger) 7%, var(--surface));
 	border-color: color-mix(in srgb, var(--danger) 25%, var(--border)); }
 .arow-d--danger > summary.arow:hover { border-color: color-mix(in srgb, var(--danger) 50%, var(--border)); }
-.arow-d--danger .arow__ic { color: var(--danger); }
+.arow-d--danger .arow__ic { color: var(--danger-text); }
 
 /* ---- Settings overview: page header w/ back button, account rows, passkeys -
    The Einstellungen page unifies account, 2FA and passkey management; sub-pages
@@ -2002,7 +2025,8 @@ span.paychip { cursor: default; }
 .kbd-help__card { background: var(--surface); color: var(--text); border: 1px solid var(--border);
 	border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.1rem 1.2rem; min-width: 15rem;
 	max-width: 22rem; width: 100%; }
-.kbd-help__h { margin: 0 0 .7rem; font-size: 1rem; }
+.kbd-help__head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .7rem; }
+.kbd-help__h { margin: 0; font-size: 1rem; }
 .kbd-help__row { display: flex; align-items: center; gap: .8rem; padding: .28rem 0; }
 .kbd-help__row span { color: var(--muted); font-size: .92rem; }
 .kbd-help kbd { min-width: 2.6rem; text-align: center; font-family: var(--font-mono); font-size: .8rem;
@@ -2143,6 +2167,9 @@ span.paychip { cursor: default; }
 	width: 1.7rem; height: 1.7rem; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .55);
 	color: #fff; cursor: pointer; }
 .photogrid__del svg { width: .95rem; height: .95rem; }
+@media (max-width: 640px), (pointer: coarse) {
+	.photogrid__del { width: var(--tap); height: var(--tap); }
+}
 
 /* ---- Desktop nav rail (Werkblatt, ≥1024px) ----------------------------- */
 /* The bottom tab bar docks LEFT as a chassis rail — a pure CSS repositioning
@@ -2189,4 +2216,15 @@ span.paychip { cursor: default; }
 }
 @media print {
 	body.has-nav { padding-left: 0; }
+}
+
+/* A single safety net for both current and future effects. No essential state is
+   communicated by motion, so reduced-motion users get immediate transitions. */
+@media (prefers-reduced-motion: reduce) {
+	html { scroll-behavior: auto !important; }
+	*, *::before, *::after {
+		animation-duration: .01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: .01ms !important;
+	}
 }

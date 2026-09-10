@@ -44,14 +44,14 @@
 						<button type="button" data-m="cron">Cron</button>
 					</div>
 					<div class="bkp__cron-rows"></div>
-					<label class="bkp__lbl bkp__cron-label">Cron-Ausdruck</label>
-					<input class="input input--mono bkp__cron-input" name="volume_cron" value="{{.VolumeCron}}" spellcheck="false" autocomplete="off" placeholder="0 3 * * *">
+					<label class="bkp__lbl bkp__cron-label" for="volume-cron">Cron-Ausdruck</label>
+					<input class="input input--mono bkp__cron-input" id="volume-cron" name="volume_cron" value="{{.VolumeCron}}" spellcheck="false" autocomplete="off" placeholder="0 3 * * *">
 					<div class="bkp__desc">{{$.VolumeCronDesc}}</div>
 					<div class="bkp__tlbl" hidden>Nächste Läufe</div>
 					<div class="bkp__timeline"></div>
 					<div class="bkp__next">nächste Ausführung: <strong>{{$.NextVolume}}</strong></div>
-					<label class="bkp__lbl">Behalten (Anzahl)</label>
-					<input class="input input--num" type="number" min="0" name="volume_keep" value="{{.VolumeKeep}}">
+					<label class="bkp__lbl" for="volume-keep">Behalten (Anzahl)</label>
+					<input class="input input--num" id="volume-keep" type="number" min="0" name="volume_keep" value="{{.VolumeKeep}}">
 				</div>
 				<div class="bkp__sched-col" data-sched-col data-default-time="04:00" data-default-dow="0">
 					<div class="bkp__sched-h">S3 {{if not $.S3Enabled}}<span class="bkp__muted">· S3_* nicht gesetzt</span>{{end}}</div>
@@ -63,14 +63,14 @@
 						<button type="button" data-m="cron">Cron</button>
 					</div>
 					<div class="bkp__cron-rows"></div>
-					<label class="bkp__lbl bkp__cron-label">Cron-Ausdruck</label>
-					<input class="input input--mono bkp__cron-input" name="s3_cron" value="{{.S3Cron}}" spellcheck="false" autocomplete="off" placeholder="0 4 * * *">
+					<label class="bkp__lbl bkp__cron-label" for="s3-cron">Cron-Ausdruck</label>
+					<input class="input input--mono bkp__cron-input" id="s3-cron" name="s3_cron" value="{{.S3Cron}}" spellcheck="false" autocomplete="off" placeholder="0 4 * * *">
 					<div class="bkp__desc">{{$.S3CronDesc}}</div>
 					<div class="bkp__tlbl" hidden>Nächste Läufe</div>
 					<div class="bkp__timeline"></div>
 					<div class="bkp__next">nächste Ausführung: <strong>{{$.NextS3}}</strong></div>
-					<label class="bkp__lbl">Behalten (0 = alle)</label>
-					<input class="input input--num" type="number" min="0" name="s3_keep" value="{{.S3Keep}}">
+					<label class="bkp__lbl" for="s3-keep">Behalten (0 = alle)</label>
+					<input class="input input--num" id="s3-keep" type="number" min="0" name="s3_keep" value="{{.S3Keep}}">
 				</div>
 			</div>
 			<div class="bkp__btnrow bkp__btnrow--wide">

@@ -288,6 +288,7 @@
 	var panel = document.querySelector("[data-offline-panel]");
 	var list = document.querySelector("[data-offline-list]");
 	var badgeEl = document.querySelector("[data-offline-badge]");
+	var panelLastFocus = null;
 	var editableFields = {
 		entry_date: "Datum", task_label: "Tätigkeit", hours: "Stunden", unit: "Einheit",
 		quantity: "Menge", unit_price: "Einzelpreis", note: "Notiz",
@@ -437,6 +438,7 @@
 
 	function openPanel() {
 		if (!panel) return;
+		panelLastFocus = document.activeElement;
 		renderQueue().then(function () {
 			panel.hidden = false;
 			var close = panel.querySelector("[data-offline-close]");
@@ -446,7 +448,8 @@
 	function closePanel() {
 		if (!panel) return;
 		panel.hidden = true;
-		if (badgeEl) badgeEl.focus();
+		if (panelLastFocus && typeof panelLastFocus.focus === "function") panelLastFocus.focus();
+		panelLastFocus = null;
 	}
 
 	if (badgeEl) badgeEl.addEventListener("click", openPanel);
@@ -463,7 +466,9 @@
 		// Click on the backdrop (not the sheet) and Escape both close it.
 		panel.addEventListener("click", function (e) { if (e.target === panel) closePanel(); });
 		document.addEventListener("keydown", function (e) {
-			if (e.key === "Escape" && !panel.hidden) closePanel();
+			if (panel.hidden) return;
+			if (e.key === "Escape") { e.preventDefault(); closePanel(); }
+			else if (window.TreckrrDialog) window.TreckrrDialog.trapFocus(panel, e);
 		});
 	}
 
