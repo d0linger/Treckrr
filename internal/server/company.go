@@ -98,8 +98,14 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 		c.SmallBusinessLimit = f
 	}
 	// Skonto-Angebot: 0-10 %% / 0-90 Tage; beides 0 = keine Klausel.
-	if f := formDecimal(r, "skonto_pct"); f.IsPositive() && f.LessThanOrEqual(decimal.NewFromInt(10)) {
-		c.SkontoPct = f
+	if value := trimmed(r, "skonto_pct"); value != "" {
+		pct, ok := parseGermanDecimalOK(value)
+		if !ok || pct.IsNegative() || pct.GreaterThan(decimal.NewFromInt(10)) {
+			s.setFlash(w, r, "error", "Skonto muss zwischen 0 und 10 % liegen.")
+			redirect(w, r, "/admin/company")
+			return
+		}
+		c.SkontoPct = pct
 	}
 	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("skonto_days"))); err == nil && v >= 0 && v <= 90 {
 		c.SkontoDays = v

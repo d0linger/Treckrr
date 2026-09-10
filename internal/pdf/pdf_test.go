@@ -91,6 +91,18 @@ func TestMahnungPagination(t *testing.T) {
 	if p := pageCount(long); p < 2 {
 		t.Errorf("very long intro should paginate to >=2 pages, got %d", p)
 	}
+	// Fees and a deadline add three lines beyond the old fixed-height budget.
+	base.Intro = strings.Repeat("Mahntext.\n", 29)
+	base.Paid = decimal.NewFromInt(100)
+	base.Fee = decimal.NewFromInt(5)
+	base.GraceUntil = time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC)
+	withFee, err := RenderMahnung(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := pageCount(withFee); p != 2 {
+		t.Errorf("fee/deadline/payment block needs a second page, got %d", p)
+	}
 }
 
 func TestRenderStatement(t *testing.T) {

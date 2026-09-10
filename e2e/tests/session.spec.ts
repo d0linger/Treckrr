@@ -102,7 +102,7 @@ test("year closing review lists what is open, and closing locks documents", asyn
   await expect(page.locator("body")).toContainText("Jahresabschluss");
   await expect(page.locator("body")).toContainText("Buchungen ohne festgeschriebene Rechnung");
 
-  await page.getByRole("button", { name: /Jahr 2025 abschließen/ }).click();
+  await page.getByRole("button", { name: /Jahr \d{4} abschließen/ }).click();
   await confirmModal(page, /\/years/);
   await expect(page.locator("body")).toContainText("Abgeschlossen");
 

@@ -70,9 +70,6 @@ type PhotoRef struct {
 	Created   time.Time
 }
 
-// PhotoCounts returns how many photos each booking of a year has, keyed by
-// entry id. neighborID 0 covers the whole year. One query instead of one per
-// row: the list renders 50 bookings at a time.
 // PhotoCountsForEntries counts receipt photos for exactly the given entries —
 // the paged bookings list shows 50 rows and aggregated the WHOLE year before.
 func (s *Store) PhotoCountsForEntries(ctx context.Context, ids []int64) (map[int64]int, error) {
@@ -98,6 +95,9 @@ func (s *Store) PhotoCountsForEntries(ctx context.Context, ids []int64) (map[int
 	return out, rows.Err()
 }
 
+// PhotoCounts returns how many photos each booking of a year has, keyed by
+// entry id. neighborID 0 covers the whole year. One query instead of one per
+// row: the list renders 50 bookings at a time.
 func (s *Store) PhotoCounts(ctx context.Context, yearID, neighborID int64) (map[int64]int, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT p.entry_id, count(*)

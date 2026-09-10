@@ -142,6 +142,9 @@ func Load() (*Config, error) {
 	// the *previous* SessionSecret before lengthening SESSION_SECRET to migrate
 	// safely.
 	c.EncryptionSecret = getenv("ENCRYPTION_SECRET", c.SessionSecret)
+	if c.S3Keep < 0 {
+		return nil, fmt.Errorf("S3_KEEP must be nonnegative (0 means unlimited retention)")
+	}
 
 	// Optional allowlist of trusted reverse-proxy networks (SH-05). Invalid CIDRs
 	// fail fast rather than silently disabling the tightening.

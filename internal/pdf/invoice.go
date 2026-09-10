@@ -244,13 +244,12 @@ func invoicePage(pdf *gopdf.GoPdf, iv *models.Invoice) error {
 		text(marginL, y, 9.5, false, line)
 		y += 14
 		text(marginL, y, 9.5, false, "Betrag: "+money(c.Gross))
-		// Frozen Skonto terms (see InvoiceContent.SkontoPct) — part of the
-		// payment terms, so the mailed/printed document must carry them too.
-		if c.SkontoPct.IsPositive() && !c.SkontoUntil.IsZero() {
-			y += 14
-			text(marginL, y, 9.5, false,
-				"Bei Zahlung bis "+c.SkontoUntil.Format("02.01.2006")+": "+trimZeros(c.SkontoPct)+" % Skonto")
-		}
+		y += 14
+	}
+	// Frozen payment terms also apply to cash invoices without an IBAN.
+	if c.SkontoPct.IsPositive() && !c.SkontoUntil.IsZero() {
+		text(marginL, y, 9.5, false,
+			"Bei Zahlung bis "+c.SkontoUntil.Format("02.01.2006")+": "+trimZeros(c.SkontoPct)+" % Skonto")
 	}
 
 	gfooter(pdf, c.Issuer.Name, c.Issuer.Address, c.Issuer.TaxID, c.Issuer.IBAN)

@@ -135,6 +135,9 @@ Pin a release rather than tracking `latest` with `TRECKRR_TAG=1.4`.
 | **S3_USE_SSL** | TLS for the S3 endpoint | `true` | No |
 | **SMTP_HOST** / **SMTP_FROM** | E-mail delivery; both must be set to enable it | — | No |
 | **SMTP_PORT** / **SMTP_USER** / **SMTP_PASSWORD** | SMTP credentials | `587` | No |
+| **SMTP_STARTTLS** | Use STARTTLS | `true` | No |
+| **METRICS_TOKEN** | Min. 16 chars; enables `GET /metrics` behind a bearer token | — | No |
+| **LOG_FORMAT** / **LOG_LEVEL** | `text`\|`json`, `debug`\|`info`\|`warn`\|`error` | `text` / `info` | No |
 
 ### Rotating the backup key
 
@@ -171,9 +174,6 @@ It restores the newest dump into `treckrr_restore_rehearsal`, checks the applied
 migrations and the money tables, drops the scratch database and reports timings.
 Only this stamps `restore_tested`; the cheap per-backup check now reports itself
 separately as `archive_verified`.
-| **SMTP_STARTTLS** | Use STARTTLS | `true` | No |
-| **METRICS_TOKEN** | Min. 16 chars; enables `GET /metrics` behind a bearer token | — | No |
-| **LOG_FORMAT** / **LOG_LEVEL** | `text`\|`json`, `debug`\|`info`\|`warn`\|`error` | `text` / `info` | No |
 
 The backup schedule is a cron expression set in the admin Backup panel, not an environment variable.
 

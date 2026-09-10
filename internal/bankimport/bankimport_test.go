@@ -1,6 +1,55 @@
 package bankimport
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
+
+func TestParseCSV_NameAfterIBAN(t *testing.T) {
+	csv := "Datum;Betrag;Verwendungszweck;Auftraggeber-IBAN;Auftraggeber\n" +
+		"01.06.2026;10,00;Rechnung 2026-001;AT611904300234573201;Huber\n"
+	txns, err := ParseCSV([]byte(csv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txns[0].Name != "Huber" {
+		t.Errorf("payer name = %q, want Huber", txns[0].Name)
+	}
+	// Correcting display/matching data must not re-book statements imported when
+	// this column order incorrectly omitted the name from the de-duplication key.
+	legacy := txns[0]
+	legacy.Name = ""
+	legacy.setHash()
+	if txns[0].Hash != legacy.Hash {
+		t.Error("fix changed the historical import hash")
+	}
+}
+
+func TestParseCamt_BatchTotal(t *testing.T) {
+	for _, tc := range []struct {
+		name, total string
+		wantErr     bool
+	}{
+		{name: "matching", total: "30.00"},
+		{name: "missing detail", total: "40.00", wantErr: true},
+		{name: "excess detail", total: "20.00", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			xml := fmt.Sprintf(`<Document><BkToCstmrStmt><Stmt><Ntry>
+<Amt Ccy="EUR">%s</Amt><CdtDbtInd>CRDT</CdtDbtInd><NtryDtls>
+<TxDtls><Amt Ccy="EUR">10.00</Amt></TxDtls>
+<TxDtls><Amt Ccy="EUR">20.00</Amt></TxDtls>
+</NtryDtls></Ntry></Stmt></BkToCstmrStmt></Document>`, tc.total)
+			txns, err := ParseCamt([]byte(xml))
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("error = %v, wantErr %v; txns = %+v", err, tc.wantErr, txns)
+			}
+			if !tc.wantErr && len(txns) != 2 {
+				t.Fatalf("got %d credits, want 2", len(txns))
+			}
+		})
+	}
+}
 
 func TestParseCSV(t *testing.T) {
 	csv := "Buchungsdatum;Betrag;Verwendungszweck;Auftraggeber\n" +

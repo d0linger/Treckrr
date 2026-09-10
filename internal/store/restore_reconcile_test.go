@@ -2,15 +2,12 @@ package store_test
 
 import (
 	"context"
-	"database/sql"
-	neturl "net/url"
 	"os"
 	"testing"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/d0linger/treckrr/internal/db"
-	"github.com/d0linger/treckrr/internal/store"
 )
 
 // TestResetPoolKeepsPoolUsable proves the *sql.DB equivalent of pgxpool.Reset():
@@ -53,45 +50,8 @@ func TestResetPoolKeepsPoolUsable(t *testing.T) {
 // silently eating other tests' fixtures. A scratch database resets both problems
 // on every run and needs no cleanup discipline at all.
 func TestReconcileAfterRestoreReappliesMigration(t *testing.T) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set; skipping DB integration test")
-	}
 	ctx := context.Background()
-
-	// Maintenance connection to create/drop the scratch database.
-	base, err := neturl.Parse(url)
-	if err != nil {
-		t.Fatalf("parse url: %v", err)
-	}
-	admin := *base
-	admin.Path = "/postgres"
-	adminPool, err := sql.Open("pgx", admin.String())
-	if err != nil {
-		t.Fatalf("admin connect: %v", err)
-	}
-	t.Cleanup(func() { _ = adminPool.Close() })
-	const scratch = "treckrr_reconcile_test"
-	drop := func() {
-		_, _ = adminPool.ExecContext(ctx, `DROP DATABASE IF EXISTS `+scratch+` WITH (FORCE)`)
-	}
-	drop() // a crashed previous run leaves it behind
-	if _, err := adminPool.ExecContext(ctx, `CREATE DATABASE `+scratch); err != nil {
-		t.Fatalf("create scratch db: %v", err)
-	}
-	t.Cleanup(drop)
-
-	scratchURL := *base
-	scratchURL.Path = "/" + scratch
-	pool, err := db.Connect(ctx, scratchURL.String())
-	if err != nil {
-		t.Fatalf("connect scratch: %v", err)
-	}
-	t.Cleanup(func() { _ = pool.Close() })
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("migrate scratch: %v", err)
-	}
-	st := store.New(pool, "test-encryption-secret")
+	st, pool := scratchStore(t)
 
 	// Simulate restoring a pre-0024 dump: drop the columns/index 0024 added and
 	// remove its migrations row — exactly the state a restored older backup

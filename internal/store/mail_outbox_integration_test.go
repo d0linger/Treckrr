@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/d0linger/treckrr/internal/db"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -16,20 +15,10 @@ import (
 // This walks the whole lifecycle against a real database: park, retry with
 // backoff, deliver, and give up — with the audit trail as the visible record.
 func TestMailOutboxLifecycleIntegration(t *testing.T) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set; skipping DB integration test")
-	}
 	ctx := context.Background()
-	pool, err := db.Connect(ctx, url)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() { _ = pool.Close() })
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	st := store.New(pool, "test-encryption-secret")
+	// Processing and purging deliberately scan the whole queue. Keep this
+	// lifecycle isolated rather than delivering another test's pending mail.
+	st, pool := scratchStore(t)
 
 	marker := fmt.Sprintf("outbox-it-%d@example.invalid", os.Getpid())
 	purge := func() {
@@ -163,20 +152,8 @@ func TestMailOutboxLifecycleIntegration(t *testing.T) {
 // meta the enqueue parked with the mail. A legacy row from before 0052 carries
 // an empty meta and must NOT fabricate a Stage-0 notice.
 func TestMailOutboxMahnungRetryBookkeepingIntegration(t *testing.T) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set; skipping DB integration test")
-	}
 	ctx := context.Background()
-	pool, err := db.Connect(ctx, url)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() { _ = pool.Close() })
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	st := store.New(pool, "test-encryption-secret")
+	st, pool := scratchStore(t)
 
 	f := fixtures{Years: []int{2107}, NeighborNames: []string{"Outbox Mahnung 2107"}}
 	purgeFixtures(t, ctx, pool, f)
@@ -254,6 +231,13 @@ func TestMailOutboxMahnungRetryBookkeepingIntegration(t *testing.T) {
 	}
 	if sends != 1 {
 		t.Errorf("beleg_sends = %d, want 1", sends)
+	}
+	history, err := st.ListBelegSends(ctx, yearID, nid)
+	if err != nil || len(history) != 1 {
+		t.Fatalf("send history: len=%d err=%v", len(history), err)
+	}
+	if b := history[0]; b.ID == 0 || b.BillingYearID != yearID || b.NeighborID != nid || b.Channel != "mahnung" || b.SentAt.IsZero() {
+		t.Errorf("send history must populate the complete model: %+v", b)
 	}
 
 	// Legacy row (pre-0052): empty meta must not fabricate a Stage-0 notice —

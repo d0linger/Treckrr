@@ -75,7 +75,7 @@
 	{{if .ByMachine}}
 	<div class="card">
 		<h2 class="section-title">Stunden je Maschine</h2>
-		<p class="muted small">Einsatzstunden je Maschine. Der Stundensatz eines Gespanns ist die Summe aus Traktor- und Maschinensätzen — der Umsatzanteil einer Maschine ist daher exakt Stunden × ihr eigener Satz, keine Schätzung.</p>
+		<p class="muted small">Erfasste Einsatzstunden je Maschine. Geldbeträge darunter sind Schätzungen zu aktuellen Sätzen, keine historischen Buchungs- oder Rechnungsbeträge.</p>
 		{{template "bar-chart" (dict "Rows" .ByMachine "Max" .ByMachineMax "Money" false)}}
 	</div>
 	{{end}}
@@ -83,10 +83,10 @@
 	{{if .MachineUsage}}
 	<div class="card">
 		<h2 class="section-title">Maschinen-Auslastung</h2>
-		<p class="muted small">Umsatzanteil je Maschine. Der Deckungsbeitrag erscheint, sobald bei der Maschine Selbstkosten je Stunde hinterlegt sind (Preisstamm).</p>
+		<p class="muted small">Geschätzter Umsatzanteil und Deckungsbeitrag: erfasste Stunden × heutige Maschinen- bzw. Selbstkostensätze. Änderungen im Preisstamm verändern auch diese Auswertung alter Jahre. Historische Einzelsätze wurden nicht gespeichert. Deckungsbeiträge erscheinen nur bei hinterlegten Selbstkosten.</p>
 		<div class="tablewrap">
 			<table class="dtable">
-				<thead><tr><th>Maschine</th><th class="num">Stunden</th><th class="num">Satz</th><th class="num">Umsatzanteil</th>{{if .HasMachineMargin}}<th class="num">Selbstkosten</th><th class="num">Deckungsbeitrag</th>{{end}}</tr></thead>
+				<thead><tr><th>Maschine</th><th class="num">Stunden</th><th class="num">Aktueller Satz</th><th class="num">Umsatzanteil (geschätzt)</th>{{if .HasMachineMargin}}<th class="num">Selbstkosten (geschätzt)</th><th class="num">Deckungsbeitrag (geschätzt)</th>{{end}}</tr></thead>
 				<tbody>
 					{{range .MachineUsage}}
 					<tr>

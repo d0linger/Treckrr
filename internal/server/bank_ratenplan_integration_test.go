@@ -65,8 +65,12 @@ func TestBankImportMatchingIntegration(t *testing.T) {
 		"address": {"Feldweg 1, 4710 Testdorf"}, "tax_id": {""}, "email": {""},
 		"iban": {"at61 1904 3002 3457 3201"},
 	})
-	if n, err := e.st.GetNeighbor(e.ctx, nid); err != nil || n.IBAN != "AT611904300234573201" {
-		t.Fatalf("IBAN not normalized/stored: %v %q", err, n.IBAN)
+	n, err := e.st.GetNeighbor(e.ctx, nid)
+	if err != nil || n == nil {
+		t.Fatalf("get neighbor: %v (%v)", err, n)
+	}
+	if n.IBAN != "AT611904300234573201" {
+		t.Fatalf("IBAN not normalized/stored: %q", n.IBAN)
 	}
 
 	// camt.054: one Sammler entry that must split (reference match + IBAN match)

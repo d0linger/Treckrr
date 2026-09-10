@@ -283,9 +283,13 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	// Leeres Feld = Firmenstandard (NULL), sonst 0-365 Tage.
 	var paymentTerm *int
 	if v := strings.TrimSpace(r.FormValue("payment_term_days")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 365 {
-			paymentTerm = &n
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 || n > 365 {
+			s.setFlash(w, r, "error", "Zahlungsziel muss eine ganze Zahl zwischen 0 und 365 Tagen sein.")
+			redirect(w, r, neighborReturnURL(r, id))
+			return
 		}
+		paymentTerm = &n
 	}
 	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email, iban, paymentTerm); err != nil {
 		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")

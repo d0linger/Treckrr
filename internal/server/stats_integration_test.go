@@ -51,7 +51,7 @@ func TestStatsPeriodDrilldownExportIntegration(t *testing.T) {
 	}
 
 	// Machine usage: the rig's machine ran 3 × 2 h = 6 h at 2 m × 5 €/m·h = 10 €/h
-	// → 60,00 attributed revenue.
+	// → 60,00 estimated revenue at current rates, not frozen booked revenue.
 	usage, err := e.st.MachineUsageForYear(e.ctx, yid, parseDay(""), parseDay(""))
 	if err != nil || len(usage) != 1 {
 		t.Fatalf("machine usage: %v (n=%d)", err, len(usage))
@@ -81,7 +81,8 @@ func TestStatsPeriodDrilldownExportIntegration(t *testing.T) {
 	if page := e.get(fmt.Sprintf("/stats?year=%d", yid)); !strings.Contains(page, "Deckungsbeitrag") {
 		t.Errorf("the statistics page does not show the contribution margin")
 	}
-	// Reset so the shared price base looks the way other tests expect.
+	// Reset for the export below. newItEnv's cleanup removes this test's entire
+	// price base even after Fatal; it is never shared with another test.
 	e.post("/prices/machines", url.Values{
 		"base_id": {itoa64(e.baseID64)}, "id": {itoa64(e.machineID)},
 		"name": {"IT-Maschine"}, "working_width": {"2"}, "cost_per_ab": {"5"},
@@ -100,6 +101,12 @@ func TestStatsPeriodDrilldownExportIntegration(t *testing.T) {
 	}
 	if strings.Contains(csvBody, "376,00") {
 		t.Errorf("the filtered CSV contains the whole-year total")
+	}
+	if !strings.Contains(csvBody, "Schätzung zu aktuellen Sätzen") {
+		t.Error("CSV presents current-price machine allocations as historical revenue")
+	}
+	if !strings.Contains(page, "Schätzungen zu aktuellen Sätzen") {
+		t.Error("page does not disclose mutable-rate estimates")
 	}
 }
 

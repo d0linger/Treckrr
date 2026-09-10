@@ -84,9 +84,9 @@ func (s *Store) ListInvoiceJournal(ctx context.Context, yearID int64) ([]Journal
 }
 
 // ListInvoiceDocs returns the full documents of a year (for the archive
-// export), with legacy rows hydrated from live data where possible so their
-// PDF can still be rendered. A row whose snapshot cannot be reconstructed is
-// returned with Content nil — the caller decides how to report it.
+// export), with legacy invoices hydrated from live data where possible so their
+// PDF can still be rendered. Other document kinds cannot be reconstructed from
+// bookings. Missing snapshots stay nil — the caller decides how to report them.
 func (s *Store) ListInvoiceDocs(ctx context.Context, yearID int64) ([]models.Invoice, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+invoiceCols+` FROM invoices WHERE billing_year_id=$1 ORDER BY issued_on, id`, yearID)
@@ -110,7 +110,9 @@ func (s *Store) ListInvoiceDocs(ctx context.Context, yearID int64) ([]models.Inv
 	// once per row (a year with 60 legacy invoices refetched it 60 times).
 	var company *models.Company
 	for i := range out {
-		if out[i].Content != nil {
+		// Reversals, credits and payment requests have no live counterpart;
+		// rebuilding them from bookings would invent an ordinary invoice.
+		if out[i].Content != nil || out[i].Kind != "invoice" {
 			continue
 		}
 		if company == nil {

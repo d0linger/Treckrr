@@ -293,7 +293,7 @@
 				<span class="beleg__docno">{{.Number}}</span>
 				<span class="beleg__dockind">{{if eq .Status "canceled"}}storniert{{else}}angefordert{{end}}</span>
 				{{if .Content}}<span class="beleg__r">{{money .Content.Gross}}</span>{{end}}
-				{{if eq .Status "issued"}}
+				{{if and (eq .Status "issued") (not $.Completed)}}
 				<form method="post" action="/documents/{{.ID}}/storno"
 					data-confirm-danger data-confirm="Abschlag {{.Number}} stornieren? Es wird ein Storno-Beleg erstellt."
 					data-confirm-reason="Storno-Grund (optional, protokolliert)">
@@ -319,7 +319,7 @@
 		{{end}}
 		{{/* Corrections are OWNER actions — never rendered on the public (Shared)
 		     read-only view, which must stay a pure document. */}}
-		{{if and (not .HasInvoice) (not .Shared)}}
+		{{if and (not .HasInvoice) (not .Shared) (not .Completed)}}
 		<div class="beleg__invacts stack">
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/anzahlung" class="beleg__gform">
 				<input type="hidden" name="year_id" value="{{.Year.ID}}">
@@ -339,7 +339,7 @@
 			</form>
 		</div>
 		{{end}}
-		{{if and .HasInvoice (not .Shared)}}
+		{{if and .HasInvoice (not .Shared) (not .Completed)}}
 		<div class="beleg__invacts stack">
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/gutschrift" class="beleg__gform">
 				<input type="hidden" name="year_id" value="{{.Year.ID}}">

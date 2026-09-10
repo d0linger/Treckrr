@@ -112,15 +112,21 @@ func TestAuditFiltersIntegration(t *testing.T) {
 	if page := e.get("/admin/audit?username=" + url.QueryEscape(e.uname+"-gibtsnicht")); strings.Contains(page, "Seite 1/1") && strings.Contains(page, e.uname) {
 		t.Errorf("filtering by an unknown user still shows our entries")
 	}
-	// A window that ends before today must exclude today's rows.
-	past := time.Now().AddDate(0, 0, -30).Format("2006-01-02")
-	old := time.Now().AddDate(0, 0, -60).Format("2006-01-02")
+	// Anchor every window to the actual login row, even across midnight.
+	var loggedAt time.Time
+	if err := e.pool.QueryRowContext(e.ctx,
+		`SELECT min(created_at) FROM audit_log WHERE username=$1`, e.uname).Scan(&loggedAt); err != nil {
+		t.Fatal(err)
+	}
+	loggedAt = loggedAt.In(time.Local)
+	past := loggedAt.AddDate(0, 0, -30).Format("2006-01-02")
+	old := loggedAt.AddDate(0, 0, -60).Format("2006-01-02")
 	page = e.get(fmt.Sprintf("/admin/audit?username=%s&from=%s&to=%s", url.QueryEscape(e.uname), old, past))
 	if !strings.Contains(page, "Keine Einträge.") {
 		t.Errorf("a 30-day-old window still reports today's entries")
 	}
 	// Today's window includes them again.
-	today := time.Now().Format("2006-01-02")
+	today := loggedAt.Format("2006-01-02")
 	page = e.get(fmt.Sprintf("/admin/audit?username=%s&from=%s&to=%s", url.QueryEscape(e.uname), today, today))
 	if strings.Contains(page, "Keine Einträge.") {
 		t.Errorf("today's window reports no entries although the user just logged in")

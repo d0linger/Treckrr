@@ -388,12 +388,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	byNeighbor := aggregate(entries, func(e models.Entry) string { return names[e.NeighborID] })
-	byTask := aggregate(entries, func(e models.Entry) string {
-		if e.TaskLabel == "" {
-			return "Sonstige"
-		}
-		return e.TaskLabel
-	})
+	byTask := aggregate(entries, func(e models.Entry) string { return e.TaskLabel })
 	byTractor := aggregate(entries, func(e models.Entry) string { return e.TractorLabel })
 	// Stunden je Maschine: a booking can run several machines (MachineLabels is the
 	// comma-joined set), and its cost is for the whole rig — so cost can't be split
@@ -413,6 +408,10 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	for i := range byTask {
+		if byTask[i].Label == "" {
+			byTask[i].Label = "Ohne Tätigkeit"
+			continue // No exact-match task filter exists for a missing label.
+		}
 		byTask[i].URL = fmt.Sprintf("/buchungen?year=%d&task=%s%s", year.ID, url.QueryEscape(byTask[i].Label), period)
 	}
 
@@ -606,7 +605,7 @@ func (s *Server) handleStatsExport(w http.ResponseWriter, r *http.Request) {
 	byNeighbor := aggregate(entries, func(e models.Entry) string { return names[e.NeighborID] })
 	byTask := aggregate(entries, func(e models.Entry) string {
 		if e.TaskLabel == "" {
-			return "Sonstige"
+			return "Ohne Tätigkeit"
 		}
 		return e.TaskLabel
 	})
@@ -639,10 +638,10 @@ func (s *Server) handleStatsExport(w http.ResponseWriter, r *http.Request) {
 	writeAgg("Tätigkeit", byTask)
 	writeAgg("Traktor", byTractor)
 	for _, m := range machines {
-		_ = cw.Write([]string{"Maschine", csvSafe(m.Name), "h", deDecimal(m.Hours), deDecimal(m.Hours),
+		_ = cw.Write([]string{"Maschine · Schätzung zu aktuellen Sätzen", csvSafe(m.Name), "h", deDecimal(m.Hours), deDecimal(m.Hours),
 			deDecimal(m.Revenue), deDecimal(m.Rate)})
 		if m.HasMargin() {
-			_ = cw.Write([]string{"Maschine · Deckungsbeitrag", csvSafe(m.Name), "h", deDecimal(m.Hours), "",
+			_ = cw.Write([]string{"Maschine · Deckungsbeitrag · Schätzung zu aktuellen Sätzen", csvSafe(m.Name), "h", deDecimal(m.Hours), "",
 				deDecimal(m.Margin), deDecimal(m.SelfCost)})
 		}
 	}

@@ -239,10 +239,14 @@ func (e *itEnv) purge(uname string) {
 		e.t.Fatalf("purge audit opt-in: %v", err)
 	}
 	if _, err := tx.ExecContext(e.ctx,
-		`DELETE FROM audit_log WHERE user_id IN (SELECT id FROM users WHERE username=$1)`, uname); err != nil {
+		`DELETE FROM audit_log WHERE user_id IN
+		 (SELECT id FROM users WHERE username=$1 OR ($2 AND starts_with(username,'ithandler')))`,
+		uname, uname == "ithandler%"); err != nil {
 		e.t.Fatalf("purge audit: %v", err)
 	}
-	if _, err := tx.ExecContext(e.ctx, `DELETE FROM users WHERE username=$1`, uname); err != nil {
+	if _, err := tx.ExecContext(e.ctx,
+		`DELETE FROM users WHERE username=$1 OR ($2 AND starts_with(username,'ithandler'))`,
+		uname, uname == "ithandler%"); err != nil {
 		e.t.Fatalf("purge user: %v", err)
 	}
 	if err := tx.Commit(); err != nil {

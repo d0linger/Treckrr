@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/d0linger/treckrr/internal/db"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
 )
@@ -18,28 +17,17 @@ import (
 // gone by the time the occurrence comes due (booking the machine half rather
 // than failing the whole maintenance run on a foreign key).
 //
-// This test deliberately owns the CURRENT calendar year: RunDueRecurring books
+// This test owns the CURRENT calendar year in an isolated scratch database:
+// RunDueRecurring books
 // an occurrence only into a non-completed billing year whose year matches the
 // occurrence's date, so the far-future fixture years the rest of the suite uses
 // can never reach the booking path at all — which is why the existing server
 // test could only assert the "no open year" refusal. billing_years.year is
-// UNIQUE, so the year is purged before seeding as well as after, exactly like
-// every other fixture in this package.
+// UNIQUE, so sharing a database would let concurrent runs purge each other's
+// year even though helper and neighbor names are unique.
 func TestRecurringWithPersonIntegration(t *testing.T) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set; skipping DB integration test")
-	}
 	ctx := context.Background()
-	pool, err := db.Connect(ctx, url)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() { _ = pool.Close() })
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	st := store.New(pool, "test-encryption-secret")
+	st, pool := scratchStore(t)
 
 	yr := time.Now().Year()
 	nbName := fmt.Sprintf("Serien Nachbar %d", os.Getpid())

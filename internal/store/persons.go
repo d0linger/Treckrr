@@ -100,22 +100,33 @@ func (s *Store) SetPersonArchived(ctx context.Context, id int64, archived bool) 
 // person_id is ON DELETE SET NULL, so deleting would silently orphan the
 // attribution on documents that are already out of the house — archive instead.
 func (s *Store) DeletePerson(ctx context.Context, id int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	// An entry's foreign-key check takes a key-share lock on this row. Lock
+	// before checking history so a concurrent booking is seen or its insert
+	// fails; deleting a helper must never silently clear a new attribution.
+	var lockedID int64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT id FROM persons WHERE id=$1 FOR UPDATE`, id).Scan(&lockedID); errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
 	var booked bool
-	if err := s.db.QueryRowContext(ctx,
+	if err := tx.QueryRowContext(ctx,
 		`SELECT EXISTS(SELECT 1 FROM entries WHERE person_id=$1)`, id).Scan(&booked); err != nil {
 		return err
 	}
 	if booked {
 		return ErrHasHistory
 	}
-	res, err := s.db.ExecContext(ctx, `DELETE FROM persons WHERE id=$1`, id)
-	if err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM persons WHERE id=$1`, id); err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return tx.Commit()
 }
 
 // PersonHours sums the booked Mannstunden per helper for a year — the figure

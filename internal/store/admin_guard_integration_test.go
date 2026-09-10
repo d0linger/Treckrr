@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/d0linger/treckrr/internal/db"
 	"github.com/d0linger/treckrr/internal/models"
@@ -44,12 +45,14 @@ func TestLastAdminGuardIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admin-count lock conn: %v", err)
 	}
-	if _, err := lockConn.ExecContext(ctx, `SELECT pg_advisory_lock(918273645)`); err != nil {
+	defer lockConn.Close()
+	lockCtx, lockCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer lockCancel()
+	if _, err := lockConn.ExecContext(lockCtx, `SELECT pg_advisory_lock(918273645)`); err != nil {
 		t.Fatalf("admin-count advisory lock: %v", err)
 	}
 	defer func() {
 		_, _ = lockConn.ExecContext(ctx, `SELECT pg_advisory_unlock(918273645)`)
-		_ = lockConn.Close()
 	}()
 
 	u := func(s string) string { return fmt.Sprintf("sh04_%s_%d", s, os.Getpid()) }

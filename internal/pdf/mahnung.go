@@ -78,15 +78,28 @@ func RenderMahnung(m MahnungData) ([]byte, error) {
 	}
 	y += 8
 
-	// Keep the amount box + paid line + Zahlung/IBAN block together above the footer
-	// (drawn at y=806): if a long intro pushed us near the bottom, this whole block
-	// (~80pt) would otherwise overrun it, so start a fresh page first.
-	if y > 700 {
+	// Reserve every optional line before drawing this indivisible block. The
+	// footer starts at 806; leave a gap and include the last line's text height.
+	total := m.Open.Add(m.Fee)
+	showPayment := strings.TrimSpace(m.IssuerIBAN) != "" && total.IsPositive()
+	blockHeight := 18.0 + 10
+	if m.Paid.IsPositive() {
+		blockHeight += 16
+	}
+	if m.Fee.IsPositive() {
+		blockHeight += 34
+	}
+	if !m.GraceUntil.IsZero() {
+		blockHeight += 16
+	}
+	if showPayment {
+		blockHeight += 13 + 14 + 12
+	}
+	if y+blockHeight > 790 {
 		pdf.AddPage()
 		y = 56
 	}
 	// amount box
-	total := m.Open.Add(m.Fee)
 	gtext(pdf, marginL, y, 11, true, "Offener Betrag")
 	gtextR(pdf, right, y, 13, true, money(m.Open))
 	y += 18
@@ -111,7 +124,7 @@ func RenderMahnung(m MahnungData) ([]byte, error) {
 	}
 	y += 10
 
-	if strings.TrimSpace(m.IssuerIBAN) != "" && m.Open.IsPositive() {
+	if showPayment {
 		gtext(pdf, marginL, y, 9.5, true, "Zahlung")
 		y += 13
 		line := "IBAN " + m.IssuerIBAN

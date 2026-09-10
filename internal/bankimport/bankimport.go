@@ -119,8 +119,11 @@ func ParseCSV(data []byte) ([]Txn, error) {
 	if len(rows) < 2 {
 		return nil, fmt.Errorf("CSV enthält keine Datenzeilen")
 	}
-	find := func(header []string, keys ...string) int {
-		for i, h := range header {
+	find := func(skip int, keys ...string) int {
+		for i, h := range rows[0] {
+			if i == skip {
+				continue
+			}
 			hl := strings.ToLower(strings.TrimSpace(h))
 			for _, k := range keys {
 				if strings.Contains(hl, k) {
@@ -130,15 +133,13 @@ func ParseCSV(data []byte) ([]Txn, error) {
 		}
 		return -1
 	}
-	head := rows[0]
-	di := find(head, "datum", "buchung")
-	ai := find(head, "betrag", "umsatz", "amount")
-	ri := find(head, "verwendungszweck", "zweck", "referenz", "reference")
-	ii := find(head, "iban")
-	ni := find(head, "auftraggeber", "name", "empfänger", "zahler")
-	if ni == ii {
-		ni = -1 // a header like "Auftraggeber-IBAN" matched both; it is the IBAN
-	}
+	di := find(-1, "datum", "buchung")
+	ai := find(-1, "betrag", "umsatz", "amount")
+	ri := find(-1, "verwendungszweck", "zweck", "referenz", "reference")
+	ii := find(-1, "iban")
+	nameKeys := []string{"auftraggeber", "name", "empfänger", "zahler"}
+	legacyNameIndex := find(-1, nameKeys...)
+	ni := find(ii, nameKeys...)
 	if ai < 0 || ri < 0 {
 		return nil, fmt.Errorf("es braucht mindestens die Spalten Betrag und Verwendungszweck")
 	}
@@ -150,7 +151,14 @@ func ParseCSV(data []byte) ([]Txn, error) {
 		}
 		date, _ := parseDate(col(rec, di))
 		t := Txn{Amount: amt, Reference: col(rec, ri), Name: col(rec, ni), IBAN: normIBAN(col(rec, ii)), Date: date}
-		t.setHash()
+		hashTxn := t
+		if legacyNameIndex == ii {
+			// This header order historically omitted the payer name. Keep that
+			// de-duplication key, while returning the corrected name to the matcher.
+			hashTxn.Name = ""
+		}
+		hashTxn.setHash()
+		t.Hash = hashTxn.Hash
 		out = append(out, t)
 	}
 	if len(out) == 0 {
@@ -268,7 +276,15 @@ func ParseCamt(data []byte) ([]Txn, error) {
 		// booking the batch total against a merged reference would mis-attribute
 		// the money.
 		if len(e.Details) > 1 {
-			out = append(out, splitBatch(e, bookg)...)
+			split := splitBatch(e, bookg)
+			total := decimal.Zero
+			for _, t := range split {
+				total = total.Add(t.Amount)
+			}
+			// Every detail must account for the entry's entire credited amount.
+			if total.Equal(amt) {
+				out = append(out, split...)
+			}
 			continue
 		}
 		var refs []string

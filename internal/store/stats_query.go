@@ -9,14 +9,10 @@ import (
 
 // ---- Auswertungen (Ausbaukarte 83/84/85) -----------------------------------
 
-// MachineUsage is one machine's year: hours run, the revenue those hours
-// earned, and — when self costs are configured — what they cost.
-//
-// The revenue attribution is EXACT, not an estimate: a rig's hourly rate is the
-// tractor rate plus the sum of the machine rates (calc.GespannRate), so a
-// machine's share of a booking is precisely hours × its own rate. The old
-// hours-only chart existed because splitting a booking's cost looked like
-// guesswork; with the rate identity it is arithmetic.
+// MachineUsage reports recorded hours and estimates their revenue and cost at
+// CURRENT machine rates. Bookings snapshot only the combined rig rate, not its
+// components; exact historical machine allocations cannot be reconstructed.
+// These estimates must not be presented as booked or invoiced revenue.
 type MachineUsage struct {
 	Name     string
 	Hours    decimal.Decimal
@@ -30,7 +26,7 @@ type MachineUsage struct {
 // HasMargin reports whether self costs are configured for this machine.
 func (m MachineUsage) HasMargin() bool { return m.SelfCost.IsPositive() }
 
-// MachineUsageForYear aggregates machine hours and attributed revenue for a
+// MachineUsageForYear aggregates machine hours and current-rate estimates for a
 // billing year, optionally narrowed to a date range (zero = unbounded).
 func (s *Store) MachineUsageForYear(ctx context.Context, yearID int64, from, to time.Time) ([]MachineUsage, error) {
 	var fromArg, toArg any

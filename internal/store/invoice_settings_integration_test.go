@@ -2,15 +2,11 @@ package store_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	neturl "net/url"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/d0linger/treckrr/internal/db"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
 )
@@ -23,43 +19,8 @@ import (
 // would race the exact-number assertions of the snapshot tests running in
 // other packages (they'd suddenly issue "IT2091-001" instead of "2091-001").
 func TestInvoiceNumberSettingsAndDate(t *testing.T) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set; skipping DB integration test")
-	}
 	ctx := context.Background()
-
-	base, err := neturl.Parse(url)
-	if err != nil {
-		t.Fatalf("parse url: %v", err)
-	}
-	admin := *base
-	admin.Path = "/postgres"
-	adminPool, err := sql.Open("pgx", admin.String())
-	if err != nil {
-		t.Fatalf("admin connect: %v", err)
-	}
-	t.Cleanup(func() { _ = adminPool.Close() })
-	const scratch = "treckrr_settings_test"
-	drop := func() {
-		_, _ = adminPool.ExecContext(ctx, `DROP DATABASE IF EXISTS `+scratch+` WITH (FORCE)`)
-	}
-	drop()
-	if _, err := adminPool.ExecContext(ctx, `CREATE DATABASE `+scratch); err != nil {
-		t.Fatalf("create scratch db: %v", err)
-	}
-	t.Cleanup(drop)
-	scratchURL := *base
-	scratchURL.Path = "/" + scratch
-	pool, err := db.Connect(ctx, scratchURL.String())
-	if err != nil {
-		t.Fatalf("connect scratch: %v", err)
-	}
-	t.Cleanup(func() { _ = pool.Close() })
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("migrate scratch: %v", err)
-	}
-	st := store.New(pool, "test-encryption-secret")
+	st, pool := scratchStore(t)
 
 	// Fixtures: one year, three neighbors with § 11-complete data and a booking.
 	baseID, err := st.CreateEmptyBase(ctx, 2026, "Settings-Basis")
@@ -76,6 +37,18 @@ func TestInvoiceNumberSettingsAndDate(t *testing.T) {
 		InvoicePrefix: "IT", InvoiceStart: 41,
 	}); err != nil {
 		t.Fatalf("company: %v", err)
+	}
+	company, err := st.GetCompany(ctx)
+	if err != nil {
+		t.Fatalf("read company: %v", err)
+	}
+	company.InvoiceStart = 0 // omitted by a legacy caller
+	company.Name = "Hof Bergmann aktualisiert"
+	if err := st.UpdateCompany(ctx, company); err != nil {
+		t.Fatalf("legacy company update: %v", err)
+	}
+	if got, err := st.GetCompany(ctx); err != nil || got.InvoiceStart != 41 || got.Name != company.Name {
+		t.Fatalf("legacy update: start=%d name=%q err=%v, want 41 and updated name", got.InvoiceStart, got.Name, err)
 	}
 	neighbor := func(i int) int64 {
 		nid, err := st.CreateNeighbor(ctx, fmt.Sprintf("Settings-Nachbar %d", i), "")

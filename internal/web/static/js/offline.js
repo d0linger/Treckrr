@@ -68,6 +68,32 @@
 			});
 		});
 	}
+	function correctRejected(item, fields) {
+		return open().then(function (db) {
+			return new Promise(function (res, rej) {
+				var t = db.transaction(STORE, "readwrite"), s = t.objectStore(STORE), r = s.get(item.id);
+				var saved = false;
+				r.onsuccess = function () {
+					var current = r.result;
+					// Never resurrect a discarded/sent item or overwrite a newer edit.
+					if (!current || !ownedByCurrentUser(current) || !current.rejection ||
+						JSON.stringify(current.data) !== JSON.stringify(item.data)) return;
+					if (!current.originalData) current.originalData = JSON.parse(JSON.stringify(current.data));
+					if (current.data.__pairs) {
+						fields.forEach(function (f) { current.data.__pairs[f.index][1] = f.input.value; });
+					} else {
+						fields.forEach(function (f) { current.data[f.key] = f.input.value; });
+					}
+					// Keep rejection: corrections require a deliberate "Jetzt senden".
+					// Scope, row count and replay keys are never editable.
+					s.put(current);
+					saved = true;
+				};
+				t.oncomplete = function () { db.close(); res(saved); };
+				t.onabort = t.onerror = function () { db.close(); rej(t.error); };
+			});
+		});
+	}
 
 	function uuid() { return crypto.randomUUID ? crypto.randomUUID() : (Date.now() + "-" + Math.random().toString(16).slice(2)); }
 	function csrf() { var i = document.querySelector('input[name="csrf_token"]'); return i ? i.value : ""; }
@@ -262,6 +288,56 @@
 	var panel = document.querySelector("[data-offline-panel]");
 	var list = document.querySelector("[data-offline-list]");
 	var badgeEl = document.querySelector("[data-offline-badge]");
+	var editableFields = {
+		entry_date: "Datum", task_label: "Tätigkeit", hours: "Stunden", unit: "Einheit",
+		quantity: "Menge", unit_price: "Einzelpreis", note: "Notiz",
+		gespann_id: "Gespann-ID", person_id: "Person-ID (leer = ohne Helfer)",
+		q_date: "Datum", q_hours: "Stunden", q_gespann: "Gespann-ID", q_person: "Person-ID (leer = ohne Helfer)"
+	};
+	function correctionEditor(item, pairs) {
+		var details = document.createElement("details"), summary = document.createElement("summary");
+		summary.textContent = "Buchungsdaten korrigieren";
+		details.appendChild(summary);
+		var hint = document.createElement("p");
+		hint.className = "muted small";
+		hint.textContent = "Nur abgelehnte Zeilen korrigieren. Bereits gespeicherte Zeilen bleiben unverändert. " +
+			"Nachbar, Jahr und Buchungsschlüssel bleiben fest. Gespann-/Person-IDs stehen in den erfassten Daten; " +
+			"eine leere Person-ID bucht ohne Helfer. Originaldaten bleiben über „Daten sichern“ verfügbar.";
+		details.appendChild(hint);
+		var fields = [], counts = {};
+		pairs.forEach(function (pair, index) {
+			var key = pair[0];
+			if (!Object.prototype.hasOwnProperty.call(editableFields, key)) return;
+			counts[key] = (counts[key] || 0) + 1;
+			var label = document.createElement("label"), text = document.createElement("span"), input = document.createElement("input");
+			label.className = "field";
+			text.textContent = (item.data.__pairs ? "Zeile " + counts[key] + " · " : "") + editableFields[key];
+			input.className = "input";
+			input.type = "text";
+			input.value = pair[1];
+			label.appendChild(text);
+			label.appendChild(input);
+			details.appendChild(label);
+			fields.push({ key: key, index: index, input: input });
+		});
+		var save = document.createElement("button");
+		save.type = "button";
+		save.className = "btn btn--ghost btn--sm";
+		save.textContent = "Korrektur speichern";
+		save.addEventListener("click", function () {
+			save.disabled = true;
+			Promise.resolve(flushing).then(function () { return correctRejected(item, fields); }).then(function (saved) {
+				toast(saved ? "Korrektur gespeichert — mit „Jetzt senden“ erneut versuchen." :
+					"Buchung inzwischen geändert oder gesendet. Bitte Warteschlange erneut prüfen.");
+				return renderQueue();
+			}).catch(function () {
+				save.disabled = false;
+				toast("Korrektur konnte nicht gespeichert werden. Die bisherigen Daten bleiben erhalten.");
+			});
+		});
+		details.appendChild(save);
+		return details;
+	}
 
 	// Build the text nodes with textContent, never innerHTML: every value here
 	// is data the user typed into a booking form.
@@ -295,7 +371,7 @@
 			error.className = "small";
 			error.textContent = "Bitte prüfen (HTTP " + item.rejection.status + "): " +
 				(item.rejection.message || "Die Buchung wurde abgelehnt.") +
-				" Die erfassten Daten bleiben erhalten. Nach der Korrektur mit „Jetzt senden“ erneut versuchen. " +
+				" Die erfassten Daten bleiben erhalten. Unten korrigieren oder Stammdaten berichtigen, dann mit „Jetzt senden“ erneut versuchen. " +
 				"Bereits gespeicherte Zeilen werden dabei nicht doppelt gebucht.";
 			meta.appendChild(error);
 		}
@@ -309,6 +385,7 @@
 		details.appendChild(summary);
 		details.appendChild(values);
 		meta.appendChild(details);
+		if (item.rejection) meta.appendChild(correctionEditor(item, fields));
 		var actions = document.createElement("div");
 		actions.className = "btnrow";
 		var backup = document.createElement("button");

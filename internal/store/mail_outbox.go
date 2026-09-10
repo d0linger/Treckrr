@@ -72,6 +72,9 @@ func nullable(id int64) any {
 }
 
 func (s *Store) EnqueueMail(ctx context.Context, m OutboxMail) error {
+	if m.Meta.Fee.IsNegative() {
+		return ErrNegativeDunningFee
+	}
 	meta, err := json.Marshal(m.Meta)
 	if err != nil {
 		return err

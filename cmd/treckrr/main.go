@@ -110,7 +110,10 @@ func newBackup(cfg *config.Config, pool *sql.DB, st *store.Store) *backup.Servic
 		SettingsFn: func(ctx context.Context) backup.Settings {
 			s, err := st.GetBackupSettings(ctx)
 			if err != nil {
-				return backup.Settings{VolumeCron: "0 3 * * *", VolumeKeep: cfg.BackupKeep, S3Cron: "0 4 * * *"}
+				return backup.Settings{
+					VolumeCron: "0 3 * * *", VolumeKeep: cfg.BackupKeep,
+					S3Cron: "0 4 * * *", S3Keep: cfg.S3Keep,
+				}
 			}
 			return backup.Settings(s)
 		},

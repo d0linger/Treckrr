@@ -371,7 +371,7 @@ func (s *Server) deliverMahnung(ctx context.Context, r *http.Request, v *mahnung
 	if err := mail.Send(ctx, s.cfg, v.Neighbor.Email, subject, body, []mail.Attachment{att}); err != nil {
 		metrics.Inc(metrics.MailFailed)
 		s.audit(ar, "mahnung_email_failed", "neighbor", v.Neighbor.ID,
-			v.Neighbor.Name+" · "+v.Title+" · Rechnung "+v.Invoice.Number+" · "+err.Error()+auditSuffix)
+			v.Neighbor.Name+" · "+v.Title+" · Rechnung "+v.Invoice.Number+" · "+sanitizeLog(err.Error())+auditSuffix)
 		slog.Error("mahnung email send failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
 		if qerr := s.store.EnqueueMail(ctx, store.OutboxMail{
 			Kind: "mahnung", NeighborID: v.Neighbor.ID, BillingYearID: v.Invoice.BillingYearID,
@@ -545,8 +545,9 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 		// the per-neighbor rows are fetched inside the loop.
 		v, ok, err := s.buildMahnungDataWith(r.WithContext(bctx), row.NeighborID, stage, company, year)
 		if err != nil {
-			s.serverError(w, "mahnwesen batch", err)
-			return
+			slog.Error("mahnwesen batch data failed", "neighbor", row.NeighborID, "err", sanitizeLog(err.Error()))
+			failed++
+			continue
 		}
 		if !ok {
 			continue
@@ -557,8 +558,9 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 		}
 		status, err := s.deliverMahnung(bctx, r, v, " (Sammellauf)")
 		if err != nil {
-			s.serverError(w, "mahnwesen batch: pdf", err)
-			return
+			slog.Error("mahnwesen batch pdf failed", "neighbor", row.NeighborID, "err", sanitizeLog(err.Error()))
+			failed++
+			continue
 		}
 		switch status {
 		case "sent", "sentNoTrail":
@@ -577,7 +579,7 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 		msg += fmt.Sprintf(", %d zur Wiederholung eingeplant", queued)
 	}
 	if failed > 0 {
-		msg += fmt.Sprintf(", %d fehlgeschlagen (bitte erneut versuchen)", failed)
+		msg += fmt.Sprintf(", %d fehlgeschlagen (bitte prüfen und nur betroffene Nachbarn erneut senden)", failed)
 	}
 	if skipped > 0 {
 		msg += fmt.Sprintf(", %d ohne E-Mail-Adresse übersprungen", skipped)

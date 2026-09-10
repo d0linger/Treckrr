@@ -69,14 +69,17 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	gauge("treckrr_backup_configured", "1 when a backup status file exists.", okVal(bs.Configured))
 	if bs.Configured {
 		gauge("treckrr_backup_ok", "1 when the last backup run succeeded.", okVal(bs.State == "ok"))
-		gauge("treckrr_backup_age_seconds", "Seconds since the last successful backup.",
-			time.Since(bs.LastBackup).Seconds())
-		gauge("treckrr_backup_encrypted", "1 when the last dump was encrypted.", okVal(bs.Encrypted))
-		if !bs.RestoreTested.IsZero() {
-			gauge("treckrr_backup_restore_tested_age_seconds",
-				"Seconds since the last restore verification.", time.Since(bs.RestoreTested).Seconds())
+		now := time.Now()
+		if !bs.LastBackup.IsZero() && !bs.LastBackup.After(now) {
+			gauge("treckrr_backup_age_seconds", "Seconds since the last successful backup.",
+				now.Sub(bs.LastBackup).Seconds())
 		}
-		if bs.S3 == "ok" || bs.S3 == "fehler" {
+		gauge("treckrr_backup_encrypted", "1 when the last dump was encrypted.", okVal(bs.Encrypted))
+		if !bs.RestoreTested.IsZero() && !bs.RestoreTested.After(now) {
+			gauge("treckrr_backup_restore_tested_age_seconds",
+				"Seconds since the last restore verification.", now.Sub(bs.RestoreTested).Seconds())
+		}
+		if bs.S3 == "ok" || bs.S3 == "fehlgeschlagen" {
 			gauge("treckrr_backup_s3_ok", "1 when the last off-host upload succeeded.", okVal(bs.S3 == "ok"))
 		}
 	}

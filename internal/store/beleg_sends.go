@@ -63,7 +63,7 @@ func (s *Store) LastBelegSend(ctx context.Context, yearID, neighborID int64) (*m
 // processing record a data subject may ask about.
 func (s *Store) ListBelegSends(ctx context.Context, yearID, neighborID int64) ([]models.BelegSend, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT channel, sent_at FROM beleg_sends
+		`SELECT id, billing_year_id, neighbor_id, sent_at, channel FROM beleg_sends
 		  WHERE billing_year_id=$1 AND neighbor_id=$2 ORDER BY sent_at`, yearID, neighborID)
 	if err != nil {
 		return nil, err
@@ -72,7 +72,7 @@ func (s *Store) ListBelegSends(ctx context.Context, yearID, neighborID int64) ([
 	var out []models.BelegSend
 	for rows.Next() {
 		var b models.BelegSend
-		if err := rows.Scan(&b.Channel, &b.SentAt); err != nil {
+		if err := rows.Scan(&b.ID, &b.BillingYearID, &b.NeighborID, &b.SentAt, &b.Channel); err != nil {
 			return nil, err
 		}
 		out = append(out, b)

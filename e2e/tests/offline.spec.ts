@@ -132,6 +132,73 @@ test("400 keeps a single booking until the user explicitly discards it", async (
   await expect.poll(async () => (await queue(page)).length).toBe(0);
 });
 
+test("a rejected single booking can be corrected without losing its original data or key", async ({ page, context }) => {
+  const submissions: URLSearchParams[] = [];
+  await page.route("**/entries", route => {
+    const data = new URLSearchParams(route.request().postData()!);
+    submissions.push(data);
+    return route.fulfill({ status: data.get("person_id") === "55" ? 204 : 422, body: "" });
+  });
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "Buchung speichern", exact: true }).click();
+  await expect.poll(async () => (await queue(page)).length).toBe(1);
+  const original = (await queue(page))[0];
+  await context.setOffline(false);
+  await expect.poll(async () => (await queue(page))[0]?.rejection?.status).toBe(422);
+  await page.locator("[data-offline-badge]").click();
+  await page.getByText("Buchungsdaten korrigieren", { exact: true }).click();
+  await page.getByLabel("Person-ID (leer = ohne Helfer)", { exact: true }).fill("55");
+  await page.getByRole("button", { name: "Korrektur speichern", exact: true }).click();
+  await expect.poll(async () => (await queue(page))[0]?.data.person_id).toBe("55");
+  const corrected = (await queue(page))[0];
+  expect(corrected.originalData).toEqual(original.data);
+  expect(corrected.data.idempotency_key).toBe(original.data.idempotency_key);
+  expect(corrected.data.neighbor_id).toBe(original.data.neighbor_id);
+  expect(corrected.data.year_id).toBe(original.data.year_id);
+  await page.reload();
+  expect(submissions).toHaveLength(1); // Saving/reloading never silently retries an edit.
+  await page.locator("[data-offline-badge]").click();
+  await page.locator("[data-offline-flush]").click();
+  await expect.poll(async () => (await queue(page)).length).toBe(0);
+  expect(submissions[1].get("person_id")).toBe("55");
+  expect(submissions[1].get("idempotency_key")).toBe(submissions[0].get("idempotency_key"));
+});
+
+test("correcting a partially saved quick batch retains every key and deduplicates accepted rows", async ({ page, context }) => {
+  const accepted = new Map<string, string>();
+  const submissions: URLSearchParams[] = [];
+  await page.route("**/entries/quick", route => {
+    const data = new URLSearchParams(route.request().postData()!);
+    submissions.push(data);
+    const keys = data.getAll("q_key"), persons = data.getAll("q_person");
+    keys.forEach((key, i) => { if (persons[i] !== "55" && !accepted.has(key)) accepted.set(key, persons[i]); });
+    return route.fulfill({ status: persons.includes("55") ? 422 : 204, body: "" });
+  });
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "Schnell speichern" }).click();
+  await expect.poll(async () => (await queue(page)).length).toBe(1);
+  const original = (await queue(page))[0];
+  await context.setOffline(false);
+  await expect.poll(async () => (await queue(page))[0]?.rejection?.status).toBe(422);
+  expect(accepted.size).toBe(1);
+  await page.locator("[data-offline-badge]").click();
+  await page.getByText("Buchungsdaten korrigieren", { exact: true }).click();
+  await page.getByLabel("Zeile 2 · Person-ID (leer = ohne Helfer)", { exact: true }).fill("66");
+  await page.setViewportSize({ width: 375, height: 812 });
+  expect(await page.locator(".offlineq__sheet").evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("offline-correction-mobile.png") });
+  await page.getByRole("button", { name: "Korrektur speichern", exact: true }).click();
+  await expect.poll(async () => (await queue(page))[0]?.originalData).toEqual(original.data);
+  const corrected = (await queue(page))[0];
+  expect(corrected.data.__pairs.filter(([key]: string[]) => key === "q_key"))
+    .toEqual(original.data.__pairs.filter(([key]: string[]) => key === "q_key"));
+  await page.locator("[data-offline-flush]").click();
+  await expect.poll(async () => (await queue(page)).length).toBe(0);
+  expect(submissions).toHaveLength(2);
+  expect(accepted.size).toBe(2);
+  expect([...accepted.values()]).toEqual(["44", "66"]);
+});
+
 test("offline capture coordinates all submit handlers and releases the save button", async ({ page, context }) => {
   let prechecks = 0;
   await page.route("**/api/entries/precheck?*", route => { prechecks++; return route.fulfill({ json: {} }); });

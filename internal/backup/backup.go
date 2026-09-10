@@ -275,9 +275,14 @@ func (s *Service) cleanupLeftovers() {
 		return
 	}
 	stale, _ := filepath.Glob(filepath.Join(s.opt.Dir, "*.dump.enc.staging"))
+	interrupted, _ := filepath.Glob(filepath.Join(s.opt.Dir, "*.dump.enc.staging.*.tmp"))
+	stale = append(stale, interrupted...)
 	for _, f := range stale {
-		fi, err := os.Stat(f)
-		if err != nil || time.Since(fi.ModTime()) <= time.Hour {
+		fi, err := os.Lstat(f)
+		if err != nil {
+			continue
+		}
+		if !fi.Mode().IsRegular() || time.Since(fi.ModTime()) <= time.Hour {
 			continue
 		}
 		if err := os.Remove(f); err != nil {

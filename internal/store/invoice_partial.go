@@ -46,11 +46,11 @@ func docSeqNumber(ctx context.Context, tx *sql.Tx, yearID int64, year int, lette
 	// leaving a permanent gap in a numbered tax sequence.
 	var seq int
 	if err := tx.QueryRowContext(ctx,
-		`SELECT COALESCE(MAX(substring(number from '`+letter+`([0-9]+)$')::int), 0) + 1
+		`SELECT COALESCE(MAX(substring(number from $2)::int), 0) + 1
 		   FROM invoices
 		  WHERE billing_year_id = $1 AND references_invoice_id IS NULL
-		    AND number ~ ('`+letter+`[0-9]+$')`,
-		yearID).Scan(&seq); err != nil {
+		    AND number ~ $3`,
+		yearID, letter+"([0-9]+)$", letter+"[0-9]+$").Scan(&seq); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("%s%d-%s%03d", prefix, year, letter, seq), nil

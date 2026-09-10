@@ -62,7 +62,7 @@ func TestDunningFlowIntegration(t *testing.T) {
 		yid, nid).Scan(&stage, &channel, &fee, &grace); err != nil {
 		t.Fatalf("no dunning notice recorded: %v", err)
 	}
-	if stage != 1 || channel != "manuell" || !strings.HasPrefix(fee, "5") {
+	if stage != 1 || channel != "manuell" || fee != "5.00" {
 		t.Errorf("notice = stage %d / %s / fee %s, want 1 / manuell / 5.00", stage, channel, fee)
 	}
 	wantGrace := time.Now().AddDate(0, 0, 10)
