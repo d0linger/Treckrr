@@ -333,9 +333,13 @@ func (s *Store) DeleteEntryPair(ctx context.Context, id, partnerID int64) error 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	// Companion first (it carries the FK); order still works either way since the
-	// link is ON DELETE SET NULL, but stating it avoids relying on that.
-	for _, eid := range []int64{partnerID, id} {
+	// Lock/delete in ascending ID order, matching recurring template creation
+	// regardless of which half's delete button was used. The link is ON DELETE
+	// SET NULL, so removing the machine first is safe.
+	if id > partnerID {
+		id, partnerID = partnerID, id
+	}
+	for _, eid := range []int64{id, partnerID} {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM entries WHERE id=$1`, eid); err != nil {
 			return err
 		}

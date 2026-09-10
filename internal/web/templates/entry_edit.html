@@ -152,6 +152,13 @@
 				<label class="field"><span>Erster Lauf</span>
 					<input class="input" type="date" name="next_run" value="{{.NextWeek}}"></label>
 			</div>
+			{{if .PairPersonLabel}}
+			<label class="check">
+				<input type="checkbox" name="with_person" value="1" checked>
+				<span>Verknüpfte Mannstunden ({{.PairPersonLabel}}) jedes Mal mitbuchen</span>
+			</label>
+			<p class="muted small">Der Stundensatz wird wie die übrigen Preise aus dieser Buchung eingefroren.</p>
+			{{end}}
 			<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit">Serie einrichten</button> <a class="link small" href="/recurring">Serien verwalten ›</a></div>
 		</form>
 	</div>

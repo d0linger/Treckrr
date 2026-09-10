@@ -538,9 +538,8 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 			Cost:     entry.Hours.Mul(person.HourlyRate).Round(2),
 			PersonID: &person.ID,
 			// Derived, deterministic key so a replayed pair no-ops on both halves.
-			// The base key is capped at maxNameLen upstream; trim before the
-			// suffix so the derived key stays inside the column's contract.
-			IdempotencyKey: companionKey(idempotencyKey),
+			// Oversized derived keys are hashed to stay within the length limit.
+			IdempotencyKey: models.CompanionKey(idempotencyKey),
 		}
 	}
 
@@ -589,20 +588,6 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		s.setFlash(w, r, "success", "Buchung gespeichert.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
-}
-
-// companionKey derives the companion entry's idempotency key from the machine
-// entry's key ("" stays "" — online submits carry no key). Deterministic, so a
-// replayed pair resolves to the same two keys; trimmed so the suffix never
-// pushes a maxNameLen-length base key over the column's contract.
-func companionKey(base string) string {
-	if base == "" {
-		return ""
-	}
-	if len(base) > maxNameLen-2 {
-		base = base[:maxNameLen-2]
-	}
-	return base + "-p"
 }
 
 // resolveEntryFromForm reads the booking form fields, resolves the tractor,
@@ -1293,6 +1278,16 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 				label = "verknüpfte Buchung"
 			}
 			data["PairPartnerLabel"] = label
+			// Only the helper half can be carried into a series (the machine half
+			// IS the series), only while it still stands (a stornierte companion
+			// must not come back every week), and only for an hour booking — the
+			// companion is priced over the machine booking's hours, which a
+			// quantity booking does not have. Named separately so the series card
+			// offers the choice only where it can be honored.
+			hourly := entry.Unit == "" || entry.Unit == "h"
+			if partner.PersonID != nil && partner.UnitPrice.IsPositive() && !partner.Voided && hourly {
+				data["PairPersonLabel"] = label
+			}
 		}
 	}
 	s.render(w, r, "entry_edit", data)
@@ -1437,7 +1432,12 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	// only the first of them. Absent for an online submit, which keeps the
 	// previous behavior exactly.
 	keys := r.Form["q_key"]
-	created, invalid := 0, 0
+	// A row may name a helper, exactly like the single booking form's person
+	// select: the row then books the machine AND that helper's Mannstunden as a
+	// linked companion, over the row's own hours. Empty when no helper is
+	// configured — the column is not rendered at all then.
+	personIDs := r.Form["q_person"]
+	created, paired, invalid := 0, 0, 0
 	var createErr error
 	// The same rig repeats across the rows of one submit — that is what quick
 	// entry is FOR — so each distinct Gespann is resolved once (5 queries) and
@@ -1448,6 +1448,15 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 		ok         bool
 	}
 	rigs := map[int64]resolvedRig{}
+	// Helpers repeat across the rows of one submit for the same reason rigs do
+	// (one person, one afternoon, several fields), so each is resolved once —
+	// including the negative answer, which must not re-query per row either.
+	type resolvedPerson struct {
+		person models.Person
+		ok     bool
+	}
+	persons := map[int64]resolvedPerson{}
+rowLoop:
 	for i := range gespanne {
 		rawGespann := strings.TrimSpace(gespanne[i])
 		gid, _ := strconv.ParseInt(rawGespann, 10, 64)
@@ -1501,20 +1510,79 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 				entry.IdempotencyKey = key
 			}
 		}
-		id, err := s.store.CreateEntry(r.Context(), &entry, machineIDs)
+		var companion *models.Entry
+		if i < len(personIDs) {
+			if pid, _ := strconv.ParseInt(strings.TrimSpace(personIDs[i]), 10, 64); pid != 0 {
+				p, seen := persons[pid]
+				if !seen {
+					person, perr := s.store.GetPerson(r.Context(), pid)
+					switch {
+					case perr == nil:
+						p = resolvedPerson{person: *person, ok: person.HourlyRate.IsPositive()}
+					case errors.Is(perr, store.ErrNotFound):
+						p = resolvedPerson{}
+					default:
+						// A store failure is transient, not a business rejection —
+						// and it must not skip the audit block below: rows already
+						// committed keep their § 132 trail regardless of where the
+						// batch stopped. Recorded like every other store failure,
+						// so the tail audits first and answers 500 afterwards.
+						createErr = errors.Join(createErr, perr)
+						break rowLoop
+					}
+					persons[pid] = p
+				}
+				if !p.ok {
+					// The row named a helper the master data cannot price (or no
+					// longer knows). Booking only the machine half would report
+					// success while filing the work as unmanned, so the row is
+					// skipped whole and counted like any other invalid row.
+					invalid++
+					continue
+				}
+				personID := p.person.ID
+				companion = &models.Entry{
+					NeighborID: neighborID, BillingYearID: year.ID,
+					Date: entry.Date, TaskLabel: "Mannstunden " + p.person.Name,
+					Unit: unitMannstunde, Quantity: hours, UnitPrice: p.person.HourlyRate,
+					Cost:     hours.Mul(p.person.HourlyRate).Round(2),
+					PersonID: &personID,
+					// Derived from the row's own key, so a replayed row no-ops on
+					// both halves (see models.CompanionKey).
+					IdempotencyKey: models.CompanionKey(entry.IdempotencyKey),
+				}
+			}
+		}
+		var (
+			id   int64
+			cerr error
+		)
+		if companion != nil {
+			var companionID int64
+			id, companionID, cerr = s.store.CreateEntryPair(r.Context(), &entry, machineIDs, companion)
+			if cerr == nil && companionID != 0 {
+				paired++
+			}
+		} else {
+			id, cerr = s.store.CreateEntry(r.Context(), &entry, machineIDs)
+		}
 		switch {
-		case err != nil:
+		case cerr != nil:
 			// Joined, not last-wins: a partly failing batch should log every reason,
 			// not just the reason the final row failed.
-			createErr = errors.Join(createErr, err)
+			createErr = errors.Join(createErr, cerr)
 		case id != 0:
 			created++
 		}
 	}
 	// Audit before answering, replay included: a replayed batch is a booking like
 	// any other, and its § 132 BAO trail must not depend on how it reached us.
-	if created > 0 {
-		s.audit(r, "quick_create", "entry", 0, fmt.Sprintf("%d Buchungen für %s", created, s.neighborName(r, neighborID)))
+	if created > 0 || paired > 0 {
+		detail := fmt.Sprintf("%d Buchungen für %s", created, s.neighborName(r, neighborID))
+		if paired > 0 {
+			detail += fmt.Sprintf(" · %d Mannstunden (verknüpft)", paired)
+		}
+		s.audit(r, "quick_create", "entry", 0, detail)
 	}
 	// A store failure is transient, not a business rejection: answer 500 so a
 	// replay retries later. Rows that did save carry their idempotency key, so the
@@ -1530,20 +1598,28 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	// duplicates if the operator re-captures.
 	if replay {
 		switch {
-		case created == 0 && invalid == 0:
+		case created == 0 && paired == 0 && invalid == 0:
 			w.WriteHeader(http.StatusNoContent)
 		case invalid > 0:
-			http.Error(w, fmt.Sprintf("%d Buchung(en) gespeichert, %d Zeile(n) ungültig (Gespann und Stunden erforderlich).", created, invalid), http.StatusUnprocessableEntity)
+			http.Error(w, fmt.Sprintf("%d Buchung(en) + %d Mannstunden gespeichert, %d Zeile(n) ungültig (Gespann und Stunden erforderlich; eine gewählte Person braucht einen Stundensatz).", created, paired, invalid), http.StatusUnprocessableEntity)
 		default:
 			w.WriteHeader(http.StatusNoContent)
 		}
 		return
 	}
 	switch {
-	case created == 0 && invalid == 0:
+	case created == 0 && paired == 0 && invalid == 0:
 		s.setFlash(w, r, "error", "Keine gültigen Zeilen (Gespann und Stunden erforderlich).")
 	case invalid > 0:
-		s.setFlash(w, r, "error", fmt.Sprintf("%d Buchung(en) gespeichert, %d Zeile(n) übersprungen — Gespann und gültige Stunden erforderlich.", created, invalid))
+		s.setFlash(w, r, "error", fmt.Sprintf("%d Buchung(en) + %d Mannstunden gespeichert, %d Zeile(n) übersprungen — Gespann und gültige Stunden erforderlich; eine gewählte Person braucht einen Stundensatz.", created, paired, invalid))
+	case created == 0 && paired > 0:
+		// The machine halves were already recorded (a re-submit of a row that
+		// carries its key), and only the Mannstunden were new. Saying "keine
+		// gültigen Zeilen" here would deny a booking that just changed the
+		// neighbor's balance.
+		s.setFlash(w, r, "success", fmt.Sprintf("%d Mannstunden zu bereits erfassten Buchungen ergänzt.", paired))
+	case paired > 0:
+		s.setFlash(w, r, "success", fmt.Sprintf("%d Buchungen + %d Mannstunden gespeichert.", created, paired))
 	default:
 		s.setFlash(w, r, "success", fmt.Sprintf("%d Buchungen gespeichert.", created))
 	}

@@ -115,7 +115,7 @@
 		<label class="field"><span>Person (optional)</span>
 			<select class="select" name="person_id">
 				<option value="">— keine —</option>
-				{{range .Persons}}<option value="{{.ID}}">{{.Name}} ({{money .HourlyRate}}/h)</option>{{end}}
+				{{range .Persons}}<option value="{{.ID}}"{{if not .HourlyRate.IsPositive}} disabled{{end}}>{{.Name}} ({{money .HourlyRate}}/h){{if not .HourlyRate.IsPositive}} — kein Satz{{end}}</option>{{end}}
 			</select>
 			<span class="muted small">Bucht zusätzlich Mannstunden über dieselben Stunden — als verknüpfte eigene Position.</span></label>
 		{{end}}
@@ -166,22 +166,30 @@
 		<form method="post" action="/entries/quick" class="form" data-quick-form>
 			<input type="hidden" name="year_id" value="{{.Year.ID}}">
 			<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
-			<p class="muted small">Je Zeile ein festes Gespann und die Stunden. Leere Zeilen werden ignoriert.</p>
+			<p class="muted small">Je Zeile ein festes Gespann und die Stunden{{if .Persons}}, auf Wunsch mit Person — dann werden deren Mannstunden über dieselben Stunden als verknüpfte Position mitgebucht{{end}}. Leere Zeilen werden ignoriert.</p>
 			<div class="tablewrap">
 				<table class="dtable">
-					<thead><tr><th>Datum</th><th>Gespann</th><th class="num">Stunden</th></tr></thead>
+					<thead><tr><th>Datum</th><th>Gespann</th><th class="num">Stunden</th>{{if .Persons}}<th>Person</th>{{end}}</tr></thead>
 					<tbody data-quick-rows>
 						{{range $i := seq 6}}
 						<tr>
 							<td><input class="input" type="date" name="q_date" value="{{$.Today}}"></td>
 							<td>
-								<select class="select" name="q_gespann">
+								<select class="select" name="q_gespann" aria-label="Gespann">
 									<option value="">—</option>
 									{{range $.Gespanne}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
 								</select>
 							</td>
 							<td><input class="input" name="q_hours" inputmode="decimal" placeholder="0">
 							<input type="hidden" name="q_key" value="" data-quick-key></td>
+							{{if $.Persons}}
+							<td>
+								<select class="select" name="q_person" aria-label="Person">
+									<option value="">— keine —</option>
+									{{range $.Persons}}<option value="{{.ID}}"{{if not .HourlyRate.IsPositive}} disabled{{end}}>{{.Name}} ({{money .HourlyRate}}/h){{if not .HourlyRate.IsPositive}} — kein Satz{{end}}</option>{{end}}
+								</select>
+							</td>
+							{{end}}
 						</tr>
 						{{end}}
 					</tbody>

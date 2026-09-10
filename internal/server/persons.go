@@ -26,7 +26,8 @@ import (
 // looks for them.
 
 const (
-	unitMannstunde = "Mannstunde"
+	// Shared with the store, which books the same unit for a series' companion.
+	unitMannstunde = models.UnitMannstunde
 	unitAnfahrt    = "Anfahrt"
 	unitKm         = "km"
 )

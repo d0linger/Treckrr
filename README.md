@@ -55,7 +55,7 @@ neighbour that satisfies § 11 UStG.
 
 ## ✨ Features
 
-- **Bookings** priced from a shared rate basis — tractor PS × load level, or per unit/area — with implements, rigs ("Gespanne"), receipt photos, recurring series, quick capture, copy-from-existing, a duplicate warning, and storno that voids without deleting.
+- **Bookings** priced from a shared rate basis — tractor PS × load level, or per unit/area — with implements, rigs ("Gespanne"), receipt photos, recurring series, quick capture, copy-from-existing, a duplicate warning, and storno that voids without deleting. A helper from the Personenstamm can ride along with a rig booking — on the form, in the quick-entry table and in a series — as linked man-hours priced from their own rate.
 - **Rate bases** per year: tractors, load levels, implements and rigs. Compare two bases side by side, and lock one so its prices stop moving.
 - **Recalculation**: after a rate change, preview every affected booking old → new and apply it in one step. Bookings on an already-issued invoice are left alone.
 - **Billing years** per neighbour with ledger positions, partial payments (7-day undo), carry-forward between years, carrying members over from last year, plus archiving and GDPR anonymisation.

@@ -17,6 +17,10 @@ import (
 // was canceled between the handler's check and the insert.
 var ErrSourceEntryVoided = errors.New("source entry is voided")
 
+// ErrSourceCompanionUnavailable reports that the selected helper booking was
+// canceled, removed, or changed before the recurring template could be saved.
+var ErrSourceCompanionUnavailable = errors.New("source companion is unavailable")
+
 func (s *Store) CreateRecurring(ctx context.Context, sourceEntryID, neighborID int64, t models.RecurTemplate, intervalKind string, nextRun time.Time) error {
 	blob, err := json.Marshal(t)
 	if err != nil {
@@ -27,16 +31,47 @@ func (s *Store) CreateRecurring(ctx context.Context, sourceEntryID, neighborID i
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	// Re-checked INSIDE the transaction, with the entry row share-locked so a
-	// concurrent storno waits: the handler's pre-check reads outside any
-	// transaction and only serves the friendly flash message.
-	var voided bool
-	if err := tx.QueryRowContext(ctx,
-		`SELECT voided FROM entries WHERE id=$1 FOR SHARE`, sourceEntryID).Scan(&voided); err != nil {
+	var companionPersonID int64
+	if t.Companion != nil {
+		companionPersonID = t.Companion.PersonID
+	}
+	// Recheck and lock the source and selected companion through insertion.
+	// Ascending IDs match DeleteEntryPair, avoiding a source/companion deadlock.
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, voided FROM entries
+		 WHERE id=$1 OR (linked_entry_id=$1 AND person_id=$2 AND unit_price > 0)
+		 ORDER BY id FOR SHARE`, sourceEntryID, companionPersonID)
+	if err != nil {
 		return err
 	}
-	if voided {
+	defer func() { _ = rows.Close() }()
+	var sourceFound, sourceVoided, companionAvailable bool
+	for rows.Next() {
+		var id int64
+		var voided bool
+		if err := rows.Scan(&id, &voided); err != nil {
+			return err
+		}
+		if id == sourceEntryID {
+			sourceFound, sourceVoided = true, voided
+		} else if !voided {
+			companionAvailable = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if !sourceFound {
+		return ErrNotFound
+	}
+	if sourceVoided {
 		return ErrSourceEntryVoided
+	}
+	if t.Companion != nil && !companionAvailable {
+		return ErrSourceCompanionUnavailable
 	}
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO recurring_entries (neighbor_id, template, interval_kind, next_run)
@@ -138,7 +173,7 @@ func (s *Store) neighborYearForDate(ctx context.Context, neighborID int64, d tim
 // normal booking and advances the rule. It is idempotent: each occurrence carries
 // idempotency_key "recur:<rule>:<date>", so a restart or overlapping tick never
 // double-books. A per-rule cap bounds catch-up after downtime. Returns the number
-// of bookings actually created.
+// of occurrences with a new booking, including a restored companion alone.
 func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()) // local midnight, not UTC
@@ -177,6 +212,12 @@ func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 	for _, d := range list {
 		next := d.next
 		var lastRun *time.Time
+		// Resolved once per rule, not per occurrence: a catch-up run materializes
+		// up to 60 of them and the answer is the same for all.
+		comp, personID, lerr := s.liveRefs(ctx, d.tmpl, d.id)
+		if lerr != nil {
+			return created, lerr
+		}
 		for i := 0; i < 60 && !next.After(today); i++ { // cap catch-up per rule per tick
 			yid, ok, yerr := s.neighborYearForDate(ctx, d.neighborID, next)
 			if yerr != nil {
@@ -190,15 +231,24 @@ func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 				break
 			}
 			e := entryFromTemplate(d.tmpl)
+			e.PersonID = personID // nil once the helper record is gone
 			e.NeighborID = d.neighborID
 			e.BillingYearID = yid
 			e.Date = next
 			e.IdempotencyKey = fmt.Sprintf("recur:%d:%s", d.id, next.Format("2006-01-02"))
-			id, cerr := s.CreateEntry(ctx, e, d.tmpl.MachineIDs)
+			var id, companionID int64
+			var cerr error
+			if companion := companionEntry(comp, e); companion != nil {
+				// Counting stays per OCCURRENCE, not per row: the companion is the
+				// same piece of work as the machine booking it is linked to.
+				id, companionID, cerr = s.CreateEntryPair(ctx, e, d.tmpl.MachineIDs, companion)
+			} else {
+				id, cerr = s.CreateEntry(ctx, e, d.tmpl.MachineIDs)
+			}
 			if cerr != nil {
 				return created, cerr
 			}
-			if id != 0 {
+			if id != 0 || companionID != 0 {
 				created++
 			}
 			ran := next
@@ -240,7 +290,91 @@ func entryFromTemplate(t models.RecurTemplate) *models.Entry {
 		TractorLabel:  t.TractorLabel,
 		LoadLabel:     t.LoadLabel,
 		MachineLabels: t.MachineLabels,
+		// A series made FROM a Mannstunden booking keeps its attribution: the
+		// template carried the person id but the rebuilt entry dropped it, so
+		// every occurrence booked the helper's hours as nobody's.
+		PersonID: t.PersonID,
 	}
+}
+
+// companionEntry builds the helper's Mannstunden booking that accompanies a
+// generated machine booking — the frozen counterpart of the person selected on
+// the booking form. nil when the series carries no helper, when the frozen rate
+// cannot price anything, or when the occurrence is not an hour booking: a
+// quantity booking (ha, Ballen, …) carries no hours the helper's time could be
+// derived from, the same rule handleEntryCreate applies.
+func companionEntry(c *models.RecurCompanion, e *models.Entry) *models.Entry {
+	if c == nil || !e.Hours.IsPositive() || !c.Rate.IsPositive() || (e.Unit != "" && e.Unit != "h") {
+		return nil
+	}
+	personID := c.PersonID
+	return &models.Entry{
+		NeighborID: e.NeighborID, BillingYearID: e.BillingYearID, Date: e.Date,
+		TaskLabel: "Mannstunden " + c.Name,
+		Unit:      models.UnitMannstunde,
+		Quantity:  e.Hours, UnitPrice: c.Rate,
+		Cost:     e.Hours.Mul(c.Rate).Round(2),
+		PersonID: &personID,
+		// Derived from the occurrence's own key, so a re-run no-ops on both
+		// halves exactly as it does for a replayed offline pair.
+		IdempotencyKey: models.CompanionKey(e.IdempotencyKey),
+	}
+}
+
+// liveRefs resolves BOTH helper references a template can carry — the
+// companion's person and the booking's own attribution — against the
+// Personenstamm, and drops whichever no longer exists.
+//
+// It has to: a helper can be deleted once no booking references them any more,
+// and a rule outlives the booking it was made from (recurring_entries has no FK
+// to entries). entries.person_id is a real foreign key, so inserting a stale id
+// fails the occurrence AND, since RunDueRecurring returns on that error, every
+// rule behind it — every tick, until someone notices. The booking is worth more
+// than the attribution, so the occurrence is booked without it and the loss is
+// logged.
+//
+// Resolved once per rule, before the occurrence loop. A helper deleted inside
+// the remaining window still fails that one occurrence; the next tick sees the
+// record gone and books it, so the failure heals itself rather than sticking.
+func (s *Store) liveRefs(ctx context.Context, t models.RecurTemplate, ruleID int64) (*models.RecurCompanion, *int64, error) {
+	ids := make([]int64, 0, 2)
+	if t.Companion != nil {
+		ids = append(ids, t.Companion.PersonID)
+	}
+	if t.PersonID != nil {
+		ids = append(ids, *t.PersonID)
+	}
+	if len(ids) == 0 {
+		return nil, nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM persons WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	live := make(map[int64]bool, len(ids))
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, nil, err
+		}
+		live[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	comp, person := t.Companion, t.PersonID
+	if comp != nil && !live[comp.PersonID] {
+		slog.Warn("recurring companion skipped: helper record is gone",
+			"rule", ruleID, "person", comp.PersonID)
+		comp = nil
+	}
+	if person != nil && !live[*person] {
+		slog.Warn("recurring booking loses its helper attribution: record is gone",
+			"rule", ruleID, "person", *person)
+		person = nil
+	}
+	return comp, person, nil
 }
 
 // ---- Serie bearbeiten und sofort ausführen (Ausbaukarte 68) ----------------
@@ -270,6 +404,8 @@ func (s *Store) UpdateRecurring(ctx context.Context, id int64, intervalKind stri
 // It reuses the scheduled run's idempotency key ("recur:<rule>:<date>"), so
 // clicking twice on the same day books once, and today's scheduled run later
 // finds the occurrence already there.
+// The returned ID identifies a newly created entry, including a companion
+// restored on its own; zero means neither half was created.
 //
 // Returns (0, false, nil) when the neighbor has no open billing year for
 // today — the same condition the scheduled run waits on, reported to the
@@ -308,7 +444,21 @@ func (s *Store) RunRecurringNow(ctx context.Context, id int64) (int64, bool, err
 	e.BillingYearID = yid
 	e.Date = today
 	e.IdempotencyKey = fmt.Sprintf("recur:%d:%s", id, today.Format("2006-01-02"))
-	entryID, err := s.CreateEntry(ctx, e, tmpl.MachineIDs)
+	comp, personID, err := s.liveRefs(ctx, tmpl, id)
+	if err != nil {
+		return 0, false, err
+	}
+	e.PersonID = personID // nil once the helper record is gone
+	var entryID int64
+	if companion := companionEntry(comp, e); companion != nil {
+		var companionID int64
+		entryID, companionID, err = s.CreateEntryPair(ctx, e, tmpl.MachineIDs, companion)
+		if entryID == 0 {
+			entryID = companionID
+		}
+	} else {
+		entryID, err = s.CreateEntry(ctx, e, tmpl.MachineIDs)
+	}
 	if err != nil {
 		return 0, false, err
 	}

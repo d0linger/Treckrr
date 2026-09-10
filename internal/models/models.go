@@ -2,6 +2,8 @@
 package models
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"time"
 
@@ -54,6 +56,50 @@ type Session struct {
 	Current   bool // set at render time for the requesting session
 }
 
+// UnitMannstunde is the unit of a helper's hours. It lives here because both
+// the handlers and the store create such bookings — the recurring runner books
+// the companion of a series without a request in sight.
+const UnitMannstunde = "Mannstunde"
+
+// maxIdempotencyKeyLen mirrors the handlers' length validation for a submitted
+// idempotency key, so a derived key can never exceed what the same validation
+// would have accepted.
+const maxIdempotencyKeyLen = 100
+
+// CompanionKey derives the companion booking's idempotency key from the machine
+// booking's key ("" stays "" — online submits carry no key). Deterministic, so a
+// replayed pair resolves to the same two keys.
+//
+// A base that would not fit the column with the suffix is HASHED rather than
+// truncated: truncation is not injective, and the pair it collapses is exactly
+// the dangerous one — CompanionKey(x) == CompanionKey(x+"-p") at the limit, so
+// the companion's insert would conflict with the machine row inserted moments
+// earlier in the same transaction and the row would commit half-booked. Keys
+// the client actually sends are 36-character UUIDs, so the suffix path (and
+// with it every key already sitting in an offline queue) is unchanged.
+func CompanionKey(base string) string {
+	if base == "" {
+		return ""
+	}
+	if len(base) > maxIdempotencyKeyLen-2 {
+		sum := sha256.Sum256([]byte(base))
+		return "p:" + hex.EncodeToString(sum[:])
+	}
+	return base + "-p"
+}
+
+// RecurCompanion is the helper carried by a series alongside its machine
+// booking — the frozen counterpart of the person picked on the booking form.
+// The rate is frozen like every other rate in the template (a series repeats
+// the booking it was made from, not today's master data); the person id is
+// re-checked at run time, since a helper record can be removed once the
+// booking that referenced it is gone.
+type RecurCompanion struct {
+	PersonID int64           `json:"person_id"`
+	Name     string          `json:"name"`
+	Rate     decimal.Decimal `json:"rate"`
+}
+
 // RecurTemplate is the booking blueprint a recurring rule stores (JSON). It mirrors
 // the fields CreateEntry needs; Cost is stored for display and recomputed on create.
 type RecurTemplate struct {
@@ -72,6 +118,13 @@ type RecurTemplate struct {
 	MachineLabels string          `json:"machine_labels"`
 	TaskLabel     string          `json:"task_label"`
 	Note          string          `json:"note"`
+	// PersonID attributes the booking ITSELF to a helper — set when the series
+	// was made from a Mannstunden booking. Dropped before this existed, so every
+	// occurrence of such a series lost the attribution the source booking had.
+	PersonID *int64 `json:"person_id,omitempty"`
+	// Companion is the helper booked ALONGSIDE this (machine) booking, mirroring
+	// the person selected on the booking form. nil for a series without one.
+	Companion *RecurCompanion `json:"companion,omitempty"`
 }
 
 // Summary renders a one-line human description of the recurring booking.
@@ -86,7 +139,11 @@ func (t RecurTemplate) Summary() string {
 	if t.Unit != "" && t.Unit != "h" {
 		return label + " · " + t.Quantity.String() + " " + t.Unit
 	}
-	return label + " · " + t.Hours.String() + " h"
+	out := label + " · " + t.Hours.String() + " h"
+	if t.Companion != nil {
+		out += " · mit " + t.Companion.Name
+	}
+	return out
 }
 
 // RecurringEntry is a stored recurring-booking rule.

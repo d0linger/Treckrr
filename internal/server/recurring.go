@@ -69,10 +69,59 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 		GespannID: entry.GespannID, TractorID: entry.TractorID, LoadLevelID: entry.LoadLevelID, MachineIDs: machineIDs,
 		TractorLabel: entry.TractorLabel, LoadLabel: entry.LoadLabel, MachineLabels: entry.MachineLabels,
 		TaskLabel: entry.TaskLabel, Note: entry.Note,
+		// A series made from a Mannstunden booking keeps booking it for that
+		// helper — the attribution is part of the booking, not decoration.
+		PersonID: entry.PersonID,
+	}
+	// A booking made together with a helper repeats WITH the helper unless the
+	// operator says otherwise on the form: the pair is the work as it happens
+	// every week, and a series that quietly drops half of it would understate
+	// every occurrence. The rate is frozen from the companion actually booked,
+	// so a one-off rate on the source booking is what the series repeats.
+	if r.FormValue("with_person") == "1" && (entry.Unit == "" || entry.Unit == "h") {
+		partnerID, perr := s.store.LinkedPartnerID(r.Context(), id)
+		if perr != nil {
+			s.serverError(w, r.URL.Path, perr)
+			return
+		}
+		if partnerID != 0 {
+			partner, gerr := s.store.GetEntry(r.Context(), partnerID)
+			if gerr != nil && !errors.Is(gerr, store.ErrNotFound) {
+				// Reading the partner failed for a real reason. Creating the rule
+				// anyway would freeze a helper-less template the operator cannot
+				// correct afterwards (UpdateRecurring keeps templates frozen), so
+				// this fails loudly instead of quietly building the wrong series.
+				s.serverError(w, r.URL.Path, gerr)
+				return
+			}
+			// A voided companion is a statement that those hours should not have
+			// been booked — the same reason a voided SOURCE cannot start a series.
+			if gerr == nil && partner.PersonID != nil && partner.UnitPrice.IsPositive() && !partner.Voided {
+				person, err := s.store.GetPerson(r.Context(), *partner.PersonID)
+				if errors.Is(err, store.ErrNotFound) {
+					s.setFlash(w, r, "error", "Die verknüpfte Person ist nicht mehr vorhanden. Bitte die Buchung neu laden.")
+					redirect(w, r, "/recurring")
+					return
+				} else if err != nil {
+					s.serverError(w, r.URL.Path, err)
+					return
+				}
+				tmpl.Companion = &models.RecurCompanion{
+					PersonID: *partner.PersonID,
+					Name:     person.Name,
+					Rate:     partner.UnitPrice,
+				}
+			}
+		}
 	}
 	if err := s.store.CreateRecurring(r.Context(), id, entry.NeighborID, tmpl, kind, start); err != nil {
 		if errors.Is(err, store.ErrSourceEntryVoided) {
 			s.setFlash(w, r, "error", "Aus einer stornierten Buchung kann keine Serie eingerichtet werden.")
+			redirect(w, r, "/recurring")
+			return
+		}
+		if errors.Is(err, store.ErrSourceCompanionUnavailable) {
+			s.setFlash(w, r, "error", "Die verknüpften Mannstunden wurden geändert, storniert oder gelöscht. Bitte die Buchung neu laden.")
 			redirect(w, r, "/recurring")
 			return
 		}
