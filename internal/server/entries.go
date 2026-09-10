@@ -447,8 +447,8 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	neighborID := formInt64(r, "neighbor_id")
 	yearID := formInt64(r, "year_id")
 	// An offline replay (offline.js) sets this header and wants a machine-readable
-	// status, not a redirect: 2xx = stored, 422 = permanent business rejection so
-	// the client drops it from the queue (and 401 from auth = retry after login).
+	// status, not a redirect: 2xx = stored, 422 = needs operator attention and
+	// stays recoverable in the queue (and 401 from auth = retry after login).
 	// This lets the queue distinguish "won't self-heal" from "retry later" instead
 	// of treating every redirect as success and silently discarding the booking.
 	replay := r.Header.Get("X-Offline-Replay") == "1"
@@ -490,7 +490,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if !errors.Is(err, store.ErrNotFound) {
 		// A real store failure (not "no invoice") is transient — return 500 so an
-		// offline replay retries rather than dropping the booking as a permanent 422.
+		// offline replay retries automatically instead of marking it for review.
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
@@ -1595,7 +1595,7 @@ rowLoop:
 	// 204 only for a fully-clean batch: invalid rows answer 422 with the honest
 	// count, so the client surfaces the message instead of silently dropping a
 	// day of captured work. The saved rows carry idempotency keys, so nothing
-	// duplicates if the operator re-captures.
+	// duplicates if the operator retries the retained batch with its original keys.
 	if replay {
 		switch {
 		case created == 0 && paired == 0 && invalid == 0:

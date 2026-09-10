@@ -275,6 +275,8 @@ func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 // insert no-ops, its id is looked up by key so the companion still links to the
 // right row, and the companion's own key makes its insert a no-op too. Returns
 // (0, 0, nil) when both halves were already recorded.
+// If only the machine was deleted, its FK was set to NULL on the surviving
+// companion; restoring the machine also restores that link, not its pricing.
 func (s *Store) CreateEntryPair(ctx context.Context, e *models.Entry, machineIDs []int64, companion *models.Entry) (mainID, companionID int64, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -299,6 +301,18 @@ func (s *Store) CreateEntryPair(ctx context.Context, e *models.Entry, machineIDs
 	companionID, err = insertEntryTx(ctx, tx, companion, nil)
 	if err != nil {
 		return 0, 0, err
+	}
+	if mainID != 0 && companionID == 0 && companion.IdempotencyKey != "" {
+		// Only repair alongside a newly restored machine, so an ordinary replay
+		// stays a no-op. Never steal a helper from an existing pair or change its
+		// captured values. It still counts as an existing row (companionID == 0).
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE entries SET linked_entry_id=$1
+			WHERE idempotency_key=$2 AND linked_entry_id IS NULL
+			  AND neighbor_id=$3 AND billing_year_id=$4 AND unit='Mannstunde'`,
+			mainID, companion.IdempotencyKey, e.NeighborID, e.BillingYearID); err != nil {
+			return 0, 0, err
+		}
 	}
 	return mainID, companionID, tx.Commit()
 }

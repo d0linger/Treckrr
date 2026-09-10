@@ -48,6 +48,26 @@
 			});
 		});
 	}
+	function rememberRejection(id, status, message) {
+		return open().then(function (db) {
+			return new Promise(function (res, rej) {
+				var t = db.transaction(STORE, "readwrite");
+				var s = t.objectStore(STORE), r = s.get(id);
+				var retained = false;
+				r.onsuccess = function () {
+					// The user may have discarded it while the request was in flight.
+					// Update only the surviving item; never resurrect a stale snapshot.
+					if (!r.result) return;
+					var item = r.result;
+					item.rejection = { status: status, message: message };
+					s.put(item);
+					retained = true;
+				};
+				t.oncomplete = function () { db.close(); res(retained); };
+				t.onabort = t.onerror = function () { db.close(); rej(t.error); };
+			});
+		});
+	}
 
 	function uuid() { return crypto.randomUUID ? crypto.randomUUID() : (Date.now() + "-" + Math.random().toString(16).slice(2)); }
 	function csrf() { var i = document.querySelector('input[name="csrf_token"]'); return i ? i.value : ""; }
@@ -98,7 +118,7 @@
 		el.hidden = !n;
 	}
 	function refreshBadge() {
-		all().then(function (a) { badge(a.filter(ownedByCurrentUser).length); });
+		return all().then(function (a) { badge(a.filter(ownedByCurrentUser).length); });
 	}
 
 	function toast(msg) {
@@ -110,13 +130,13 @@
 		setTimeout(function () { t.remove(); }, 4000);
 	}
 
-	var flushing = false;
-	function flush() {
-		if (flushing || !navigator.onLine) return;
-		flushing = true;
+	var flushing = null;
+	function flush(retryRejected) {
+		if (flushing) return flushing;
+		if (!navigator.onLine) return Promise.resolve();
 		// Returned so a caller can wait for the flush — the queue panel redraws
 		// only once the sending is actually done.
-		return all().then(function (all_items) {
+		flushing = all().then(function (all_items) {
 			var items = all_items.filter(ownedByCurrentUser);
 			var orphans = all_items.length - items.length;
 			if (orphans > 0 && window.console && console.warn) {
@@ -127,6 +147,9 @@
 			var token = csrf();
 			return items.reduce(function (p, item) {
 				return p.then(function () {
+					// Validation failures need operator attention, not another automatic
+					// attempt on every navigation. "Jetzt senden" explicitly retries them.
+					if (item.rejection && !retryRejected) return;
 					var body = new URLSearchParams();
 					if (item.data && item.data.__pairs) {
 						item.data.__pairs.forEach(function (p) { body.append(p[0], p[1]); });
@@ -137,14 +160,18 @@
 					return fetch(item.path || "/entries", {
 						method: "POST", credentials: "same-origin", redirect: "manual",
 						// The server answers a replay with an explicit status (not a redirect):
-						// 2xx = stored, 422/400 = permanent rejection, 401 = login needed.
+						// 2xx = stored, 422/400 = needs attention, 401 = login needed.
 						headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Offline-Replay": "1" },
 						body: body.toString()
 					}).then(function (r) {
 						if (r.status >= 200 && r.status < 300) return del(item.id); // stored (or already recorded)
-						if (r.status === 422 || r.status === 400) {                 // won't self-heal (year closed/locked, bad data)
-							return del(item.id).then(function () {
-								toast("Eine offline erfasste Buchung wurde abgelehnt (z. B. Jahr gesperrt) und verworfen.");
+						if (r.status === 422 || r.status === 400) {
+							// A quick batch may already be partially saved. Keep ALL original
+							// fields and keys: retrying them deduplicates the accepted rows.
+							return r.text().catch(function () { return ""; }).then(function (message) {
+								return rememberRejection(item.id, r.status, message.trim().slice(0, 1000));
+							}).then(function (retained) {
+								if (retained) toast("Offline-Buchung nicht vollständig gespeichert. Die Daten bleiben in der Warteschlange — bitte prüfen.");
 							});
 						}
 						// 401 (session expired), 403 (stale CSRF), 5xx, an opaqueredirect
@@ -152,9 +179,12 @@
 					}).catch(function () { /* network died mid-flush: keep for next time */ });
 				});
 			}, Promise.resolve());
-		}).then(function () { refreshBadge(); }).catch(function () {}).then(function () {
-			flushing = false;
+		}).then(function () { return refreshBadge(); }).then(function () {
+			if (panel && !panel.hidden) return renderQueue();
+		}).catch(function () {}).then(function () {
+			flushing = null;
 		});
+		return flushing;
 	}
 
 	// Hook the booking form so an offline submit is queued instead of failing.
@@ -260,6 +290,43 @@
 		}
 		meta.appendChild(title);
 		meta.appendChild(sub);
+		if (item.rejection) {
+			var error = document.createElement("p");
+			error.className = "small";
+			error.textContent = "Bitte prüfen (HTTP " + item.rejection.status + "): " +
+				(item.rejection.message || "Die Buchung wurde abgelehnt.") +
+				" Die erfassten Daten bleiben erhalten. Nach der Korrektur mit „Jetzt senden“ erneut versuchen. " +
+				"Bereits gespeicherte Zeilen werden dabei nicht doppelt gebucht.";
+			meta.appendChild(error);
+		}
+		var details = document.createElement("details");
+		var summary = document.createElement("summary");
+		summary.textContent = "Erfasste Daten anzeigen";
+		var values = document.createElement("pre");
+		values.className = "offlineq__data small";
+		var fields = d.__pairs || Object.keys(d).map(function (key) { return [key, d[key]]; });
+		values.textContent = fields.map(function (p) { return p[0] + ": " + p[1]; }).join("\n");
+		details.appendChild(summary);
+		details.appendChild(values);
+		meta.appendChild(details);
+		var actions = document.createElement("div");
+		actions.className = "btnrow";
+		var backup = document.createElement("button");
+		backup.type = "button";
+		backup.className = "btn btn--ghost btn--sm";
+		backup.textContent = "Daten sichern";
+		backup.addEventListener("click", function () {
+			// An explicit local backup also preserves work if its helper no longer
+			// exists. Exporting never removes the queue item or changes replay keys.
+			var url = URL.createObjectURL(new Blob([JSON.stringify(item, null, 2)], { type: "application/json" }));
+			var a = document.createElement("a");
+			a.href = url;
+			a.download = "treckrr-offline-" + String(item.id).replace(/[^a-zA-Z0-9-]/g, "_") + ".json";
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+		});
 		var drop = document.createElement("button");
 		drop.type = "button";
 		drop.className = "btn btn--danger btn--sm";
@@ -269,7 +336,9 @@
 			del(item.id).then(function () { renderQueue(); refreshBadge(); });
 		});
 		wrap.appendChild(meta);
-		wrap.appendChild(drop);
+		actions.appendChild(backup);
+		actions.appendChild(drop);
+		wrap.appendChild(actions);
 		return wrap;
 	}
 
@@ -311,7 +380,7 @@
 		if (flushBtn) {
 			flushBtn.addEventListener("click", function () {
 				if (!navigator.onLine) { toast("Keine Verbindung — die Buchungen bleiben gespeichert."); return; }
-				Promise.resolve(flush()).then(function () { renderQueue(); });
+				flush(true).then(function () { renderQueue(); });
 			});
 		}
 		// Click on the backdrop (not the sheet) and Escape both close it.

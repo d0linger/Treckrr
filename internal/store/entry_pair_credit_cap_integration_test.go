@@ -120,6 +120,58 @@ func TestCreateEntryPairIntegration(t *testing.T) {
 		t.Fatalf("partner of companion = %d (%v), want %d", pid, err, mainID)
 	}
 
+	// A machine-only deletion nulls the surviving helper's FK. Replaying must
+	// reconnect that SAME helper, without repricing it from today's master data.
+	if err := st.DeleteEntry(ctx, mainID); err != nil {
+		t.Fatalf("delete machine half: %v", err)
+	}
+	if partner, err := st.LinkedPartnerID(ctx, compID); err != nil || partner != 0 {
+		t.Fatalf("surviving helper partner = %d (%v), want 0", partner, err)
+	}
+	main3, comp3 := mkPair()
+	comp3.UnitPrice, comp3.Cost = dec("99"), dec("297")
+	m3, c3, err := st.CreateEntryPair(ctx, main3, nil, comp3)
+	if err != nil || m3 == 0 || c3 != 0 {
+		t.Fatalf("restore machine: main=%d companion=%d err=%v", m3, c3, err)
+	}
+	mainID = m3
+	if partner, err := st.LinkedPartnerID(ctx, mainID); err != nil || partner != compID {
+		t.Fatalf("restored machine partner = %d (%v), want %d", partner, err, compID)
+	}
+	if partner, err := st.LinkedPartnerID(ctx, compID); err != nil || partner != mainID {
+		t.Fatalf("surviving helper partner = %d (%v), want %d", partner, err, mainID)
+	}
+	var quantity, price, savedCost string
+	var personID int64
+	if err := pool.QueryRowContext(ctx,
+		`SELECT quantity::text, unit_price::text, cost::text, person_id FROM entries WHERE id=$1`,
+		compID).Scan(&quantity, &price, &savedCost, &personID); err != nil {
+		t.Fatalf("read surviving helper: %v", err)
+	}
+	if !dec(quantity).Equal(dec("3")) || !dec(price).Equal(dec("28.50")) ||
+		!dec(savedCost).Equal(dec("85.50")) || personID != pid {
+		t.Fatalf("relink changed helper: quantity=%s price=%s cost=%s person=%d", quantity, price, savedCost, personID)
+	}
+	main4, comp4 := mkPair()
+	if m, c, err := st.CreateEntryPair(ctx, main4, nil, comp4); err != nil || m != 0 || c != 0 {
+		t.Fatalf("replay restored pair: main=%d companion=%d err=%v", m, c, err)
+	}
+
+	// The converse still works: recreate only the helper, linked to the existing
+	// machine. The subsequent sync/delete checks exercise the recovered pair.
+	if err := st.DeleteEntry(ctx, compID); err != nil {
+		t.Fatalf("delete helper half: %v", err)
+	}
+	main5, comp5 := mkPair()
+	m5, c5, err := st.CreateEntryPair(ctx, main5, nil, comp5)
+	if err != nil || m5 != 0 || c5 == 0 {
+		t.Fatalf("restore helper: main=%d companion=%d err=%v", m5, c5, err)
+	}
+	compID = c5
+	if partner, err := st.LinkedPartnerID(ctx, compID); err != nil || partner != mainID {
+		t.Fatalf("restored helper partner = %d (%v), want %d", partner, err, mainID)
+	}
+
 	// Hour sync: 3 h -> 5 h on the companion re-prices at ITS rate (5 x 28.50).
 	cost, err := st.SyncPairHours(ctx, compID, dec("5"))
 	if err != nil {

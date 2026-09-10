@@ -2121,10 +2121,11 @@ span.paychip { cursor: default; }
 .offlineq__sheet { width: min(46rem, 100%); max-height: 85vh; overflow-y: auto;
 	border-radius: 16px 16px 0 0; margin: 0; }
 .offlineq__head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
-.offlineq__row { display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+.offlineq__row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem;
 	padding: .5rem 0; border-top: 1px solid var(--border); }
 .offlineq__row:first-child { border-top: 0; }
-.offlineq__meta { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.offlineq__meta { display: flex; flex: 1 1 16rem; flex-direction: column; gap: .1rem; min-width: 0; overflow-wrap: anywhere; }
+.offlineq__data { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; }
 @media (min-width: 48rem) {
 	.offlineq { align-items: center; padding: 1rem; }
 	.offlineq__sheet { border-radius: 16px; }
