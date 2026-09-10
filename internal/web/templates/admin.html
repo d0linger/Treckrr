@@ -11,10 +11,14 @@
 				<span class="list__title">{{.Username}}
 					<span class="chip {{if .IsAdmin}}chip--accent{{end}}">{{.RoleLabel}}</span>
 					{{if .TotpEnabled}}<span class="chip">2FA</span>{{end}}
+					{{if .Disabled}}<span class="chip">Deaktiviert</span>{{end}}
 				</span>
 				<span class="list__sub muted">seit {{date .CreatedAt}}</span>
 			</summary>
 
+			{{if .Disabled}}
+			<p class="muted small">Zugang gesperrt. Die Benutzeridentität bleibt für die unveränderte Historie erhalten.</p>
+			{{else}}
 			<form method="post" action="/admin/users/{{.ID}}/update" class="form">
 				<label class="field"><span>Benutzername</span>
 					<input class="input" name="username" value="{{.Username}}" autocomplete="off" required></label>
@@ -52,13 +56,14 @@
 						<button class="btn btn--ghost btn--sm" type="submit">2FA zurücksetzen</button>
 					</form>
 					{{end}}
-					<form method="post" action="/admin/users/{{.ID}}/delete" data-confirm-danger data-confirm="Benutzer {{.Username}} löschen?">
-						<button class="btn btn--danger btn--sm" type="submit">Benutzer löschen</button>
+					<form method="post" action="/admin/users/{{.ID}}/delete" data-confirm-danger data-confirm="Benutzer {{.Username}} deaktivieren? Alle Zugangsdaten und Sitzungen werden widerrufen; die Historie bleibt erhalten.">
+						<button class="btn btn--danger btn--sm" type="submit">Benutzer deaktivieren</button>
 					</form>
 				</div>
 			</div>
 			{{else}}
-			<p class="muted small">Dein eigenes Konto kannst du hier nicht löschen. Passwort, 2FA &amp; Passkeys verwaltest du unter <a class="link" href="/profile">Einstellungen</a>.</p>
+			<p class="muted small">Dein eigenes Konto kannst du hier nicht deaktivieren. Passwort, 2FA &amp; Passkeys verwaltest du unter <a class="link" href="/profile">Einstellungen</a>.</p>
+			{{end}}
 			{{end}}
 		</details>
 		{{end}}

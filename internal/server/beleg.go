@@ -1021,7 +1021,6 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
 		return
 	}
-	s.audit(r, "invoice_issue", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Rechnung "+iv.Number)
 	s.setFlash(w, r, "success", "Rechnung "+iv.Number+" ausgestellt."+s.kuIssueNote(r, company, iv.IssuedOn.Year()))
 	redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID))
 }
@@ -1059,11 +1058,6 @@ func (s *Server) handleInvoiceStorno(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.setFlash(w, r, "error", "Storno fehlgeschlagen.")
 	default:
-		detail := s.neighborName(r, neighborID) + " · Storno " + sv.Number
-		if reason != "" {
-			detail += " · " + reason
-		}
-		s.audit(r, "invoice_storno", "neighbor", neighborID, detail)
 		s.setFlash(w, r, "success", "Rechnung storniert ("+sv.Number+"). Die Buchungen sind wieder bearbeitbar.")
 	}
 	redirect(w, r, back)
@@ -1104,7 +1098,6 @@ func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request)
 	case err != nil:
 		s.setFlash(w, r, "error", "Gutschrift fehlgeschlagen – bitte einen Betrag größer 0 angeben.")
 	default:
-		s.audit(r, "invoice_gutschrift", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Gutschrift "+gv.Number)
 		s.setFlash(w, r, "success", "Gutschrift "+gv.Number+" erstellt.")
 	}
 	redirect(w, r, back)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,21 @@ func insertInvoiceDoc(ctx context.Context, tx *sql.Tx, yearID, neighborID int64,
 		c.Net, c.VATRate, c.VATAmount, c.Gross, c.ShowVAT, c.TaxMode, c.TaxNote,
 		nullDate(c.ServiceFrom), nullDate(c.ServiceTo), issuerJSON, recipientJSON, linesJSON, c.Hash, issuedOn,
 		nullSkonto(c.SkontoPct), nullDate(c.SkontoUntil)))
+}
+
+func addInvoiceAudit(ctx context.Context, tx *sql.Tx, action string, iv models.Invoice) error {
+	gross := decimal.Zero
+	if iv.Content != nil {
+		gross = iv.Content.Gross
+	}
+	return addAuditTx(
+		ctx,
+		tx,
+		action,
+		"invoice",
+		strconv.FormatInt(iv.ID, 10),
+		fmt.Sprintf("number=%q; kind=%s; gross=%s", iv.Number, iv.Kind, gross.StringFixed(2)),
+	)
 }
 
 // reverseContent mirrors an invoice's frozen substance into a Storno: the net,
@@ -75,8 +91,12 @@ func (s *Store) StornoInvoice(ctx context.Context, yearID, neighborID int64, rea
 		return models.Invoice{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, yearID); err != nil {
+	ok, err := lockAccountBoundary(ctx, tx, yearID, neighborID, true, true)
+	if err != nil {
 		return models.Invoice{}, err
+	}
+	if !ok {
+		return models.Invoice{}, ErrNotFound
 	}
 	orig, err := scanInvoice(tx.QueryRowContext(ctx,
 		`SELECT `+invoiceCols+` FROM invoices
@@ -107,6 +127,9 @@ func (s *Store) StornoInvoice(ctx context.Context, yearID, neighborID int64, rea
 		orig.ID); err != nil {
 		return models.Invoice{}, err
 	}
+	if err := addInvoiceAudit(ctx, tx, "invoice_storno", sv); err != nil {
+		return models.Invoice{}, err
+	}
 	return sv, tx.Commit()
 }
 
@@ -126,8 +149,12 @@ func (s *Store) GutschriftInvoice(ctx context.Context, yearID, neighborID int64,
 		return models.Invoice{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, yearID); err != nil {
+	ok, err := lockAccountBoundary(ctx, tx, yearID, neighborID, true, true)
+	if err != nil {
 		return models.Invoice{}, err
+	}
+	if !ok {
+		return models.Invoice{}, ErrNotFound
 	}
 	orig, err := scanInvoice(tx.QueryRowContext(ctx,
 		`SELECT `+invoiceCols+` FROM invoices
@@ -197,6 +224,9 @@ func (s *Store) GutschriftInvoice(ctx context.Context, yearID, neighborID int64,
 	}
 	gv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+suffix, "gutschrift", &orig.ID, time.Now(), credit)
 	if err != nil {
+		return models.Invoice{}, err
+	}
+	if err := addInvoiceAudit(ctx, tx, "invoice_gutschrift", gv); err != nil {
 		return models.Invoice{}, err
 	}
 	return gv, tx.Commit()

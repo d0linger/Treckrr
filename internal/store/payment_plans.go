@@ -19,12 +19,23 @@ import (
 
 // AddInstallment records one agreed installment.
 func (s *Store) AddInstallment(ctx context.Context, yearID, neighborID int64, amount decimal.Decimal, dueOn time.Time, note string) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if err := lockPersonalDataNeighbor(ctx, tx, neighborID); err != nil {
+		return 0, err
+	}
 	var id int64
-	err := s.db.QueryRowContext(ctx,
+	err = tx.QueryRowContext(ctx,
 		`INSERT INTO payment_plans (billing_year_id, neighbor_id, due_on, amount, note)
 		 VALUES ($1,$2,$3,$4,$5) RETURNING id`,
 		yearID, neighborID, dueOn, amount, note).Scan(&id)
-	return id, err
+	if err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
 }
 
 // DeleteInstallment removes one installment and returns the deleted row, so the

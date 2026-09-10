@@ -225,6 +225,9 @@ func (s *Store) ApplyRecalc(ctx context.Context, yearID int64, neighborID *int64
 		return 0, oldTotal, newTotal, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, yearID); err != nil {
+		return 0, oldTotal, newTotal, err
+	}
 
 	// Re-check the year status inside the transaction (locking the row) so a
 	// concurrent "complete year" cannot be raced past the handler's pre-check.
@@ -253,13 +256,21 @@ func (s *Store) ApplyRecalc(ctx context.Context, yearID int64, neighborID *int64
 	// recalcs cannot deadlock each other. Settle/carry DO touch billing_years —
 	// their FK inserts take KEY SHARE on the year row — which is why the year
 	// lock above is NO KEY UPDATE (see there), not FOR UPDATE.
-	lockQ := `SELECT 1 FROM billing_year_neighbors WHERE billing_year_id=$1 ORDER BY neighbor_id FOR UPDATE`
-	lockArgs := []any{yearID}
-	if neighborID != nil {
-		lockQ = `SELECT 1 FROM billing_year_neighbors WHERE billing_year_id=$1 AND neighbor_id=$2 FOR UPDATE`
-		lockArgs = append(lockArgs, *neighborID)
+	targetSet := map[int64]struct{}{}
+	for _, row := range rows {
+		targetSet[row.NeighborID] = struct{}{}
 	}
-	if _, e := tx.ExecContext(ctx, lockQ, lockArgs...); e != nil {
+	// A neighbor-scoped recalc participates in the account boundary even when
+	// its preview is empty. Otherwise it can race an invoice/settlement simply
+	// because that account currently has no priceable booking rows.
+	if neighborID != nil {
+		targetSet[*neighborID] = struct{}{}
+	}
+	accounts := make([]accountKey, 0, len(targetSet))
+	for id := range targetSet {
+		accounts = append(accounts, accountKey{yearID: yearID, neighborID: id})
+	}
+	if e := lockMutableAccounts(ctx, tx, accounts...); e != nil {
 		return 0, oldTotal, newTotal, e
 	}
 	// Same optimistic treatment the per-booking guard below uses, one level up.

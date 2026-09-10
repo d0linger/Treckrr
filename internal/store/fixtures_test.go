@@ -171,7 +171,30 @@ func purgeFixtures(t *testing.T, ctx context.Context, pool *sql.DB, f fixtures) 
 		exec(`DELETE FROM neighbors WHERE name = ANY($1)`, f.NeighborNames)
 	}
 	if f.UsernameLike != "" {
-		exec(`DELETE FROM users WHERE username LIKE $1`, f.UsernameLike)
+		// User offboarding is now deliberately logical so audit attribution remains
+		// intact. Test fixtures still need physical cleanup because their stable
+		// usernames must be reusable across runs. Remove only the matching test
+		// actors and their audit rows through the same transaction-local retention
+		// opt-in used by PurgeAuditLog; otherwise ON DELETE SET NULL would attempt a
+		// forbidden UPDATE of the append-only audit table.
+		tx, err := pool.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatalf("purge user fixtures: begin: %v", err)
+		}
+		defer tx.Rollback() //nolint:errcheck // no-op after Commit
+		if _, err := tx.ExecContext(ctx, `SET LOCAL treckrr.allow_audit_prune = 'on'`); err != nil {
+			t.Fatalf("purge user fixtures: audit opt-in: %v", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM audit_log
+			WHERE user_id IN (SELECT id FROM users WHERE username LIKE $1)`, f.UsernameLike); err != nil {
+			t.Fatalf("purge user fixtures: audit rows: %v", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE username LIKE $1`, f.UsernameLike); err != nil {
+			t.Fatalf("purge user fixtures: users: %v", err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("purge user fixtures: commit: %v", err)
+		}
 	}
 }
 

@@ -199,7 +199,7 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	name, err := s.store.DeleteWebauthnCredential(r.Context(), user.ID, id)
+	_, err = s.store.DeleteWebauthnCredential(r.Context(), user.ID, id)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		// Already gone (double-submit, stale page, or someone else's id): the
@@ -209,7 +209,6 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.setFlash(w, r, "error", "Passkey konnte nicht entfernt werden.")
 	default:
-		s.audit(r, "passkey_delete", "user", user.ID, "Passkey „"+name+"“ entfernt")
 		s.setFlash(w, r, "success", "Passkey entfernt.")
 	}
 	redirect(w, r, "/profile")
@@ -233,14 +232,17 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 	// steps, and it must be throttled like them: unbounded, a hijacked session
 	// could brute-force the account password here (and drive one bcrypt hash per
 	// request while doing it). Same per-user limiter, JSON-shaped response.
-	if s.logins.blocked(r.Context(), acctLimitKey(user.ID)) {
+	allowed, failed := s.admitVerification(w, r, acctLimitKey(user.ID), loginMaxFails, loginWindow)
+	if failed {
+		return
+	}
+	if !allowed {
 		s.audit(r, "rate_limited", "user", user.ID, "zu viele Versuche bei sensibler Aktion")
 		http.Error(w, "Zu viele Versuche. Bitte in einigen Minuten erneut versuchen.",
 			http.StatusTooManyRequests)
 		return
 	}
 	if _, err := s.store.AuthenticateUser(r.Context(), user.Username, body.Password); err != nil {
-		s.sensitiveFail(r, user.ID)
 		s.audit(r, "passkey_add_denied", "user", user.ID, "Passwort falsch")
 		http.Error(w, "Passwort falsch.", http.StatusForbidden)
 		return
@@ -298,7 +300,6 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	s.audit(r, "passkey_add", "user", user.ID, name)
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 

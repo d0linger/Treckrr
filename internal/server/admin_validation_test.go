@@ -62,7 +62,7 @@ func (r *mockRows) Columns() []string {
 		return []string{"id"}
 	}
 	// GetUser scan columns: id, username, email, role, is_admin, must_change_password, totp_enabled, created_at
-	return []string{"id", "username", "email", "role", "is_admin", "must_change_password", "totp_enabled", "created_at"}
+	return []string{"id", "username", "email", "role", "is_admin", "must_change_password", "totp_enabled", "created_at", "disabled"}
 }
 
 func (r *mockRows) Close() error { return nil }
@@ -84,6 +84,7 @@ func (r *mockRows) Next(dest []driver.Value) error {
 		dest[5] = false
 		dest[6] = false
 		dest[7] = time.Now()
+		dest[8] = false
 	}
 	return nil
 }

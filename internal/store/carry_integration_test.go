@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -93,6 +94,20 @@ func TestCarryForwardCascadeIntegration(t *testing.T) {
 	}
 	if ledB[0].TransferID == "" {
 		t.Fatalf("carry posting has no transfer_id")
+	}
+	// Transfer reversals are ledger edits, not settlement actions. A completed
+	// participating year must be reopened before either side can be changed.
+	if err := st.SetYearStatus(ctx, fromYear, "completed"); err != nil {
+		t.Fatalf("complete source year: %v", err)
+	}
+	if err := st.SetLedgerVoidedTransfer(ctx, ledB[0].TransferID, true, "closed-year attempt"); !errors.Is(err, store.ErrYearCompleted) {
+		t.Fatalf("void transfer in completed year: got %v, want ErrYearCompleted", err)
+	}
+	if err := st.DeleteLedgerTransfer(ctx, ledB[0].TransferID); !errors.Is(err, store.ErrYearCompleted) {
+		t.Fatalf("delete transfer in completed year: got %v, want ErrYearCompleted", err)
+	}
+	if err := st.SetYearStatus(ctx, fromYear, "in_progress"); err != nil {
+		t.Fatalf("reopen source year: %v", err)
 	}
 	if err := st.DeleteLedgerTransfer(ctx, ledB[0].TransferID); err != nil {
 		t.Fatalf("delete transfer: %v", err)

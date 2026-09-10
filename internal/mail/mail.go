@@ -114,7 +114,10 @@ func Send(ctx context.Context, cfg *config.Config, to, subject, body string, att
 	if err := wc.Close(); err != nil {
 		return err
 	}
-	return c.Quit()
+	// DATA was accepted. A failed connection shutdown must not ask the caller
+	// to retry a message the SMTP server has already queued.
+	_ = c.Quit()
+	return nil
 }
 
 // buildMessage assembles a MIME multipart/mixed message (text + attachments).

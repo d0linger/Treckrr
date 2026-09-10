@@ -58,7 +58,7 @@ neighbour that satisfies § 11 UStG.
 - **Bookings** priced from a shared rate basis — tractor PS × load level, or per unit/area — with implements, rigs ("Gespanne"), receipt photos, recurring series, quick capture, copy-from-existing, a duplicate warning, and storno that voids without deleting. A helper from the Personenstamm can ride along with a rig booking — on the form, in the quick-entry table and in a series — as linked man-hours priced from their own rate.
 - **Rate bases** per year: tractors, load levels, implements and rigs. Compare two bases side by side, and lock one so its prices stop moving.
 - **Recalculation**: after a rate change, preview every affected booking old → new and apply it in one step. Bookings on an already-issued invoice are left alone.
-- **Billing years** per neighbour with ledger positions, partial payments (7-day undo), carry-forward between years, carrying members over from last year, plus archiving and GDPR anonymisation.
+- **Billing years** per neighbour with ledger positions, reversible payment cancellations, carry-forward between years, carrying members over from last year, plus archiving and GDPR anonymisation.
 - **Invoices** frozen at issue time (§ 11 UStG snapshot) with sequential numbering, storno, credit notes, PDF, EPC QR code and optional e-mail with send tracking. **Sammel-Festschreibung** issues a whole year at once, showing per neighbour what would be issued, blocked or skipped.
 - **Austrian VAT modes**: Kleinunternehmer (no VAT shown), flat-rate § 22, or standard taxation — company data, IBAN and payment terms flow into every document.
 - **Public receipt links** — expiring, revocable, hash-stored tokens so a neighbour can view their invoice without an account.
@@ -67,7 +67,7 @@ neighbour that satisfies § 11 UStG.
 - **Import/export**: CSV bookings with preview, bank statement payment matching, per-neighbour GDPR export, year and neighbour CSV.
 - **Authentication**: password + optional TOTP with recovery codes, passkeys (WebAuthn, user verification required), roles (admin / editor / viewer), and session management with per-device revocation.
 - **Append-only audit log** enforced by a database trigger, filterable and exportable, with staggered retention (1 year operational, 7 years for § 132 BAO records).
-- **Encrypted backups** (AES-256-GCM) on a schedule, optional off-box S3 target, upload-and-validate before restoring, and a CLI restore that puts the app into maintenance mode.
+- **Encrypted backups** (AES-256-GCM) on a schedule, optional off-box S3 target, guarded GUI restores and an offline CLI recovery workflow.
 - **PWA** with offline booking capture that replays under the user who captured it when the connection returns.
 - Full-text search with typo tolerance, statistics per year and across all years, light/dark theme, Prometheus metrics (opt-in).
 
@@ -145,16 +145,24 @@ Changing `BACKUP_ENCRYPTION_KEY` on its own orphans every existing dump: new
 backups use the new key, older ones can no longer be opened. Rotate instead:
 
 ```bash
-# BACKUP_ENCRYPTION_KEY = the new key, BACKUP_ENCRYPTION_KEY_OLD = the previous one
-docker compose run --rm app rotate-key
+# Stop every app instance/scheduler before rotating; keep the database running.
+docker compose stop app
+# BACKUP_ENCRYPTION_KEY = new key, BACKUP_ENCRYPTION_KEY_OLD = previous key.
+# Use docker-compose.ghcr.yml as the base instead when that is your deployment.
+docker compose -f docker-compose.yml -f compose.rotate-key.yml run --rm --no-deps app rotate-key
 ```
 
-Every dump is re-encrypted, verified as restorable **with the new key**, and only
+Every **local** dump is re-encrypted, verified as restorable **with the new key**, and only
 then replaced atomically. A dump that fails verification is left untouched and
 reported, so a partial run degrades to "some files still use the old key" — never
 to an unreadable archive. The command is resumable: run it again after fixing
-whatever failed. Remove `BACKUP_ENCRYPTION_KEY_OLD` once it reports everything
-rotated.
+whatever failed. Remove `BACKUP_ENCRYPTION_KEY_OLD` from the deployment environment
+after success, then recreate the app with its new key. **Do not destroy the old
+key**: S3, off-host copies and object versions are not rotated by this command.
+Keep a versioned recovery-key record in separate secure storage for as long as
+any archive still needs it. Rehearse a representative retained remote archive
+with its original key before retiring any key. The previous key is deliberately
+mapped only by the CLI override, not into the long-running app.
 
 The same applies to `ENCRYPTION_SECRET` (TOTP secrets at rest): pin it to the old
 value before rotating `SESSION_SECRET`, as the table above notes.
@@ -170,10 +178,15 @@ database, then:
 docker compose run --rm app rehearse-restore
 ```
 
-It restores the newest dump into `treckrr_restore_rehearsal`, checks the applied
+It restores the newest dump into a unique `treckrr_rehearsal_<random>` database, checks the applied
 migrations and the money tables, drops the scratch database and reports timings.
 Only this stamps `restore_tested`; the cheap per-backup check now reports itself
 separately as `archive_verified`.
+
+Use a dedicated rehearsal server/role with CREATE DATABASE permission, not a
+production database owner. The scratch name is unique per invocation; existing
+databases are never dropped to make room. Status-file persistence failures make
+the command fail even when the restore drill itself succeeded.
 
 The backup schedule is a cron expression set in the admin Backup panel, not an environment variable.
 
@@ -195,12 +208,71 @@ Persist these two named volumes:
 
 Backups next to the database are not backups: set the **S3_\*** variables, or sync the `backups` volume to another machine.
 
-**Restore** is deliberately CLI-only and asks for typed confirmation:
+**Restore** is available to administrators in the Backup panel and as an offline
+CLI command. Both require typed confirmation. For the CLI, stop **all** app
+instances and external schedulers first; leave PostgreSQL running:
 
 ```bash
-docker compose run --rm app restore --test <file.dump.enc>   # validate only
-docker compose run --rm app restore <file.dump.enc>          # overwrites the live database
+docker compose stop app  # 120-second stop grace, not a forced kill
+docker compose run --rm --no-deps app restore --test /backups/<file.dump.enc>
+docker compose run --rm --no-deps app restore /backups/<file.dump.enc>
+# Only after restore + reconciliation succeed and recovery checks pass:
+docker compose up -d app
 ```
+
+Serving binaries hold a database advisory lease; the CLI refuses a restore while
+a participating app is running. The GUI drains local requests and background
+maintenance, admits only one restore, and refuses while another participating
+instance is present. **First upgrade:** older binaries do not hold this lease;
+stop every older instance before relying on the safeguard. These leases do not
+replace fencing/stop procedures for other writers or a database connection loss.
+A failed or uncertain GUI restore/reconcile keeps maintenance enabled; inspect
+logs and complete recovery before restarting. A successful explicit restore
+migrates the schema and invalidates all restored sessions and WebAuthn challenges.
+The restore transaction itself omits their archived rows, so a crash immediately
+after the restore commit cannot resurrect a revoked login.
+Review restored passwords, disabled accounts, recovery credentials and revoked
+share links against post-backup security changes before reopening access.
+
+Online archives and dump output are capped at **128 MiB**, with one memory-heavy
+backup operation admitted per app process. This also bounds S3 downloads and
+verification; an oversized archive is rejected without deleting it. Older larger
+archives remain recoverable via an offline CLI process with explicitly provisioned
+RAM/tmp space and `BACKUP_CLI_MAX_BYTES` (bytes, 1 MiB–16 GiB). Pass this only to that
+process (for Compose, `run -e BACKUP_CLI_MAX_BYTES ...` with the value supplied in
+the environment), and raise that one-off container's memory/tmpfs limits in a
+reviewed local override. Raising this variable alone does **not** allocate RAM.
+The current whole-archive format needs several times the archive size plus the
+64 MiB key-derivation workspace. Do not run overlapping CLI jobs in a live app's
+memory budget.
+
+S3 retention is limited to flat `treckrr-*.dump.enc` objects under the configured
+prefix and never deletes objects younger than 24 hours (or with unknown dates).
+Use a dedicated prefix per instance; a different Treckrr instance's matching
+names cannot be distinguished. `S3_KEEP=0` keeps everything. Retention env values
+seed the GUI settings only on first boot; existing GUI values remain authoritative.
+
+### Verified release images
+
+The release workflow publishes a candidate, scans that exact digest for both
+amd64 and arm64, attaches per-platform SBOM artifacts, and promotes the same
+manifest index without rebuilding only after the gates pass. Repository names
+are lowercased for registry use. Tags (including `sha-*`) remain mutable aliases;
+pin production to the digest shown in the workflow summary. Serialized promotion
+rejects superseded branch refs; operators must still publish semantic-version
+tags in order so a historical release does not move a minor-version alias back.
+
+The weekly supply-chain job rescans the published digest and, when configured,
+repository variable `PRODUCTION_IMAGE_DIGEST` (`sha256:...`, the multi-arch index)
+without rebuilding. Update that variable after each deployment. An unset value
+reports unknown deployed-image coverage; scanning `latest` is not deployment
+inventory. Candidate tags from failed gates must never be selected for deployment.
+
+For local core Go checks, `make check` requires an isolated `TEST_DATABASE_URL`
+on the `treckrr-itest` network and matching `PG_MAJOR=16` or `18`; it runs race and
+tagged integration tests serially. `make test-unit` is explicitly unit-only.
+Security scanners, browser tests, image builds and registry promotion remain
+separate CI jobs, not claims made by the Make target.
 
 ---
 

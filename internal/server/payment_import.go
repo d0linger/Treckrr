@@ -265,7 +265,6 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		if !fresh {
 			continue // a concurrent/earlier import already booked it
 		}
-		s.audit(r, "payment_import", "neighbor", row.NeighborID, row.NeighborName+" · "+row.Txn.Amount.StringFixed(2)+" € · Rechnung "+row.InvoiceNumber+" ("+row.MatchedBy+")")
 		booked++
 	}
 	s.setFlash(w, r, "success", itoa(booked)+" Zahlung(en) importiert und zugeordnet.")

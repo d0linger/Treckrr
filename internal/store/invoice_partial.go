@@ -116,8 +116,12 @@ func (s *Store) FreeGutschrift(ctx context.Context, yearID, neighborID int64, ye
 		return models.Invoice{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, yearID); err != nil {
+	ok, err := lockAccountBoundary(ctx, tx, yearID, neighborID, true, false)
+	if err != nil {
 		return models.Invoice{}, err
+	}
+	if !ok {
+		return models.Invoice{}, ErrNotFound
 	}
 	// Same cap as the attached credit note (see ErrGutschriftTooLarge): while an
 	// issued invoice exists, the neighbor+year's credits — attached and free
@@ -152,6 +156,9 @@ func (s *Store) FreeGutschrift(ctx context.Context, yearID, neighborID int64, ye
 	}
 	gv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, number, "gutschrift", nil, now, content)
 	if err != nil {
+		return models.Invoice{}, err
+	}
+	if err := addInvoiceAudit(ctx, tx, "invoice_gutschrift", gv); err != nil {
 		return models.Invoice{}, err
 	}
 	return gv, tx.Commit()
@@ -205,7 +212,7 @@ func (s *Store) CreateAnzahlung(ctx context.Context, yearID, neighborID int64, y
 		return models.Invoice{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, yearID); err != nil {
+	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
 		return models.Invoice{}, err
 	}
 	number, err := docSeqNumber(ctx, tx, yearID, year, "A")
@@ -214,6 +221,9 @@ func (s *Store) CreateAnzahlung(ctx context.Context, yearID, neighborID int64, y
 	}
 	av, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, number, "anzahlung", nil, now, content)
 	if err != nil {
+		return models.Invoice{}, err
+	}
+	if err := addInvoiceAudit(ctx, tx, "anzahlung_create", av); err != nil {
 		return models.Invoice{}, err
 	}
 	return av, tx.Commit()
@@ -230,23 +240,24 @@ func (s *Store) StornoDocument(ctx context.Context, id int64, reason string) (mo
 		return models.Invoice{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	// Advisory lock FIRST, row lock second — the order every sibling document
-	// path uses (StornoInvoice, GutschriftInvoice, FreeGutschrift). The old
-	// row-then-advisory order deadlocked against StornoInvoice, which holds the
-	// advisory lock while canceling attached credit notes by row. The year id
-	// is peeked without a lock; the FOR UPDATE re-read below is authoritative
-	// and refuses if the document changed in the gap.
-	var peekYear int64
+	// The ids are peeked without a lock only to select the shared account lock;
+	// the FOR UPDATE re-read below is authoritative and refuses if the document
+	// changed in the gap.
+	var peekYear, peekNeighbor int64
 	err = tx.QueryRowContext(ctx,
-		`SELECT billing_year_id FROM invoices WHERE id=$1`, id).Scan(&peekYear)
+		`SELECT billing_year_id, neighbor_id FROM invoices WHERE id=$1`, id).Scan(&peekYear, &peekNeighbor)
 	if errors.Is(err, sql.ErrNoRows) {
 		return models.Invoice{}, ErrNotFound
 	}
 	if err != nil {
 		return models.Invoice{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, peekYear); err != nil {
+	ok, err := lockAccountBoundary(ctx, tx, peekYear, peekNeighbor, true, true)
+	if err != nil {
 		return models.Invoice{}, err
+	}
+	if !ok {
+		return models.Invoice{}, ErrNotFound
 	}
 	orig, err := scanInvoice(tx.QueryRowContext(ctx,
 		`SELECT `+invoiceCols+` FROM invoices
@@ -257,18 +268,6 @@ func (s *Store) StornoDocument(ctx context.Context, id int64, reason string) (mo
 	if err != nil {
 		return models.Invoice{}, err
 	}
-	// A closed year takes no new documents. The handler cannot pre-check this —
-	// it only knows the document id — and every sibling path (StornoInvoice via
-	// requireOpenYear, CreateAnzahlung, FreeGutschrift) refuses a completed year,
-	// so the guard belongs here, inside the transaction that writes.
-	var ystatus string
-	if err := tx.QueryRowContext(ctx,
-		`SELECT status FROM billing_years WHERE id=$1 FOR UPDATE`, orig.BillingYearID).Scan(&ystatus); err != nil {
-		return models.Invoice{}, err
-	}
-	if ystatus == models.YearCompleted {
-		return models.Invoice{}, ErrYearCompleted
-	}
 	if orig.Content == nil {
 		return models.Invoice{}, fmt.Errorf("storno: kein Snapshot vorhanden")
 	}
@@ -278,6 +277,9 @@ func (s *Store) StornoDocument(ctx context.Context, id int64, reason string) (mo
 		return models.Invoice{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE invoices SET status='canceled' WHERE id=$1`, orig.ID); err != nil {
+		return models.Invoice{}, err
+	}
+	if err := addInvoiceAudit(ctx, tx, "document_storno", sv); err != nil {
 		return models.Invoice{}, err
 	}
 	return sv, tx.Commit()

@@ -1,26 +1,12 @@
 name: Supply chain (SBOM + vuln scan)
 
-# Independent of the release pipeline: this never gates docker-publish.
-#
-# It scans TWO different things, because they cover different ground:
-#   - the repository (scan-type: fs) for the Go module graph and the e2e npm
-#     tooling, neither of which ends up in the runtime image;
-#   - the built IMAGE for the layer nothing else looks at — musl, busybox,
-#     ca-certificates, tzdata, wget and postgresql16-client. Those are the
-#     packages that actually run in production and the ones that accumulate CVEs,
-#     and until the image scan existed no tool in this repository examined them.
-#
-# The weekly schedule matters more than the push trigger: a build-time scan only
-# knows the CVEs published before the build, while the image runs for months
-# afterwards. Rebuilding weekly from a digest-pinned base means the scheduled run
-# examines the same base layer that is deployed, so a newly-disclosed CVE in it
-# surfaces without anyone touching the repository.
+# Release gating is in docker-publish.yml. Periodic scans use existing digests,
+# never a rebuild that could hide vulnerabilities still present in production.
 on:
   push:
     branches: [main, dev]
   pull_request:
   schedule:
-    # Weekly, so newly-disclosed CVEs in pinned deps surface even without a push.
     - cron: "0 5 * * 1"
   workflow_dispatch:
 
@@ -28,20 +14,14 @@ permissions:
   contents: read
 
 jobs:
-  scan:
-    name: Trivy vuln scan + SBOM
+  source:
+    name: Source dependency scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-
-      # Fail the build only on HIGH/CRITICAL vulnerabilities that actually have a
-      # fix available (ignore-unfixed), so the failure is always actionable — it
-      # tells us to bump a dependency, which Dependabot then does. Scanners is
-      # limited to `vuln`; secret scanning is covered by the gitleaks workflow.
-      - name: Trivy vulnerability scan (Go deps)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -50,60 +30,73 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
-      # ---- The shipped image ------------------------------------------------
-      # Single-arch and loaded into the local daemon: this build exists to be
-      # scanned, not published, and a multi-arch build cannot be --load-ed.
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
-
-      - name: Build the runtime image for scanning
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+  runtime:
+    name: Rescan existing image (${{ matrix.arch }}, ${{ matrix.target }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        target: [published, production]
+    env:
+      TRIVY_PLATFORM: linux/${{ matrix.arch }}
+      TRIVY_USERNAME: ${{ github.actor }}
+      TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
-          context: .
-          platforms: linux/amd64
-          load: true
-          push: false
-          tags: treckrr:scan
-          # The weekly run must NOT reuse the cache. `apk upgrade` in the Dockerfile
-          # pulls whatever Alpine currently ships, so a cached package layer would
-          # keep the scan looking at the versions from whenever that layer was
-          # built — the scheduled scan would then quietly certify a stale image.
-          # Push/PR runs keep the cache; only the scheduled one pays the rebuild.
-          no-cache: ${{ github.event_name == 'schedule' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # The OS packages in the runtime layer. Same policy as the repo scan: fail
-      # only on HIGH/CRITICAL that have a fix, so the failure is always actionable
-      # (bump the pinned base digest).
-      - name: Trivy vulnerability scan (runtime image)
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve existing immutable digest
+        id: image
+        env:
+          TARGET: ${{ matrix.target }}
+          PRODUCTION_DIGEST: ${{ vars.PRODUCTION_IMAGE_DIGEST }}
+        shell: bash
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          if [[ "$TARGET" == production ]]; then
+            if [[ -z "$PRODUCTION_DIGEST" ]]; then
+              echo "::warning::PRODUCTION_IMAGE_DIGEST is unset; deployed-image coverage is unknown."
+              echo "Production digest is unset: deployment coverage is UNKNOWN." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            digest="$PRODUCTION_DIGEST"
+          else
+            digest="sha256:$(docker buildx imagetools inspect "$image:latest" --raw | sha256sum | cut -d' ' -f1)"
+          fi
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "Invalid image digest"; exit 1; }
+          echo "ref=$image@$digest" >> "$GITHUB_OUTPUT"
+          echo "Scanning $image@$digest ($TARGET)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Scan existing runtime image
+        if: steps.image.outputs.ref != ''
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: treckrr:scan
+          image-ref: ${{ steps.image.outputs.ref }}
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
-
-      # The SBOM is generated from the IMAGE, not the repository. A repo-derived
-      # SBOM lists the Go modules but none of the OS packages that ship, so it
-      # described something that is never deployed. Trivy also reads the module
-      # list back out of the compiled binary, so this is a superset of the old one.
-      - name: Generate CycloneDX SBOM (from the image)
-        if: always()
+      - name: Generate existing-image SBOM
+        if: always() && steps.image.outputs.ref != ''
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: treckrr:scan
+          image-ref: ${{ steps.image.outputs.ref }}
           format: cyclonedx
           output: sbom.cdx.json
           exit-code: "0"
-
-      - name: Upload SBOM artifact
-        if: always()
+      - name: Upload SBOM
+        if: always() && steps.image.outputs.ref != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: sbom-cyclonedx
+          name: sbom-${{ matrix.target }}-${{ matrix.arch }}
           path: sbom.cdx.json
-          if-no-files-found: warn
+          if-no-files-found: error

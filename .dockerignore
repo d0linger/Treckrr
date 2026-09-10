@@ -19,6 +19,8 @@
 /.claude/
 Dockerfile
 docker-compose.yml
+docker-compose.ghcr.yml
+compose.rotate-key.yml
 
 # Node/Playwright E2E suite: CI-only, never part of the Go image build context.
 # node_modules also carries symlinks (e.g. .bin/*) that break the context transfer.

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -149,12 +150,37 @@ func (s *Store) ImportPayment(ctx context.Context, hash string, yearID, neighbor
 	if n, _ := res.RowsAffected(); n == 0 {
 		return false, tx.Commit() // already imported → nothing to book
 	}
+	ok, err := lockAccountBoundary(ctx, tx, yearID, neighborID, false, false)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, ErrNotFound
+	}
+	if invoiceID != 0 {
+		var valid bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
+			SELECT 1 FROM invoices
+			 WHERE id=$1 AND billing_year_id=$2 AND neighbor_id=$3
+			   AND kind='invoice' AND status='issued')`, invoiceID, yearID, neighborID).Scan(&valid); err != nil {
+			return false, err
+		}
+		if !valid {
+			return false, ErrNotFound
+		}
+	}
 	// A bank credit is by definition an Überweisung, and the matcher already
 	// resolved the invoice — store both instead of re-deriving them.
-	if _, err := tx.ExecContext(ctx,
+	var paymentID int64
+	if err := tx.QueryRowContext(ctx,
 		`INSERT INTO payments (billing_year_id, neighbor_id, amount, paid_on, note, method, invoice_id)
-		 VALUES ($1,$2,$3,$4,$5,'überweisung',$6)`, yearID, neighborID, amount, paidOn, note, nullable(invoiceID)); err != nil {
+		 VALUES ($1,$2,$3,$4,$5,'überweisung',$6) RETURNING id`,
+		yearID, neighborID, amount, paidOn, note, nullable(invoiceID)).Scan(&paymentID); err != nil {
 		return false, err // rollback also undoes the hash insert
+	}
+	if err := addAuditTx(ctx, tx, "payment_import", "payment", strconv.FormatInt(paymentID, 10),
+		paymentAuditState(amount, paidOn, "überweisung")); err != nil {
+		return false, err
 	}
 	return true, tx.Commit()
 }

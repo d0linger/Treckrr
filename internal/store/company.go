@@ -138,20 +138,14 @@ func (s *Store) GetInvoice(ctx context.Context, yearID, neighborID int64) (model
 // mirrors the Beleg page's InvRest exactly so the scan-to-pay QR encodes what is
 // actually outstanding, not the full gross. Zero when no invoice is issued.
 func (s *Store) InvoiceRemaining(ctx context.Context, yearID, neighborID int64) (decimal.Decimal, error) {
-	var rest decimal.Decimal
+	var remaining decimal.Decimal
 	err := s.db.QueryRowContext(ctx, `
-		SELECT
-		  COALESCE((SELECT gross FROM invoices
-		             WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='invoice' AND status='issued'
-		             LIMIT 1), 0)
-		  + COALESCE((SELECT SUM(gross) FROM invoices
-		               WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='gutschrift' AND status='issued'), 0)
-		  + COALESCE((SELECT SUM(amount) FROM neighbor_ledger
-		               WHERE billing_year_id=$1 AND neighbor_id=$2 AND NOT voided), 0)
-		  - COALESCE((SELECT SUM(amount) FROM payments
-		               WHERE billing_year_id=$1 AND neighbor_id=$2 AND deleted_at IS NULL), 0)`,
-		yearID, neighborID).Scan(&rest)
-	return rest, err
+		SELECT CASE WHEN EXISTS(
+			SELECT 1 FROM invoices WHERE billing_year_id=$1 AND neighbor_id=$2
+			  AND kind='invoice' AND status='issued'
+		) THEN account.balance ELSE 0 END
+		FROM (`+remainingSQL+`) AS account(balance)`, yearID, neighborID).Scan(&remaining)
+	return remaining, err
 }
 
 // BuildInvoiceContent computes the invoice substance from the current live data,
@@ -171,13 +165,97 @@ func (s *Store) buildInvoiceContentWith(ctx context.Context, company models.Comp
 	if err != nil {
 		return models.InvoiceContent{}, err
 	}
-	net, _, err := s.NeighborTotal(ctx, neighborID, yearID)
-	if err != nil {
-		return models.InvoiceContent{}, err
-	}
 	entries, err := s.ListEntries(ctx, neighborID, yearID)
 	if err != nil {
 		return models.InvoiceContent{}, err
+	}
+	return invoiceContentFromEntries(company, *neighbor, entries), nil
+}
+
+func (s *Store) buildInvoiceContentTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	yearID, neighborID int64,
+) (models.InvoiceContent, error) {
+	var company models.Company
+	if err := tx.QueryRowContext(ctx, `
+		SELECT name, address, tax_id, tax_note, tax_mode, vat_rate, iban, payment_term_days,
+		       dunning_fee_1, dunning_fee_2, dunning_grace_days, skonto_pct, skonto_days,
+		       invoice_prefix, invoice_start, small_business_limit,
+		       travel_flat, travel_per_km, mail_signature, mail_cc
+		  FROM company WHERE id=1
+		  FOR SHARE`).Scan(
+		&company.Name,
+		&company.Address,
+		&company.TaxID,
+		&company.TaxNote,
+		&company.TaxMode,
+		&company.VATRate,
+		&company.IBAN,
+		&company.PaymentTermDays,
+		&company.DunningFee1,
+		&company.DunningFee2,
+		&company.DunningGraceDays,
+		&company.SkontoPct,
+		&company.SkontoDays,
+		&company.InvoicePrefix,
+		&company.InvoiceStart,
+		&company.SmallBusinessLimit,
+		&company.TravelFlat,
+		&company.TravelPerKm,
+		&company.MailSignature,
+		&company.MailCC,
+	); err != nil {
+		return models.InvoiceContent{}, err
+	}
+	var neighbor models.Neighbor
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id, name, note, address, tax_id, email, iban, payment_term_days,
+		       archived, anonymized, created_at
+		  FROM neighbors WHERE id=$1`, neighborID).Scan(
+		&neighbor.ID,
+		&neighbor.Name,
+		&neighbor.Note,
+		&neighbor.Address,
+		&neighbor.TaxID,
+		&neighbor.Email,
+		&neighbor.IBAN,
+		&neighbor.PaymentTermDays,
+		&neighbor.Archived,
+		&neighbor.Anonymized,
+		&neighbor.Created,
+	); err != nil {
+		return models.InvoiceContent{}, err
+	}
+	rows, err := tx.QueryContext(ctx,
+		entrySelect+` WHERE neighbor_id=$1 AND billing_year_id=$2 ORDER BY entry_date, id`,
+		neighborID,
+		yearID,
+	)
+	if err != nil {
+		return models.InvoiceContent{}, err
+	}
+	entries, err := collectEntries(rows)
+	closeErr := rows.Close()
+	if err != nil {
+		return models.InvoiceContent{}, err
+	}
+	if closeErr != nil {
+		return models.InvoiceContent{}, closeErr
+	}
+	return invoiceContentFromEntries(company, neighbor, entries), nil
+}
+
+func invoiceContentFromEntries(
+	company models.Company,
+	neighbor models.Neighbor,
+	entries []models.Entry,
+) models.InvoiceContent {
+	net := decimal.Zero
+	for _, e := range entries {
+		if !e.Voided {
+			net = net.Add(e.Cost)
+		}
 	}
 	showVAT := (company.TaxMode == "pauschal" || company.TaxMode == "regel") && company.VATRate.IsPositive()
 	var vat decimal.Decimal
@@ -217,7 +295,7 @@ func (s *Store) buildInvoiceContentWith(ctx context.Context, company models.Comp
 		}
 	}
 	c.Hash = invoiceContentHash(c)
-	return c, nil
+	return c
 }
 
 func invoiceContentHash(c models.InvoiceContent) string {
@@ -326,33 +404,15 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 	} else if !errors.Is(err, ErrNotFound) {
 		return models.Invoice{}, err
 	}
-	// Build and validate the snapshot BEFORE opening the transaction. It reads
-	// through the pool (GetCompany/GetNeighbor/NeighborTotal/ListEntries all do),
-	// and doing that while already holding a transaction's connection means each
-	// in-flight issuance occupies two of the pool's ten — enough concurrent
-	// issuances would then all wait on a connection none of them will release.
-	//
-	// Nothing is lost by moving it out: the reads are not part of the transaction
-	// either way, so under READ COMMITTED they see the same committed rows. The
-	// § 11 backstop still validates the exact content that gets persisted, and the
-	// re-check under the lock below still prevents double issuance. The only cost
-	// is that a request which loses that race has built a snapshot it discards.
-	content, err := s.BuildInvoiceContent(ctx, yearID, neighborID)
-	if err != nil {
-		return models.Invoice{}, err
-	}
-	if len(content.MissingMandatory()) > 0 {
-		return models.Invoice{}, ErrInvoiceIncomplete
-	}
-
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return models.Invoice{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	// Serialize number allocation per year (held until commit).
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, yearID); err != nil {
+	if ok, err := lockAccountBoundary(ctx, tx, yearID, neighborID, true, false); err != nil {
 		return models.Invoice{}, err
+	} else if !ok {
+		return models.Invoice{}, ErrNotFound
 	}
 	// Re-check under the lock: a concurrent request may have just issued it.
 	if iv, err := scanInvoice(tx.QueryRowContext(ctx,
@@ -362,6 +422,13 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 		return iv, tx.Commit()
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return models.Invoice{}, err
+	}
+	content, err := s.buildInvoiceContentTx(ctx, tx, yearID, neighborID)
+	if err != nil {
+		return models.Invoice{}, err
+	}
+	if len(content.MissingMandatory()) > 0 {
+		return models.Invoice{}, ErrInvoiceIncomplete
 	}
 	// Rechnungsdatum (Nr. 48): default today; never in the future, and never
 	// before the youngest document already in this year's Nummernkreis — § 11
@@ -430,6 +497,9 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 	number := fmt.Sprintf("%s%d-%03d", prefix, year, seq)
 	iv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, number, "invoice", nil, issuedOn, content)
 	if err != nil {
+		return models.Invoice{}, err
+	}
+	if err := addInvoiceAudit(ctx, tx, "invoice_issue", iv); err != nil {
 		return models.Invoice{}, err
 	}
 	return iv, tx.Commit()

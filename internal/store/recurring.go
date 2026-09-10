@@ -31,6 +31,9 @@ func (s *Store) CreateRecurring(ctx context.Context, sourceEntryID, neighborID i
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if err := lockPersonalDataNeighbor(ctx, tx, neighborID); err != nil {
+		return err
+	}
 	var companionPersonID int64
 	if t.Companion != nil {
 		companionPersonID = t.Companion.PersonID

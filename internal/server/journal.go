@@ -311,8 +311,6 @@ func (s *Server) handleFreeGutschrift(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.setFlash(w, r, "error", "Gutschrift fehlgeschlagen.")
 	default:
-		s.audit(r, "invoice_gutschrift", "neighbor", neighborID,
-			s.neighborName(r, neighborID)+" · freie Gutschrift "+gv.Number+" · "+amount.StringFixed(2)+" €")
 		s.setFlash(w, r, "success", "Gutschrift "+gv.Number+" erstellt.")
 	}
 	redirect(w, r, back)
@@ -369,8 +367,6 @@ func (s *Server) handleAnzahlungCreate(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.setFlash(w, r, "error", "Abschlag konnte nicht erstellt werden.")
 	default:
-		s.audit(r, "anzahlung_create", "neighbor", neighborID,
-			s.neighborName(r, neighborID)+" · Abschlag "+av.Number+" · "+amount.StringFixed(2)+" €")
 		s.setFlash(w, r, "success", "Abschlag "+av.Number+" erstellt.")
 	}
 	redirect(w, r, back)
@@ -408,8 +404,6 @@ func (s *Server) handleDocumentStorno(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/")
 		return
 	}
-	s.audit(r, "document_storno", "neighbor", sv.NeighborID,
-		s.neighborName(r, sv.NeighborID)+" · Storno "+sv.Number)
 	s.setFlash(w, r, "success", "Beleg storniert ("+sv.Number+").")
 	redirect(w, r, back)
 }

@@ -14,8 +14,9 @@ import (
 )
 
 // TestPaymentSoftDeleteIntegration proves the undo path: a soft-deleted payment
-// drops out of the sum immediately, restore brings it back, and purge removes it
-// for good — verifying that every payment-sum query got the deleted_at filter.
+// drops out of the sum immediately and restore brings it back. The legacy purge
+// hook deliberately retains the financial row; a seven-day UI undo window is
+// not a lawful evidence-retention policy.
 func TestPaymentSoftDeleteIntegration(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
@@ -115,17 +116,19 @@ func TestPaymentSoftDeleteIntegration(t *testing.T) {
 		t.Errorf("second restore: restored=%v err=%v, want false/nil", restored, err)
 	}
 
-	// Delete again, then purge with a future cutoff → gone for good.
+	// Delete again, then run the legacy purge hook with a future cutoff. The row
+	// remains recoverable until a separately reviewed financial-retention policy
+	// (including legal holds) authorizes physical deletion.
 	if _, err := st.DeletePayment(ctx, id); err != nil {
 		t.Fatalf("delete2: %v", err)
 	}
 	if err := st.PurgeDeletedPayments(ctx, time.Now().Add(time.Hour)); err != nil {
 		t.Fatalf("purge: %v", err)
 	}
-	if restored, err := st.RestorePayment(ctx, id); err != nil || restored {
-		t.Fatalf("restore after purge should be a no-op: restored=%v err=%v", restored, err)
+	if restored, err := st.RestorePayment(ctx, id); err != nil || !restored {
+		t.Fatalf("restore after retention hook: restored=%v err=%v, want true/nil", restored, err)
 	}
-	if got := sum(); got != "0" {
-		t.Errorf("sum after purge = %s, want 0 (row hard-deleted)", got)
+	if got := sum(); got != "100" {
+		t.Errorf("sum after restore = %s, want 100 (row retained)", got)
 	}
 }

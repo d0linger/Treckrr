@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -17,17 +19,44 @@ import (
 // It is allowed regardless of the year's status (the payment side is decoupled
 // from booking lock).
 func (s *Store) AddPayment(ctx context.Context, yearID, neighborID int64, amount decimal.Decimal, paidOn time.Time, note, method string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	ok, err := lockAccountBoundary(ctx, tx, yearID, neighborID, false, false)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNotFound
+	}
 	// Linked to the ACTIVE invoice at recording time, forward-only: after a
 	// storno + re-issue the attribution used to be guesswork. A scalar subquery
 	// keeps this a single statement — no invoice means NULL, exactly as before.
-	_, err := s.db.ExecContext(ctx,
+	var id int64
+	err = tx.QueryRowContext(ctx,
 		`INSERT INTO payments (billing_year_id, neighbor_id, amount, paid_on, note, method, invoice_id)
 		 VALUES ($1,$2,$3,$4,$5,$6,
 		         (SELECT id FROM invoices
 		           WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='invoice' AND status='issued'
-		           ORDER BY id DESC LIMIT 1))`,
-		yearID, neighborID, amount, paidOn, note, method)
-	return err
+		           ORDER BY id DESC LIMIT 1))
+		 RETURNING id`,
+		yearID, neighborID, amount, paidOn, note, method).Scan(&id)
+	if err != nil {
+		return err
+	}
+	if err := addAuditTx(
+		ctx,
+		tx,
+		"payment_add",
+		"payment",
+		strconv.FormatInt(id, 10),
+		paymentAuditState(amount, paidOn, method),
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // UpdatePayment corrects a payment's amount, date, note and method in place —
@@ -37,14 +66,103 @@ func (s *Store) AddPayment(ctx context.Context, yearID, neighborID int64, amount
 // payments, and GetPayment (by id) still returns them, so a caller that only
 // checked the error would audit and report a change that never happened.
 func (s *Store) UpdatePayment(ctx context.Context, id int64, amount decimal.Decimal, paidOn time.Time, note, method string) (bool, error) {
-	res, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	yearID, neighborID, err := paymentAccount(ctx, tx, id)
+	if err != nil {
+		return false, err
+	}
+	ok, err := lockAccountBoundary(ctx, tx, yearID, neighborID, false, false)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, ErrNotFound
+	}
+	before, err := paymentForUpdate(ctx, tx, id)
+	if err != nil {
+		return false, err
+	}
+	if before.DeletedAt != nil {
+		return false, tx.Commit()
+	}
+	res, err := tx.ExecContext(ctx,
 		`UPDATE payments SET amount=$2, paid_on=$3, note=$4, method=$5 WHERE id=$1 AND deleted_at IS NULL`,
 		id, amount, paidOn, note, method)
 	if err != nil {
 		return false, err
 	}
 	n, err := res.RowsAffected()
-	return n > 0, err
+	if err != nil || n == 0 {
+		return false, err
+	}
+	detail := "before{" + paymentAuditState(before.Amount, before.PaidOn, before.Method) + "} after{" +
+		paymentAuditState(amount, paidOn, method) + "}"
+	if err := addAuditTx(
+		ctx,
+		tx,
+		"payment_update",
+		"payment",
+		strconv.FormatInt(id, 10),
+		detail,
+	); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
+type paymentMutationRow struct {
+	BillingYearID, NeighborID int64
+	Amount                    decimal.Decimal
+	PaidOn                    time.Time
+	Method                    string
+	DeletedAt                 *time.Time
+}
+
+func paymentAccount(ctx context.Context, tx *sql.Tx, id int64) (yearID, neighborID int64, err error) {
+	err = tx.QueryRowContext(ctx,
+		`SELECT billing_year_id, neighbor_id FROM payments WHERE id=$1`, id).Scan(&yearID, &neighborID)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = ErrNotFound
+	}
+	return
+}
+
+func paymentForUpdate(ctx context.Context, tx *sql.Tx, id int64) (paymentMutationRow, error) {
+	var row paymentMutationRow
+	var deleted sql.NullTime
+	err := tx.QueryRowContext(ctx, `
+		SELECT billing_year_id, neighbor_id, amount, paid_on, method, deleted_at
+		  FROM payments WHERE id=$1 FOR UPDATE`, id).Scan(
+		&row.BillingYearID,
+		&row.NeighborID,
+		&row.Amount,
+		&row.PaidOn,
+		&row.Method,
+		&deleted,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return row, ErrNotFound
+	}
+	if err != nil {
+		return row, err
+	}
+	if deleted.Valid {
+		row.DeletedAt = &deleted.Time
+	}
+	return row, nil
+}
+
+func paymentAuditState(amount decimal.Decimal, paidOn time.Time, method string) string {
+	return fmt.Sprintf(
+		"amount=%s; paid_on=%s; method=%q",
+		amount.StringFixed(2),
+		paidOn.Format("2006-01-02"),
+		method,
+	)
 }
 
 // ListPayments returns a neighbor's payments for a year, oldest first.
@@ -98,40 +216,78 @@ func (s *Store) CountPaymentsForNeighborYear(ctx context.Context, yearID, neighb
 	return n, err
 }
 
-// DeletePayment soft-deletes a payment (sets deleted_at), so an accidental delete
-// can be undone. It drops out of every sum/list immediately; a background purge
-// removes it for good after the grace window.
 // DeletePayment soft-deletes a payment. Returns true only when an active row was
 // actually deleted; false (no error) if it was already deleted or gone, so the
-// caller can skip a misleading success flash + audit event.
+// caller can skip a misleading success flash + audit event. The retained row is
+// durable financial evidence until a reviewed retention policy says otherwise.
 func (s *Store) DeletePayment(ctx context.Context, id int64) (bool, error) {
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE payments SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL`, id)
+	return s.setPaymentDeleted(ctx, id, true)
+}
+
+func (s *Store) setPaymentDeleted(ctx context.Context, id int64, deleted bool) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
-	n, _ := res.RowsAffected()
-	return n > 0, nil
+	defer func() { _ = tx.Rollback() }()
+	yearID, neighborID, err := paymentAccount(ctx, tx, id)
+	if err != nil {
+		return false, err
+	}
+	ok, err := lockAccountBoundary(ctx, tx, yearID, neighborID, false, false)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, ErrNotFound
+	}
+	payment, err := paymentForUpdate(ctx, tx, id)
+	if err != nil {
+		return false, err
+	}
+	wantChange := (deleted && payment.DeletedAt == nil) || (!deleted && payment.DeletedAt != nil)
+	if !wantChange {
+		return false, tx.Commit()
+	}
+	query := `UPDATE payments SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL`
+	action := "payment_delete"
+	if !deleted {
+		query = `UPDATE payments SET deleted_at=NULL WHERE id=$1 AND deleted_at IS NOT NULL`
+		action = "payment_restore"
+	}
+	res, err := tx.ExecContext(ctx, query, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil || n == 0 {
+		return false, err
+	}
+	if err := addAuditTx(
+		ctx,
+		tx,
+		action,
+		"payment",
+		strconv.FormatInt(id, 10),
+		paymentAuditState(payment.Amount, payment.PaidOn, payment.Method),
+	); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
 }
 
 // RestorePayment reverses a soft-delete (undo). Returns true only when a
 // soft-deleted row was actually reactivated; false (no error) if it was already
 // active or gone, so the caller can skip a misleading success flash + audit event.
 func (s *Store) RestorePayment(ctx context.Context, id int64) (bool, error) {
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE payments SET deleted_at=NULL WHERE id=$1 AND deleted_at IS NOT NULL`, id)
-	if err != nil {
-		return false, err
-	}
-	n, _ := res.RowsAffected()
-	return n > 0, nil
+	return s.setPaymentDeleted(ctx, id, false)
 }
 
-// PurgeDeletedPayments hard-deletes payments soft-deleted before the cutoff.
+// PurgeDeletedPayments intentionally keeps durable financial evidence. The
+// seven-day UI undo window is not a retention policy; deletion requires a
+// separately reviewed legal-hold-aware retention decision.
 func (s *Store) PurgeDeletedPayments(ctx context.Context, before time.Time) error {
-	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM payments WHERE deleted_at IS NOT NULL AND deleted_at < $1`, before)
-	return err
+	return nil
 }
 
 // NeighborPaymentSum returns the total a neighbor has paid toward a year.
@@ -168,6 +324,14 @@ func (s *Store) CarryForward(ctx context.Context, neighborID, fromYearID, toYear
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if err := lockSettlementAccounts(
+		ctx,
+		tx,
+		accountKey{yearID: fromYearID, neighborID: neighborID},
+		accountKey{yearID: toYearID, neighborID: neighborID},
+	); err != nil {
+		return err
+	}
 	// Both sides share transfer_id so the pair reverses atomically (see
 	// DeleteLedgerTransfer / SetLedgerVoidedTransfer).
 	const ins = `INSERT INTO neighbor_ledger (billing_year_id, neighbor_id, amount, description, posting_date, transfer_id)
@@ -176,6 +340,16 @@ func (s *Store) CarryForward(ctx context.Context, neighborID, fromYearID, toYear
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, ins, toYearID, neighborID, amount, toDesc, when, tid); err != nil {
+		return err
+	}
+	if err := addAuditTx(
+		ctx,
+		tx,
+		"carry_forward",
+		"ledger_transfer",
+		tid,
+		fmt.Sprintf("amount=%s; from_year_id=%d; to_year_id=%d", amount.StringFixed(2), fromYearID, toYearID),
+	); err != nil {
 		return err
 	}
 	return tx.Commit()

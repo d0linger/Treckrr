@@ -12,10 +12,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -206,6 +206,12 @@ type Options struct {
 	Dir         string
 	StatusFile  string
 	Keep        int
+	// SkipStartupCleanup is for short-lived CLI services. They must not remove
+	// another process's staging files before offline restore admission succeeds.
+	SkipStartupCleanup bool
+	// MaxBytes bounds each in-memory archive. Zero uses the online 128 MiB
+	// budget; a larger value is for an explicitly provisioned offline CLI only.
+	MaxBytes int64
 	// RehearseURL points at a server where a scratch database may be created and
 	// dropped for restore rehearsals. Empty disables rehearsals entirely — the
 	// conservative default, because the feature needs CREATE DATABASE rights.
@@ -232,6 +238,7 @@ type Service struct {
 
 	mu         sync.Mutex    // serializes status.json read-modify-write
 	opSem      chan struct{} // size-1 semaphore serializing DB dump/restore, ctx-aware (T-05)
+	workSem    chan struct{} // one whole memory-heavy job, including HTTP parsing
 	volRetryAt time.Time     // earliest next volume attempt after a failure (tick goroutine only)
 	s3RetryAt  time.Time     // earliest next S3 attempt after a failure (tick goroutine only)
 }
@@ -255,11 +262,13 @@ func (s *Service) updateStatus(mutate func(*Status)) {
 // New builds a Service. When opt.EncKey is empty the service is disabled and all
 // operations return ErrDisabled.
 func New(opt Options, db *sql.DB) *Service {
-	s := &Service{opt: opt, db: db, opSem: make(chan struct{}, 1)}
+	s := &Service{opt: opt, db: db, opSem: make(chan struct{}, 1), workSem: make(chan struct{}, 1)}
 	if opt.EncKey != "" {
 		s.secret = []byte(opt.EncKey)
 	}
-	s.cleanupLeftovers()
+	if !opt.SkipStartupCleanup {
+		s.cleanupLeftovers()
+	}
 	return s
 }
 
@@ -384,25 +393,6 @@ func decrypt(enc, secret []byte) ([]byte, error) {
 	return pt, nil
 }
 
-// dbURLEnv splits a postgres connection URL into a password-free URL plus a
-// child-process environment that carries the password via PGPASSWORD, so the
-// password never appears in the process argv (visible via ps / /proc/<pid>/cmdline
-// to any co-located process). A URL without an embedded password is returned
-// unchanged. libpq reads PGPASSWORD when the URL omits the password.
-func dbURLEnv(rawURL string) (cleanURL string, env []string) {
-	env = os.Environ()
-	u, err := url.Parse(rawURL)
-	if err != nil || u.User == nil {
-		return rawURL, env
-	}
-	pw, ok := u.User.Password()
-	if !ok {
-		return rawURL, env
-	}
-	u.User = url.User(u.User.Username()) // strip the password from the argv URL
-	return u.String(), append(env, "PGPASSWORD="+pw)
-}
-
 // dump runs pg_dump in PostgreSQL's custom format (compressed, restorable with
 // pg_restore) against the configured database and returns the raw archive bytes.
 func (s *Service) dump(ctx context.Context) ([]byte, error) {
@@ -414,13 +404,17 @@ func (s *Service) dump(ctx context.Context) ([]byte, error) {
 	defer s.releaseOp()
 	// DATABASE_URL is trusted deployment config, not user input; the password is
 	// passed via PGPASSWORD (see dbURLEnv), not on the command line.
-	dbURL, env := dbURLEnv(s.opt.DatabaseURL)
+	dbURL, env, err := dbURLEnv(s.opt.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
 	cmd := exec.CommandContext(ctx, "pg_dump", // #nosec G204
 		"--format=custom", "--no-owner", "--no-privileges", dbURL)
 	cmd.Env = env
 	var out, errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
+	// Include space for the TRKBK2 salt, nonce and tag in the archive budget.
+	cmd.Stdout = &limitedWriter{w: &out, remaining: s.maxBytes() - 50}
+	cmd.Stderr = &limitedWriter{w: &errBuf, remaining: 1 << 20}
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("pg_dump: %w: %s", err, strings.TrimSpace(errBuf.String()))
 	}
@@ -442,6 +436,11 @@ func (s *Service) SchemaVersion(ctx context.Context) string {
 // CreateEncrypted produces one encrypted dump in memory and its filename — the
 // path shared by the on-demand download and the scheduled writer.
 func (s *Service) CreateEncrypted(ctx context.Context) (data []byte, filename string, err error) {
+	ctx, release, err := s.AcquireWork(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	defer release()
 	if !s.Enabled() {
 		return nil, "", ErrDisabled
 	}
@@ -502,6 +501,11 @@ func (s *Service) RunScheduled(ctx context.Context) error {
 // runVolume writes one encrypted dump to the volume, prunes to keep, verifies it
 // restores, and updates status — without touching S3.
 func (s *Service) runVolume(ctx context.Context, keep int) error {
+	ctx, release, err := s.AcquireWork(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	enc, name, err := s.CreateEncrypted(ctx)
 	if err != nil {
 		s.updateStatus(func(st *Status) { st.OK = false })
@@ -559,6 +563,11 @@ func (s *Service) runVolume(ctx context.Context, keep int) error {
 // runS3Mirror uploads the newest volume dump not already in the bucket, prunes S3
 // to s3keep, and records the S3 status/time.
 func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
+	ctx, release, err := s.AcquireWork(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	if !s.S3Enabled() {
 		return nil
 	}
@@ -578,7 +587,7 @@ func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
 				// off-box copy forever. Re-verify the stored bytes (also catches at-rest
 				// bit-rot); if it's bad but we still hold a good local dump, self-heal by
 				// overwriting it rather than staying failed until the next volume cycle.
-				err := s.verifyS3Object(ctx, newest, r.Size)
+				err := s.verifyS3Object(ctx, newest, files[0].Size)
 				if err != nil {
 					if rerr := s.repairS3Mirror(ctx, newest); rerr != nil {
 						err = fmt.Errorf("s3 copy failed verification (%v) and repair failed: %w", err, rerr)
@@ -589,11 +598,14 @@ func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
 				ok := err == nil
 				now := time.Now()
 				s.updateStatus(func(st *Status) { st.S3OK, st.LastS3 = &ok, now })
+				if ok {
+					s.pruneS3(ctx, s3keep)
+				}
 				return err
 			}
 		}
 		name = newest
-		if data, err = s.Open(newest); err != nil {
+		if data, err = s.OpenContext(ctx, newest); err != nil {
 			return err
 		}
 	} else {
@@ -630,7 +642,7 @@ func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
 // verified first, so a bad local dump is never pushed over the (differently) bad
 // remote — repair only ever replaces a bad off-box copy with a known-good one.
 func (s *Service) repairS3Mirror(ctx context.Context, name string) error {
-	data, err := s.Open(name)
+	data, err := s.OpenContext(ctx, name)
 	if err != nil {
 		return err
 	}
@@ -644,9 +656,8 @@ func (s *Service) repairS3Mirror(ctx context.Context, name string) error {
 }
 
 // minRetention is the age below which a dump is never pruned, regardless of
-// count. Counting alone is a trap: seven retried runs in one bad afternoon
-// evict a whole week of recovery points, leaving seven copies of the same hour.
-// A day's grace means the newest dumps can never push out everything older.
+// count. This protects recent points from immediate deletion; it does not
+// guarantee daily/weekly spacing or preserve older points after many retries.
 const minRetention = 24 * time.Hour
 
 // prune keeps the newest keep dumps in the volume backup dir, but never deletes
@@ -685,8 +696,8 @@ func (s *Service) listArchive(ctx context.Context, raw []byte) (int, string, err
 	// tmp is an internal temp file we just wrote, not user input.
 	cmd := exec.CommandContext(ctx, "pg_restore", "--list", tmp) // #nosec G204
 	var out, errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
+	cmd.Stdout = &limitedWriter{w: &out, remaining: 16 << 20}
+	cmd.Stderr = &limitedWriter{w: &errBuf, remaining: 1 << 20}
 	if err := cmd.Run(); err != nil {
 		return 0, "", fmt.Errorf("not a valid archive: %s", strings.TrimSpace(errBuf.String()))
 	}
@@ -747,6 +758,14 @@ func contentSanity(toc string, objects int) error {
 // RestoreRaw restores decrypted dump bytes into targetURL, dropping and
 // recreating objects (--clean). Destructive — callers must confirm.
 func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) error {
+	if int64(len(raw)) > s.maxBytes() {
+		return errors.New("restore archive exceeds configured memory budget")
+	}
+	ctx, release, err := s.AcquireWork(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	// Serialize every dump/restore so a restore never overlaps a scheduled backup
 	// or another restore (T-05).
 	if err := s.acquireOp(ctx); err != nil {
@@ -765,15 +784,29 @@ func (s *Service) RestoreRaw(ctx context.Context, raw []byte, targetURL string) 
 	defer cleanup()
 	// targetURL is trusted deployment config; its password is passed via
 	// PGPASSWORD (see dbURLEnv), not on the command line.
-	dbURL, env := dbURLEnv(targetURL)
+	dbURL, env, err := dbURLEnv(targetURL)
+	if err != nil {
+		return err
+	}
+	// Omit ephemeral authentication rows in the restore transaction itself.
+	// A crash after COMMIT but before reconciliation must not resurrect sessions.
+	list, err := restoreList(ctx, tmp)
+	if err != nil {
+		return err
+	}
+	listFile, removeList, err := writeTemp(list)
+	if err != nil {
+		return err
+	}
+	defer removeList()
 	// --single-transaction wraps the whole clean+recreate+load in one transaction
 	// (implies --exit-on-error): on any failure it rolls back, so a timeout or tool
 	// error can no longer leave a partially restored database (T-05).
 	cmd := exec.CommandContext(ctx, "pg_restore", // #nosec G204
-		"--clean", "--if-exists", "--no-owner", "--single-transaction", "--dbname="+dbURL, tmp)
+		"--clean", "--if-exists", "--no-owner", "--single-transaction", "--use-list="+listFile, "--dbname="+dbURL, tmp)
 	cmd.Env = env
 	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
+	cmd.Stderr = &limitedWriter{w: &errBuf, remaining: 1 << 20}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("pg_restore: %w: %s", err, strings.TrimSpace(errBuf.String()))
 	}
@@ -799,16 +832,24 @@ func DecryptWith(enc []byte, keySecret string) ([]byte, error) {
 
 // Restore decrypts a backup file (with the service key) and restores it. CLI use.
 func (s *Service) Restore(ctx context.Context, encFile, targetURL string) error {
+	ctx, release, err := s.AcquireWork(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	if !s.Enabled() {
 		return ErrDisabled
 	}
 	// encFile is an operator-supplied path from the restore CLI, not user input.
-	enc, err := os.ReadFile(encFile) // #nosec G304
+	enc, err := s.readFile(encFile)
 	if err != nil {
 		return err
 	}
 	raw, err := decrypt(enc, s.secret)
 	if err != nil {
+		return err
+	}
+	if _, err := s.ValidateArchive(ctx, raw); err != nil {
 		return err
 	}
 	return s.RestoreRaw(ctx, raw, targetURL)
@@ -823,11 +864,16 @@ type TestReport struct {
 // TestRestore validates a backup file without touching the live DB. CLI use.
 func (s *Service) TestRestore(ctx context.Context, encFile string) (TestReport, error) {
 	var rep TestReport
+	ctx, release, err := s.AcquireWork(ctx)
+	if err != nil {
+		return rep, err
+	}
+	defer release()
 	if !s.Enabled() {
 		return rep, ErrDisabled
 	}
 	// encFile is an operator-supplied path from the restore CLI, not user input.
-	enc, err := os.ReadFile(encFile) // #nosec G304
+	enc, err := s.readFile(encFile)
 	if err != nil {
 		return rep, err
 	}
@@ -871,6 +917,16 @@ func validName(name string) bool {
 
 // Open returns the bytes of a stored encrypted dump for download.
 func (s *Service) Open(name string) ([]byte, error) {
+	return s.OpenContext(context.Background(), name)
+}
+
+// OpenContext reads a stored archive under the caller's memory-operation lease.
+func (s *Service) OpenContext(ctx context.Context, name string) ([]byte, error) {
+	_, release, err := s.AcquireWork(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	if !validName(name) {
 		return nil, fmt.Errorf("invalid backup name")
 	}
@@ -884,7 +940,7 @@ func (s *Service) Open(name string) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
-	return io.ReadAll(f)
+	return s.readArchive(f)
 }
 
 // Loop polls once a minute and runs the volume and S3 backups independently when
@@ -954,6 +1010,11 @@ func (s *Service) ManualVolume(ctx context.Context) error {
 // even when the volume schedule is off and no local dump exists) and never
 // prunes. Dumps in-memory, so it is safe under a read-only root filesystem.
 func (s *Service) ManualS3(ctx context.Context) (string, error) {
+	ctx, release, err := s.AcquireWork(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	if !s.Enabled() {
 		return "", ErrDisabled
 	}
@@ -1019,7 +1080,11 @@ func (s *Service) pruneS3(ctx context.Context, keep int) {
 	if err != nil {
 		return
 	}
+	cutoff := time.Now().Add(-minRetention)
 	for _, f := range files[keep:] { // S3List is newest-first
+		if f.ModTime.IsZero() || f.ModTime.After(cutoff) {
+			continue
+		}
 		if err := cl.RemoveObject(ctx, s.opt.S3.Bucket, s.opt.S3.Prefix+f.Name, minio.RemoveObjectOptions{}); err != nil {
 			slog.Warn("backup prune: s3 remove failed", "object", f.Name, "err", err)
 		}
@@ -1044,6 +1109,9 @@ func (s *Service) uploadS3(ctx context.Context, name string, data []byte) error 
 // GCM auth tag in decrypt catches corruption; contentSanity catches an empty archive.
 // Do NOT compare the ETag to an md5 — a multipart upload's ETag is not the object md5.
 func (s *Service) verifyS3Object(ctx context.Context, name string, wantSize int64) error {
+	if wantSize <= 0 || wantSize > s.maxBytes() {
+		return fmt.Errorf("backup object size out of bounds: %d", wantSize)
+	}
 	cl, err := s.s3Client()
 	if err != nil {
 		return err
@@ -1100,7 +1168,7 @@ func (s *Service) S3Test(ctx context.Context) error {
 // a single downloaded object (well above any realistic encrypted dump).
 const (
 	maxS3Listing     = 10_000
-	maxS3ObjectBytes = 1 << 30 // 1 GiB
+	maxS3ObjectBytes = 128 << 20 // matches the online restore/container budget
 )
 
 // S3List returns the encrypted dumps stored in the bucket (the bucket explorer).
@@ -1129,7 +1197,7 @@ func (s *Service) S3List(ctx context.Context) ([]BackupFile, error) {
 			return nil, fmt.Errorf("S3 listing exceeds %d objects; refusing to enumerate unbounded", maxS3Listing)
 		}
 		name := strings.TrimPrefix(obj.Key, s.opt.S3.Prefix)
-		if !strings.HasSuffix(name, ".dump.enc") {
+		if !validName(name) {
 			continue
 		}
 		out = append(out, BackupFile{Name: name, Size: obj.Size, ModTime: obj.LastModified})
@@ -1140,6 +1208,11 @@ func (s *Service) S3List(ctx context.Context) ([]BackupFile, error) {
 
 // S3Get downloads one object from the bucket (still encrypted).
 func (s *Service) S3Get(ctx context.Context, name string) ([]byte, error) {
+	ctx, release, err := s.AcquireWork(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	if !s.S3Enabled() {
 		return nil, fmt.Errorf("S3 ist nicht konfiguriert")
 	}
@@ -1155,7 +1228,7 @@ func (s *Service) S3Get(ctx context.Context, name string) ([]byte, error) {
 	// exhaust memory before the read.
 	if info, err := cl.StatObject(ctx, s.opt.S3.Bucket, key, minio.StatObjectOptions{}); err != nil {
 		return nil, err
-	} else if info.Size > maxS3ObjectBytes {
+	} else if info.Size < 0 || info.Size > s.maxBytes() {
 		return nil, fmt.Errorf("backup object too large: %d bytes", info.Size)
 	}
 	obj, err := cl.GetObject(ctx, s.opt.S3.Bucket, key, minio.GetObjectOptions{})
@@ -1164,12 +1237,12 @@ func (s *Service) S3Get(ctx context.Context, name string) ([]byte, error) {
 	}
 	defer obj.Close()
 	// Belt-and-suspenders: cap the read even if the reported size lied.
-	data, err := io.ReadAll(io.LimitReader(obj, maxS3ObjectBytes+1))
+	data, err := io.ReadAll(io.LimitReader(obj, s.maxBytes()+1))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) > maxS3ObjectBytes {
-		return nil, fmt.Errorf("backup object exceeds %d bytes", int64(maxS3ObjectBytes))
+	if int64(len(data)) > s.maxBytes() {
+		return nil, fmt.Errorf("backup object exceeds %d bytes", s.maxBytes())
 	}
 	return data, nil
 }

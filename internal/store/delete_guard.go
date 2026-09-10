@@ -80,9 +80,8 @@ func (b DeleteBlockers) Any() bool {
 // Soft-deleted payments COUNT. They are still rows, so the 0039 RESTRICT
 // constraints refuse the delete because of them; excluding them here would make
 // the precheck disagree with the database and turn a clear refusal into an
-// unexplained "Löschen fehlgeschlagen". They also remain restorable until the
-// undo grace period expires, so blocking is the honest answer — and it is
-// self-healing, since PurgeDeletedPayments removes them after seven days.
+// unexplained "Löschen fehlgeschlagen". They remain durable financial evidence;
+// physical deletion requires a separately reviewed retention/legal-hold policy.
 func (s *Store) NeighborDeleteBlockers(ctx context.Context, neighborID int64) (DeleteBlockers, error) {
 	var b DeleteBlockers
 	err := s.db.QueryRowContext(ctx, `

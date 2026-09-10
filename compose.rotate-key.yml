@@ -1,0 +1,6 @@
+# CLI-only secret projection; never add this override to the running web app.
+# docker compose -f docker-compose.yml -f compose.rotate-key.yml run --rm --no-deps app rotate-key
+services:
+  app:
+    environment:
+      BACKUP_ENCRYPTION_KEY_OLD: ${BACKUP_ENCRYPTION_KEY_OLD:?Set the previous backup key for this rotation only}

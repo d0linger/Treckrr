@@ -411,7 +411,7 @@ func (s *Server) handleBackupFile(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.PathValue("name")
 	extendWriteDeadline(w, 10*time.Minute)
-	data, err := s.backup.Open(name)
+	data, err := s.backup.OpenContext(r.Context(), name)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -568,10 +568,18 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 	defer rcancel()
 	// [T-05] Enter maintenance mode for the whole restore + reconcile: other requests
 	// get a 503 so none can read/write a half-restored schema. This admin request
-	// already passed the gate, so it isn't blocked. Cleared on every exit path.
-	s.setMaintenance(true)
-	defer s.setMaintenance(false)
+	// already passed the gate. Reopen traffic only after verified reconciliation.
+	finish, err := s.beginRestore(rctx)
+	if err != nil {
+		s.setFlash(w, r, "error", "Wiederherstellung nicht möglich: andere App-Instanzen stoppen und erneut versuchen.")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	reconciled := false
+	defer func() { finish(reconciled) }()
 	if err := s.backup.RestoreRaw(rctx, raw, s.cfg.DatabaseURL); err != nil {
+		// A lost connection can make COMMIT's outcome uncertain. Keep traffic
+		// stopped until an operator verifies recovery, even on a restore error.
 		slog.Error("restore failed", "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Wiederherstellung fehlgeschlagen.")
 		redirect(w, r, "/admin/backup")
@@ -589,7 +597,7 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 			slog.Warn("post-restore: ensure admin failed", "err", sanitizeLog(err.Error()))
 		}
 		if err := s.store.EnsureBackupSettings(rctx, models.BackupSettings{
-			VolumeCron: "0 3 * * *", VolumeKeep: s.cfg.BackupKeep, S3Cron: "0 4 * * *",
+			VolumeCron: "0 3 * * *", VolumeKeep: s.cfg.BackupKeep, S3Cron: "0 4 * * *", S3Keep: s.cfg.S3Keep,
 		}); err != nil {
 			slog.Warn("post-restore: ensure backup settings failed", "err", sanitizeLog(err.Error()))
 		}
@@ -601,6 +609,7 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 		return
 	}
 	s.audit(r, "backup_restore", "backup", 0, fmt.Sprintf("%d Objekte aus Upload wiederhergestellt", objects))
+	reconciled = true
 	s.setFlash(w, r, "success", "Wiederherstellung abgeschlossen (Schema aktualisiert, kein Neustart nötig). Bitte neu anmelden.")
 	redirect(w, r, "/admin/backup")
 }

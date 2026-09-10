@@ -139,7 +139,8 @@ func TestDeleteBlockersIntegration(t *testing.T) {
 
 	// A soft-deleted payment STILL blocks: the row exists, so RESTRICT refuses the
 	// delete because of it. The precheck has to agree, or the refusal arrives with
-	// no explanation. It is self-healing — PurgeDeletedPayments clears it later.
+	// no explanation. The retained row remains a deliberate blocker until an
+	// approved financial-retention process authorizes physical deletion.
 	softID := mkNeighbor("DG-Storniert")
 	if err := st.AddPayment(ctx, yearID, softID, decimal.RequireFromString("10"), time.Now(), "", ""); err != nil {
 		t.Fatalf("add payment: %v", err)

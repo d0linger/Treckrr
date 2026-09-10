@@ -19,20 +19,28 @@ import (
 // as a deliberate break-glass to reset the password and revoke live sessions.
 func (s *Store) EnsureAdmin(ctx context.Context, username, password string, reset bool) error {
 	var (
-		id      int64
-		isAdmin bool
+		id       int64
+		isAdmin  bool
+		disabled bool
 	)
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, is_admin FROM users WHERE username=$1`, username).Scan(&id, &isAdmin)
+		`SELECT id, role='admin', disabled FROM users WHERE username=$1`, username).Scan(&id, &isAdmin, &disabled)
 	if errors.Is(err, sql.ErrNoRows) {
-		newID, err := s.CreateUser(ctx, username, password, models.RoleAdmin)
+		_, err := s.CreateAccount(ctx, NewAccount{Username: username, Password: password, Role: models.RoleAdmin, MustChangePassword: true})
 		if err != nil {
 			return fmt.Errorf("create admin: %w", err)
 		}
-		return s.SetMustChangePassword(ctx, newID, true)
+		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("look up admin: %w", err)
+	}
+	if disabled {
+		// Retired identities must not be resurrected by stale environment config.
+		if reset {
+			return fmt.Errorf("bootstrap admin is disabled; choose an active administrator")
+		}
+		return nil
 	}
 	if !isAdmin {
 		if err := s.SetAdmin(ctx, id, true); err != nil {
@@ -43,11 +51,5 @@ func (s *Store) EnsureAdmin(ctx context.Context, username, password string, rese
 		return nil
 	}
 	// Break-glass: reset to the env password, force a change, and revoke sessions.
-	if err := s.UpdatePassword(ctx, id, password); err != nil {
-		return err
-	}
-	if err := s.SetMustChangePassword(ctx, id, true); err != nil {
-		return err
-	}
-	return s.DeleteUserSessionsExcept(ctx, id, "")
+	return s.ResetPassword(ctx, id, password, true)
 }

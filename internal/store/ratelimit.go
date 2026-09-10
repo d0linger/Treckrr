@@ -2,8 +2,28 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"time"
 )
+
+// RateLimitAdmit reserves an attempt before verification. The capped UPSERT is
+// atomic across processes; rejected traffic neither increments nor overflows it.
+func (s *Store) RateLimitAdmit(ctx context.Context, key string, maxAttempts int, window time.Duration) (bool, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+		INSERT INTO login_attempts (key, fails, window_start, updated_at) VALUES ($1,1,now(),now())
+		ON CONFLICT (key) DO UPDATE SET
+		 fails=CASE WHEN now()-login_attempts.window_start>make_interval(secs=>$3) THEN 1 ELSE login_attempts.fails+1 END,
+		 window_start=CASE WHEN now()-login_attempts.window_start>make_interval(secs=>$3) THEN now() ELSE login_attempts.window_start END,
+		 updated_at=now()
+		WHERE login_attempts.fails<$2 OR now()-login_attempts.window_start>make_interval(secs=>$3)
+		RETURNING fails`, key, maxAttempts, window.Seconds()).Scan(&count)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil && count <= maxAttempts, err
+}
 
 // RateLimitBlocked reports whether key has reached maxFails within the active
 // window. All time comparisons happen in the database to avoid app/DB clock

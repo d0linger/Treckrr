@@ -127,6 +127,8 @@ func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 // audit records an action in the persistent audit trail. Failures are logged
 // but never block the request.
 func (s *Server) audit(r *http.Request, action, entity string, entityID int64, detail string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+	defer cancel()
 	var (
 		uid   *int64
 		uname string
@@ -140,9 +142,16 @@ func (s *Server) audit(r *http.Request, action, entity string, entityID int64, d
 	if entityID != 0 {
 		idStr = strconv.FormatInt(entityID, 10)
 	}
-	if err := s.store.AddAudit(r.Context(), uid, uname, action, entity, idStr, detail, s.clientIP(r)); err != nil {
+	if err := s.store.AddAudit(ctx, uid, uname, action, entity, idStr, detail, s.clientIP(r)); err != nil {
 		slog.Error("audit write failed", "action", action, "entity", entity, "err", err)
 	}
+}
+
+func logRequestPath(path string) string {
+	if strings.HasPrefix(path, "/s/beleg/") {
+		return "/s/beleg/[redacted]"
+	}
+	return sanitizeLog(path)
 }
 
 // fieldChange is one before/after pair for building old→new audit details.
@@ -221,7 +230,9 @@ func (s *Server) yearLabel(r *http.Request, id int64) string {
 
 // auditLogin records a login attempt where no ctx user is set yet.
 func (s *Server) auditLogin(r *http.Request, username, action, detail string) {
-	if err := s.store.AddAudit(r.Context(), nil, username, action, "auth", "", detail, s.clientIP(r)); err != nil {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+	defer cancel()
+	if err := s.store.AddAudit(ctx, nil, username, action, "auth", "", detail, s.clientIP(r)); err != nil {
 		slog.Error("audit write failed", "action", action, "err", err)
 	}
 }
@@ -339,7 +350,7 @@ func (s *Server) recoverPanic(next http.Handler) http.Handler {
 			metrics.Inc(metrics.HTTPPanics)
 			slog.Error("handler panic",
 				"req_id", id,
-				"path", sanitizeLog(r.URL.Path),
+				"path", logRequestPath(r.URL.Path),
 				"panic", sanitizeLog(fmt.Sprint(rec)),
 				"stack", string(debug.Stack()))
 			// Best effort: if the handler already streamed a body this writes into
@@ -392,7 +403,7 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 		slog.Info("request",
 			"req_id", id,
 			"method", sanitizeLog(r.Method),
-			"path", sanitizeLog(r.URL.Path),
+			"path", logRequestPath(r.URL.Path),
 			"status", rec.status,
 			"dur", dur.Round(time.Millisecond).String(),
 			"user", sanitizeLog(user),

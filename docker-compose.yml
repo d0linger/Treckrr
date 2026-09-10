@@ -48,6 +48,7 @@ services:
 
   app:
     build: .
+    stop_grace_period: 120s
     container_name: treckrr-app
     restart: unless-stopped
     # Hardening — works the same under rootless Docker/Podman. The app writes
@@ -115,6 +116,8 @@ services:
       BACKUP_STATUS_FILE: ${BACKUP_STATUS_FILE:-/backups/status.json}
       # Schedule (cron) is configured in the admin Backup panel, not here.
       BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      BACKUP_REHEARSE_URL: ${BACKUP_REHEARSE_URL:-}
+      S3_KEEP: ${S3_KEEP:-0}
       # Optional off-box S3/Backblaze destination for scheduled backups (3-2-1).
       # Empty S3_ENDPOINT/S3_BUCKET disables it.
       S3_ENDPOINT: ${S3_ENDPOINT:-}

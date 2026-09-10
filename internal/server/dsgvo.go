@@ -9,30 +9,36 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // The DSGVO/GDPR Art. 15 (right of access) & Art. 20 (portability) export: a
-// machine-readable JSON document containing every piece of personal data Treckrr
-// holds about one neighbor — their master record plus, per billing year, all
-// bookings (including voided ones, for completeness) and all invoice documents.
+// machine-readable neighbor-record export. The accompanying-delivery checklist
+// identifies records needing separate delivery/review; it is not a completeness
+// claim for all subject roles, third-party data, logs or backup archives.
 
 type dsgvoExport struct {
-	ExportedAt   time.Time    `json:"exported_at"`
-	Notice       string       `json:"notice"`
-	Subject      dsgvoSubject `json:"subject"`
-	BillingYears []dsgvoYear  `json:"billing_years"`
+	ExportedAt         time.Time                       `json:"exported_at"`
+	Notice             string                          `json:"notice"`
+	Subject            dsgvoSubject                    `json:"subject"`
+	BillingYears       []dsgvoYear                     `json:"billing_years"`
+	Recurring          []store.NeighborRecurringExport `json:"recurring_rules"`
+	Mail               []store.NeighborMailExport      `json:"mail_outbox"`
+	AdditionalDelivery []string                        `json:"additional_delivery_required"`
 }
 
 type dsgvoSubject struct {
-	ID       int64     `json:"id"`
-	Name     string    `json:"name"`
-	Address  string    `json:"address,omitempty"`
-	TaxID    string    `json:"tax_id,omitempty"`
-	Email    string    `json:"email,omitempty"`
-	IBAN     string    `json:"iban,omitempty"`
-	Note     string    `json:"note,omitempty"`
-	Archived bool      `json:"archived"`
-	Created  time.Time `json:"created"`
+	ID              int64     `json:"id"`
+	Name            string    `json:"name"`
+	Address         string    `json:"address,omitempty"`
+	TaxID           string    `json:"tax_id,omitempty"`
+	Email           string    `json:"email,omitempty"`
+	IBAN            string    `json:"iban,omitempty"`
+	Note            string    `json:"note,omitempty"`
+	Archived        bool      `json:"archived"`
+	Anonymized      bool      `json:"anonymized"`
+	PaymentTermDays *int      `json:"payment_term_days,omitempty"`
+	Created         time.Time `json:"created"`
 }
 
 type dsgvoYear struct {
@@ -65,11 +71,14 @@ type dsgvoDunning struct {
 }
 
 type dsgvoPayment struct {
-	PaidOn  time.Time       `json:"paid_on"`
-	Amount  decimal.Decimal `json:"amount"`
-	Method  string          `json:"method,omitempty"`
-	Invoice string          `json:"invoice,omitempty"`
-	Note    string          `json:"note,omitempty"`
+	ID        int64           `json:"id"`
+	PaidOn    time.Time       `json:"paid_on"`
+	Amount    decimal.Decimal `json:"amount"`
+	Method    string          `json:"method,omitempty"`
+	Invoice   string          `json:"invoice,omitempty"`
+	Note      string          `json:"note,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
+	DeletedAt *time.Time      `json:"deleted_at,omitempty"`
 }
 
 type dsgvoLedger struct {
@@ -77,6 +86,7 @@ type dsgvoLedger struct {
 	Amount      decimal.Decimal `json:"amount"`
 	Description string          `json:"description,omitempty"`
 	Voided      bool            `json:"voided"`
+	VoidReason  string          `json:"void_reason,omitempty"`
 }
 
 type dsgvoPhoto struct {
@@ -131,7 +141,8 @@ func dsgvoSubjectFromNeighbor(n *models.Neighbor) dsgvoSubject {
 	return dsgvoSubject{
 		ID: n.ID, Name: n.Name, Address: n.Address, TaxID: n.TaxID,
 		Email: n.Email, IBAN: n.IBAN,
-		Note: n.Note, Archived: n.Archived, Created: n.Created,
+		Note: n.Note, Archived: n.Archived, Anonymized: n.Anonymized, Created: n.Created,
+		PaymentTermDays: n.PaymentTermDays,
 	}
 }
 
@@ -173,8 +184,24 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 
 	out := dsgvoExport{
 		ExportedAt: time.Now(),
-		Notice:     "DSGVO Art. 15/20 Datenauskunft — alle zu dieser Person gespeicherten Daten.",
+		Notice:     "DSGVO Art. 15/20 Datenauskunft — strukturierte Nachbardaten; ergänzende Unterlagen gemäß Prüfliste separat bereitstellen.",
 		Subject:    dsgvoSubjectFromNeighbor(n),
+		AdditionalDelivery: []string{
+			"Fotos: Die angegebenen URLs benötigen eine interne Anmeldung. Berechtigte Fotos herunterladen und als Dateien sicher mitliefern; URLs allein sind keine vollständige Kopie.",
+			"E-Mail-Anhänge: Gespeicherte Dateien anhand der mail_outbox-ID und Anhangsmetadaten prüfen und separat sicher mitliefern; Anhangsbytes und technische SMTP-Fehler sind nicht enthalten.",
+			"Protokolle: Personenbezogene Audit- und Betriebsprotokolle durch einen Administrator prüfen, fremde Daten und Zugangsdaten entfernen und einen berechtigten Auszug separat mitliefern. Eine Namenssuche allein ist nicht vollständig.",
+			"Weitere Rollen und Archive: Personenstamm, Benutzerkonten und Sicherungen separat prüfen, falls diese dieselbe betroffene Person betreffen. Dieser Export ordnet diese Rollen nicht automatisch zu.",
+		},
+	}
+	out.Recurring, err = s.store.ListNeighborRecurringExport(r.Context(), n.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	out.Mail, err = s.store.ListNeighborMailExport(r.Context(), n.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
 	}
 	for _, y := range years {
 		entries, err := s.store.ListEntries(r.Context(), n.ID, y.ID)
@@ -187,7 +214,7 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
-		payments, err := s.store.ListPayments(r.Context(), y.ID, n.ID)
+		payments, err := s.store.ListRetainedPayments(r.Context(), y.ID, n.ID)
 		if err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
@@ -235,13 +262,14 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 		}
 		for _, p := range payments {
 			dy.Payments = append(dy.Payments, dsgvoPayment{
+				ID: p.ID, CreatedAt: p.Created, DeletedAt: p.DeletedAt,
 				PaidOn: p.PaidOn, Amount: p.Amount, Method: p.Method,
 				Invoice: p.InvoiceNumber, Note: p.Note,
 			})
 		}
 		for _, l := range ledger {
 			dy.Ledger = append(dy.Ledger, dsgvoLedger{
-				Date: l.Date, Amount: l.Amount, Description: l.Description, Voided: l.Voided,
+				Date: l.Date, Amount: l.Amount, Description: l.Description, Voided: l.Voided, VoidReason: l.VoidReason,
 			})
 		}
 		for _, ph := range photos {

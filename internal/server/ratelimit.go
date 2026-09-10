@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -33,14 +34,25 @@ const (
 	shareWindow    = 15 * time.Minute
 )
 
-// loginLimiter is a Postgres-backed sliding-window limiter for login and other
-// sensitive actions, keyed by client IP or user. Persisting the state means it
-// survives restarts and is shared across instances. On a DB error it fails open
-// (does not lock users out) rather than fail closed — but the error is logged so
-// the degraded state is observable rather than silent.
+// loginLimiter shares persistent counters across instances. Password/MFA
+// verification uses fail-closed atomic admission; legacy scanner/ceremony checks
+// below keep their separate policies.
 type loginLimiter struct{ store *store.Store }
 
 func newLoginLimiter(st *store.Store) *loginLimiter { return &loginLimiter{store: st} }
+
+// admitVerification reserves before any credential work and fails closed on a
+// persistence error. Successful authentication clears the reservation bucket.
+func (s *Server) admitVerification(w http.ResponseWriter, r *http.Request, key string, maxAttempts int, window time.Duration) (bool, bool) {
+	allowed, err := s.store.RateLimitAdmit(r.Context(), key, maxAttempts, window)
+	if err != nil {
+		slog.Error("ratelimit admission failed", "err", sanitizeLog(err.Error()))
+		w.Header().Set("Retry-After", "60")
+		http.Error(w, "Anmeldung vorübergehend nicht verfügbar", http.StatusServiceUnavailable)
+		return false, true
+	}
+	return allowed, false
+}
 
 // blocked reports whether the key currently exceeds the per-IP failure threshold.
 func (l *loginLimiter) blocked(ctx context.Context, key string) bool {
@@ -72,24 +84,6 @@ func (l *loginLimiter) reset(ctx context.Context, key string) {
 // so failures are counted per target account independent of source IP.
 func accountKey(username string) string {
 	return "pwuser:" + strings.ToLower(strings.TrimSpace(username))
-}
-
-// accountBlocked reports whether login attempts for the given username exceed the
-// account-scoped threshold, independent of which IP(s) they came from.
-func (l *loginLimiter) accountBlocked(ctx context.Context, username string) bool {
-	b, err := l.store.RateLimitBlocked(ctx, accountKey(username), accountMaxFails, accountWindow)
-	if err != nil {
-		slog.Warn("ratelimit degraded (account)", "err", sanitizeLog(err.Error()))
-		return false // fail open, but visibly
-	}
-	return b
-}
-
-// accountFail records a failed login attempt against the target account.
-func (l *loginLimiter) accountFail(ctx context.Context, username string) {
-	if _, err := l.store.RateLimitFail(ctx, accountKey(username), accountWindow); err != nil {
-		slog.Warn("ratelimit fail-record failed (account)", "err", sanitizeLog(err.Error()))
-	}
 }
 
 // shareKey namespaces the public share-link miss counter by client IP, keeping it
@@ -150,8 +144,7 @@ func ceremonyKey(ip string) string { return "wabegin:" + ip }
 // The cheap blocked() read stays in front so an already-blocked client is turned
 // away without a write.
 //
-// Unlike the login limiter this counts SUCCESSFUL requests, because the resource
-// being protected is the ceremony row itself, which a begin creates either way.
+// This counts successful begin requests too: each one creates a ceremony row.
 //
 // It fails CLOSED, against the fail-open convention used elsewhere. That costs
 // nothing here: the very next step, CreateWebauthnCeremony, needs the same

@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/shopspring/decimal"
 )
 
 // Payments gained a method, an invoice link, an edit path, credit handling and
@@ -58,22 +60,32 @@ func TestPaymentFlowIntegration(t *testing.T) {
 		t.Errorf("unknown method %q was stored", got.Method)
 	}
 
-	// Overpay: 92 owed, 45 paid, pay another 100 -> credit 53. Both credit
-	// actions must appear; the payout books a ledger posting that zeroes it.
+	// Overpay the invoice. Settlement is based on its frozen gross amount, not
+	// the live net booking total; both credit actions must show that amount and
+	// payout must book exactly enough to zero it.
 	e.post(fmt.Sprintf("/neighbors/%d/payments", nid), url.Values{
 		"year_id": {itoa64(yid)}, "amount": {"100"}, "paid_on": {"2026-05-04"},
 	})
+	inv, err := e.st.GetInvoice(e.ctx, yid, nid)
+	if err != nil {
+		t.Fatalf("get invoice: %v", err)
+	}
+	if inv.Content == nil {
+		t.Fatal("issued invoice has no frozen content")
+	}
+	credit := inv.Content.Gross.Sub(got.Amount).Sub(decimal.RequireFromString("100")).Neg()
+	displayedCredit := strings.ReplaceAll(credit.StringFixed(2), ".", ",")
 	page = e.get(fmt.Sprintf("/neighbors/%d?year=%d", nid, yid))
-	if !strings.Contains(page, "Guthaben (53,00") {
-		t.Fatalf("credit actions missing or wrong amount (want Guthaben (53,00 …))")
+	if !strings.Contains(page, "Guthaben ("+displayedCredit) {
+		t.Fatalf("credit actions missing or wrong amount (want Guthaben (%s …))", displayedCredit)
 	}
 	e.post(fmt.Sprintf("/neighbors/%d/credit-payout", nid), url.Values{"year_id": {itoa64(yid)}})
 	rest, err := e.st.NeighborLedgerSum(e.ctx, yid, nid)
 	if err != nil {
 		t.Fatalf("ledger sum: %v", err)
 	}
-	if rest.StringFixed(2) != "53.00" {
-		t.Errorf("payout posting = %s, want 53.00", rest.StringFixed(2))
+	if !rest.Equal(credit) {
+		t.Errorf("payout posting = %s, want %s", rest.StringFixed(2), credit.StringFixed(2))
 	}
 	page = e.get(fmt.Sprintf("/neighbors/%d?year=%d", nid, yid))
 	if strings.Contains(page, "Guthaben (") {
@@ -85,7 +97,7 @@ func TestPaymentFlowIntegration(t *testing.T) {
 
 	// A second payout must refuse: the credit is gone.
 	e.post(fmt.Sprintf("/neighbors/%d/credit-payout", nid), url.Values{"year_id": {itoa64(yid)}})
-	if rest2, _ := e.st.NeighborLedgerSum(e.ctx, yid, nid); rest2.StringFixed(2) != "53.00" {
+	if rest2, _ := e.st.NeighborLedgerSum(e.ctx, yid, nid); !rest2.Equal(credit) {
 		t.Errorf("double payout changed the ledger: %s", rest2.StringFixed(2))
 	}
 }

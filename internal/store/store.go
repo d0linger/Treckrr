@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,16 +88,16 @@ func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 // ---- Users ---------------------------------------------------------------
 
 // userCols is the shared column list for scanning a models.User.
-const userCols = `id, username, email, role, is_admin, must_change_password, totp_enabled, created_at`
+const userCols = `id, username, email, role, is_admin, must_change_password, totp_enabled, created_at, disabled`
 
 func scanUser(sc scanner) (models.User, error) {
 	var u models.User
 	if err := sc.Scan(&u.ID, &u.Username, &u.Email, &u.Role, &u.IsAdmin,
-		&u.MustChangePassword, &u.TotpEnabled, &u.CreatedAt); err != nil {
+		&u.MustChangePassword, &u.TotpEnabled, &u.CreatedAt, &u.Disabled); err != nil {
 		return u, err
 	}
 	// Role is authoritative; keep the legacy IsAdmin flag in sync.
-	u.IsAdmin = u.Role == models.RoleAdmin
+	u.IsAdmin = !u.Disabled && u.Role == models.RoleAdmin
 	return u, nil
 }
 
@@ -117,27 +118,49 @@ func (s *Store) CreateUser(ctx context.Context, username, password, role string)
 // UpdateUserAccount updates a user's username and e-mail. Returns an error if
 // the username is already taken (the users.username UNIQUE constraint).
 func (s *Store) UpdateUserAccount(ctx context.Context, userID int64, username, email string) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE users SET username=$1, email=$2 WHERE id=$3`, username, email, userID)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	previous, err := scanUser(tx.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE id=$1 AND NOT disabled FOR UPDATE`, userID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx,
+		`UPDATE users SET username=$1, email=$2 WHERE id=$3 AND NOT disabled`, username, email, userID)
+	if err := activeUserUpdateResult(res, err); err != nil {
+		return err
+	}
+	detail := fmt.Sprintf("Benutzername: %s → %s; E-Mail: %s → %s", previous.Username, username, previous.Email, email)
+	if err := addAuditTx(ctx, tx, "update", "user", strconv.FormatInt(userID, 10), detail); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SetMustChangePassword flags/unflags a forced password change on next login.
 func (s *Store) SetMustChangePassword(ctx context.Context, userID int64, must bool) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE users SET must_change_password=$1 WHERE id=$2`, must, userID)
-	return err
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE users SET must_change_password=$1 WHERE id=$2 AND NOT disabled`, must, userID)
+	return activeUserUpdateResult(res, err)
 }
 
-// UpdatePassword sets a new password for the given user.
-func (s *Store) UpdatePassword(ctx context.Context, userID int64, password string) error {
-	hash, err := auth.HashPassword(password)
+func activeUserUpdateResult(result sql.Result, err error) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx,
-		`UPDATE users SET password_hash=$1 WHERE id=$2`, hash, userID)
-	return err
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // SetAdmin toggles admin by mapping to the role model. It routes through the
@@ -161,6 +184,9 @@ const adminLockKey = 4712
 // fails closed on any error (SH-04). Returns ErrLastAdmin if the change would
 // leave no admin, ErrNotFound if the user is gone.
 func (s *Store) SetRoleSafe(ctx context.Context, userID int64, role string) error {
+	if role != models.RoleAdmin && role != models.RoleEditor && role != models.RoleViewer {
+		return fmt.Errorf("invalid role")
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -170,7 +196,7 @@ func (s *Store) SetRoleSafe(ctx context.Context, userID int64, role string) erro
 		return err
 	}
 	var wasAdmin bool
-	if err := tx.QueryRowContext(ctx, `SELECT is_admin FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(&wasAdmin); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT role='admin' FROM users WHERE id=$1 AND NOT disabled FOR UPDATE`, userID).Scan(&wasAdmin); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -178,7 +204,7 @@ func (s *Store) SetRoleSafe(ctx context.Context, userID int64, role string) erro
 	}
 	if wasAdmin && role != models.RoleAdmin {
 		var admins int
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM users WHERE is_admin`).Scan(&admins); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM users WHERE role='admin' AND NOT disabled`).Scan(&admins); err != nil {
 			return err
 		}
 		if admins <= 1 {
@@ -189,12 +215,17 @@ func (s *Store) SetRoleSafe(ctx context.Context, userID int64, role string) erro
 		`UPDATE users SET role=$1, is_admin=$2 WHERE id=$3`, role, role == models.RoleAdmin, userID); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=$1`, userID); err != nil {
+		return err
+	}
+	if err := addAuditTx(ctx, tx, "set_role", "user", strconv.FormatInt(userID, 10), role+"; Sitzungen beendet"); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
-// DeleteUserSafe removes a user but refuses to delete the last admin — the admin
-// check and the delete are atomic under the same advisory lock, failing closed
-// (SH-04). Returns ErrLastAdmin / ErrNotFound as SetRoleSafe does.
+// DeleteUserSafe deactivates a user without deleting their audit identity.
+// Credentials, sessions and deactivation audit are changed atomically.
 func (s *Store) DeleteUserSafe(ctx context.Context, userID int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -205,7 +236,7 @@ func (s *Store) DeleteUserSafe(ctx context.Context, userID int64) error {
 		return err
 	}
 	var isAdmin bool
-	if err := tx.QueryRowContext(ctx, `SELECT is_admin FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(&isAdmin); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT role='admin' FROM users WHERE id=$1 AND NOT disabled FOR UPDATE`, userID).Scan(&isAdmin); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -213,14 +244,27 @@ func (s *Store) DeleteUserSafe(ctx context.Context, userID int64) error {
 	}
 	if isAdmin {
 		var admins int
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM users WHERE is_admin`).Scan(&admins); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM users WHERE role='admin' AND NOT disabled`).Scan(&admins); err != nil {
 			return err
 		}
 		if admins <= 1 {
 			return ErrLastAdmin
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id=$1`, userID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE users SET disabled=true, password_hash='',
+		totp_enabled=false, totp_secret='', totp_last_step=NULL WHERE id=$1`, userID); err != nil {
+		return err
+	}
+	for _, query := range []string{
+		`DELETE FROM sessions WHERE user_id=$1`,
+		`DELETE FROM totp_recovery_codes WHERE user_id=$1`,
+		`DELETE FROM webauthn_credentials WHERE user_id=$1`,
+	} {
+		if _, err := tx.ExecContext(ctx, query, userID); err != nil {
+			return err
+		}
+	}
+	if err := addAuditTx(ctx, tx, "deactivate", "user", strconv.FormatInt(userID, 10), "Zugang gesperrt; Historie erhalten"); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -248,9 +292,9 @@ func (s *Store) AuthenticateUser(ctx context.Context, username, password string)
 		hash string
 	)
 	err := s.db.QueryRowContext(ctx,
-		`SELECT `+userCols+`, password_hash FROM users WHERE username=$1`, username).
+		`SELECT `+userCols+`, password_hash FROM users WHERE username=$1 AND NOT disabled`, username).
 		Scan(&u.ID, &u.Username, &u.Email, &u.Role, &u.IsAdmin, &u.MustChangePassword,
-			&u.TotpEnabled, &u.CreatedAt, &hash)
+			&u.TotpEnabled, &u.CreatedAt, &u.Disabled, &hash)
 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
@@ -354,7 +398,7 @@ func (s *Store) MigrateTotpSecretsToV2(ctx context.Context) (int, error) {
 func (s *Store) GetTotpSecret(ctx context.Context, userID int64) (string, error) {
 	var secret string
 	err := s.db.QueryRowContext(ctx,
-		`SELECT totp_secret FROM users WHERE id=$1`, userID).Scan(&secret)
+		`SELECT totp_secret FROM users WHERE id=$1 AND NOT disabled`, userID).Scan(&secret)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrNotFound
 	}
@@ -364,7 +408,8 @@ func (s *Store) GetTotpSecret(ctx context.Context, userID int64) (string, error)
 	return s.decryptTotp(secret)
 }
 
-// SetTotp enables/disables TOTP and stores the secret (encrypted, current format).
+// SetTotp stores an encrypted seed. A stale setup GET must not disable an active
+// factor; explicit factor changes use ConfigureTwoFactor with an audit instead.
 func (s *Store) SetTotp(ctx context.Context, userID int64, enabled bool, secret string) error {
 	if secret != "" {
 		enc, err := s.encryptTotp(secret)
@@ -373,9 +418,10 @@ func (s *Store) SetTotp(ctx context.Context, userID int64, enabled bool, secret 
 		}
 		secret = enc
 	}
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE users SET totp_enabled=$1, totp_secret=$2 WHERE id=$3`, enabled, secret, userID)
-	return err
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE users SET totp_enabled=$1, totp_secret=$2 WHERE id=$3 AND NOT disabled
+		 AND (NOT totp_enabled OR $1)`, enabled, secret, userID)
+	return activeUserUpdateResult(res, err)
 }
 
 // AcceptTotpStep records a just-matched TOTP time-step for replay protection.
@@ -385,7 +431,7 @@ func (s *Store) SetTotp(ctx context.Context, userID int64, enabled bool, secret 
 func (s *Store) AcceptTotpStep(ctx context.Context, userID int64, step uint64) (bool, error) {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE users SET totp_last_step = $2
-		  WHERE id = $1 AND (totp_last_step IS NULL OR totp_last_step < $2)`,
+		  WHERE id = $1 AND NOT disabled AND (totp_last_step IS NULL OR totp_last_step < $2)`,
 		userID, int64(step)) //nosec G115 -- TOTP step (unix/30) fits int64 for millennia
 	if err != nil {
 		return false, err
@@ -445,11 +491,33 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Durati
 	if err != nil {
 		return "", err
 	}
-	_, err = s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	var username string
+	if err := tx.QueryRowContext(ctx, `SELECT username FROM users WHERE id=$1 AND NOT disabled FOR UPDATE`, userID).Scan(&username); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO sessions (token, user_id, expires_at, user_agent, ip)
 		 VALUES ($1,$2,$3,$4,$5)`,
 		HashToken(token), userID, time.Now().Add(ttl), userAgent, ip)
-	return token, err
+	if err != nil {
+		return "", err
+	}
+	ctx = WithAuditActor(ctx, AuditActor{UserID: &userID, Username: username, IP: ip})
+	if err := addAuditTx(ctx, tx, "login", "auth", "", ""); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 // UserFromSession resolves a session token to its (non-expired) user. On each
@@ -460,9 +528,9 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Durati
 func (s *Store) UserFromSession(ctx context.Context, token string, slideTTL, absoluteTTL time.Duration) (*models.User, error) {
 	th := HashToken(token)
 	u, err := scanUser(s.db.QueryRowContext(ctx,
-		`SELECT u.id, u.username, u.email, u.role, u.is_admin, u.must_change_password, u.totp_enabled, u.created_at
+		`SELECT u.id, u.username, u.email, u.role, u.is_admin, u.must_change_password, u.totp_enabled, u.created_at, u.disabled
 		   FROM sessions s JOIN users u ON u.id = s.user_id
-		  WHERE s.token=$1 AND s.expires_at > now()
+		  WHERE s.token=$1 AND s.expires_at > now() AND NOT u.disabled
 		    AND s.created_at > now() - make_interval(secs => $2)`, th, absoluteTTL.Seconds()))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -574,8 +642,9 @@ func (s *Store) ResetTotpForUser(ctx context.Context, userID int64) error {
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
 
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE users SET totp_enabled=false, totp_secret='' WHERE id=$1`, userID); err != nil {
+	res, err := tx.ExecContext(ctx,
+		`UPDATE users SET totp_enabled=false, totp_secret='' WHERE id=$1 AND NOT disabled`, userID)
+	if err := activeUserUpdateResult(res, err); err != nil {
 		return fmt.Errorf("reset totp: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx,
@@ -585,6 +654,9 @@ func (s *Store) ResetTotpForUser(ctx context.Context, userID int64) error {
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM sessions WHERE user_id=$1`, userID); err != nil {
 		return fmt.Errorf("reset totp: revoke sessions: %w", err)
+	}
+	if err := addAuditTx(ctx, tx, "2fa_reset", "user", strconv.FormatInt(userID, 10), "durch Admin; Sitzungen beendet"); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

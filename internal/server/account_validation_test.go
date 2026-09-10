@@ -9,8 +9,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/d0linger/treckrr/internal/auth"
 	"github.com/d0linger/treckrr/internal/config"
@@ -47,6 +47,9 @@ func (s *mockAccountStmt) Exec(args []driver.Value) (driver.Result, error) {
 	return &mockAccountResult{}, nil
 }
 func (s *mockAccountStmt) Query(args []driver.Value) (driver.Rows, error) {
+	if strings.Contains(s.query, "INSERT INTO login_attempts") {
+		testAccountAdmissionQueries.Add(1)
+	}
 	return &mockAccountRows{query: s.query}, nil
 }
 
@@ -60,10 +63,13 @@ type mockAccountRows struct {
 	hasRead bool
 }
 
-var testAccountPasswordHash string
+var (
+	testAccountPasswordHash     string
+	testAccountAdmissionQueries atomic.Int64
+)
 
 func (r *mockAccountRows) Columns() []string {
-	return []string{"id", "username", "email", "role", "is_admin", "must_change_password", "totp_enabled", "created_at", "password_hash"}
+	return []string{"value"}
 }
 
 func (r *mockAccountRows) Close() error { return nil }
@@ -74,15 +80,16 @@ func (r *mockAccountRows) Next(dest []driver.Value) error {
 	}
 	r.hasRead = true
 
-	dest[0] = int64(123)
-	dest[1] = "testuser"
-	dest[2] = "test@example.com"
-	dest[3] = "editor"
-	dest[4] = false
-	dest[5] = false
-	dest[6] = false
-	dest[7] = time.Now()
-	dest[8] = testAccountPasswordHash
+	switch {
+	case strings.Contains(r.query, "INSERT INTO login_attempts"):
+		dest[0] = int64(1)
+	case strings.Contains(r.query, "SELECT password_hash"):
+		dest[0] = testAccountPasswordHash
+	case strings.Contains(r.query, "SELECT EXISTS"):
+		dest[0] = true
+	default:
+		return io.EOF
+	}
 
 	return nil
 }
@@ -113,6 +120,7 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 	s := testAccountServer(t)
 
 	t.Run("same new password is rejected", func(t *testing.T) {
+		testAccountAdmissionQueries.Store(0)
 		form := url.Values{}
 		form.Set("current_password", "SecurePassword123")
 		form.Set("new_password", "SecurePassword123")
@@ -120,6 +128,7 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/account/password", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: "original-session"})
 		rr := httptest.NewRecorder()
 
 		// Inject user context directly
@@ -139,9 +148,53 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 		if !strings.Contains(flashCookie, "Das neue Passwort darf nicht mit dem aktuellen Passwort übereinstimmen.") {
 			t.Errorf("expected identical password warning, got cookie: %q", flashCookie)
 		}
+		if got := testAccountAdmissionQueries.Load(); got != 0 {
+			t.Errorf("local validation consumed %d admission attempts", got)
+		}
+	})
+
+	t.Run("mismatched confirmation is rejected without admission", func(t *testing.T) {
+		testAccountAdmissionQueries.Store(0)
+		next := "NewSecurePassword456"
+		confirmation := "DifferentPassword789"
+		form := url.Values{
+			"current_password":     {"SecurePassword123"},
+			"new_password":         {next},
+			"new_password_confirm": {confirmation},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/account/password", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req = req.WithContext(context.WithValue(req.Context(), userCtxKey, &models.User{ID: 123, Username: "testuser", Role: "editor"}))
+		rr := httptest.NewRecorder()
+
+		s.handleAccountPasswordSubmit(rr, req)
+
+		if got := testAccountAdmissionQueries.Load(); got != 0 {
+			t.Errorf("local validation consumed %d admission attempts", got)
+		}
+	})
+
+	t.Run("password policy rejection does not consume admission", func(t *testing.T) {
+		testAccountAdmissionQueries.Store(0)
+		form := url.Values{
+			"current_password":     {"SecurePassword123"},
+			"new_password":         {"short"},
+			"new_password_confirm": {"short"},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/account/password", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req = req.WithContext(context.WithValue(req.Context(), userCtxKey, &models.User{ID: 123, Username: "testuser", Role: "editor"}))
+		rr := httptest.NewRecorder()
+
+		s.handleAccountPasswordSubmit(rr, req)
+
+		if got := testAccountAdmissionQueries.Load(); got != 0 {
+			t.Errorf("local validation consumed %d admission attempts", got)
+		}
 	})
 
 	t.Run("different new password is accepted", func(t *testing.T) {
+		testAccountAdmissionQueries.Store(0)
 		form := url.Values{}
 		form.Set("current_password", "SecurePassword123")
 		form.Set("new_password", "NewSecurePassword456")
@@ -149,6 +202,7 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/account/password", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: "original-session"})
 		rr := httptest.NewRecorder()
 
 		ctx := context.WithValue(req.Context(), userCtxKey, &models.User{
@@ -167,7 +221,39 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 		if !strings.Contains(flashCookie, "Passwort geändert. Andere Sitzungen wurden beendet.") {
 			t.Errorf("expected success password change, got cookie: %q", flashCookie)
 		}
+		found := false
+		for _, cookie := range rr.Result().Cookies() {
+			if cookie.Name == sessionCookie && cookie.Value != "" && cookie.Value != "original-session" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("fresh session cookie missing after password change")
+		}
+		if got := testAccountAdmissionQueries.Load(); got != 1 {
+			t.Errorf("password verification consumed %d admission attempts, want 1", got)
+		}
 	})
+}
+
+func TestHandleTwoFactorConfirmValidation(t *testing.T) {
+	s := testAccountServer(t)
+	testAccountAdmissionQueries.Store(0)
+	password := "SecurePassword123"
+	form := url.Values{"password": {password}, "code": {"123456"}}
+	req := httptest.NewRequest(http.MethodPost, "/account/2fa", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = req.WithContext(context.WithValue(req.Context(), userCtxKey, &models.User{ID: 123, Username: "testuser", Role: "editor"}))
+	rr := httptest.NewRecorder()
+
+	s.handleTwoFactorConfirm(rr, req)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("expected status SeeOther, got %v", rr.Code)
+	}
+	if got := testAccountAdmissionQueries.Load(); got != 0 {
+		t.Errorf("missing pending secret consumed %d admission attempts", got)
+	}
 }
 
 func TestHandleSessionRevokeValidation(t *testing.T) {

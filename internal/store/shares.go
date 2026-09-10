@@ -16,15 +16,26 @@ import (
 // Revocation is a hard DELETE (the audit log is the durable record), so
 // expiry is the only liveness condition anywhere.
 func (s *Store) CreateBelegShare(ctx context.Context, tokenHash string, neighborID, yearID int64, expires time.Time, createdBy string) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if err := lockPersonalDataNeighbor(ctx, tx, neighborID); err != nil {
+		return 0, err
+	}
 	var id int64
-	err := s.db.QueryRowContext(ctx,
+	err = tx.QueryRowContext(ctx,
 		`WITH prune AS (
 		     DELETE FROM beleg_shares WHERE expires_at < now() - interval '30 days'
 		 )
 		 INSERT INTO beleg_shares (token_hash, neighbor_id, billing_year_id, expires_at, created_by)
 		 VALUES ($1,$2,$3,$4,$5) RETURNING id`,
 		tokenHash, neighborID, yearID, expires, createdBy).Scan(&id)
-	return id, err
+	if err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
 }
 
 // ResolveBelegShare validates a token hash and returns the Beleg it grants.

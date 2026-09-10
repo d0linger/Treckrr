@@ -161,7 +161,7 @@ func (s *Server) handleBatchIssueCommit(w http.ResponseWriter, r *http.Request) 
 			skipped++
 			continue
 		}
-		iv, err := s.store.IssueInvoice(r.Context(), yearID, row.Neighbor.ID, year.Year, time.Time{})
+		_, err := s.store.IssueInvoice(r.Context(), yearID, row.Neighbor.ID, year.Year, time.Time{})
 		if err != nil {
 			// One failure doesn't roll back the others (each invoice is its own
 			// festgeschriebenes document); report progress and stop.
@@ -170,7 +170,6 @@ func (s *Server) handleBatchIssueCommit(w http.ResponseWriter, r *http.Request) 
 			redirect(w, r, dashboardURL(yearID))
 			return
 		}
-		s.audit(r, "invoice_issue", "neighbor", row.Neighbor.ID, row.Neighbor.Name+" · Rechnung "+iv.Number+" (Sammel)")
 		issued++
 	}
 	s.audit(r, "invoice_issue_batch", "year", yearID, fmt.Sprintf("%d ausgestellt, %d übersprungen", issued, skipped))
