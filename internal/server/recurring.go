@@ -34,6 +34,18 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// Check the raw value before trimming or reading the booking. The request
+	// body is already capped by limitBody; this is a field-level ceiling.
+	if s.tooLong(
+		w,
+		r,
+		"Startdatum",
+		r.FormValue("next_run"),
+		maxNameLen,
+	) {
+		redirect(w, r, "/recurring")
+		return
+	}
 	entry, err := s.store.GetEntry(r.Context(), id)
 	if err != nil {
 		http.NotFound(w, r)
@@ -187,6 +199,16 @@ func (s *Server) handleRecurringUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := r.ParseForm(); err != nil {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if s.tooLong(
+		w,
+		r,
+		"Startdatum",
+		r.FormValue("next_run"),
+		maxNameLen,
+	) {
+		redirect(w, r, "/recurring")
 		return
 	}
 	kind := r.FormValue("interval_kind")
