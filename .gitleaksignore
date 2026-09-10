@@ -7,3 +7,4 @@
 # code snippet that triggered it) in commits 856c91a and 63f476b:
 856c91a27832d31204afa498cb0a7f675ca710b8:.gitleaksignore:generic-api-key:1
 63f476b8f9377f0c82a056825630ed77636fccb0:.gitleaksignore:generic-api-key:3
+6e9ee7d440c3a5418c8059104d623546f4c18252:internal/store/auth_security_integration_test.go:generic-api-key:32

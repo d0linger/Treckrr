@@ -62,9 +62,6 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	user := userFromCtx(r)
-	if !s.sensitiveAdmit(w, r, user.ID, "/account/password") {
-		return
-	}
 	current := r.FormValue("current_password")
 	next := r.FormValue("new_password")
 
@@ -81,6 +78,9 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 	if msg := passwordPolicyError(next); msg != "" {
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, "/account/password")
+		return
+	}
+	if !s.sensitiveAdmit(w, r, user.ID, "/account/password") {
 		return
 	}
 	currentToken := ""
@@ -173,13 +173,13 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	user := userFromCtx(r)
-	if !s.sensitiveAdmit(w, r, user.ID, "/account/2fa") {
-		return
-	}
 	secret, err := s.store.GetTotpSecret(r.Context(), user.ID)
 	if err != nil || secret == "" {
 		s.setFlash(w, r, "error", "Kein ausstehendes 2FA‑Geheimnis. Bitte erneut starten.")
 		redirect(w, r, "/account/2fa")
+		return
+	}
+	if !s.sensitiveAdmit(w, r, user.ID, "/account/2fa") {
 		return
 	}
 	// Step-up: enabling a second factor requires re-entering the password, so a

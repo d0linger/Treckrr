@@ -101,7 +101,7 @@ type NeighborYearHistoryRow struct {
 	Net        decimal.Decimal // Cost + Ledger
 	Hours      decimal.Decimal
 	PaidAmount decimal.Decimal // sum of recorded payments
-	Payable    decimal.Decimal // frozen invoice gross, or live booking net before issuance
+	Payable    decimal.Decimal // frozen invoice gross plus issued credits, or live booking net before issuance
 	Remaining  decimal.Decimal // Payable + Ledger - PaidAmount
 	Paid       bool            // fully settled (Remaining <= 0)
 }
@@ -135,7 +135,11 @@ func (s *Store) NeighborYearHistory(ctx context.Context, neighborID int64) ([]Ne
 		           (SELECT SUM(e.cost) FROM entries e
 		             WHERE e.neighbor_id = byn.neighbor_id
 		               AND e.billing_year_id = byn.billing_year_id
-		               AND NOT e.voided), 0) AS payable
+		               AND NOT e.voided), 0)
+		  + COALESCE((SELECT SUM(iv.gross) FROM invoices iv
+		               WHERE iv.neighbor_id = byn.neighbor_id
+		                 AND iv.billing_year_id = byn.billing_year_id
+		                 AND iv.kind = 'gutschrift' AND iv.status = 'issued'), 0) AS payable
 		FROM billing_year_neighbors byn
 		JOIN billing_years y ON y.id = byn.billing_year_id
 		WHERE byn.neighbor_id = $1
@@ -416,6 +420,8 @@ func (s *Store) DeleteLedgerTransfer(ctx context.Context, transferID string) err
 	if err != nil {
 		return err
 	}
+	// Reversing a transfer is an ordinary ledger edit: completed years must be
+	// reopened first, matching the handler's transferYearsOpen guard.
 	if err := lockOpenAccounts(ctx, tx, accounts...); err != nil {
 		return err
 	}
@@ -452,6 +458,7 @@ func (s *Store) SetLedgerVoidedTransfer(ctx context.Context, transferID string, 
 	if err != nil {
 		return err
 	}
+	// Keep completed years immutable here as well as in transferYearsOpen.
 	if err := lockOpenAccounts(ctx, tx, accounts...); err != nil {
 		return err
 	}

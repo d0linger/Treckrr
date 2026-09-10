@@ -18,6 +18,7 @@ func invoiceFixture(t *testing.T, vat bool) (*store.Store, *sql.DB, int64, int64
 	t.Helper()
 	st, pool, yearID, neighborID := scratchBookingFixture(t)
 	ctx := context.Background()
+	lockCompanyRow(t, ctx, pool)
 	company := models.Company{
 		Name:         "Review Farm",
 		Address:      "Review Street 1",
@@ -105,14 +106,51 @@ func TestInvoiceGrossIsAuthoritativeForSettlement(t *testing.T) {
 			t.Fatalf("invoice remaining = %s, want zero", remaining)
 		}
 	})
+
+	t.Run("credit note reduces year history payable", func(t *testing.T) {
+		st, _, yearID, neighborID, _ := invoiceFixture(t, false)
+		iv := issueFixtureInvoice(t, st, yearID, neighborID)
+		credit, err := st.GutschriftInvoice(context.Background(), yearID, neighborID, decimal.NewFromInt(25), "review credit")
+		if err != nil {
+			t.Fatalf("credit note: %v", err)
+		}
+		wantPayable := iv.Content.Gross.Add(credit.Content.Gross)
+		if err := st.AddPayment(context.Background(), yearID, neighborID, wantPayable,
+			time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC), "", "bank"); err != nil {
+			t.Fatalf("payment: %v", err)
+		}
+		history, err := st.NeighborYearHistory(context.Background(), neighborID)
+		if err != nil {
+			t.Fatalf("history: %v", err)
+		}
+		for _, row := range history {
+			if row.YearID != yearID {
+				continue
+			}
+			if !row.Payable.Equal(wantPayable) || !row.Remaining.IsZero() || !row.Paid {
+				t.Fatalf("history payable/remaining/paid = %s/%s/%v, want %s/0/true",
+					row.Payable, row.Remaining, row.Paid, wantPayable)
+			}
+			return
+		}
+		t.Fatalf("history missing billing year %d", yearID)
+	})
 }
 
-func waitForLockWaiters(t *testing.T, ctx context.Context, pool *sql.DB, minimum int) {
+func waitForLockWaiters(t *testing.T, ctx context.Context, pool *sql.DB, holderPID, minimum int) {
 	t.Helper()
 	for {
 		var count int
-		if err := pool.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_activity
-			WHERE datname=current_database() AND wait_event_type='Lock'`).Scan(&count); err != nil {
+		if err := pool.QueryRowContext(ctx, `WITH RECURSIVE waiters(pid) AS (
+			SELECT pid FROM pg_stat_activity
+			 WHERE datname=current_database() AND wait_event_type='Lock'
+			   AND $1 = ANY(pg_blocking_pids(pid))
+			UNION
+			SELECT a.pid FROM pg_stat_activity a JOIN waiters w
+			  ON w.pid = ANY(pg_blocking_pids(a.pid))
+			 WHERE a.datname=current_database() AND a.wait_event_type='Lock'
+		)
+		SELECT count(*) FROM waiters`, holderPID).Scan(&count); err != nil {
 			t.Fatalf("count lock waiters: %v", err)
 		}
 		if count >= minimum {
@@ -166,7 +204,7 @@ func TestInvoiceFreezeSerializesBookingWriter(t *testing.T) {
 		}, nil)
 		bookingDone <- err
 	}()
-	waitForLockWaiters(t, ctx, pool, 2)
+	waitForLockWaiters(t, ctx, pool, holderPID, 2)
 	if err := holder.Commit(); err != nil {
 		t.Fatalf("release holder: %v", err)
 	}
@@ -318,7 +356,7 @@ func TestRecalcCannotCommitAfterInvoiceFreeze(t *testing.T) {
 		updated, _, _, err := st.ApplyRecalc(ctx, yearID, &neighborID)
 		recalcDone <- recalcResult{updated: updated, err: err}
 	}()
-	waitForLockWaiters(t, ctx, pool, 2)
+	waitForLockWaiters(t, ctx, pool, holderPID, 2)
 	if err := holder.Commit(); err != nil {
 		t.Fatalf("release holder: %v", err)
 	}
