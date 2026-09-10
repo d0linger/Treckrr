@@ -140,7 +140,13 @@ func (s *Server) handleBatchIssueCommit(w http.ResponseWriter, r *http.Request) 
 	// mistake that cannot be undone without a Storno per invoice.
 	selected := map[int64]bool{}
 	hasSelection := len(r.PostForm["neighbor_id"]) > 0
-	for _, id := range formIDs(r, "neighbor_id") {
+	batchIDs, okIDs := formIDs(r, "neighbor_id")
+	if !okIDs {
+		s.setFlash(w, r, "error", "Zu viele Nachbarn auf einmal ausgewählt.")
+		redirect(w, r, fmt.Sprintf("/years/%d/issue-all", yearID))
+		return
+	}
+	for _, id := range batchIDs {
 		selected[id] = true
 	}
 	if !hasSelection {

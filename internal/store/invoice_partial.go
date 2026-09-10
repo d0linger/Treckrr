@@ -230,16 +230,31 @@ func (s *Store) StornoDocument(ctx context.Context, id int64, reason string) (mo
 		return models.Invoice{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	orig, err := scanInvoice(tx.QueryRowContext(ctx,
-		`SELECT `+invoiceCols+` FROM invoices
-		  WHERE id=$1 AND kind IN ('anzahlung','gutschrift') AND status='issued' FOR UPDATE`, id))
+	// Advisory lock FIRST, row lock second — the order every sibling document
+	// path uses (StornoInvoice, GutschriftInvoice, FreeGutschrift). The old
+	// row-then-advisory order deadlocked against StornoInvoice, which holds the
+	// advisory lock while canceling attached credit notes by row. The year id
+	// is peeked without a lock; the FOR UPDATE re-read below is authoritative
+	// and refuses if the document changed in the gap.
+	var peekYear int64
+	err = tx.QueryRowContext(ctx,
+		`SELECT billing_year_id FROM invoices WHERE id=$1`, id).Scan(&peekYear)
 	if errors.Is(err, sql.ErrNoRows) {
 		return models.Invoice{}, ErrNotFound
 	}
 	if err != nil {
 		return models.Invoice{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, orig.BillingYearID); err != nil {
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, peekYear); err != nil {
+		return models.Invoice{}, err
+	}
+	orig, err := scanInvoice(tx.QueryRowContext(ctx,
+		`SELECT `+invoiceCols+` FROM invoices
+		  WHERE id=$1 AND kind IN ('anzahlung','gutschrift') AND status='issued' AND billing_year_id=$2 FOR UPDATE`, id, peekYear))
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.Invoice{}, ErrNotFound
+	}
+	if err != nil {
 		return models.Invoice{}, err
 	}
 	// A closed year takes no new documents. The handler cannot pre-check this —

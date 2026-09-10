@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 //go:embed templates/*.html
@@ -94,18 +96,9 @@ func Templates() (map[string]*template.Template, error) {
 func funcMap() template.FuncMap {
 	return template.FuncMap{
 		// stageName maps a dunning stage to its German label (list + history).
-		"stageName": func(stage int) string {
-			switch stage {
-			case 1:
-				return "1. Mahnung"
-			case 2:
-				return "2. Mahnung"
-			default:
-				return "Zahlungserinnerung"
-			}
-		},
-		"money": Money,
-		"num":   Num,
+		"stageName": models.DunningStageTitle,
+		"money":     Money,
+		"num":       Num,
 		// numInput formats a decimal for an <input type="number"> value: a plain
 		// period-decimal with trailing zeros trimmed. Num() emits the German comma,
 		// which HTML number inputs reject (the field would render empty), so form

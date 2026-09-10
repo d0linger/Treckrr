@@ -7,7 +7,6 @@ import (
 	"encoding/csv"
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -197,19 +196,8 @@ func (s *Server) handleImportForm(w http.ResponseWriter, r *http.Request) {
 // sample parse identically. The placeholder neighbors won't import until renamed
 // to actual year members; that's intentional (the file is a format guide).
 func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=\"treckrr_import_vorlage.csv\"")
-	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF}) // UTF-8 BOM, so Excel opens umlauts/€ correctly
-	cw := csv.NewWriter(w)
-	cw.Comma = ';'
-	defer func() {
-		cw.Flush()
-		if err := cw.Error(); err != nil {
-			// The status is long gone — logging is what is still possible; without
-			// it an aborted download is a silently truncated file behind HTTP 200.
-			slog.Warn("csv export incomplete", "path", sanitizeLog(r.URL.Path), "err", sanitizeLog(err.Error()))
-		}
-	}()
+	cw, finish := csvDownload(w, r, "treckrr_import_vorlage.csv")
+	defer finish()
 	_ = cw.Write([]string{
 		"Nachbar", "Datum", "Tätigkeit", "Traktor", "Belastung", "Maschinen",
 		"Einheit", "Menge", "Satz/Einheit (€)", "Kosten (€)", "Notiz",

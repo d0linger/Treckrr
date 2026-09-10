@@ -73,9 +73,15 @@ func (s *Store) SettleRemaining(ctx context.Context, yearID, neighborID int64, w
 	if !remaining.IsPositive() {
 		return decimal.Zero, tx.Commit()
 	}
+	// invoice_id via subselect: 0044 added the attribution column and updated
+	// two of the three payment INSERTs — settle-generated payments stayed
+	// unlinked and showed a blank Rechnung column in the Zahlungshistorie.
+	// method stays '': how the money arrived is genuinely unknown here.
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO payments (billing_year_id, neighbor_id, amount, paid_on, note)
-		 VALUES ($1,$2,$3,$4,$5)`, yearID, neighborID, remaining, when, note); err != nil {
+		`INSERT INTO payments (billing_year_id, neighbor_id, amount, paid_on, note, invoice_id)
+		 VALUES ($1,$2,$3,$4,$5,
+		         (SELECT id FROM invoices WHERE billing_year_id=$1 AND neighbor_id=$2
+		           AND kind='invoice' AND status='issued'))`, yearID, neighborID, remaining, when, note); err != nil {
 		return decimal.Zero, err
 	}
 	return remaining, tx.Commit()

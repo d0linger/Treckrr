@@ -305,15 +305,24 @@ const maxDecimalLen = 32
 // field added later. Over-long input is treated as invalid, which is the same
 // answer these callers already get for anything unparseable.
 func parseGermanDecimal(raw string) decimal.Decimal {
+	d, _ := parseGermanDecimalOK(raw)
+	return d
+}
+
+// parseGermanDecimalOK is parseGermanDecimal for callers that must tell
+// "invalid" apart from a typed 0 (payment amounts reject both, but with a
+// message). Three handlers had hand-rolled this — one of them ran the
+// exponent guard AFTER the parse the guard exists to precede.
+func parseGermanDecimalOK(raw string) (decimal.Decimal, bool) {
 	raw = strings.ReplaceAll(strings.TrimSpace(raw), ",", ".")
-	if len(raw) > maxDecimalLen || strings.ContainsAny(raw, "eE") {
-		return decimal.Zero
+	if raw == "" || len(raw) > maxDecimalLen || strings.ContainsAny(raw, "eE") {
+		return decimal.Zero, false
 	}
 	d, err := decimal.NewFromString(raw)
 	if err != nil {
-		return decimal.Zero
+		return decimal.Zero, false
 	}
-	return d
+	return d, true
 }
 
 // maxFormListLen bounds how many values one repeated form field may carry.

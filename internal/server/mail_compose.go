@@ -17,11 +17,17 @@ import (
 
 // mailBody builds the outgoing plain-text body. The signature comes from the
 // Betriebsdaten; empty falls back to the wording that was hard-coded before,
-// so a farm that configures nothing sees no change.
-func mailBody(company models.Company, recipientName, intro, fallbackFrom string) string {
+// so a farm that configures nothing sees no change. The sender fallback is
+// derived HERE: it used to be a parameter every caller computed with the same
+// four lines, and the fallback name lived in three files.
+func mailBody(company models.Company, recipientName, intro string) string {
 	sig := strings.TrimSpace(company.MailSignature)
 	if sig == "" {
-		sig = "Mit freundlichen Grüßen\n" + fallbackFrom
+		from := strings.TrimSpace(company.Name)
+		if from == "" {
+			from = "Ihr Maschinenring"
+		}
+		sig = "Mit freundlichen Grüßen\n" + from
 	}
 	return "Guten Tag " + recipientName + ",\n\n" + intro + "\n\n" + sig
 }

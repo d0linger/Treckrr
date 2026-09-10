@@ -14,7 +14,7 @@
 	</form>
 	{{else}}
 	<p class="muted small">{{.Importable}} von {{.Total}} Eingängen werden automatisch zugeordnet.{{if .Assignable}} Offene Eingänge können unten manuell einer Rechnung zugewiesen werden.{{end}}</p>
-	<form method="post" action="/payments/import" data-confirm="Zahlungen wie zugeordnet verbuchen?">
+	<form method="post" action="/payments/import" data-confirm="{{.Importable}} Zahlung(en) wie zugeordnet verbuchen?">
 		<input type="hidden" name="raw" value="{{.Raw}}">
 		<div class="tablewrap">
 			<table class="dtable">

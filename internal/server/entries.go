@@ -1437,25 +1437,62 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	// only the first of them. Absent for an online submit, which keeps the
 	// previous behavior exactly.
 	keys := r.Form["q_key"]
-	created := 0
+	created, invalid := 0, 0
 	var createErr error
+	// The same rig repeats across the rows of one submit — that is what quick
+	// entry is FOR — so each distinct Gespann is resolved once (5 queries) and
+	// reused, instead of 5 queries per row (a 100-row submit was ~500 SELECTs).
+	type resolvedRig struct {
+		entry      models.Entry
+		machineIDs []int64
+		ok         bool
+	}
+	rigs := map[int64]resolvedRig{}
 	for i := range gespanne {
-		gid, _ := strconv.ParseInt(strings.TrimSpace(gespanne[i]), 10, 64)
-		hours := decimal.Zero
+		rawGespann := strings.TrimSpace(gespanne[i])
+		gid, _ := strconv.ParseInt(rawGespann, 10, 64)
+		rawHours := ""
 		if i < len(hoursList) {
-			hours = parseGermanDecimal(hoursList[i])
+			rawHours = strings.TrimSpace(hoursList[i])
 		}
+		if rawGespann == "" && rawHours == "" {
+			continue // an untouched blank row of the fixed table — not an error
+		}
+		hours := parseGermanDecimal(rawHours)
 		if gid == 0 || !hours.IsPositive() {
+			// The row WAS filled in but does not parse ("1.234,5", missing rig):
+			// silently dropping it reported "N Buchungen gespeichert" while a
+			// day of work vanished. Count it and say so.
+			invalid++
 			continue
 		}
 		dateStr := ""
 		if i < len(dates) {
 			dateStr = strings.TrimSpace(dates[i])
 		}
-		entry, machineIDs, ok := s.buildGespannEntry(r, gid, hours, dateStr)
-		if !ok {
+		rig, seen := rigs[gid]
+		if !seen {
+			e, mids, ok := s.buildGespannEntry(r, gid, decimal.NewFromInt(1), "")
+			rig = resolvedRig{machineIDs: mids, ok: ok}
+			if ok {
+				rig.entry = *e
+			}
+			rigs[gid] = rig
+		}
+		if !rig.ok {
+			invalid++
 			continue
 		}
+		entry := rig.entry // copy of the resolved template
+		entry.Hours = hours
+		entry.Cost = calc.Cost(hours, entry.HourlyRate)
+		entry.Quantity, entry.UnitPrice = decimal.Decimal{}, decimal.Decimal{}
+		if d, err := time.Parse("2006-01-02", dateStr); err == nil {
+			entry.Date = d
+		} else {
+			entry.Date = time.Now()
+		}
+		machineIDs := rig.machineIDs
 		entry.NeighborID = neighborID
 		entry.BillingYearID = year.ID
 		if i < len(keys) {
@@ -1464,7 +1501,7 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 				entry.IdempotencyKey = key
 			}
 		}
-		id, err := s.store.CreateEntry(r.Context(), entry, machineIDs)
+		id, err := s.store.CreateEntry(r.Context(), &entry, machineIDs)
 		switch {
 		case err != nil:
 			// Joined, not last-wins: a partly failing batch should log every reason,
@@ -1487,20 +1524,27 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// An offline replay gets an explicit status, never a redirect (see above).
-	// 204 only for rows that actually landed: answering it for a batch where every
-	// row was rejected would make the client delete the queue item, and a day of
-	// captured work would be gone with no flash, no audit line and no log entry.
+	// 204 only for a fully-clean batch: invalid rows answer 422 with the honest
+	// count, so the client surfaces the message instead of silently dropping a
+	// day of captured work. The saved rows carry idempotency keys, so nothing
+	// duplicates if the operator re-captures.
 	if replay {
-		if created == 0 {
-			http.Error(w, "Keine gültigen Zeilen (Gespann und Stunden erforderlich).", http.StatusUnprocessableEntity)
-			return
+		switch {
+		case created == 0 && invalid == 0:
+			w.WriteHeader(http.StatusNoContent)
+		case invalid > 0:
+			http.Error(w, fmt.Sprintf("%d Buchung(en) gespeichert, %d Zeile(n) ungültig (Gespann und Stunden erforderlich).", created, invalid), http.StatusUnprocessableEntity)
+		default:
+			w.WriteHeader(http.StatusNoContent)
 		}
-		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if created == 0 {
+	switch {
+	case created == 0 && invalid == 0:
 		s.setFlash(w, r, "error", "Keine gültigen Zeilen (Gespann und Stunden erforderlich).")
-	} else {
+	case invalid > 0:
+		s.setFlash(w, r, "error", fmt.Sprintf("%d Buchung(en) gespeichert, %d Zeile(n) übersprungen — Gespann und gültige Stunden erforderlich.", created, invalid))
+	default:
 		s.setFlash(w, r, "success", fmt.Sprintf("%d Buchungen gespeichert.", created))
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))

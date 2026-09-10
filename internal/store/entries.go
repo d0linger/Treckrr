@@ -630,10 +630,26 @@ func (s *Store) SetEntryVoided(ctx context.Context, id int64, voided bool, reaso
 	return err
 }
 
-const entrySelect = `SELECT id, neighbor_id, billing_year_id, entry_date, task_label, gespann_id,
+// entryCols is THE entry column list — scanEntryInto knows its order, and
+// FilterEntries derives its e.-prefixed twin from it (entryColsE), so a new
+// column cannot silently miss one of the query sites again (person_id and
+// linked_entry_id each had to be added in three places).
+const entryCols = `id, neighbor_id, billing_year_id, entry_date, task_label, gespann_id,
 	tractor_id, load_level_id, tractor_label, load_label, machine_labels,
 	hours, hourly_rate, cost, note, voided, void_reason, created_at,
-	unit, quantity, unit_price, person_id, linked_entry_id FROM entries`
+	unit, quantity, unit_price, person_id, linked_entry_id`
+
+const entrySelect = `SELECT ` + entryCols + ` FROM entries`
+
+// entryColsE is entryCols with every column e.-prefixed, for queries that join
+// (unqualified id/name would be ambiguous there).
+var entryColsE = func() string {
+	parts := strings.Split(entryCols, ",")
+	for i := range parts {
+		parts[i] = "e." + strings.TrimSpace(parts[i])
+	}
+	return strings.Join(parts, ", ")
+}()
 
 func collectEntries(rows *sql.Rows) ([]models.Entry, error) {
 	var out []models.Entry

@@ -422,10 +422,7 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	// (issue date + company payment term). Only meaningful while something is still
 	// payable; the template shows "fällig am … (in N Tagen / seit N Tagen überfällig)".
 	if hasInvoice && !invoice.IssuedOn.IsZero() && invRest.IsPositive() {
-		term := company.PaymentTermDays
-		if term < 0 {
-			term = 14
-		}
+		term := company.EffectiveTermDays()
 		due := invoice.IssuedOn.AddDate(0, 0, term)
 		data["DueOn"] = due
 		// Whole-day, DST-safe difference (shared with the dunning overdue count).
@@ -787,11 +784,7 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	company, _ := s.store.GetCompany(r.Context())
-	from := strings.TrimSpace(company.Name)
-	if from == "" {
-		from = "Ihr Maschinenring"
-	}
-	body := mailBody(company, neighbor.Name, "anbei die Rechnung "+iv.Number+" als PDF.", from)
+	body := mailBody(company, neighbor.Name, "anbei die Rechnung "+iv.Number+" als PDF.")
 	att := mail.Attachment{Filename: "Rechnung_" + sanitizeFilename(iv.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
 	subject := "Rechnung " + iv.Number
 	if err := mail.Send(r.Context(), s.cfg, neighbor.Email, subject, body, []mail.Attachment{att}); err != nil {

@@ -105,11 +105,23 @@ func (s *Store) ListInvoiceDocs(ctx context.Context, yearID int64) ([]models.Inv
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	// Legacy rows (pre-snapshot) rebuild their content on the fly; the company
+	// row is loop-invariant, so it is fetched once for all of them instead of
+	// once per row (a year with 60 legacy invoices refetched it 60 times).
+	var company *models.Company
 	for i := range out {
-		if out[i].Content == nil {
-			if c, err := s.contentOrBuild(ctx, out[i], out[i].BillingYearID, out[i].NeighborID); err == nil {
-				out[i].Content = &c
+		if out[i].Content != nil {
+			continue
+		}
+		if company == nil {
+			c, err := s.GetCompany(ctx)
+			if err != nil {
+				return out, nil // rebuild is best-effort, same as before
 			}
+			company = &c
+		}
+		if c, err := s.contentOrBuildWith(ctx, *company, out[i], out[i].BillingYearID, out[i].NeighborID); err == nil {
+			out[i].Content = &c
 		}
 	}
 	return out, nil

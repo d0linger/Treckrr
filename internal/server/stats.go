@@ -1,9 +1,7 @@
 package server
 
 import (
-	"encoding/csv"
 	"fmt"
-	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -625,17 +623,8 @@ func (s *Server) handleStatsExport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filename := fmt.Sprintf("statistik-%d.csv", year.Year)
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
-	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF})
-	cw := csv.NewWriter(w)
-	cw.Comma = ';'
-	defer func() {
-		cw.Flush()
-		if err := cw.Error(); err != nil {
-			slog.Warn("stats csv incomplete", "err", sanitizeLog(err.Error()))
-		}
-	}()
+	cw, finish := csvDownload(w, r, filename)
+	defer finish()
 	_ = cw.Write([]string{"Auswertung", "Bezeichnung", "Einheit", "Menge", "Stunden", "Betrag (€)", "je Einheit (€)"})
 	// csvSafe on every free-text column, like every other export: a neighbor,
 	// task or machine name starting with = + - @ would otherwise be evaluated as

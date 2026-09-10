@@ -374,6 +374,7 @@ type Company struct {
 	DunningFee2 decimal.Decimal
 	// DunningGraceDays is the Nachfrist printed on a Mahnung ("zahlbar bis").
 	DunningGraceDays int
+	// See EffectiveTermDays for the payment-term fallback rule.
 	// SkontoPct/SkontoDays are the Skonto OFFER printed on the invoice ("2 % bei
 	// Zahlung binnen 14 Tagen"). Both 0 = no clause. The § 16 credit that applies
 	// a taken Skonto at payment time exists independently of this.
@@ -461,6 +462,32 @@ type InvoiceContent struct {
 // invoiceUIDThreshold is the gross amount (§ 11 Abs. 1 Z 6 UStG) above which the
 // recipient's UID is a mandatory invoice field.
 var invoiceUIDThreshold = decimal.NewFromInt(10000)
+
+// EffectiveTermDays is the payment term to apply: a negative value means
+// "unset" and falls back to the 14-day default, while a CONFIGURED 0 (due
+// immediately) is valid and must not be overridden. This rule was open-coded
+// at six call sites — with two of them treating 0 as unset — before it lived
+// here.
+func (c Company) EffectiveTermDays() int {
+	if c.PaymentTermDays < 0 {
+		return 14
+	}
+	return c.PaymentTermDays
+}
+
+// DunningStageTitle is the German document heading for a dunning stage — the
+// single source for the letter, the PDF, the audit lines and the history list
+// (the template func stageName), so a renamed stage cannot drift apart.
+func DunningStageTitle(stage int) string {
+	switch stage {
+	case 1:
+		return "1. Mahnung"
+	case 2:
+		return "2. Mahnung"
+	default:
+		return "Zahlungserinnerung"
+	}
+}
 
 // MandatoryCheck is one § 11 UStG line item for the pre-issuance checklist.
 type MandatoryCheck struct {

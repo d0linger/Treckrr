@@ -1,7 +1,7 @@
 package server
 
 import (
-	"encoding/csv"
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -23,13 +23,17 @@ import (
 // Stage 0 = friendly reminder (no fee), 1/2 = escalating Mahnungen. Chosen at
 // print time; no state is persisted.
 func dunningStage(stage int) (title, intro string) {
+	// Title from the single source (models.DunningStageTitle) — the history
+	// list's stageName template func reads the same switch, so a renamed stage
+	// cannot drift between letter and list.
+	title = models.DunningStageTitle(stage)
 	switch stage {
 	case 1:
-		return "1. Mahnung", "Trotz unserer Zahlungserinnerung ist der folgende Betrag noch offen. Wir bitten Sie, den Ausgleich umgehend vorzunehmen."
+		return title, "Trotz unserer Zahlungserinnerung ist der folgende Betrag noch offen. Wir bitten Sie, den Ausgleich umgehend vorzunehmen."
 	case 2:
-		return "2. Mahnung", "Der folgende Betrag ist weiterhin offen. Bitte begleichen Sie ihn unverzüglich, um weitere Schritte zu vermeiden."
+		return title, "Der folgende Betrag ist weiterhin offen. Bitte begleichen Sie ihn unverzüglich, um weitere Schritte zu vermeiden."
 	default:
-		return "Zahlungserinnerung", "Vermutlich haben Sie es übersehen – der folgende Betrag ist noch offen. Bitte gleichen Sie ihn bei Gelegenheit aus."
+		return title, "Vermutlich haben Sie es übersehen – der folgende Betrag ist noch offen. Bitte gleichen Sie ihn bei Gelegenheit aus."
 	}
 }
 
@@ -47,10 +51,7 @@ func (s *Server) handleMahnwesen(w http.ResponseWriter, r *http.Request) {
 	}
 	// A configured term of 0 (due immediately) is valid; only a negative value —
 	// which the settings form never stores — falls back to the default.
-	term := company.PaymentTermDays
-	if term < 0 {
-		term = 14
-	}
+	term := company.EffectiveTermDays()
 	// scope=alle switches to the cross-year open-items list (Nr. 37): the same
 	// overdue definition, but yearID 0 pulls every year and the rows carry their
 	// year so the Altersstaffel (30/60/90 tags in the template) means something.
@@ -93,29 +94,15 @@ func (s *Server) handleMahnwesenExport(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	term := company.PaymentTermDays
-	if term < 0 {
-		term = 14
-	}
+	term := company.EffectiveTermDays()
 	rows, err := s.store.DunningRows(r.Context(), year.ID, term, time.Now())
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+fmt.Sprintf("treckrr_mahnwesen_%d.csv", year.Year)+"\"")
-	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF}) // UTF-8 BOM for Excel
-	cw := csv.NewWriter(w)
-	cw.Comma = ';'
-	defer func() {
-		cw.Flush()
-		if err := cw.Error(); err != nil {
-			// The status is long gone — logging is what is still possible; without
-			// it an aborted download is a silently truncated file behind HTTP 200.
-			slog.Warn("csv export incomplete", "path", sanitizeLog(r.URL.Path), "err", sanitizeLog(err.Error()))
-		}
-	}()
+	cw, finish := csvDownload(w, r, fmt.Sprintf("treckrr_mahnwesen_%d.csv", year.Year))
+	defer finish()
 	_ = cw.Write([]string{"Nachbar", "Rechnung", "Rechnungsdatum", "Fällig am", "Tage überfällig", "Offener Betrag (€)"})
 	for _, dr := range rows {
 		_ = cw.Write([]string{
@@ -155,12 +142,6 @@ type mahnungView struct {
 func (s *Server) buildMahnungData(r *http.Request, neighborID, yearID int64, stage int) (*mahnungView, bool, error) {
 	// (nil, false, nil) means "no such reminder" → 404; a real DB error must
 	// propagate as (nil, false, err) → 500, not be masked as not-found.
-	neighbor, err := s.store.GetNeighbor(r.Context(), neighborID)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, false, nil
-	} else if err != nil {
-		return nil, false, err
-	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, false, nil
@@ -169,6 +150,20 @@ func (s *Server) buildMahnungData(r *http.Request, neighborID, yearID int64, sta
 	}
 	company, err := s.store.GetCompany(r.Context())
 	if err != nil {
+		return nil, false, err
+	}
+	return s.buildMahnungDataWith(r, neighborID, stage, company, year)
+}
+
+// buildMahnungDataWith is buildMahnungData with the loop-invariant company and
+// year already in hand — the batch run resolves 30 neighbors and refetched the
+// same two rows 30 times each before this split.
+func (s *Server) buildMahnungDataWith(r *http.Request, neighborID int64, stage int, company models.Company, year *models.BillingYear) (*mahnungView, bool, error) {
+	yearID := year.ID
+	neighbor, err := s.store.GetNeighbor(r.Context(), neighborID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, false, nil
+	} else if err != nil {
 		return nil, false, err
 	}
 	// A reminder only makes sense for a formally issued invoice.
@@ -189,10 +184,7 @@ func (s *Server) buildMahnungData(r *http.Request, neighborID, yearID int64, sta
 		return nil, false, err
 	}
 	title, intro := dunningStage(stage)
-	term := company.PaymentTermDays
-	if term < 0 {
-		term = 14
-	}
+	term := company.EffectiveTermDays()
 	// The neighbor's own payment term wins over the company default (Nr. 36).
 	if neighbor.PaymentTermDays != nil {
 		term = *neighbor.PaymentTermDays
@@ -211,12 +203,13 @@ func (s *Server) buildMahnungData(r *http.Request, neighborID, yearID int64, sta
 		v.Fee = company.DunningFee2
 	}
 	v.TotalDue = open.Add(v.Fee)
-	// Nachfrist: a Mahnung without a new deadline only points at the missed one.
-	grace := company.DunningGraceDays
-	if grace <= 0 {
-		grace = 14
+	// Nachfrist: a CONFIGURED 0 means "zahlbar sofort" — the letter then names
+	// no new deadline at all. Only the letter changes; the column's default (14)
+	// covers the unconfigured case, so no code-side fallback is needed. The old
+	// grace<=0→14 silently overrode an explicit 0 the settings form accepts.
+	if company.DunningGraceDays > 0 {
+		v.GraceUntil = time.Now().AddDate(0, 0, company.DunningGraceDays)
 	}
-	v.GraceUntil = time.Now().AddDate(0, 0, grace)
 	if !iv.IssuedOn.IsZero() {
 		v.DueOn = iv.IssuedOn.AddDate(0, 0, term)
 	}
@@ -335,55 +328,82 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
-	blob, err := v.toPDF()
+	status, err := s.deliverMahnung(r.Context(), r, v, "")
 	if err != nil {
 		s.serverError(w, "mahnung email: pdf", err)
 		return
 	}
-	from := strings.TrimSpace(v.Company.Name)
-	if from == "" {
-		from = "Ihr Maschinenring"
+	switch status {
+	case "sent":
+		s.setFlash(w, r, "success", v.Title+" an "+v.Neighbor.Email+" gesendet.")
+	case "sentNoTrail":
+		s.setFlash(w, r, "success", v.Title+" an "+v.Neighbor.Email+" gesendet (Versand-Historie konnte nicht gespeichert werden).")
+	case "queued":
+		s.setFlash(w, r, "error", "Versand fehlgeschlagen — zur automatischen Wiederholung eingeplant.")
+	default:
+		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
 	}
-	body := mailBody(v.Company, v.Neighbor.Name, "anbei "+v.Title+" zur Rechnung "+v.Invoice.Number+" als PDF.", from)
+	redirect(w, r, back)
+}
+
+// deliverMahnung is the one delivery tail for a reminder — PDF, body,
+// attachment, SMTP, and on failure the retry-outbox park (with the meta the
+// outbox needs to write the Mahnhistorie when the retry finally lands); on
+// success the CC copy and the dunning/send trail. Single send and Sammellauf
+// both call it — the two hand-written copies had already drifted (the batch
+// never wrote RecordBelegSend, so the year-closing "nie versendet" check
+// reported batch-dunned neighbors as never contacted).
+//
+// Returns: "sent", "sentNoTrail" (delivered, trail write failed), "queued"
+// (parked for retry) or "failed" (send AND park failed); err only for the PDF.
+func (s *Server) deliverMahnung(ctx context.Context, r *http.Request, v *mahnungView, auditSuffix string) (string, error) {
+	blob, err := v.toPDF()
+	if err != nil {
+		return "", err
+	}
+	// Audits ride on the given ctx, not the request's: the batch runs on a
+	// WithoutCancel context so a closed browser tab cannot lose the trail of
+	// mails that DID go out.
+	ar := r.WithContext(ctx)
+	body := mailBody(v.Company, v.Neighbor.Name, "anbei "+v.Title+" zur Rechnung "+v.Invoice.Number+" als PDF.")
 	att := mail.Attachment{Filename: "Mahnung_" + sanitizeFilename(v.Invoice.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
 	subject := v.Title + " · Rechnung " + v.Invoice.Number
-	if err := mail.Send(r.Context(), s.cfg, v.Neighbor.Email, subject, body, []mail.Attachment{att}); err != nil {
+	if err := mail.Send(ctx, s.cfg, v.Neighbor.Email, subject, body, []mail.Attachment{att}); err != nil {
 		metrics.Inc(metrics.MailFailed)
-		s.audit(r, "mahnung_email_failed", "neighbor", v.Neighbor.ID,
-			v.Neighbor.Name+" · "+v.Title+" · Rechnung "+v.Invoice.Number+" · "+err.Error())
-		if qerr := s.store.EnqueueMail(r.Context(), store.OutboxMail{
+		s.audit(ar, "mahnung_email_failed", "neighbor", v.Neighbor.ID,
+			v.Neighbor.Name+" · "+v.Title+" · Rechnung "+v.Invoice.Number+" · "+err.Error()+auditSuffix)
+		slog.Error("mahnung email send failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
+		if qerr := s.store.EnqueueMail(ctx, store.OutboxMail{
 			Kind: "mahnung", NeighborID: v.Neighbor.ID, BillingYearID: v.Invoice.BillingYearID,
-			Recipient: v.Neighbor.Email, Subject: v.Title + " · Rechnung " + v.Invoice.Number, Body: body,
+			Recipient: v.Neighbor.Email, Subject: subject, Body: body,
 			AttName: att.Filename, AttType: att.ContentType, AttData: att.Data,
+			Meta: store.OutboxMeta{Stage: v.Stage, Fee: v.Fee, GraceUntil: v.GraceUntil, InvoiceNumber: v.Invoice.Number},
 		}); qerr != nil {
 			slog.Error("mahnung email enqueue failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(qerr.Error()))
+			return "failed", nil
 		}
-		slog.Error("mahnung email send failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
-		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
-		redirect(w, r, back)
-		return
+		return "queued", nil
 	}
-	// Delivery succeeded; the send-trail marker is secondary — mirror handleBelegEmail:
-	// log a failed write and tell the user the reminder went out but wasn't recorded.
-	// The configured CC gets its copy (Nr. 99), best-effort.
-	s.sendMailCopy(r.Context(), v.Company, subject, body, []mail.Attachment{att})
-	if err := s.store.RecordDunningNotice(r.Context(), store.DunningNotice{
+	// Delivered — the configured CC gets its copy (Nr. 99), best-effort.
+	s.sendMailCopy(ctx, v.Company, subject, body, []mail.Attachment{att})
+	trailOK := true
+	if err := s.store.RecordDunningNotice(ctx, store.DunningNotice{
 		BillingYearID: v.Invoice.BillingYearID, NeighborID: v.Neighbor.ID,
 		InvoiceNumber: v.Invoice.Number, Stage: v.Stage, Channel: "e-mail",
 		GraceUntil: v.GraceUntil, Fee: v.Fee,
 	}); err != nil {
 		slog.Error("record dunning notice failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
+		trailOK = false
 	}
-	if err := s.store.RecordBelegSend(r.Context(), v.Year.ID, v.Neighbor.ID, "mahnung"); err != nil {
+	if err := s.store.RecordBelegSend(ctx, v.Year.ID, v.Neighbor.ID, "mahnung"); err != nil {
 		slog.Error("record beleg send failed", "kind", "mahnung", "year", v.Year.ID, "neighbor", v.Neighbor.ID, "err", err)
-		s.audit(r, "mahnung_email", "neighbor", v.Neighbor.ID, v.Neighbor.Name+" · E-Mail · "+v.Title+" "+v.Invoice.Number)
-		s.setFlash(w, r, "success", v.Title+" an "+v.Neighbor.Email+" gesendet (Versand-Historie konnte nicht gespeichert werden).")
-		redirect(w, r, back)
-		return
+		trailOK = false
 	}
-	s.audit(r, "mahnung_email", "neighbor", v.Neighbor.ID, v.Neighbor.Name+" · E-Mail · "+v.Title+" "+v.Invoice.Number)
-	s.setFlash(w, r, "success", v.Title+" an "+v.Neighbor.Email+" gesendet.")
-	redirect(w, r, back)
+	s.audit(ar, "mahnung_email", "neighbor", v.Neighbor.ID, v.Neighbor.Name+" · E-Mail · "+v.Title+" "+v.Invoice.Number+auditSuffix)
+	if !trailOK {
+		return "sentNoTrail", nil
+	}
+	return "sent", nil
 }
 
 // handleMahnungEpcQR serves the EPC/GiroCode QR for a reminder, encoding the
@@ -501,19 +521,29 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	term := company.PaymentTermDays
-	if term < 0 {
-		term = 14
-	}
+	term := company.EffectiveTermDays()
 	rows, err := s.store.DunningRows(r.Context(), yearID, term, time.Now())
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	year, err := s.store.GetBillingYear(r.Context(), yearID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	// A batch of SMTP dialogs does not fit the server's 30s write timeout, and
+	// once the operator kicked the run off, a closed tab must not strand the
+	// remaining letters half-sent with their trail unwritten: the deadline is
+	// extended and the loop runs detached from the request's cancellation.
+	extendWriteDeadline(w, 10*time.Minute)
+	bctx := context.WithoutCancel(r.Context())
 
-	var sent, queued, skipped int
+	var sent, queued, skipped, failed int
 	for _, row := range rows {
-		v, ok, err := s.buildMahnungData(r, row.NeighborID, yearID, stage)
+		// Company and year are loop-invariant (see buildMahnungDataWith); only
+		// the per-neighbor rows are fetched inside the loop.
+		v, ok, err := s.buildMahnungDataWith(r.WithContext(bctx), row.NeighborID, stage, company, year)
 		if err != nil {
 			s.serverError(w, "mahnwesen batch", err)
 			return
@@ -525,55 +555,37 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 			skipped++
 			continue
 		}
-		blob, err := v.toPDF()
+		status, err := s.deliverMahnung(bctx, r, v, " (Sammellauf)")
 		if err != nil {
 			s.serverError(w, "mahnwesen batch: pdf", err)
 			return
 		}
-		from := strings.TrimSpace(v.Company.Name)
-		if from == "" {
-			from = "Ihr Maschinenring"
-		}
-		body := mailBody(v.Company, v.Neighbor.Name, "anbei "+v.Title+" zur Rechnung "+v.Invoice.Number+" als PDF.", from)
-		att := mail.Attachment{Filename: "Mahnung_" + sanitizeFilename(v.Invoice.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
-		subject := v.Title + " · Rechnung " + v.Invoice.Number
-		if err := mail.Send(r.Context(), s.cfg, v.Neighbor.Email, subject, body, []mail.Attachment{att}); err != nil {
-			metrics.Inc(metrics.MailFailed)
-			s.audit(r, "mahnung_email_failed", "neighbor", v.Neighbor.ID,
-				v.Neighbor.Name+" · "+v.Title+" · Rechnung "+v.Invoice.Number+" · "+err.Error())
-			if qerr := s.store.EnqueueMail(r.Context(), store.OutboxMail{
-				Kind: "mahnung", NeighborID: v.Neighbor.ID, BillingYearID: v.Invoice.BillingYearID,
-				Recipient: v.Neighbor.Email, Subject: v.Title + " · Rechnung " + v.Invoice.Number, Body: body,
-				AttName: att.Filename, AttType: att.ContentType, AttData: att.Data,
-			}); qerr != nil {
-				slog.Error("mahnwesen batch: enqueue failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(qerr.Error()))
-				skipped++
-				continue
-			}
+		switch status {
+		case "sent", "sentNoTrail":
+			sent++
+		case "queued":
 			queued++
-			continue
+		default:
+			// Send AND retry-park failed — this neighbor HAS an address; counting
+			// them under "ohne E-Mail-Adresse übersprungen" told the operator a lie.
+			failed++
 		}
-		// Delivered — the configured CC gets its copy (Nr. 99), best-effort.
-		s.sendMailCopy(r.Context(), v.Company, subject, body, []mail.Attachment{att})
-		if err := s.store.RecordDunningNotice(r.Context(), store.DunningNotice{
-			BillingYearID: v.Invoice.BillingYearID, NeighborID: v.Neighbor.ID,
-			InvoiceNumber: v.Invoice.Number, Stage: v.Stage, Channel: "e-mail",
-			GraceUntil: v.GraceUntil, Fee: v.Fee,
-		}); err != nil {
-			slog.Error("mahnwesen batch: record notice failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
-		}
-		s.audit(r, "mahnung_email", "neighbor", v.Neighbor.ID,
-			v.Neighbor.Name+" · "+v.Title+" · Rechnung "+v.Invoice.Number+" (Sammellauf)")
-		sent++
 	}
 
 	msg := fmt.Sprintf("Sammel-Mahnlauf: %d gesendet", sent)
 	if queued > 0 {
 		msg += fmt.Sprintf(", %d zur Wiederholung eingeplant", queued)
 	}
+	if failed > 0 {
+		msg += fmt.Sprintf(", %d fehlgeschlagen (bitte erneut versuchen)", failed)
+	}
 	if skipped > 0 {
 		msg += fmt.Sprintf(", %d ohne E-Mail-Adresse übersprungen", skipped)
 	}
-	s.setFlash(w, r, "success", msg+".")
+	kind := "success"
+	if failed > 0 {
+		kind = "error"
+	}
+	s.setFlash(w, r, kind, msg+".")
 	redirect(w, r, back)
 }

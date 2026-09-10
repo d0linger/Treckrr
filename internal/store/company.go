@@ -159,6 +159,10 @@ func (s *Store) BuildInvoiceContent(ctx context.Context, yearID, neighborID int6
 	if err != nil {
 		return models.InvoiceContent{}, err
 	}
+	return s.buildInvoiceContentWith(ctx, company, yearID, neighborID)
+}
+
+func (s *Store) buildInvoiceContentWith(ctx context.Context, company models.Company, yearID, neighborID int64) (models.InvoiceContent, error) {
 	neighbor, err := s.GetNeighbor(ctx, neighborID)
 	if err != nil {
 		return models.InvoiceContent{}, err

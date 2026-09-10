@@ -156,3 +156,136 @@ func TestMailOutboxLifecycleIntegration(t *testing.T) {
 		t.Errorf("after purge: sent=%d failed=%d, want 0/1", sentLeft, failedLeft)
 	}
 }
+
+// TestMailOutboxMahnungRetryBookkeepingIntegration: a Mahnung delivered on
+// RETRY must land in the Mahnhistorie (dunning_notices) and the send trail
+// (beleg_sends) exactly like a synchronously delivered one — built from the
+// meta the enqueue parked with the mail. A legacy row from before 0052 carries
+// an empty meta and must NOT fabricate a Stage-0 notice.
+func TestMailOutboxMahnungRetryBookkeepingIntegration(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping DB integration test")
+	}
+	ctx := context.Background()
+	pool, err := db.Connect(ctx, url)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	st := store.New(pool, "test-encryption-secret")
+
+	f := fixtures{Years: []int{2107}, NeighborNames: []string{"Outbox Mahnung 2107"}}
+	purgeFixtures(t, ctx, pool, f)
+	t.Cleanup(func() { purgeFixtures(t, ctx, pool, f) })
+
+	baseID, err := st.CreateEmptyBase(ctx, 2107, "Outbox-Basis")
+	if err != nil {
+		t.Fatalf("base: %v", err)
+	}
+	yearID, err := st.CreateBillingYear(ctx, 2107, baseID, "Outbox-Jahr")
+	if err != nil {
+		t.Fatalf("year: %v", err)
+	}
+	nid, err := st.CreateNeighbor(ctx, "Outbox Mahnung 2107", "")
+	if err != nil {
+		t.Fatalf("neighbor: %v", err)
+	}
+	if err := st.AddNeighborToYear(ctx, yearID, nid); err != nil {
+		t.Fatalf("add neighbor: %v", err)
+	}
+
+	marker := fmt.Sprintf("outbox-mahnung-it-%d@example.invalid", os.Getpid())
+	purgeMail := func() {
+		if _, err := pool.ExecContext(ctx, `DELETE FROM mail_outbox WHERE recipient=$1`, marker); err != nil {
+			t.Fatalf("purge outbox: %v", err)
+		}
+	}
+	purgeMail()
+	t.Cleanup(purgeMail)
+
+	grace := day(2107, 6, 20)
+	if err := st.EnqueueMail(ctx, store.OutboxMail{
+		Kind: "mahnung", NeighborID: nid, BillingYearID: yearID,
+		Recipient: marker, Subject: "2. Mahnung · Rechnung IT-2107-001", Body: "b",
+		Meta: store.OutboxMeta{Stage: 2, Fee: dec("15"), GraceUntil: grace, InvoiceNumber: "IT-2107-001"},
+	}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	if _, err := pool.ExecContext(ctx,
+		`UPDATE mail_outbox SET next_attempt_at=now() WHERE recipient=$1`, marker); err != nil {
+		t.Fatalf("force due: %v", err)
+	}
+	// >= 1, not == 1: the outbox is a shared global queue and another test's
+	// leftover due row would otherwise flake this count.
+	delivered, _, err := st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, []byte) error {
+		return nil
+	})
+	if err != nil || delivered < 1 {
+		t.Fatalf("process: delivered=%d err=%v", delivered, err)
+	}
+
+	var stage int
+	var invoiceNo, channel, fee string
+	var graceGot time.Time
+	if err := pool.QueryRowContext(ctx, `
+		SELECT stage, invoice_number, channel, fee::text, COALESCE(grace_until, '0001-01-01'::date)
+		  FROM dunning_notices WHERE billing_year_id=$1 AND neighbor_id=$2`, yearID, nid).
+		Scan(&stage, &invoiceNo, &channel, &fee, &graceGot); err != nil {
+		t.Fatalf("read notice: %v", err)
+	}
+	if stage != 2 || invoiceNo != "IT-2107-001" || channel != "e-mail (Wiederholung)" {
+		t.Errorf("notice = stage %d / %q / %q, want 2 / IT-2107-001 / e-mail (Wiederholung)", stage, invoiceNo, channel)
+	}
+	if dec(fee).Cmp(dec("15")) != 0 {
+		t.Errorf("notice fee = %s, want 15", fee)
+	}
+	if graceGot.Format("2006-01-02") != "2107-06-20" {
+		t.Errorf("notice grace = %s, want 2107-06-20", graceGot.Format("2006-01-02"))
+	}
+	var sends int
+	if err := pool.QueryRowContext(ctx,
+		`SELECT count(*) FROM beleg_sends WHERE billing_year_id=$1 AND neighbor_id=$2 AND channel='mahnung'`,
+		yearID, nid).Scan(&sends); err != nil {
+		t.Fatalf("read sends: %v", err)
+	}
+	if sends != 1 {
+		t.Errorf("beleg_sends = %d, want 1", sends)
+	}
+
+	// Legacy row (pre-0052): empty meta must not fabricate a Stage-0 notice —
+	// but the send trail is still written.
+	if _, err := pool.ExecContext(ctx, `
+		INSERT INTO mail_outbox (kind, neighbor_id, billing_year_id, recipient, subject, body,
+		                         att_name, att_type, att_data, next_attempt_at)
+		VALUES ('mahnung', $1, $2, $3, 'Alt-Mahnung', 'b', '', '', ''::bytea, now())`,
+		nid, yearID, marker); err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+	delivered, _, err = st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, []byte) error {
+		return nil
+	})
+	if err != nil || delivered < 1 {
+		t.Fatalf("legacy process: delivered=%d err=%v", delivered, err)
+	}
+	var notices int
+	if err := pool.QueryRowContext(ctx,
+		`SELECT count(*) FROM dunning_notices WHERE billing_year_id=$1 AND neighbor_id=$2`, yearID, nid).
+		Scan(&notices); err != nil {
+		t.Fatalf("count notices: %v", err)
+	}
+	if notices != 1 {
+		t.Errorf("after legacy delivery: %d notices, want still 1 (no fabricated Stage-0 row)", notices)
+	}
+	if err := pool.QueryRowContext(ctx,
+		`SELECT count(*) FROM beleg_sends WHERE billing_year_id=$1 AND neighbor_id=$2 AND channel='mahnung'`,
+		yearID, nid).Scan(&sends); err != nil {
+		t.Fatalf("read sends: %v", err)
+	}
+	if sends != 2 {
+		t.Errorf("beleg_sends after legacy delivery = %d, want 2", sends)
+	}
+}

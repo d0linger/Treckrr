@@ -3,6 +3,8 @@ package server
 import (
 	"io"
 	"net/http"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -45,46 +47,85 @@ func (s *Server) matchTxns(r *http.Request, txns []bankimport.Txn, assign map[st
 			assignable[a.ID] = a
 		}
 	}
+	// Three set queries for the WHOLE statement — the per-transaction path (an
+	// EXISTS, a regex scan, an unindexable IBAN scan and a name SELECT per
+	// credit) cost a 400-line statement ~1600 round trips per preview and the
+	// same again on commit. Matching itself happens here in Go.
+	hashes := make([]string, 0, len(txns))
+	for _, t := range txns {
+		hashes = append(hashes, t.Hash)
+	}
+	seen, err := s.store.SeenPaymentHashes(r.Context(), hashes)
+	if err != nil {
+		return nil, 0, err
+	}
+	targets, err := s.store.IssuedInvoiceTargets(r.Context())
+	if err != nil {
+		return nil, 0, err
+	}
+	ibans, err := s.store.NeighborIBANMap(r.Context())
+	if err != nil {
+		return nil, 0, err
+	}
+	// Reference matching mirrors InvoiceByReferenceText: the reference must
+	// appear in the remittance text on non-alphanumeric boundaries, the longest
+	// reference wins (2026-0001 must not lose to a neighbor whose reference is
+	// its prefix). Newest issued invoice per neighbor doubles as the IBAN
+	// fallback target, exactly as LatestOpenInvoiceForNeighbor picked it.
+	type refPattern struct {
+		re *regexp.Regexp
+		t  store.InvoiceRefTarget
+	}
+	patterns := make([]refPattern, 0, len(targets))
+	newest := map[int64]store.InvoiceRefTarget{} // neighbor id → newest issued invoice
+	for _, t := range targets {
+		if ref := strings.TrimSpace(t.PaymentReference); ref != "" {
+			re, err := regexp.Compile(`(^|[^0-9A-Za-z])` + regexp.QuoteMeta(ref) + `([^0-9A-Za-z]|$)`)
+			if err == nil {
+				patterns = append(patterns, refPattern{re: re, t: t})
+			}
+		}
+		if cur, ok := newest[t.NeighborID]; !ok || t.ID > cur.ID {
+			newest[t.NeighborID] = t
+		}
+	}
+	sort.SliceStable(patterns, func(i, j int) bool {
+		return len(patterns[i].t.PaymentReference) > len(patterns[j].t.PaymentReference)
+	})
+
 	rows := make([]paymentImportRow, 0, len(txns))
 	importable := 0
 	for _, t := range txns {
-		row := paymentImportRow{Txn: t}
-		if seen, err := s.store.PaymentImportSeen(r.Context(), t.Hash); err != nil {
-			return nil, 0, err
-		} else {
-			row.AlreadyImported = seen
+		row := paymentImportRow{Txn: t, AlreadyImported: seen[t.Hash]}
+		var match *store.InvoiceRefTarget
+		for i := range patterns {
+			if patterns[i].re.MatchString(t.Reference) {
+				match = &patterns[i].t
+				break
+			}
 		}
-		iv, err := s.store.InvoiceByReferenceText(r.Context(), t.Reference)
-		if err != nil {
-			return nil, 0, err
-		}
-		if iv == nil && t.IBAN != "" {
+		if match == nil && t.IBAN != "" {
 			// Fallback: a known payer account books against that neighbor's
 			// newest issued invoice — under neighbors the remittance text is
 			// often just "Aushilfe" with no reference at all.
-			nid, err := s.store.NeighborIDByIBAN(r.Context(), t.IBAN)
-			if err != nil {
-				return nil, 0, err
-			}
-			if nid != 0 {
-				if iv, err = s.store.LatestOpenInvoiceForNeighbor(r.Context(), nid); err != nil {
-					return nil, 0, err
-				}
-				if iv != nil {
+			norm := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(t.IBAN), " ", ""))
+			if nid := ibans[norm]; nid != 0 {
+				if nv, ok := newest[nid]; ok {
+					match = &nv
 					row.MatchedBy = "IBAN"
 				}
 			}
 		}
-		if iv != nil {
+		if match != nil {
 			row.Matched = true
 			if row.MatchedBy == "" {
 				row.MatchedBy = "Referenz"
 			}
-			row.NeighborID = iv.NeighborID
-			row.YearID = iv.BillingYearID
-			row.InvoiceID = iv.ID
-			row.InvoiceNumber = iv.Number
-			row.NeighborName = s.neighborName(r, iv.NeighborID)
+			row.NeighborID = match.NeighborID
+			row.YearID = match.YearID
+			row.InvoiceID = match.ID
+			row.InvoiceNumber = match.Number
+			row.NeighborName = match.NeighborName
 		} else if id, ok := assign[t.Hash]; ok {
 			if a, ok := assignable[id]; ok {
 				row.Matched = true

@@ -171,16 +171,9 @@ func (s *Server) handleJournalCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filename := fmt.Sprintf("rechnungsjournal-%d.csv", year.Year)
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
-	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF})
-	cw := csv.NewWriter(w)
-	cw.Comma = ';'
+	cw, finish := csvDownload(w, r, filename)
+	defer finish()
 	writeJournalCSV(cw, rows)
-	cw.Flush()
-	if err := cw.Error(); err != nil {
-		slog.Warn("journal csv incomplete", "err", sanitizeLog(err.Error()))
-	}
 }
 
 var zipNameSafe = regexp.MustCompile(`[^A-Za-z0-9._-]`)

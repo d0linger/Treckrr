@@ -35,23 +35,40 @@ type DunningRow struct {
 // yearID 0 means ALL years — the cross-year open-items list (Altersstaffel).
 // The term is per row: a neighbor's payment_term_days override wins over the
 // company default handed in.
+// openAmountJoins is the shared core of the remaining-payable figure: the
+// grouped credit/ledger/payment sums an issued invoice is reduced by. Joined
+// once per child table instead of three correlated subqueries per invoice row
+// — the cross-year Altersstaffel (yearID 0) materializes one row per invoice
+// EVER issued, and the correlated form re-scanned each child table per row.
+// YearClosingChecks consumes the same fragment; the single-pair form is
+// InvoiceRemaining (company.go) — change all of them together.
+const openAmountJoins = `
+	  LEFT JOIN (SELECT billing_year_id, neighbor_id, SUM(gross) AS s FROM invoices
+	              WHERE kind = 'gutschrift' AND status = 'issued'
+	              GROUP BY billing_year_id, neighbor_id) cr
+	         ON cr.billing_year_id = iv.billing_year_id AND cr.neighbor_id = iv.neighbor_id
+	  LEFT JOIN (SELECT billing_year_id, neighbor_id, SUM(amount) AS s FROM neighbor_ledger
+	              WHERE NOT voided
+	              GROUP BY billing_year_id, neighbor_id) led
+	         ON led.billing_year_id = iv.billing_year_id AND led.neighbor_id = iv.neighbor_id
+	  LEFT JOIN (SELECT billing_year_id, neighbor_id, SUM(amount) AS s FROM payments
+	              WHERE deleted_at IS NULL
+	              GROUP BY billing_year_id, neighbor_id) pay
+	         ON pay.billing_year_id = iv.billing_year_id AND pay.neighbor_id = iv.neighbor_id`
+
+// openAmountExpr is the remaining payable built from those joins.
+const openAmountExpr = `COALESCE(iv.gross, 0) + COALESCE(cr.s, 0) + COALESCE(led.s, 0) - COALESCE(pay.s, 0)`
+
 func (s *Store) DunningRows(ctx context.Context, yearID int64, termDays int, asOf time.Time) ([]DunningRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		WITH inv AS (
 		  SELECT iv.billing_year_id, y.year AS year_no, iv.neighbor_id, n.name, iv.number, iv.issued_on,
 		    COALESCE(n.payment_term_days, $2) AS term_days,
-		    COALESCE(iv.gross, 0)
-		    + COALESCE((SELECT SUM(g.gross) FROM invoices g
-		                 WHERE g.billing_year_id = iv.billing_year_id AND g.neighbor_id = iv.neighbor_id
-		                   AND g.kind = 'gutschrift' AND g.status = 'issued'), 0)
-		    + COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
-		                 WHERE l.billing_year_id = iv.billing_year_id AND l.neighbor_id = iv.neighbor_id
-		                   AND NOT l.voided), 0)
-		    - COALESCE((SELECT SUM(p.amount) FROM payments p
-		                 WHERE p.billing_year_id = iv.billing_year_id AND p.neighbor_id = iv.neighbor_id AND p.deleted_at IS NULL), 0) AS open_amt
+		    `+openAmountExpr+` AS open_amt
 		  FROM invoices iv
 		  JOIN neighbors n ON n.id = iv.neighbor_id
 		  JOIN billing_years y ON y.id = iv.billing_year_id
+		  `+openAmountJoins+`
 		  WHERE ($1 = 0 OR iv.billing_year_id = $1) AND iv.kind = 'invoice' AND iv.status = 'issued'
 		)
 		SELECT billing_year_id, year_no, neighbor_id, name, number, issued_on, term_days, open_amt

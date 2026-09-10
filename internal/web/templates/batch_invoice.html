@@ -41,7 +41,7 @@
 		</div>
 		{{if .Issuable}}
 		<button class="btn btn--primary btn--sm" type="submit"
-			data-confirm="Die ausgewählten Rechnungen jetzt endgültig festschreiben? Das ist irreversibel (nur per Storno korrigierbar).">Ausgewählte festschreiben</button>
+			data-confirm="Die ausgewählten Rechnungen jetzt endgültig festschreiben (wählbar: {{.Issuable}} über {{money .Total}})? Das ist irreversibel (nur per Storno korrigierbar).">Ausgewählte festschreiben</button>
 		{{end}}
 	</div>
 	</form>

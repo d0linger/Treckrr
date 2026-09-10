@@ -155,6 +155,10 @@
 			<input class="input" type="text" name="note"></label>
 
 		<button class="btn btn--primary btn--block" type="submit" title="Strg + Enter">Buchung speichern</button>
+		{{/* capture.js remembers unit/rig/task per neighbor (localStorage); this is
+		     the only way to clear that memory — the JS handler existed, the button
+		     was never rendered. */}}
+		<button class="btn btn--ghost btn--xs" type="button" data-defaults-reset>Gemerkte Vorgaben löschen</button>
 	</form>
 
 	<details class="card disclosure">

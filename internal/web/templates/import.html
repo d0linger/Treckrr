@@ -18,7 +18,7 @@
 	</form>
 	{{else}}
 	<p class="muted small">{{.OKCount}} von {{.Total}} Zeilen importierbar. Einzelne Zeilen lassen sich abwählen; fehlerhafte Zeilen können unten direkt korrigiert und erneut geprüft werden.</p>
-	<form method="post" action="/entries/import" data-confirm="Die ausgewählten Buchungen jetzt importieren?">
+	<form method="post" action="/entries/import" data-confirm="{{.OKCount}} importierbare Buchung(en) — die ausgewählten jetzt importieren?">
 		<input type="hidden" name="year_id" value="{{.Year.ID}}">
 		<input type="hidden" name="csv" value="{{.CSV}}">
 		<input type="hidden" name="import_token" value="{{.ImportToken}}">

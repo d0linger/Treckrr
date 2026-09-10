@@ -84,7 +84,13 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	photoCounts, err := s.store.PhotoCounts(r.Context(), year.ID, 0)
+	// Only the rows on THIS page — aggregating the whole year hashed every
+	// photo-bearing booking per pager click to decorate 50 rows.
+	pageIDs := make([]int64, 0, len(rows))
+	for _, e := range rows {
+		pageIDs = append(pageIDs, e.ID)
+	}
+	photoCounts, err := s.store.PhotoCountsForEntries(r.Context(), pageIDs)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -152,18 +158,22 @@ func entryListURL(r *http.Request, yearID int64, page int, sort string) string {
 
 // formIDs reads the checked ids of a bulk form, capped so one request cannot
 // ask the database to touch an unbounded set.
-func formIDs(r *http.Request, field string) []int64 {
+// formIDs parses a repeated id field. ok=false means the list was over the
+// cap — the caller must REFUSE, not proceed: truncating silently made a bulk
+// delete of 700 bookings report "500 gelöscht" while 200 stood untouched, and
+// formInt64List's contract says exactly this (the copy here had drifted).
+func formIDs(r *http.Request, field string) ([]int64, bool) {
 	raw := r.PostForm[field]
-	if len(raw) > 500 {
-		raw = raw[:500]
+	if len(raw) > maxFormListLen {
+		return nil, false
 	}
 	ids := make([]int64, 0, len(raw))
 	for _, v := range raw {
-		if id, err := strconv.ParseInt(v, 10, 64); err == nil && id > 0 {
+		if id, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && id > 0 {
 			ids = append(ids, id)
 		}
 	}
-	return ids
+	return ids, true
 }
 
 // handleEntryBulk applies a bulk action to the checked bookings (Ausbaukarte
@@ -179,7 +189,12 @@ func (s *Server) handleEntryBulk(w http.ResponseWriter, r *http.Request) {
 	if ret := r.FormValue("return_to"); strings.HasPrefix(ret, "/buchungen") {
 		back = ret
 	}
-	ids := formIDs(r, "entry_id")
+	ids, ok := formIDs(r, "entry_id")
+	if !ok {
+		s.setFlash(w, r, "error", fmt.Sprintf("Zu viele Buchungen auf einmal ausgewählt (höchstens %d).", maxFormListLen))
+		redirect(w, r, "/buchungen")
+		return
+	}
 	if len(ids) == 0 {
 		s.setFlash(w, r, "info", "Keine Buchung ausgewählt.")
 		redirect(w, r, back)

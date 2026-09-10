@@ -74,18 +74,10 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	rawAmount := strings.ReplaceAll(strings.TrimSpace(r.FormValue("amount")), ",", ".")
-	// Refused BEFORE parsing, for the reason spelled out at maxDecimalLen: an
-	// exponent turns a nine-character field into hundreds of milliseconds of work
-	// in every operation that follows, including the checks meant to reject it.
-	// This field does not go through parseGermanDecimal, so it needs its own guard.
-	if strings.ContainsAny(rawAmount, "eE") {
-		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
-		redirect(w, r, neighborURL(neighborID, yearID))
-		return
-	}
-	amount, err := decimal.NewFromString(rawAmount)
-	if err != nil || !amount.IsPositive() {
+	// parseGermanDecimalOK carries the exponent/length guards (see there) —
+	// this used to be one of three hand-rolled copies of them.
+	amount, okAmount := parseGermanDecimalOK(r.FormValue("amount"))
+	if !okAmount || !amount.IsPositive() {
 		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
@@ -364,14 +356,8 @@ func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
-	rawAmount := strings.ReplaceAll(strings.TrimSpace(r.FormValue("amount")), ",", ".")
-	if strings.ContainsAny(rawAmount, "eE") {
-		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
-		redirect(w, r, back)
-		return
-	}
-	amount, err := decimal.NewFromString(rawAmount)
-	if err != nil || !amount.IsPositive() {
+	amount, okAmount := parseGermanDecimalOK(r.FormValue("amount"))
+	if !okAmount || !amount.IsPositive() {
 		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
 		redirect(w, r, back)
 		return
@@ -454,9 +440,8 @@ func (s *Server) handleInstallmentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
-	rawAmount := strings.ReplaceAll(strings.TrimSpace(r.FormValue("amount")), ",", ".")
-	amount, err := decimal.NewFromString(rawAmount)
-	if err != nil || !amount.IsPositive() || strings.ContainsAny(rawAmount, "eE") {
+	amount, okAmount := parseGermanDecimalOK(r.FormValue("amount"))
+	if !okAmount || !amount.IsPositive() {
 		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
 		redirect(w, r, back)
 		return

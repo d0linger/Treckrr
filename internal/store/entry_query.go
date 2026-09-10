@@ -116,10 +116,9 @@ func (s *Store) FilterEntries(ctx context.Context, f EntryFilter) ([]EntryRow, i
 	// entryFilterOrder returns one of three constants, and the LIMIT/OFFSET
 	// placeholders are numbers derived from len(args).
 	//nolint:gosec // G202: no user input reaches the query string
-	q := `SELECT e.id, e.neighbor_id, e.billing_year_id, e.entry_date, e.task_label, e.gespann_id,
-		e.tractor_id, e.load_level_id, e.tractor_label, e.load_label, e.machine_labels,
-		e.hours, e.hourly_rate, e.cost, e.note, e.voided, e.void_reason, e.created_at,
-		e.unit, e.quantity, e.unit_price, e.person_id, e.linked_entry_id, n.name
+	// entryColsE derives from entryCols (entries.go): a new entry column now
+	// reaches this query automatically instead of being the third hand-edit.
+	q := `SELECT ` + entryColsE + `, n.name
 		FROM entries e JOIN neighbors n ON n.id = e.neighbor_id` + where +
 		entryFilterOrder(f.Sort, f.Desc) +
 		" LIMIT $" + strconv.Itoa(len(args)-1) + " OFFSET $" + strconv.Itoa(len(args))

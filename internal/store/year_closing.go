@@ -93,18 +93,12 @@ func (s *Store) YearClosingChecks(ctx context.Context, yearID int64) ([]ClosingC
 
 	// 3. Still unpaid: the invoice's own remaining, per neighbor. Same shape as
 	// InvoiceRemaining, aggregated — an amount, not just a count.
+	// Shared fragment (see openAmountJoins in dunning.go) — the checklist and
+	// the Mahnwesen list must never disagree about what is still open.
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT n.name, iv.gross
-		      + COALESCE((SELECT SUM(g.gross) FROM invoices g
-		                   WHERE g.billing_year_id = iv.billing_year_id AND g.neighbor_id = iv.neighbor_id
-		                     AND g.kind = 'gutschrift' AND g.status = 'issued'), 0)
-		      + COALESCE((SELECT SUM(l.amount) FROM neighbor_ledger l
-		                   WHERE l.billing_year_id = iv.billing_year_id AND l.neighbor_id = iv.neighbor_id
-		                     AND NOT l.voided), 0)
-		      - COALESCE((SELECT SUM(p.amount) FROM payments p
-		                   WHERE p.billing_year_id = iv.billing_year_id AND p.neighbor_id = iv.neighbor_id
-		                     AND p.deleted_at IS NULL), 0) AS rest
+		`SELECT n.name, `+openAmountExpr+` AS rest
 		   FROM invoices iv JOIN neighbors n ON n.id = iv.neighbor_id
+		  `+openAmountJoins+`
 		  WHERE iv.billing_year_id = $1 AND iv.kind = 'invoice' AND iv.status = 'issued'
 		  ORDER BY n.name`, yearID)
 	if err != nil {

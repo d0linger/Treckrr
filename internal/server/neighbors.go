@@ -22,8 +22,42 @@ func (s *Server) handleNeighborsManage(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	var stats []neighborStat
+	// Scope (Ausbaukarte 78): archived and anonymised neighbors stood in the same
+	// undivided list as the active ones. Default shows the active ones — that is
+	// who gets booked — with the other two a click away.
+	//
+	// Filter BEFORE counting: the tab tallies need only the flags, while the two
+	// count queries below cost two round trips per neighbor — the default view
+	// used to spend most of them on archived rows it then threw away.
+	scope := r.URL.Query().Get("scope")
+	var active, archived, anon int
+	kept := make([]models.Neighbor, 0, len(neighbors))
 	for _, n := range neighbors {
+		switch {
+		case n.Anonymized:
+			anon++
+		case n.Archived:
+			archived++
+		default:
+			active++
+		}
+		keep := false
+		switch scope {
+		case "archiviert":
+			keep = n.Archived && !n.Anonymized
+		case "anonymisiert":
+			keep = n.Anonymized
+		case "alle":
+			keep = true
+		default:
+			keep = !n.Archived && !n.Anonymized
+		}
+		if keep {
+			kept = append(kept, n)
+		}
+	}
+	shown := make([]neighborStat, 0, len(kept))
+	for _, n := range kept {
 		years, err := s.store.CountYearsForNeighbor(r.Context(), n.ID)
 		if err != nil {
 			s.serverError(w, r.URL.Path, err)
@@ -34,38 +68,7 @@ func (s *Server) handleNeighborsManage(w http.ResponseWriter, r *http.Request) {
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
-		stats = append(stats, neighborStat{Neighbor: n, Years: years, Entries: entries})
-	}
-
-	// Scope (Ausbaukarte 78): archived and anonymised neighbors stood in the same
-	// undivided list as the active ones. Default shows the active ones — that is
-	// who gets booked — with the other two a click away.
-	scope := r.URL.Query().Get("scope")
-	shown := make([]neighborStat, 0, len(stats))
-	var active, archived, anon int
-	for _, st := range stats {
-		switch {
-		case st.Neighbor.Anonymized:
-			anon++
-		case st.Neighbor.Archived:
-			archived++
-		default:
-			active++
-		}
-		keep := false
-		switch scope {
-		case "archiviert":
-			keep = st.Neighbor.Archived && !st.Neighbor.Anonymized
-		case "anonymisiert":
-			keep = st.Neighbor.Anonymized
-		case "alle":
-			keep = true
-		default:
-			keep = !st.Neighbor.Archived && !st.Neighbor.Anonymized
-		}
-		if keep {
-			shown = append(shown, st)
-		}
+		shown = append(shown, neighborStat{Neighbor: n, Years: years, Entries: entries})
 	}
 	// The year to link a neighbor into, so the list is a way INTO the data
 	// rather than a dead end. Absent on a fresh installation.
@@ -77,7 +80,7 @@ func (s *Server) handleNeighborsManage(w http.ResponseWriter, r *http.Request) {
 	data["CountActive"] = active
 	data["CountArchived"] = archived
 	data["CountAnon"] = anon
-	data["Total"] = len(stats)
+	data["Total"] = len(neighbors)
 	if yerr == nil {
 		data["Year"] = year
 	}

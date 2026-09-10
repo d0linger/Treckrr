@@ -3,10 +3,13 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 // OutboxMail is one parked outbound mail awaiting retry.
@@ -22,6 +25,19 @@ type OutboxMail struct {
 	AttType       string
 	AttData       []byte
 	Attempts      int
+	// Meta carries what the retry loop needs to finish the kind's bookkeeping
+	// on delivery — for a Mahnung: stage, fee, grace and invoice number, so
+	// RecordDunningNotice can be written when the mail ACTUALLY went out, not
+	// merely when it was parked. Stored as JSONB (0052).
+	Meta OutboxMeta
+}
+
+// OutboxMeta is the per-kind bookkeeping payload (see OutboxMail.Meta).
+type OutboxMeta struct {
+	Stage         int             `json:"stage,omitempty"`
+	Fee           decimal.Decimal `json:"fee,omitempty"`
+	GraceUntil    time.Time       `json:"grace_until,omitempty"`
+	InvoiceNumber string          `json:"invoice_number,omitempty"`
 }
 
 // outboxMaxAttempts is how often a parked mail is retried before it is marked
@@ -56,12 +72,16 @@ func nullable(id int64) any {
 }
 
 func (s *Store) EnqueueMail(ctx context.Context, m OutboxMail) error {
-	_, err := s.db.ExecContext(ctx,
+	meta, err := json.Marshal(m.Meta)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO mail_outbox (kind, neighbor_id, billing_year_id, recipient, subject, body,
-		                          att_name, att_type, att_data, next_attempt_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		                          att_name, att_type, att_data, next_attempt_at, meta)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
 		m.Kind, nullable(m.NeighborID), nullable(m.BillingYearID), m.Recipient, m.Subject, m.Body,
-		m.AttName, m.AttType, m.AttData, time.Now().Add(outboxBackoff(1)))
+		m.AttName, m.AttType, m.AttData, time.Now().Add(outboxBackoff(1)), meta)
 	return err
 }
 
@@ -86,7 +106,7 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 ) (delivered, exhausted int, err error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, kind, COALESCE(neighbor_id,0), COALESCE(billing_year_id,0), recipient, subject, body,
-		        att_name, att_type, COALESCE(att_data,''::bytea), attempts
+		        att_name, att_type, COALESCE(att_data,''::bytea), attempts, COALESCE(meta,'{}'::jsonb)
 		   FROM mail_outbox
 		  WHERE status='pending' AND next_attempt_at <= now()
 		  ORDER BY id
@@ -97,10 +117,14 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 	var due []OutboxMail
 	for rows.Next() {
 		var m OutboxMail
+		var meta []byte
 		if err := rows.Scan(&m.ID, &m.Kind, &m.NeighborID, &m.BillingYearID, &m.Recipient,
-			&m.Subject, &m.Body, &m.AttName, &m.AttType, &m.AttData, &m.Attempts); err != nil {
+			&m.Subject, &m.Body, &m.AttName, &m.AttType, &m.AttData, &m.Attempts, &meta); err != nil {
 			_ = rows.Close()
 			return 0, 0, err
+		}
+		if err := json.Unmarshal(meta, &m.Meta); err != nil {
+			slog.Warn("outbox: bad meta, ignoring", "id", m.ID, "err", err)
 		}
 		due = append(due, m)
 	}
@@ -110,6 +134,36 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 	}
 
 	for _, m := range due {
+		// Between mails the caller's ctx is a STOP signal (shutdown): break off
+		// cleanly rather than starting another dialog the deploy will not wait
+		// for. WITHIN one mail, the work runs on its own detached budget below —
+		// a mail that was delivered must always get its status marked, or the
+		// next tick re-sends it (the "sent but never marked" duplicate).
+		if ctx.Err() != nil {
+			return delivered, exhausted, nil
+		}
+		mctx, cancelMail := context.WithTimeout(context.WithoutCancel(ctx), perMailBudget)
+		_, err := s.processOneOutboxMail(mctx, m, send, &delivered, &exhausted)
+		cancelMail()
+		if err != nil {
+			return delivered, exhausted, err
+		}
+	}
+	return delivered, exhausted, nil
+}
+
+// perMailBudget bounds ONE outbox delivery: the SMTP dial+dialog budget
+// (10s+18s in mail.Send) plus the bookkeeping writes. Detached from the tick's
+// context on purpose — the old shared 1-minute tick budget could expire
+// between a successful SMTP dialog and the status='sent' UPDATE, leaving the
+// row pending and the neighbor with a duplicate invoice on every later tick.
+const perMailBudget = 45 * time.Second
+
+func (s *Store) processOneOutboxMail(ctx context.Context, m OutboxMail,
+	send func(ctx context.Context, to, subject, body, attName, attType string, attData []byte) error,
+	delivered, exhausted *int,
+) (skip bool, err error) {
+	{
 		// Claim the row before dialing SMTP. Selecting and then sending leaves a
 		// window in which a second app instance — or a tick that overlaps a slow
 		// SMTP dialog — reads the same still-pending row and delivers the same
@@ -124,10 +178,10 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 			  RETURNING id`,
 			m.ID, attempts, time.Now().Add(outboxBackoff(attempts+1))).Scan(&claimed)
 		if errors.Is(claimErr, sql.ErrNoRows) {
-			continue // another worker got there first
+			return true, nil // another worker got there first
 		}
 		if claimErr != nil {
-			return delivered, exhausted, claimErr
+			return false, claimErr
 		}
 
 		sendErr := send(ctx, m.Recipient, m.Subject, m.Body, m.AttName, m.AttType, m.AttData)
@@ -135,11 +189,34 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 			if _, err := s.db.ExecContext(ctx,
 				`UPDATE mail_outbox SET status='sent', sent_at=now(), last_error='' WHERE id=$1`,
 				m.ID); err != nil {
-				return delivered, exhausted, err
+				return false, err
 			}
-			delivered++
-			if m.Kind == "beleg" && m.NeighborID != 0 && m.BillingYearID != 0 {
+			*delivered++
+			switch {
+			case m.Kind == "beleg" && m.NeighborID != 0 && m.BillingYearID != 0:
 				if err := s.RecordBelegSend(ctx, m.BillingYearID, m.NeighborID, "e-mail (Wiederholung)"); err != nil {
+					slog.Warn("outbox: record beleg send failed", "id", m.ID, "err", err)
+				}
+			case m.Kind == "mahnung" && m.NeighborID != 0 && m.BillingYearID != 0:
+				// A reminder delivered on RETRY is a delivered reminder: without
+				// these rows the Mahnwesen list showed nothing and the operator
+				// ran the same stage again against people who already got it —
+				// and the year-closing "nie versendet" check read the same gap.
+				//
+				// Rows parked BEFORE 0052 carry an empty meta — a notice built
+				// from it would claim a Stage-0 letter with no invoice and no
+				// fee, misstating the history. Those legacy rows keep the old
+				// behavior (send trail only); every new enqueue sets the number.
+				if m.Meta.InvoiceNumber != "" {
+					if err := s.RecordDunningNotice(ctx, DunningNotice{
+						BillingYearID: m.BillingYearID, NeighborID: m.NeighborID,
+						InvoiceNumber: m.Meta.InvoiceNumber, Stage: m.Meta.Stage,
+						Channel: "e-mail (Wiederholung)", GraceUntil: m.Meta.GraceUntil, Fee: m.Meta.Fee,
+					}); err != nil {
+						slog.Warn("outbox: record dunning notice failed", "id", m.ID, "err", err)
+					}
+				}
+				if err := s.RecordBelegSend(ctx, m.BillingYearID, m.NeighborID, "mahnung"); err != nil {
 					slog.Warn("outbox: record beleg send failed", "id", m.ID, "err", err)
 				}
 			}
@@ -147,7 +224,7 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 				"%s nach %d Versuch(en) zugestellt an %s", m.Subject, m.Attempts+1, m.Recipient), ""); err != nil {
 				slog.Warn("outbox: audit failed", "id", m.ID, "err", err)
 			}
-			continue
+			return true, nil
 		}
 
 		// attempts and next_attempt_at were already written by the claim above;
@@ -156,22 +233,22 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 			if _, err := s.db.ExecContext(ctx,
 				`UPDATE mail_outbox SET status='failed', last_error=$2 WHERE id=$1`,
 				m.ID, sendErr.Error()); err != nil {
-				return delivered, exhausted, err
+				return false, err
 			}
-			exhausted++
+			*exhausted++
 			if err := s.AddAudit(ctx, nil, "system", "mail_retry_failed", m.Kind, "", fmt.Sprintf(
 				"%s endgültig NICHT zugestellt an %s (%d Versuche): %s",
 				m.Subject, m.Recipient, attempts, sendErr.Error()), ""); err != nil {
 				slog.Warn("outbox: audit failed", "id", m.ID, "err", err)
 			}
-			continue
+			return true, nil
 		}
 		if _, err := s.db.ExecContext(ctx,
 			`UPDATE mail_outbox SET last_error=$2 WHERE id=$1`, m.ID, sendErr.Error()); err != nil {
-			return delivered, exhausted, err
+			return false, err
 		}
 	}
-	return delivered, exhausted, nil
+	return false, nil
 }
 
 // PurgeSentMail removes delivered outbox rows older than the cutoff. Failed rows

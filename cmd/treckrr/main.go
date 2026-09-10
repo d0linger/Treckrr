@@ -171,7 +171,12 @@ func run() error {
 	// Background maintenance: purge expired sessions and stale rate-limit rows on a
 	// timer, so cleanup no longer depends on /healthz being hit — and /healthz can
 	// stay a cheap, side-effect-free probe instead of running DELETEs per request.
-	go purgeLoop(ctx, cfg, st)
+	// Waited for at shutdown like the backup loop: without the wait, pool.Close()
+	// fired under an in-flight tick — a mail could be DELIVERED but its
+	// status='sent' write fail on the closed pool, and the next boot re-sent it.
+	var purgeWG sync.WaitGroup
+	purgeWG.Add(1)
+	go func() { defer purgeWG.Done(); purgeLoop(ctx, cfg, st) }()
 
 	// Encrypted backups: scheduled writer (in-app) + on-demand download handler.
 	// Seed the schedule from env on first boot; thereafter it is GUI-editable.
@@ -232,6 +237,12 @@ func run() error {
 	// writeFileAtomic guarantees no partial file if we exit first).
 	if !waitTimeout(&bkWG, 30*time.Second) {
 		slog.Warn("shutdown: a scheduled backup was still running after 30s; exiting anyway")
+	}
+	// The maintenance tick stops BETWEEN outbox mails on ctx cancel and each
+	// mail's own budget is 45s — this wait lets an in-flight delivery finish its
+	// bookkeeping instead of leaving a delivered-but-still-pending row behind.
+	if !waitTimeout(&purgeWG, 50*time.Second) {
+		slog.Warn("shutdown: the maintenance tick was still running after 50s; exiting anyway")
 	}
 	return err
 }
@@ -295,7 +306,12 @@ func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store) {
 		// the store stays free of a config dependency; each delivery gets its own
 		// bounded context so one slow SMTP dialog cannot eat the whole tick.
 		if cfg.MailEnabled() {
-			sent, gaveUp, err := st.ProcessMailOutbox(bg, func(ctx context.Context, to, subject, body, attName, attType string, attData []byte) error {
+			// The LOOP ctx, not bg: between mails it is the shutdown stop signal,
+			// while each mail runs on its own detached 45s budget inside the
+			// store — the old shared 1-minute bg could expire between a
+			// successful SMTP dialog and the status='sent' write, and the next
+			// tick re-sent a delivered invoice.
+			sent, gaveUp, err := st.ProcessMailOutbox(ctx, func(ctx context.Context, to, subject, body, attName, attType string, attData []byte) error {
 				sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 				defer cancel()
 				var atts []mail.Attachment

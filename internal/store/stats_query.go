@@ -41,7 +41,7 @@ func (s *Store) MachineUsageForYear(ctx context.Context, yearID int64, from, to 
 		toArg = to
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT m.name, COALESCE(SUM(e.hours),0), m.working_width * m.cost_per_ab, m.self_cost_per_h
+		`SELECT m.name, COALESCE(SUM(e.hours),0), round(m.working_width * m.cost_per_ab, 2), m.self_cost_per_h
 		   FROM entry_machines em
 		   JOIN entries e ON e.id = em.entry_id
 		   JOIN machines m ON m.id = em.machine_id

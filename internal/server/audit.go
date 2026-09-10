@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/rand"
-	"encoding/csv"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -109,19 +108,8 @@ func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=\"treckrr_audit.csv\"")
-	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF})
-	cw := csv.NewWriter(w)
-	cw.Comma = ';'
-	defer func() {
-		cw.Flush()
-		if err := cw.Error(); err != nil {
-			// The status is long gone — logging is what is still possible; without
-			// it an aborted download is a silently truncated file behind HTTP 200.
-			slog.Warn("csv export incomplete", "path", sanitizeLog(r.URL.Path), "err", sanitizeLog(err.Error()))
-		}
-	}()
+	cw, finish := csvDownload(w, r, "treckrr_audit.csv")
+	defer finish()
 	_ = cw.Write([]string{"Zeitpunkt", "Benutzer", "Aktion", "Objekt", "ID", "Detail", "IP"})
 	for _, e := range filtered {
 		_ = cw.Write([]string{

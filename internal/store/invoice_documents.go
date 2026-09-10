@@ -213,6 +213,16 @@ func (s *Store) contentOrBuild(ctx context.Context, iv models.Invoice, yearID, n
 	return s.BuildInvoiceContent(ctx, yearID, neighborID)
 }
 
+// contentOrBuildWith is contentOrBuild with the company already in hand — the
+// journal exports rebuild many legacy rows in a loop and the company row is
+// the same for every one of them.
+func (s *Store) contentOrBuildWith(ctx context.Context, company models.Company, iv models.Invoice, yearID, neighborID int64) (models.InvoiceContent, error) {
+	if iv.Content != nil {
+		return *iv.Content, nil
+	}
+	return s.buildInvoiceContentWith(ctx, company, yearID, neighborID)
+}
+
 // ListInvoiceDocuments returns every invoice-family document (invoice, its storno,
 // credit notes) for a neighbor+year, oldest first, for the document history and
 // settlement. Snapshot-less legacy rows come back with a nil Content.
