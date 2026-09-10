@@ -59,7 +59,7 @@ jobs:
       - name: Verify modules
         run: go mod verify
       - name: Vet
-        run: go vet ./...
+        run: go vet -tags=integration ./...
       # The same guard ci.yml carries, and it matters more here: this job decides
       # whether an image is published. Without it, a Postgres service that failed
       # to start would let every DB-backed test skip, the job would report green,
@@ -72,8 +72,10 @@ jobs:
             sleep 1
           done
           pg_isready -h localhost -p 5432 -U treckrr
-      - name: Test
-        run: go test -race ./...
+      # Match CI: include tagged regressions and serialize packages sharing
+      # the service database before allowing an image to be published.
+      - name: Test (unit + integration)
+        run: go test -race -tags=integration -p 1 ./...
       - name: Build
         run: go build ./...
 

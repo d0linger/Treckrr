@@ -65,7 +65,7 @@ jobs:
           go mod tidy
           git diff --exit-code -- go.mod go.sum
       - name: Vet
-        run: go vet ./...
+        run: go vet -tags=integration ./...
       # Fails loudly if the service or the variable ever disappears again, rather
       # than letting the DB-backed tests quietly skip.
       - name: Verify the integration database is reachable
@@ -76,8 +76,10 @@ jobs:
             sleep 1
           done
           pg_isready -h localhost -p 5432 -U treckrr
-      - name: Test
-        run: go test -race -coverprofile=coverage.out ./...
+      # Include tagged regressions; packages share the service database, so
+      # serialize packages to keep their database fixtures from interfering.
+      - name: Test (unit + integration)
+        run: go test -race -tags=integration -p 1 -coverprofile=coverage.out ./...
       # The profile used to be written and thrown away, so a slide in coverage
       # was invisible. The floor is deliberately a few points BELOW the current
       # figure: it catches a real regression (a whole handler family losing its
@@ -119,3 +121,4 @@ jobs:
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.13.1
+          args: --build-tags=integration
