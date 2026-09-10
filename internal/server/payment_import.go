@@ -3,10 +3,14 @@ package server
 import (
 	"io"
 	"net/http"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/d0linger/treckrr/internal/bankimport"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // paymentImportRow is one parsed bank credit with its match result, for the
@@ -14,37 +18,124 @@ import (
 type paymentImportRow struct {
 	Txn             bankimport.Txn
 	Matched         bool
+	MatchedBy       string // "Referenz", "IBAN" or "manuell"
 	NeighborID      int64
 	NeighborName    string
 	YearID          int64
+	InvoiceID       int64
 	InvoiceNumber   string
 	AlreadyImported bool
 }
 
 func (r paymentImportRow) Importable() bool { return r.Matched && !r.AlreadyImported }
 
-// matchTxns resolves each transaction against an issued invoice (by reference) and
-// flags already-imported ones.
-func (s *Server) matchTxns(r *http.Request, txns []bankimport.Txn) ([]paymentImportRow, int, error) {
-	rows := make([]paymentImportRow, 0, len(txns))
-	importable := 0
-	for _, t := range txns {
-		row := paymentImportRow{Txn: t}
-		if seen, err := s.store.PaymentImportSeen(r.Context(), t.Hash); err != nil {
-			return nil, 0, err
-		} else {
-			row.AlreadyImported = seen
-		}
-		iv, err := s.store.InvoiceByReferenceText(r.Context(), t.Reference)
+// matchTxns resolves each transaction, in this order: the invoice reference in
+// the remittance text, then the payer IBAN against the neighbor master data
+// (booking against the neighbor's newest issued invoice), then a manual
+// assignment from the preview (keyed by transaction hash, validated against the
+// assignable-invoice list so a crafted id cannot book against arbitrary rows).
+// Already-imported credits are flagged and never re-booked.
+func (s *Server) matchTxns(r *http.Request, txns []bankimport.Txn, assign map[string]int64) ([]paymentImportRow, int, error) {
+	var assignable map[int64]store.AssignableInvoice
+	if len(assign) > 0 {
+		list, err := s.store.ListAssignableInvoices(r.Context())
 		if err != nil {
 			return nil, 0, err
 		}
-		if iv != nil {
+		assignable = make(map[int64]store.AssignableInvoice, len(list))
+		for _, a := range list {
+			assignable[a.ID] = a
+		}
+	}
+	// Three set queries for the WHOLE statement — the per-transaction path (an
+	// EXISTS, a regex scan, an unindexable IBAN scan and a name SELECT per
+	// credit) cost a 400-line statement ~1600 round trips per preview and the
+	// same again on commit. Matching itself happens here in Go.
+	hashes := make([]string, 0, len(txns))
+	for _, t := range txns {
+		hashes = append(hashes, t.Hash)
+	}
+	seen, err := s.store.SeenPaymentHashes(r.Context(), hashes)
+	if err != nil {
+		return nil, 0, err
+	}
+	targets, err := s.store.IssuedInvoiceTargets(r.Context())
+	if err != nil {
+		return nil, 0, err
+	}
+	ibans, err := s.store.NeighborIBANMap(r.Context())
+	if err != nil {
+		return nil, 0, err
+	}
+	// Reference matching mirrors InvoiceByReferenceText: the reference must
+	// appear in the remittance text on non-alphanumeric boundaries, the longest
+	// reference wins (2026-0001 must not lose to a neighbor whose reference is
+	// its prefix). Newest issued invoice per neighbor doubles as the IBAN
+	// fallback target, exactly as LatestOpenInvoiceForNeighbor picked it.
+	type refPattern struct {
+		re *regexp.Regexp
+		t  store.InvoiceRefTarget
+	}
+	patterns := make([]refPattern, 0, len(targets))
+	newest := map[int64]store.InvoiceRefTarget{} // neighbor id → newest issued invoice
+	for _, t := range targets {
+		if ref := strings.TrimSpace(t.PaymentReference); ref != "" {
+			re, err := regexp.Compile(`(^|[^0-9A-Za-z])` + regexp.QuoteMeta(ref) + `([^0-9A-Za-z]|$)`)
+			if err == nil {
+				patterns = append(patterns, refPattern{re: re, t: t})
+			}
+		}
+		if cur, ok := newest[t.NeighborID]; !ok || t.ID > cur.ID {
+			newest[t.NeighborID] = t
+		}
+	}
+	sort.SliceStable(patterns, func(i, j int) bool {
+		return len(patterns[i].t.PaymentReference) > len(patterns[j].t.PaymentReference)
+	})
+
+	rows := make([]paymentImportRow, 0, len(txns))
+	importable := 0
+	for _, t := range txns {
+		row := paymentImportRow{Txn: t, AlreadyImported: seen[t.Hash]}
+		var match *store.InvoiceRefTarget
+		for i := range patterns {
+			if patterns[i].re.MatchString(t.Reference) {
+				match = &patterns[i].t
+				break
+			}
+		}
+		if match == nil && t.IBAN != "" {
+			// Fallback: a known payer account books against that neighbor's
+			// newest issued invoice — under neighbors the remittance text is
+			// often just "Aushilfe" with no reference at all.
+			norm := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(t.IBAN), " ", ""))
+			if nid := ibans[norm]; nid != 0 {
+				if nv, ok := newest[nid]; ok {
+					match = &nv
+					row.MatchedBy = "IBAN"
+				}
+			}
+		}
+		if match != nil {
 			row.Matched = true
-			row.NeighborID = iv.NeighborID
-			row.YearID = iv.BillingYearID
-			row.InvoiceNumber = iv.Number
-			row.NeighborName = s.neighborName(r, iv.NeighborID)
+			if row.MatchedBy == "" {
+				row.MatchedBy = "Referenz"
+			}
+			row.NeighborID = match.NeighborID
+			row.YearID = match.YearID
+			row.InvoiceID = match.ID
+			row.InvoiceNumber = match.Number
+			row.NeighborName = match.NeighborName
+		} else if id, ok := assign[t.Hash]; ok {
+			if a, ok := assignable[id]; ok {
+				row.Matched = true
+				row.MatchedBy = "manuell"
+				row.NeighborID = a.NeighborID
+				row.YearID = a.YearID
+				row.InvoiceID = a.ID
+				row.InvoiceNumber = a.Number
+				row.NeighborName = a.NeighborName
+			}
 		}
 		if row.Importable() {
 			importable++
@@ -85,12 +176,28 @@ func (s *Server) handlePaymentImportPreview(w http.ResponseWriter, r *http.Reque
 		redirect(w, r, "/payments/import")
 		return
 	}
-	rows, importable, err := s.matchTxns(r, txns)
+	rows, importable, err := s.matchTxns(r, txns, nil)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	// Offer manual assignment for whatever stayed unmatched.
+	unmatched := false
+	for _, row := range rows {
+		if !row.Matched && !row.AlreadyImported {
+			unmatched = true
+			break
+		}
+	}
 	data := s.newPage(w, r, "Zahlungs-Import Vorschau", "dashboard")
+	if unmatched {
+		assignable, err := s.store.ListAssignableInvoices(r.Context())
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+		data["Assignable"] = assignable
+	}
 	data["Rows"] = rows
 	data["Importable"] = importable
 	data["Total"] = len(rows)
@@ -118,7 +225,17 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		redirect(w, r, "/payments/import")
 		return
 	}
-	rows, _, err := s.matchTxns(r, txns)
+	// Manual assignments from the preview: assign_<hash> → invoice id.
+	assign := make(map[string]int64)
+	for key, vals := range r.PostForm {
+		if !strings.HasPrefix(key, "assign_") || len(vals) == 0 {
+			continue
+		}
+		if id, err := strconv.ParseInt(vals[0], 10, 64); err == nil && id > 0 {
+			assign[strings.TrimPrefix(key, "assign_")] = id
+		}
+	}
+	rows, _, err := s.matchTxns(r, txns, assign)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -140,7 +257,7 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		}
 		// Atomic: hash + payment are booked together, so a failure never leaves the
 		// credit marked-imported-but-unbooked (which would skip it forever).
-		fresh, err := s.store.ImportPayment(r.Context(), row.Txn.Hash, row.YearID, row.NeighborID, row.Txn.Amount, paidOn, note)
+		fresh, err := s.store.ImportPayment(r.Context(), row.Txn.Hash, row.YearID, row.NeighborID, row.InvoiceID, row.Txn.Amount, paidOn, note)
 		if err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
@@ -148,7 +265,7 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		if !fresh {
 			continue // a concurrent/earlier import already booked it
 		}
-		s.audit(r, "payment_import", "neighbor", row.NeighborID, row.NeighborName+" · "+row.Txn.Amount.StringFixed(2)+" € · Rechnung "+row.InvoiceNumber)
+		s.audit(r, "payment_import", "neighbor", row.NeighborID, row.NeighborName+" · "+row.Txn.Amount.StringFixed(2)+" € · Rechnung "+row.InvoiceNumber+" ("+row.MatchedBy+")")
 		booked++
 	}
 	s.setFlash(w, r, "success", itoa(booked)+" Zahlung(en) importiert und zugeordnet.")

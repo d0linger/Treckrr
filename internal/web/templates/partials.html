@@ -36,7 +36,8 @@
 		{{$max := .Max}}{{$money := .Money}}
 		{{range .Rows}}
 		<div class="barchart__row">
-			<span class="barchart__label" title="{{.Label}}">{{.Label}}</span>
+			{{if .URL}}<a class="barchart__label" href="{{.URL}}" title="Buchungen zu {{.Label}} anzeigen">{{.Label}}</a>
+			{{else}}<span class="barchart__label" title="{{.Label}}">{{.Label}}</span>{{end}}
 			<svg class="bchart" preserveAspectRatio="none">
 				<title>{{.Label}} · {{if $money}}{{money .Cost}}{{else}}{{num .Hours}} h{{end}}</title>
 				<rect class="bchart__track" x="0" y="0" width="100%" height="10" rx="5"></rect>
@@ -112,6 +113,9 @@
 {{define "ic-power"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>{{end}}
 {{define "ic-warn"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>{{end}}
 {{define "ic-back"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>{{end}}
+{{define "ic-info"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>{{end}}
+{{define "ic-photo"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="m4 17 5-4.5 3.5 3L16 12l4 4"/></svg>{{end}}
+{{define "ic-search"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>{{end}}
 
 {{define "machine-checks"}}
 	<div class="checkgroup">

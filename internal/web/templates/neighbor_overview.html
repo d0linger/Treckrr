@@ -42,5 +42,46 @@
 	{{if .Rows}}
 	<div class="bcard__summary"><span class="muted">Gesamt · {{num .TotalHours}} h</span><span>{{money .TotalCost}}</span></div>
 	{{end}}
+
+	{{if .HasTrend}}
+	<h2 class="section-title">Verlauf über die Jahre</h2>
+	<p class="muted small">Leistungen und Stunden je Jahr — ein Klick auf ein Jahr öffnet es.</p>
+	<div class="card">
+		<h3 class="section-title">Leistungen</h3>
+		{{template "bar-chart" (dict "Rows" .CostTrend "Max" .CostTrendMax "Money" true)}}
+	</div>
+	<div class="card">
+		<h3 class="section-title">Stunden</h3>
+		{{template "bar-chart" (dict "Rows" .HoursTrend "Max" .HoursTrendMax "Money" false)}}
+	</div>
+	{{end}}
+
+	<h2 class="section-title">Zahlungen</h2>
+	{{if .Payments}}
+	<div class="tablewrap">
+		<table class="dtable">
+			<thead><tr><th>Datum</th><th>Jahr</th><th>Art</th><th>Rechnung</th><th>Notiz</th><th class="num">Betrag</th></tr></thead>
+			<tbody>
+				{{range .Payments}}
+				<tr>
+					<td>{{date .PaidOn}}</td>
+					<td><a href="/neighbors/{{$.Neighbor.ID}}?year={{.BillingYearID}}">{{.Year}}</a></td>
+					<td>{{if .Method}}{{.Method}}{{else}}—{{end}}</td>
+					<td>{{if .InvoiceNumber}}{{.InvoiceNumber}}{{else}}—{{end}}</td>
+					<td>{{if .Note}}{{.Note}}{{else}}—{{end}}</td>
+					<td class="num">{{money .Amount}}</td>
+				</tr>
+				{{end}}
+			</tbody>
+			<tfoot>
+				<tr><th colspan="5">Summe aller Zahlungen</th><th class="num">{{money .PaidTotal}}</th></tr>
+			</tfoot>
+		</table>
+	</div>
+	{{else}}
+	<div class="empty empty--slim">
+		<span class="empty__title">Noch keine Zahlungen erfasst</span>
+	</div>
+	{{end}}
 </section>
 {{end}}

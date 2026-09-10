@@ -49,16 +49,16 @@
 			</div>
 			<div class="btnrow">
 				{{if .Completed}}
-				<form method="post" action="/years/{{.ID}}/status">
+				<form method="post" action="/years/{{.ID}}/status"
+					data-confirm="Abrechnungsjahr {{.Year}} wieder öffnen? Buchungen und Belege werden dadurch wieder änderbar."
+					data-confirm-reason="Grund für das Wiederöffnen (wird protokolliert)">
 					<input type="hidden" name="status" value="in_progress">
+					<input type="hidden" name="reason" value="">
 					<button class="btn btn--ghost btn--sm" type="submit">Wieder öffnen</button>
 				</form>
+				<a class="btn btn--ghost btn--sm" href="/years/{{.ID}}/abschluss">Abschluss-Prüfung</a>
 				{{else}}
-				<form method="post" action="/years/{{.ID}}/status"
-					data-confirm="Abrechnungsjahr {{.Year}} abschließen? Danach kann je Nachbar der Zahlungsstatus gepflegt werden.">
-					<input type="hidden" name="status" value="completed">
-					<button class="btn btn--primary btn--sm" type="submit">Jahr abschließen</button>
-				</form>
+				<a class="btn btn--primary btn--sm" href="/years/{{.ID}}/abschluss">Jahr abschließen …</a>
 				{{end}}
 			</div>
 			<details class="disclosure disclosure--plain">

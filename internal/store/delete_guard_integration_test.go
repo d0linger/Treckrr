@@ -82,7 +82,7 @@ func TestDeleteBlockersIntegration(t *testing.T) {
 
 	// A neighbor with a PAYMENT and no bookings: the case the old guard missed.
 	payID := mkNeighbor("DG-Zahler")
-	if err := st.AddPayment(ctx, yearID, payID, decimal.RequireFromString("92.00"), time.Now(), ""); err != nil {
+	if err := st.AddPayment(ctx, yearID, payID, decimal.RequireFromString("92.00"), time.Now(), "", ""); err != nil {
 		t.Fatalf("add payment: %v", err)
 	}
 	b, err := st.NeighborDeleteBlockers(ctx, payID)
@@ -141,7 +141,7 @@ func TestDeleteBlockersIntegration(t *testing.T) {
 	// delete because of it. The precheck has to agree, or the refusal arrives with
 	// no explanation. It is self-healing — PurgeDeletedPayments clears it later.
 	softID := mkNeighbor("DG-Storniert")
-	if err := st.AddPayment(ctx, yearID, softID, decimal.RequireFromString("10"), time.Now(), ""); err != nil {
+	if err := st.AddPayment(ctx, yearID, softID, decimal.RequireFromString("10"), time.Now(), "", ""); err != nil {
 		t.Fatalf("add payment: %v", err)
 	}
 	ps, err := st.ListPayments(ctx, yearID, softID)

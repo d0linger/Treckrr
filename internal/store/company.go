@@ -19,16 +19,39 @@ import (
 func (s *Store) GetCompany(ctx context.Context) (models.Company, error) {
 	var c models.Company
 	err := s.db.QueryRowContext(ctx,
-		`SELECT name, address, tax_id, tax_note, tax_mode, vat_rate, iban, payment_term_days FROM company WHERE id=1`).
-		Scan(&c.Name, &c.Address, &c.TaxID, &c.TaxNote, &c.TaxMode, &c.VATRate, &c.IBAN, &c.PaymentTermDays)
+		`SELECT name, address, tax_id, tax_note, tax_mode, vat_rate, iban, payment_term_days,
+		        dunning_fee_1, dunning_fee_2, dunning_grace_days, skonto_pct, skonto_days,
+		        invoice_prefix, invoice_start, small_business_limit,
+		        travel_flat, travel_per_km, mail_signature, mail_cc FROM company WHERE id=1`).
+		Scan(&c.Name, &c.Address, &c.TaxID, &c.TaxNote, &c.TaxMode, &c.VATRate, &c.IBAN, &c.PaymentTermDays,
+			&c.DunningFee1, &c.DunningFee2, &c.DunningGraceDays, &c.SkontoPct, &c.SkontoDays,
+			&c.InvoicePrefix, &c.InvoiceStart, &c.SmallBusinessLimit,
+			&c.TravelFlat, &c.TravelPerKm, &c.MailSignature, &c.MailCC)
 	return c, err
 }
 
 // UpdateCompany saves the company (Absender) settings.
 func (s *Store) UpdateCompany(ctx context.Context, c models.Company) error {
+	if c.DunningFee1.IsNegative() || c.DunningFee2.IsNegative() {
+		return ErrNegativeDunningFee
+	}
+	// Zero means omitted by a legacy caller; preserve the stored start in the
+	// UPDATE itself so a concurrent settings save cannot be overwritten by a
+	// stale read. Explicit negative values retain the minimum-value fallback.
+	if c.InvoiceStart < 0 {
+		c.InvoiceStart = 1
+	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE company SET name=$1, address=$2, tax_id=$3, tax_note=$4, tax_mode=$5, vat_rate=$6, iban=$7, payment_term_days=$8 WHERE id=1`,
-		c.Name, c.Address, c.TaxID, c.TaxNote, c.TaxMode, c.VATRate, c.IBAN, c.PaymentTermDays)
+		`UPDATE company SET name=$1, address=$2, tax_id=$3, tax_note=$4, tax_mode=$5, vat_rate=$6, iban=$7,
+		        payment_term_days=$8, dunning_fee_1=$9, dunning_fee_2=$10, dunning_grace_days=$11,
+		        skonto_pct=$12, skonto_days=$13, invoice_prefix=$14,
+		        invoice_start=CASE WHEN $15=0 THEN invoice_start ELSE $15 END,
+		        small_business_limit=$16, travel_flat=$17, travel_per_km=$18,
+		        mail_signature=$19, mail_cc=$20 WHERE id=1`,
+		c.Name, c.Address, c.TaxID, c.TaxNote, c.TaxMode, c.VATRate, c.IBAN, c.PaymentTermDays,
+		c.DunningFee1, c.DunningFee2, c.DunningGraceDays, c.SkontoPct, c.SkontoDays,
+		c.InvoicePrefix, c.InvoiceStart, c.SmallBusinessLimit, c.TravelFlat, c.TravelPerKm,
+		c.MailSignature, c.MailCC)
 	return err
 }
 
@@ -37,7 +60,8 @@ func (s *Store) UpdateCompany(ctx context.Context, c models.Company) error {
 const invoiceCols = `id, billing_year_id, neighbor_id, number, issued_on, created_at,
 	kind, status, references_invoice_id, payment_reference,
 	net, vat_rate, vat_amount, gross, show_vat, tax_mode, tax_note,
-	service_from, service_to, issuer, recipient, lines, content_hash`
+	service_from, service_to, issuer, recipient, lines, content_hash,
+	skonto_pct, skonto_until`
 
 // scanInvoice reads a full invoice row. The snapshot columns are NULL for legacy
 // rows issued before Festschreibung, in which case Content stays nil.
@@ -49,11 +73,14 @@ func scanInvoice(sc scanner) (models.Invoice, error) {
 	var taxMode, taxNote, hash string
 	var sFrom, sTo sql.NullTime
 	var issuer, recipient, lines []byte
+	var skontoPct decimal.NullDecimal
+	var skontoUntil sql.NullTime
 	if err := sc.Scan(
 		&iv.ID, &iv.BillingYearID, &iv.NeighborID, &iv.Number, &iv.IssuedOn, &iv.Created,
 		&iv.Kind, &iv.Status, &refID, &iv.PaymentReference,
 		&net, &vatRate, &vatAmt, &gross, &showVAT, &taxMode, &taxNote,
 		&sFrom, &sTo, &issuer, &recipient, &lines, &hash,
+		&skontoPct, &skontoUntil,
 	); err != nil {
 		return iv, err
 	}
@@ -71,6 +98,12 @@ func scanInvoice(sc scanner) (models.Invoice, error) {
 		}
 		if sTo.Valid {
 			c.ServiceTo = sTo.Time
+		}
+		if skontoPct.Valid {
+			c.SkontoPct = skontoPct.Decimal
+		}
+		if skontoUntil.Valid {
+			c.SkontoUntil = skontoUntil.Time
 		}
 		if err := json.Unmarshal(issuer, &c.Issuer); err != nil {
 			return iv, fmt.Errorf("scan invoice %d: issuer: %w", iv.ID, err)
@@ -130,6 +163,10 @@ func (s *Store) BuildInvoiceContent(ctx context.Context, yearID, neighborID int6
 	if err != nil {
 		return models.InvoiceContent{}, err
 	}
+	return s.buildInvoiceContentWith(ctx, company, yearID, neighborID)
+}
+
+func (s *Store) buildInvoiceContentWith(ctx context.Context, company models.Company, yearID, neighborID int64) (models.InvoiceContent, error) {
 	neighbor, err := s.GetNeighbor(ctx, neighborID)
 	if err != nil {
 		return models.InvoiceContent{}, err
@@ -194,6 +231,15 @@ func nullDate(t time.Time) any {
 		return nil
 	}
 	return t
+}
+
+// nullSkonto stores a zero Skonto percentage as NULL — "no clause", matching
+// the pre-0051 rows, rather than a stored 0.
+func nullSkonto(d decimal.Decimal) any {
+	if !d.IsPositive() {
+		return nil
+	}
+	return d
 }
 
 // InvoicedNeighborIDs returns the set of neighbor IDs that have an active issued
@@ -274,7 +320,7 @@ func (s *Store) BackfillInvoiceSnapshots(ctx context.Context) (int, error) {
 // sequential per-year number and stores it, or returns the existing active
 // invoice if one is already issued (idempotent). Content and number are fixed
 // once, so the document stays stable regardless of later booking/price changes.
-func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year int) (models.Invoice, error) {
+func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year int, issuedOn time.Time) (models.Invoice, error) {
 	if iv, err := s.GetInvoice(ctx, yearID, neighborID); err == nil {
 		return iv, nil
 	} else if !errors.Is(err, ErrNotFound) {
@@ -317,19 +363,72 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return models.Invoice{}, err
 	}
-	// Next sequence = highest existing invoice suffix + 1 (robust to gaps). Only
+	// Rechnungsdatum (Nr. 48): default today; never in the future, and never
+	// before the youngest document already in this year's Nummernkreis — § 11
+	// numbers must stay chronologically consistent within their sequence. The
+	// check runs under the same lock that serializes numbering.
+	if issuedOn.IsZero() {
+		issuedOn = time.Now()
+	}
+	const day = "2006-01-02"
+	if issuedOn.Format(day) > time.Now().Format(day) {
+		return models.Invoice{}, ErrIssueDateInvalid
+	}
+	var last sql.NullTime
+	if err := tx.QueryRowContext(ctx,
+		`SELECT MAX(issued_on) FROM invoices WHERE billing_year_id=$1`, yearID).Scan(&last); err != nil {
+		return models.Invoice{}, err
+	}
+	if last.Valid && issuedOn.Format(day) < last.Time.Format(day) {
+		return models.Invoice{}, ErrIssueDateInvalid
+	}
+	// Nummernkreis (Nr. 49): optional prefix and start number from the company
+	// settings. The prefix is alphanumeric by CHECK constraint — a separator
+	// inside it would break the split_part sequence scan below.
+	prefix, start := "", 1
+	var skontoPct decimal.Decimal
+	var skontoDays int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT invoice_prefix, invoice_start, skonto_pct, skonto_days FROM company WHERE id=1`).
+		Scan(&prefix, &start, &skontoPct, &skontoDays); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return models.Invoice{}, err
+	}
+	// Skonto terms freeze WITH the invoice (see InvoiceContent.SkontoPct): the
+	// deadline anchors on the issue date, which only exists from here on.
+	if skontoPct.IsPositive() && skontoDays > 0 {
+		content.SkontoPct = skontoPct
+		content.SkontoUntil = issuedOn.AddDate(0, 0, skontoDays)
+		content.Hash = invoiceContentHash(content)
+	}
+	// Next sequence = highest existing invoice suffix + 1 (robust to gaps), but
+	// at least the configured start (continuing an external Nummernkreis). Only
 	// numeric suffixes of kind='invoice' are counted, so storno/gutschrift
 	// suffixes (…-S / …-G) can't skew or crash the ::int cast.
 	var seq int
 	if err := tx.QueryRowContext(ctx,
-		`SELECT COALESCE(MAX(split_part(number,'-',2)::int), 0)+1
+		`SELECT GREATEST(COALESCE(MAX(split_part(number,'-',2)::int), 0)+1, $2)
 		   FROM invoices
 		  WHERE billing_year_id=$1 AND kind='invoice' AND split_part(number,'-',2) ~ '^[0-9]+$'`,
-		yearID).Scan(&seq); err != nil {
+		yearID, start).Scan(&seq); err != nil {
 		return models.Invoice{}, err
 	}
-	number := fmt.Sprintf("%d-%03d", year, seq)
-	iv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, number, "invoice", nil, content)
+	// Credits issued BEFORE the invoice (free Gutschriften) count against it the
+	// moment it exists — InvoiceRemaining subtracts them all. An invoice below
+	// what was already credited would be born with a negative balance, i.e. a
+	// payout-able Guthaben no money ever backed. Refuse; the operator stornos the
+	// Gutschrift first (see ErrGutschriftTooLarge).
+	var credited decimal.Decimal
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COALESCE(-SUM(gross), 0) FROM invoices
+		  WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='gutschrift' AND status='issued'`,
+		yearID, neighborID).Scan(&credited); err != nil {
+		return models.Invoice{}, err
+	}
+	if credited.GreaterThan(content.Gross) {
+		return models.Invoice{}, ErrGutschriftTooLarge
+	}
+	number := fmt.Sprintf("%s%d-%03d", prefix, year, seq)
+	iv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, number, "invoice", nil, issuedOn, content)
 	if err != nil {
 		return models.Invoice{}, err
 	}

@@ -17,7 +17,10 @@ import (
 // ListNeighbors returns all neighbors (active first, then archived).
 func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, note, address, tax_id, archived, anonymized, created_at FROM neighbors ORDER BY archived, name`)
+		// email and payment_term_days included: the manage page's edit form renders
+		// both, and a SELECT without them meant the form showed empty values — a
+		// save would then have ERASED the stored e-mail address.
+		`SELECT id, name, note, address, tax_id, email, iban, payment_term_days, archived, anonymized, created_at FROM neighbors ORDER BY archived, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -25,7 +28,7 @@ func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 	var out []models.Neighbor
 	for rows.Next() {
 		var n models.Neighbor
-		if err := rows.Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Archived, &n.Anonymized, &n.Created); err != nil {
+		if err := rows.Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Email, &n.IBAN, &n.PaymentTermDays, &n.Archived, &n.Anonymized, &n.Created); err != nil {
 			return nil, err
 		}
 		out = append(out, n)
@@ -37,8 +40,8 @@ func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 func (s *Store) GetNeighbor(ctx context.Context, id int64) (*models.Neighbor, error) {
 	var n models.Neighbor
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, note, address, tax_id, email, archived, anonymized, created_at FROM neighbors WHERE id=$1`, id).
-		Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Email, &n.Archived, &n.Anonymized, &n.Created)
+		`SELECT id, name, note, address, tax_id, email, iban, payment_term_days, archived, anonymized, created_at FROM neighbors WHERE id=$1`, id).
+		Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Email, &n.IBAN, &n.PaymentTermDays, &n.Archived, &n.Anonymized, &n.Created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -48,19 +51,63 @@ func (s *Store) GetNeighbor(ctx context.Context, id int64) (*models.Neighbor, er
 // AnonymizeNeighbor erases the live personal data of a neighbor (DSGVO Art. 17)
 // while keeping the row and its bookings/invoices for the legal retention period.
 // The name is replaced with a stable non-identifying placeholder (kept unique for
-// the UNIQUE(name) constraint), and the neighbor is archived. Frozen invoice
-// snapshots are deliberately untouched. No-op if already anonymized.
+// the UNIQUE(name) constraint), and the neighbor is archived. No-op if already
+// anonymized.
+//
+// Since Ausbaukarte 87 it reaches beyond the master record, because the operator
+// types free text all over the app and any of it can name a person: booking notes
+// and task labels, ledger descriptions, payment notes, and the receipt photos —
+// a Wiegeschein shows names and plates. All of that is live working data with no
+// retention claim of its own once the person is erased.
+//
+// What stays, deliberately: the FROZEN invoice snapshots and the amounts. They
+// are the tax record (§ 132 BAO, seven years), and scrubbing the live row while
+// the snapshot keeps the same text would be theater rather than erasure.
+//
+// Everything runs in ONE transaction: a half-anonymised person is worse than
+// none, because the operator would believe the erasure happened.
 func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
-	res, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	res, err := tx.ExecContext(ctx,
 		`UPDATE neighbors
 		    SET name = 'anonymisiert #' || id,
-		        note = '', address = '', tax_id = '', email = '',
+		        note = '', address = '', tax_id = '', email = '', iban = '',
 		        archived = TRUE, anonymized = TRUE
 		  WHERE id = $1 AND NOT anonymized`, id)
 	if err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	if n, _ := res.RowsAffected(); n > 0 {
+		for _, q := range []string{
+			`DELETE FROM entry_photos WHERE entry_id IN (SELECT id FROM entries WHERE neighbor_id = $1)`,
+			`UPDATE entries SET note = '', task_label = '' WHERE neighbor_id = $1 AND (note <> '' OR task_label <> '')`,
+			`UPDATE neighbor_ledger SET description = '' WHERE neighbor_id = $1 AND description <> ''`,
+			`UPDATE payments SET note = '' WHERE neighbor_id = $1 AND note <> ''`,
+			`DELETE FROM mail_outbox WHERE neighbor_id = $1`,
+			`DELETE FROM beleg_shares WHERE neighbor_id = $1`,
+			// Ratenplan notes are operator-typed free text about the person
+			// ("zahlt monatlich, Sohn holt das Geld") — the same class as the
+			// booking notes above.
+			`UPDATE payment_plans SET note = '' WHERE neighbor_id = $1 AND note <> ''`,
+			// Recurring rules carry the person's task/note frozen in their
+			// template AND would keep materializing new bookings for an erased
+			// person — delete them outright, not just their text.
+			`DELETE FROM recurring_entries WHERE neighbor_id = $1`,
+		} {
+			if _, err := tx.ExecContext(ctx, q, id); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	{
 		// Either the neighbor is gone or was already anonymized; distinguish so the
 		// handler can 404 vs. treat it as a no-op.
 		var exists bool
@@ -106,25 +153,26 @@ func (s *Store) CreateNeighbor(ctx context.Context, name, note string) (int64, e
 }
 
 // UpdateNeighbor updates a neighbor.
-func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note, address, taxID, email string) error {
+func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note, address, taxID, email, iban string, paymentTermDays *int) error {
 	// Never re-populate personal fields on an anonymized neighbor (DSGVO Art. 17):
 	// the UI hides the edit form, and this WHERE clause is the server-side backstop
 	// against a crafted POST reviving erased data.
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE neighbors SET name=$1, note=$2, address=$3, tax_id=$4, email=$5 WHERE id=$6 AND NOT anonymized`,
-		name, note, address, taxID, email, id)
+		`UPDATE neighbors SET name=$1, note=$2, address=$3, tax_id=$4, email=$5, iban=$8, payment_term_days=$7 WHERE id=$6 AND NOT anonymized`,
+		name, note, address, taxID, email, id, paymentTermDays, iban)
 	return err
 }
 
-// DeleteNeighbor removes a neighbor and their entries.
+// DeleteNeighbor removes a neighbor without retained financial or delivery history.
 func (s *Store) DeleteNeighbor(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM neighbors WHERE id=$1`, id)
-	// The handler's precheck and this delete are two statements; a row inserted
-	// between them is caught here instead, by the 0039 RESTRICT constraints.
-	if isForeignKeyViolation(err) {
-		return ErrHasHistory
-	}
-	return err
+	return s.deleteWithDeliveryGuard(
+		ctx,
+		id,
+		`SELECT id FROM neighbors WHERE id=$1 FOR UPDATE`,
+		`SELECT EXISTS(SELECT 1 FROM dunning_notices WHERE neighbor_id=$1)
+		     OR EXISTS(SELECT 1 FROM mail_outbox WHERE neighbor_id=$1)`,
+		`DELETE FROM neighbors WHERE id=$1`,
+	)
 }
 
 // CountYearsForNeighbor returns how many billing years a neighbor is part of.
@@ -172,30 +220,26 @@ func ensureUnit(e *models.Entry) {
 	}
 }
 
-func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []int64) (int64, error) {
+// insertEntryTx writes one entry inside the caller's transaction. Returns 0
+// (and no error) when the entry's idempotency key already exists — a replayed
+// offline booking is a safe no-op, not a failure.
+func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs []int64) (int64, error) {
 	ensureUnit(e)
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	var id int64
-	err = tx.QueryRowContext(ctx,
+	err := tx.QueryRowContext(ctx,
 		`INSERT INTO entries
 		   (neighbor_id, billing_year_id, entry_date, task_label, gespann_id, tractor_id, load_level_id,
 		    tractor_label, load_label, machine_labels, hours, hourly_rate, cost, note,
-		    unit, quantity, unit_price, idempotency_key)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+		    unit, quantity, unit_price, idempotency_key, person_id, linked_entry_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		 ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
 		 RETURNING id`,
 		e.NeighborID, e.BillingYearID, e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID),
 		nullInt(e.LoadLevelID), e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours,
-		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey)).Scan(&id)
+		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey),
+		nullInt(e.PersonID), nullInt(e.LinkedEntryID)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		// A replayed offline booking whose key already exists: a safe no-op. Commit
-		// the empty tx and return 0 to signal "already recorded".
-		return 0, tx.Commit()
+		return 0, nil
 	}
 	if err != nil {
 		return 0, err
@@ -206,7 +250,135 @@ func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 			return 0, err
 		}
 	}
+	return id, nil
+}
+
+func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []int64) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	id, err := insertEntryTx(ctx, tx, e, machineIDs)
+	if err != nil {
+		return 0, err
+	}
 	return id, tx.Commit()
+}
+
+// CreateEntryPair books a machine entry and its companion (the helper's
+// Mannstunden booked alongside the Gespann) in ONE transaction, linking the
+// companion to the machine entry. One transaction, because a pair where only
+// one half exists misreports the work either as unmanned or as hours without a
+// machine — and the operator was told "gespeichert" for both.
+//
+// Idempotent per half via each entry's own key: on a replay the machine entry's
+// insert no-ops, its id is looked up by key so the companion still links to the
+// right row, and the companion's own key makes its insert a no-op too. Returns
+// (0, 0, nil) when both halves were already recorded.
+// If only the machine was deleted, its FK was set to NULL on the surviving
+// companion; restoring the machine also restores that link, not its pricing.
+func (s *Store) CreateEntryPair(ctx context.Context, e *models.Entry, machineIDs []int64, companion *models.Entry) (mainID, companionID int64, err error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	mainID, err = insertEntryTx(ctx, tx, e, machineIDs)
+	if err != nil {
+		return 0, 0, err
+	}
+	linkID := mainID
+	if linkID == 0 && e.IdempotencyKey != "" {
+		// Replay: the machine entry already exists — link against the stored row.
+		if err := tx.QueryRowContext(ctx,
+			`SELECT id FROM entries WHERE idempotency_key=$1`, e.IdempotencyKey).Scan(&linkID); err != nil {
+			return 0, 0, err
+		}
+	}
+	if linkID != 0 {
+		companion.LinkedEntryID = &linkID
+	}
+	companionID, err = insertEntryTx(ctx, tx, companion, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	if mainID != 0 && companionID == 0 && companion.IdempotencyKey != "" {
+		// Only repair alongside a newly restored machine, so an ordinary replay
+		// stays a no-op. Never steal a helper from an existing pair or change its
+		// captured values. It still counts as an existing row (companionID == 0).
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE entries SET linked_entry_id=$1
+			WHERE idempotency_key=$2 AND linked_entry_id IS NULL
+			  AND neighbor_id=$3 AND billing_year_id=$4 AND unit='Mannstunde'`,
+			mainID, companion.IdempotencyKey, e.NeighborID, e.BillingYearID); err != nil {
+			return 0, 0, err
+		}
+	}
+	return mainID, companionID, tx.Commit()
+}
+
+// LinkedPartnerID returns the id of the entry paired with this one — the
+// machine entry a companion points at, or the companion pointing at this
+// machine entry. 0 when the entry is unpaired.
+func (s *Store) LinkedPartnerID(ctx context.Context, id int64) (int64, error) {
+	var partner sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(
+		  (SELECT linked_entry_id FROM entries WHERE id = $1),
+		  (SELECT id FROM entries WHERE linked_entry_id = $1 LIMIT 1))`, id).Scan(&partner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if !partner.Valid {
+		return 0, nil
+	}
+	return partner.Int64, nil
+}
+
+// DeleteEntryPair removes a linked pair in one transaction: deleting only half
+// would misreport the work as unmanned or as hours without a machine, and the
+// operator confirmed both.
+func (s *Store) DeleteEntryPair(ctx context.Context, id, partnerID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Lock/delete in ascending ID order, matching recurring template creation
+	// regardless of which half's delete button was used. The link is ON DELETE
+	// SET NULL, so removing the machine first is safe.
+	if id > partnerID {
+		id, partnerID = partnerID, id
+	}
+	for _, eid := range []int64{id, partnerID} {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM entries WHERE id=$1`, eid); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// SyncPairHours mirrors an edited booking's hours onto its linked partner: the
+// machine entry (unit 'h') gets hours/quantity + cost at its frozen hourly
+// rate, the Mannstunden companion gets quantity + cost at its person rate. One
+// statement handles both directions via the unit.
+func (s *Store) SyncPairHours(ctx context.Context, partnerID int64, hours decimal.Decimal) (decimal.Decimal, error) {
+	var cost decimal.Decimal
+	err := s.db.QueryRowContext(ctx, `
+		UPDATE entries SET
+		  hours    = CASE WHEN unit = 'h' THEN $2::numeric ELSE hours END,
+		  quantity = $2::numeric,
+		  cost     = round($2::numeric * CASE WHEN unit = 'h' THEN hourly_rate ELSE unit_price END, 2)
+		WHERE id = $1
+		RETURNING cost`, partnerID, hours).Scan(&cost)
+	if errors.Is(err, sql.ErrNoRows) {
+		return decimal.Zero, ErrNotFound
+	}
+	return cost, err
 }
 
 // DeleteEntry removes an entry.
@@ -477,10 +649,26 @@ func (s *Store) SetEntryVoided(ctx context.Context, id int64, voided bool, reaso
 	return err
 }
 
-const entrySelect = `SELECT id, neighbor_id, billing_year_id, entry_date, task_label, gespann_id,
+// entryCols is THE entry column list — scanEntryInto knows its order, and
+// FilterEntries derives its e.-prefixed twin from it (entryColsE), so a new
+// column cannot silently miss one of the query sites again (person_id and
+// linked_entry_id each had to be added in three places).
+const entryCols = `id, neighbor_id, billing_year_id, entry_date, task_label, gespann_id,
 	tractor_id, load_level_id, tractor_label, load_label, machine_labels,
 	hours, hourly_rate, cost, note, voided, void_reason, created_at,
-	unit, quantity, unit_price FROM entries`
+	unit, quantity, unit_price, person_id, linked_entry_id`
+
+const entrySelect = `SELECT ` + entryCols + ` FROM entries`
+
+// entryColsE is entryCols with every column e.-prefixed, for queries that join
+// (unqualified id/name would be ambiguous there).
+var entryColsE = func() string {
+	parts := strings.Split(entryCols, ",")
+	for i := range parts {
+		parts[i] = "e." + strings.TrimSpace(parts[i])
+	}
+	return strings.Join(parts, ", ")
+}()
 
 func collectEntries(rows *sql.Rows) ([]models.Entry, error) {
 	var out []models.Entry
@@ -494,19 +682,44 @@ func collectEntries(rows *sql.Rows) ([]models.Entry, error) {
 	return out, rows.Err()
 }
 
+// scanEntryWithName reads an entry row that carries the neighbor's name as its
+// last column (the filtered list joins it in). It shares scanEntry's column
+// order so the two can only drift together.
+func scanEntryWithName(sc scanner, name *string) (models.Entry, error) {
+	return scanEntryInto(sc, name)
+}
+
 func scanEntry(sc scanner) (models.Entry, error) {
+	return scanEntryInto(sc, nil)
+}
+
+// scanEntryInto is the one place that knows entrySelect's column order. With a
+// non-nil name it additionally reads the joined neighbor name.
+func scanEntryInto(sc scanner, name *string) (models.Entry, error) {
 	var (
 		e       models.Entry
 		gespann sql.NullInt64
 		tractor sql.NullInt64
 		load    sql.NullInt64
+		person  sql.NullInt64
+		linked  sql.NullInt64
 		date    time.Time
 	)
-	if err := sc.Scan(&e.ID, &e.NeighborID, &e.BillingYearID, &date, &e.TaskLabel, &gespann,
+	dest := []any{&e.ID, &e.NeighborID, &e.BillingYearID, &date, &e.TaskLabel, &gespann,
 		&tractor, &load, &e.TractorLabel, &e.LoadLabel, &e.MachineLabels,
 		&e.Hours, &e.HourlyRate, &e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created,
-		&e.Unit, &e.Quantity, &e.UnitPrice); err != nil {
+		&e.Unit, &e.Quantity, &e.UnitPrice, &person, &linked}
+	if name != nil {
+		dest = append(dest, name)
+	}
+	if err := sc.Scan(dest...); err != nil {
 		return e, err
+	}
+	if person.Valid {
+		e.PersonID = &person.Int64
+	}
+	if linked.Valid {
+		e.LinkedEntryID = &linked.Int64
 	}
 	e.Date = date
 	if gespann.Valid {

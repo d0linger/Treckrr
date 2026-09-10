@@ -25,12 +25,21 @@ func TestTotpMigrationIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	defer pool.Close()
+	// Cleanup statt defer: die Purge unten ist ebenfalls ein Cleanup, und
+	// Cleanups laufen LIFO NACH allen defers — ein deferred Close macht den
+	// Pool zu, bevor die Purge dran ist.
+	t.Cleanup(func() { _ = pool.Close() })
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	st := store.New(pool, "test-encryption-secret")
 
+	// Pre-purge: the pid-derived fixture keys are UNIQUE and container
+	// runtimes reuse pids, so a rerun without this collides on the unique
+	// constraints (the intermittent 23505s this suite was known for).
+	f := fixtures{UsernameLike: fmt.Sprintf(`t06\_%d`, os.Getpid())}
+	purgeFixtures(t, ctx, pool, f)
+	t.Cleanup(func() { purgeFixtures(t, ctx, pool, f) })
 	uid, err := st.CreateUser(ctx, fmt.Sprintf("t06_%d", os.Getpid()), "pw-xxxxxxxxxxxx", models.RoleEditor)
 	if err != nil {
 		t.Fatalf("create user: %v", err)

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"regexp"
 	"time"
+
+	"github.com/d0linger/treckrr/internal/metrics"
 )
 
 const (
@@ -99,6 +101,7 @@ func (s *Server) csrf(next http.Handler) http.Handler {
 					got = r.FormValue(csrfFieldName)
 				}
 				if !hmac.Equal([]byte(got), []byte(expected)) {
+					metrics.Inc(metrics.CSRFRejected)
 					http.Error(w, "CSRF-Token ungültig oder fehlt. Bitte die Seite neu laden.", http.StatusForbidden)
 					return
 				}

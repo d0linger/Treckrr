@@ -1,6 +1,9 @@
 {{define "content"}}
 <section class="stack">
-	<h1 class="section-title">Betriebsdaten</h1>
+	<div class="pagehead">
+		<a class="backbtn" href="/admin/users" aria-label="Zurück zur Verwaltung">{{template "ic-back"}}</a>
+		<h1 class="pagehead__t">Betriebsdaten</h1>
+	</div>
 	<p class="muted small">Absender und Steuerhinweis für den Rechnungs-Modus des Belegs. Empfänger-Adressen pflegst du je Nachbar unter „Nachbarn".</p>
 	{{with .Company}}
 	<form method="post" action="/admin/company" class="card form">
@@ -14,6 +17,30 @@
 			<input class="input" name="iban" value="{{.IBAN}}" placeholder="z. B. AT61 1904 3002 3457 3201 – leer lassen: kein IBAN-Ausweis"></label>
 		<label class="field"><span>Zahlungsziel (Tage) – für das Mahnwesen</span>
 			<input class="input" type="number" min="0" max="365" step="1" name="payment_term_days" value="{{.PaymentTermDays}}" placeholder="14"></label>
+		<label class="field"><span>Nachfrist auf Mahnungen (Tage, „zahlbar bis")</span>
+			<input class="input" type="number" min="0" max="365" step="1" name="dunning_grace_days" value="{{.DunningGraceDays}}" placeholder="14"></label>
+		<label class="field"><span>Mahnspesen 1. Mahnung (€) – 0 = keine</span>
+			<input class="input" name="dunning_fee_1" inputmode="decimal" value="{{num .DunningFee1}}"></label>
+		<label class="field"><span>Mahnspesen 2. Mahnung (€) – 0 = keine</span>
+			<input class="input" name="dunning_fee_2" inputmode="decimal" value="{{num .DunningFee2}}"></label>
+		<label class="field"><span>Skonto-Angebot (%) – 0 = keine Klausel auf der Rechnung</span>
+			<input class="input" name="skonto_pct" inputmode="decimal" value="{{num .SkontoPct}}"></label>
+		<label class="field"><span>Skonto-Frist (Tage ab Rechnungsdatum)</span>
+			<input class="input" type="number" min="0" max="90" step="1" name="skonto_days" value="{{.SkontoDays}}"></label>
+		<label class="field"><span>Rechnungs-Präfix (Nummernkreis, optional – nur Buchstaben/Ziffern)</span>
+			<input class="input" name="invoice_prefix" maxlength="10" value="{{.InvoicePrefix}}" placeholder="z. B. HOF"></label>
+		<label class="field"><span>Start-Rechnungsnummer je Jahr (Fortführung eines bestehenden Kreises)</span>
+			<input class="input" type="number" min="1" max="999999" step="1" name="invoice_start" value="{{.InvoiceStart}}"></label>
+		<label class="field"><span>Kleinunternehmergrenze (€/Kalenderjahr, 0 = keine Überwachung)</span>
+			<input class="input" name="small_business_limit" inputmode="decimal" value="{{num .SmallBusinessLimit}}"></label>
+		<label class="field"><span>Anfahrtspauschale (€ je Einsatz, 0 = kein Zuschlag)</span>
+			<input class="input" name="travel_flat" inputmode="decimal" value="{{num .TravelFlat}}"></label>
+		<label class="field"><span>Kilometergeld (€ je km, 0 = kein Zuschlag)</span>
+			<input class="input" name="travel_per_km" inputmode="decimal" value="{{num .TravelPerKm}}"></label>
+		<label class="field"><span>E-Mail-Signatur (leer = „Mit freundlichen Grüßen“ + Betriebsname)</span>
+			<textarea class="input" name="mail_signature" rows="3" placeholder="Mit freundlichen Grüßen&#10;Hof Bergmann&#10;Tel. 0664 …">{{.MailSignature}}</textarea></label>
+		<label class="field"><span>Kopie an (CC bei Beleg- und Mahnungs-Mails, optional)</span>
+			<input class="input" type="email" name="mail_cc" value="{{.MailCC}}" placeholder="steuerberater@example.at" autocomplete="off"></label>
 		<label class="field"><span>Besteuerung</span>
 			<select class="select" name="tax_mode">
 				<option value="kleinunternehmer" {{if eq .TaxMode "kleinunternehmer"}}selected{{end}}>Kleinunternehmer – kein USt-Ausweis</option>

@@ -162,6 +162,33 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /neighbors/{id}/ledger", s.auth(s.handleLedgerAdd))
 	mux.Handle("POST /neighbors/{id}/payments", s.auth(s.handlePaymentAdd))
 	mux.Handle("POST /neighbors/{id}/carry-forward", s.auth(s.handleNeighborCarryForward))
+	mux.Handle("GET /payments/{id}/edit", s.auth(s.handlePaymentEditForm))
+	mux.Handle("POST /payments/{id}/update", s.auth(s.handlePaymentUpdate))
+	mux.Handle("POST /neighbors/{id}/credit-payout", s.auth(s.handleCreditPayout))
+	mux.Handle("POST /neighbors/{id}/gutschrift", s.auth(s.handleFreeGutschrift))
+	mux.Handle("POST /neighbors/{id}/anzahlung", s.auth(s.handleAnzahlungCreate))
+	mux.Handle("POST /documents/{id}/storno", s.auth(s.handleDocumentStorno))
+	mux.Handle("GET /years/{id}/abschluss", s.auth(s.handleYearClosing))
+	mux.Handle("POST /recurring/{id}/update", s.auth(s.handleRecurringUpdate))
+	mux.Handle("POST /recurring/{id}/run-now", s.auth(s.handleRecurringRunNow))
+	mux.Handle("GET /ledger/{id}/copy", s.auth(s.handleLedgerCopy))
+	mux.Handle("GET /payments/{id}/copy", s.auth(s.handlePaymentCopy))
+	mux.Handle("GET /stats/export.csv", s.auth(s.handleStatsExport))
+	mux.Handle("GET /buchungen", s.auth(s.handleEntryList))
+	mux.Handle("POST /buchungen/bulk", s.auth(s.handleEntryBulk))
+	mux.Handle("GET /personen", s.auth(s.handlePersons))
+	mux.Handle("POST /personen", s.auth(s.handlePersonCreate))
+	mux.Handle("POST /personen/{id}/update", s.auth(s.handlePersonUpdate))
+	mux.Handle("POST /personen/{id}/archive", s.auth(s.handlePersonArchive))
+	mux.Handle("POST /personen/{id}/delete", s.auth(s.handlePersonDelete))
+	mux.Handle("POST /neighbors/{id}/mannstunden", s.auth(s.handleMannstundenAdd))
+	mux.Handle("POST /neighbors/{id}/anfahrt", s.auth(s.handleAnfahrtAdd))
+	mux.Handle("GET /rechnungsjournal", s.auth(s.handleJournal))
+	mux.Handle("GET /rechnungsjournal/export.csv", s.auth(s.handleJournalCSV))
+	mux.Handle("GET /rechnungsjournal/archiv.zip", s.auth(s.handleJournalZip))
+	mux.Handle("GET /rechnungsjournal/rechnungen.pdf", s.auth(s.handleJournalPDF))
+	mux.Handle("POST /neighbors/{id}/installments", s.auth(s.handleInstallmentAdd))
+	mux.Handle("POST /installments/{id}/delete", s.auth(s.handleInstallmentDelete))
 	mux.Handle("POST /payments/{id}/delete", s.auth(s.handlePaymentDelete))
 	mux.Handle("POST /payments/{id}/restore", s.auth(s.handlePaymentRestore))
 	mux.Handle("GET /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcPreview))
@@ -240,6 +267,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /neighbors/{id}/mahnung", s.auth(s.handleNeighborMahnung))
 	mux.Handle("GET /neighbors/{id}/mahnung.pdf", s.auth(s.handleMahnungPDF))
 	mux.Handle("POST /neighbors/{id}/mahnung/email", s.auth(s.handleMahnungEmail))
+	mux.Handle("POST /neighbors/{id}/mahnung/mark-sent", s.auth(s.handleMahnungMarkSent))
+	mux.Handle("POST /mahnwesen/batch-email", s.auth(s.handleMahnwesenBatchEmail))
 	mux.Handle("GET /neighbors/{id}/mahnung/epc-qr.png", s.auth(s.handleMahnungEpcQR))
 
 	// Admin only.
@@ -269,7 +298,7 @@ func (s *Server) Handler() http.Handler {
 	// the nosniff/frame/CSP headers (the gate returns before inner handlers run).
 	// userCache is outermost so limitBody, auth/admin, the handler and accessLog all
 	// share ONE session resolution instead of repeating the SELECT+UPDATE.
-	return s.userCacheMW(s.limitBody(s.accessLog(s.securityHeaders(s.maintenanceGate(s.csrf(mux))))))
+	return s.userCacheMW(s.limitBody(s.accessLog(s.recoverPanic(s.securityHeaders(s.maintenanceGate(s.csrf(mux)))))))
 }
 
 // userCacheMW installs the per-request session memo (see currentUser).

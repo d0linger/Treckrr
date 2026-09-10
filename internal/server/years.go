@@ -211,6 +211,20 @@ func (s *Server) handleYearStatus(w http.ResponseWriter, r *http.Request) {
 	if r.FormValue("status") == models.YearCompleted {
 		status = models.YearCompleted
 	}
+	// Reopening a closed year unlocks bookings and documents again, so it may
+	// not happen silently (Ausbaukarte 60): a reason is required and recorded.
+	reason := trimmed(r, "reason")
+	if status == models.YearInProgress {
+		if reason == "" {
+			s.setFlash(w, r, "error", "Bitte einen Grund für das Wiederöffnen angeben.")
+			redirect(w, r, "/years")
+			return
+		}
+		if s.tooLong(w, r, "Grund", reason, maxNoteLen) {
+			redirect(w, r, "/years")
+			return
+		}
+	}
 	if err := s.store.SetYearStatus(r.Context(), id, status); err != nil {
 		s.setFlash(w, r, "error", "Statuswechsel fehlgeschlagen.")
 	} else if status == models.YearCompleted {
@@ -222,7 +236,7 @@ func (s *Server) handleYearStatus(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "complete", "year", id, "Jahr "+s.yearLabel(r, id))
 		s.setFlash(w, r, "success", "Abrechnungsjahr abgeschlossen. Zahlungsstatus je Nachbar steht auf offen.")
 	} else {
-		s.audit(r, "reopen", "year", id, "Jahr "+s.yearLabel(r, id))
+		s.audit(r, "reopen", "year", id, "Jahr "+s.yearLabel(r, id)+" · Grund: "+reason)
 		s.setFlash(w, r, "success", "Abrechnungsjahr wieder geöffnet.")
 	}
 	if r.FormValue("origin") == "dashboard" {
@@ -264,4 +278,59 @@ func (s *Server) handleYearDelete(w http.ResponseWriter, r *http.Request) {
 		s.setFlash(w, r, "success", "Abrechnungsjahr gelöscht.")
 	}
 	redirect(w, r, "/years")
+}
+
+// ---- Abschlusswirkung (Ausbaukarte 60) ------------------------------------
+
+// requireOpenYear refuses a balance-changing write in a closed year: issuing,
+// corrections, Abschläge and the credit payout alike. Closing a year means its
+// documents and balances are final, so the sanctioned path for a late
+// correction is to reopen the year — which costs a recorded reason — fix, and
+// close again.
+//
+// Payments are deliberately NOT covered: money keeps arriving after the books
+// are closed, and recording it changes no document.
+//
+// This checks the YEAR only. ledgerYearOpen additionally refuses while an
+// invoice is festgeschrieben, which is right for ordinary Verrechnung but
+// wrong for the credit payout — paying an overpayment back is precisely the
+// case where an invoice exists.
+func (s *Server) requireOpenYear(w http.ResponseWriter, r *http.Request, yearID int64, back string) bool {
+	year, err := s.store.GetBillingYear(r.Context(), yearID)
+	if err != nil {
+		s.setFlash(w, r, "error", "Abrechnungsjahr konnte nicht geladen werden.")
+		redirect(w, r, back)
+		return false
+	}
+	if year.Completed() {
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen — für eine Korrektur bitte zuerst wieder öffnen.")
+		redirect(w, r, back)
+		return false
+	}
+	return true
+}
+
+// handleYearClosing renders the pre-close review (Ausbaukarte 59): what is
+// still open before the year is put to bed.
+func (s *Server) handleYearClosing(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	year, err := s.store.GetBillingYear(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	checks, err := s.store.YearClosingChecks(r.Context(), id)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data := s.newPage(w, r, "Jahresabschluss", "years")
+	data["Year"] = year
+	data["Checks"] = checks
+	data["OpenChecks"] = store.OpenClosingChecks(checks)
+	s.render(w, r, "year_closing", data)
 }

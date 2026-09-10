@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	netmail "net/mail"
 	"os"
@@ -57,6 +58,16 @@ type Config struct {
 	BackupEncryptionKey string
 	// BackupDir is where the scheduled in-app backup writer drops encrypted dumps.
 	BackupDir string
+	// S3Keep is how many objects to retain off-box. It seeds backup_settings on
+	// first boot only — afterwards the GUI value wins, exactly like BackupKeep.
+	// 0 means "keep everything", which is what an unset value used to mean with
+	// no way to change it from the environment at all.
+	S3Keep int
+	// BackupRehearseURL enables real restore rehearsals: a Postgres URL on a
+	// server where a scratch database may be created and dropped. Empty (the
+	// default) leaves rehearsals off — they need CREATE DATABASE rights, which
+	// is not something to switch on behind an operator's back.
+	BackupRehearseURL string
 	// BackupKeep is how many encrypted dumps to retain (older ones are pruned).
 	// The schedule itself is cron-based and configured in the admin panel.
 	BackupKeep int
@@ -107,6 +118,8 @@ func Load() (*Config, error) {
 		BackupEncryptionKey: os.Getenv("BACKUP_ENCRYPTION_KEY"),
 		BackupDir:           getenv("BACKUP_DIR", "/backups"),
 		BackupKeep:          getenvInt("BACKUP_KEEP", 7),
+		S3Keep:              getenvInt("S3_KEEP", 0),
+		BackupRehearseURL:   getenv("BACKUP_REHEARSE_URL", ""),
 		S3Endpoint:          os.Getenv("S3_ENDPOINT"),
 		S3Bucket:            os.Getenv("S3_BUCKET"),
 		S3AccessKey:         os.Getenv("S3_ACCESS_KEY"),
@@ -129,6 +142,9 @@ func Load() (*Config, error) {
 	// the *previous* SessionSecret before lengthening SESSION_SECRET to migrate
 	// safely.
 	c.EncryptionSecret = getenv("ENCRYPTION_SECRET", c.SessionSecret)
+	if c.S3Keep < 0 {
+		return nil, fmt.Errorf("S3_KEEP must be nonnegative (0 means unlimited retention)")
+	}
 
 	// Optional allowlist of trusted reverse-proxy networks (SH-05). Invalid CIDRs
 	// fail fast rather than silently disabling the tightening.
@@ -204,11 +220,21 @@ func getenv(key, fallback string) string {
 	return fallback
 }
 
+// getenvInt parses an integer option. An unparseable value is REPORTED, not
+// silently replaced: BACKUP_KEEP=sieben used to fall back to 7 without a word,
+// so an operator who mistyped a retention setting learned nothing until the
+// backups did the wrong thing. Every other option in Load is strict; this one
+// was the exception.
 func getenvInt(key string, fallback int) int {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
-		}
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
 	}
-	return fallback
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		slog.Warn("ignoring unparseable integer option, using default",
+			"key", key, "value", v, "default", fallback)
+		return fallback
+	}
+	return n
 }

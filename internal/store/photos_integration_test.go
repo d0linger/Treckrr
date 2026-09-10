@@ -28,17 +28,41 @@ func TestEntryPhotosIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	defer pool.Close()
+	// As a Cleanup, not a defer: the purge below is also a Cleanup, and
+	// Cleanups run LIFO after all defers — a deferred Close would slam the
+	// pool shut before the purge gets to run.
+	t.Cleanup(func() { _ = pool.Close() })
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	st := store.New(pool, "test-encryption-secret")
 
 	pid := os.Getpid()
-	baseID, _ := st.CreateEmptyBase(ctx, 4500+pid%1000, "Foto-Basis")
-	yearID, _ := st.CreateBillingYear(ctx, 4500+pid%1000, baseID, "Foto-Jahr")
-	nid, _ := st.CreateNeighbor(ctx, fmt.Sprintf("Foto Nachbar %d", pid), "")
-	_ = st.AddNeighborToYear(ctx, yearID, nid)
+	// Purge BEFORE seeding, and check every error. Both were missing: the
+	// fixture year and neighbor name are UNIQUE and derived from the pid, which
+	// container runtimes reuse — so a second run with the same pid hit the
+	// unique constraints, the discarded errors left baseID/yearID/nid at 0, and
+	// the first insert failed as a foreign-key violation on id 0. That is what
+	// made this suite intermittently red for reasons unrelated to the code.
+	f := fixtures{Years: []int{4500 + pid%1000}, NeighborNames: []string{fmt.Sprintf("Foto Nachbar %d", pid)}}
+	purgeFixtures(t, ctx, pool, f)
+	t.Cleanup(func() { purgeFixtures(t, ctx, pool, f) })
+
+	baseID, err := st.CreateEmptyBase(ctx, 4500+pid%1000, "Foto-Basis")
+	if err != nil {
+		t.Fatalf("base: %v", err)
+	}
+	yearID, err := st.CreateBillingYear(ctx, 4500+pid%1000, baseID, "Foto-Jahr")
+	if err != nil {
+		t.Fatalf("year: %v", err)
+	}
+	nid, err := st.CreateNeighbor(ctx, fmt.Sprintf("Foto Nachbar %d", pid), "")
+	if err != nil {
+		t.Fatalf("neighbor: %v", err)
+	}
+	if err := st.AddNeighborToYear(ctx, yearID, nid); err != nil {
+		t.Fatalf("membership: %v", err)
+	}
 	eid, err := st.CreateEntry(ctx, &models.Entry{
 		NeighborID: nid, BillingYearID: yearID, Date: time.Now(), TaskLabel: "Foto",
 		Unit: "h", Hours: decimal.RequireFromString("1"), HourlyRate: decimal.RequireFromString("40"),
@@ -65,8 +89,13 @@ func TestEntryPhotosIntegration(t *testing.T) {
 		t.Errorf("content type = %q, want image/jpeg", ct)
 	}
 
-	if n, _ := st.CountEntryPhotos(ctx, eid); n != 1 {
-		t.Errorf("count = %d, want 1", n)
+	// PhotoCounts replaced the per-entry counter: one query for a whole year,
+	// keyed by booking.
+	if counts, err := st.PhotoCounts(ctx, yearID, nid); err != nil || counts[eid] != 1 {
+		t.Errorf("PhotoCounts[%d] = %d, %v; want 1, nil", eid, counts[eid], err)
+	}
+	if refs, err := st.ListNeighborPhotos(ctx, yearID, nid); err != nil || len(refs) != 1 || refs[0].EntryID != eid {
+		t.Errorf("ListNeighborPhotos = %+v, %v; want one ref for entry %d", refs, err, eid)
 	}
 	if ps, _ := st.ListEntryPhotos(ctx, eid); len(ps) != 1 {
 		t.Errorf("list len = %d, want 1", len(ps))
@@ -80,7 +109,7 @@ func TestEntryPhotosIntegration(t *testing.T) {
 	if err := st.DeleteEntryPhoto(ctx, eid, pidPhoto); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if n, _ := st.CountEntryPhotos(ctx, eid); n != 0 {
-		t.Errorf("count after delete = %d, want 0", n)
+	if counts, err := st.PhotoCounts(ctx, yearID, nid); err != nil || counts[eid] != 0 {
+		t.Errorf("count after delete = %d, %v; want 0, nil", counts[eid], err)
 	}
 }

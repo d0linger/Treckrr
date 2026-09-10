@@ -9,11 +9,24 @@ import (
 // EnsureBackupSettings inserts the single settings row from the given defaults if
 // it does not exist yet. Idempotent.
 func (s *Store) EnsureBackupSettings(ctx context.Context, def models.BackupSettings) error {
+	def.VolumeKeep = keepAtLeastOne(def.VolumeKeep)
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO backup_settings (id, volume_cron, volume_keep, s3_cron, s3_keep)
 		 VALUES (1,$1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`,
 		def.VolumeCron, def.VolumeKeep, def.S3Cron, def.S3Keep)
 	return err
+}
+
+// keepAtLeastOne holds volume_keep inside its CHECK constraint (0041). Applied
+// in the store rather than at each call site because the value arrives from
+// three of them — the admin form, the BACKUP_KEEP env seed and the post-restore
+// re-seed — and a 0 from any of them would fail the write with nothing but a
+// generic "Speichern fehlgeschlagen." to show for it.
+func keepAtLeastOne(n int) int {
+	if n < 1 {
+		return 7
+	}
+	return n
 }
 
 // GetBackupSettings returns the current backup schedule.
@@ -28,6 +41,7 @@ func (s *Store) GetBackupSettings(ctx context.Context) (models.BackupSettings, e
 
 // UpdateBackupSettings persists an edited backup schedule.
 func (s *Store) UpdateBackupSettings(ctx context.Context, b models.BackupSettings) error {
+	b.VolumeKeep = keepAtLeastOne(b.VolumeKeep)
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE backup_settings
 		    SET volume_cron=$1, volume_keep=$2, s3_cron=$3, s3_keep=$4

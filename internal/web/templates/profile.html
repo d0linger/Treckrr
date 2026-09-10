@@ -86,7 +86,7 @@
 					<span class="pkrow__s">seit {{date .Created}}{{if .LastUsed}} · zuletzt {{pdate .LastUsed}}{{end}}</span>
 				</span>
 				<form method="post" action="/account/passkeys/{{.ID}}/delete"
-					data-confirm-danger data-confirm="Diesen Passkey entfernen?">
+					data-confirm-danger data-confirm="Passkey „{{.Name}}“ entfernen?">
 					<button class="btn btn--danger btn--sm" type="submit">Entfernen</button>
 				</form>
 			</div>
@@ -118,7 +118,7 @@
 			<div class="list__row list__row--plain">
 				<div class="list__main">
 					<span class="list__title">{{if .Current}}Diese Sitzung{{else}}Sitzung{{end}} · {{.IP}}</span>
-					<span class="list__sub muted">{{.UserAgent}} · zuletzt {{date .LastSeen}}</span>
+					<span class="list__sub muted" title="{{.UserAgent}}">{{.UserAgent}} · zuletzt {{date .LastSeen}}</span>
 				</div>
 				{{if not .Current}}
 				<form method="post" action="/account/sessions/revoke">

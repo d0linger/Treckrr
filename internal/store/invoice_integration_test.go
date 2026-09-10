@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -46,6 +47,10 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 	st := store.New(pool, "test-encryption-secret")
+	// The company row is a shared singleton and this test writes a tax mode per
+	// subtest, then reads it back. Every server itEnv writes that same row, so
+	// without this lock a parallel package silently replaces the mode under us.
+	lockCompanyRow(t, ctx, pool)
 
 	f := fixtures{
 		Years:         []int{2085, 2086, 2087, 2088, 2091, 2092, 2093, 2094, 2095},
@@ -119,7 +124,7 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 			t.Fatalf("service period: %v..%v", c.ServiceFrom, c.ServiceTo)
 		}
 
-		iv, err := st.IssueInvoice(ctx, yearID, nid, 2091)
+		iv, err := st.IssueInvoice(ctx, yearID, nid, 2091, time.Time{})
 		if err != nil {
 			t.Fatalf("issue: %v", err)
 		}
@@ -157,7 +162,7 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 			t.Fatalf("snapshot changed! net=%s gross=%s", frozen.Content.Net.StringFixed(2), frozen.Content.Gross.StringFixed(2))
 		}
 		// Idempotent re-issue returns the same frozen document.
-		again, err := st.IssueInvoice(ctx, yearID, nid, 2091)
+		again, err := st.IssueInvoice(ctx, yearID, nid, 2091, time.Time{})
 		if err != nil {
 			t.Fatalf("re-issue: %v", err)
 		}
@@ -190,7 +195,7 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 
 	t.Run("backfill re-freezes a legacy invoice at its current live values", func(t *testing.T) {
 		yearID, nid, _ := setup(t, 2094, "regel", "13")
-		iv, err := st.IssueInvoice(ctx, yearID, nid, 2094)
+		iv, err := st.IssueInvoice(ctx, yearID, nid, 2094, time.Time{})
 		if err != nil {
 			t.Fatalf("issue: %v", err)
 		}
@@ -272,7 +277,7 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 		}
 
 		// Issue A's invoice → A is festgeschrieben.
-		if _, err := st.IssueInvoice(ctx, yearID, aID, 2095); err != nil {
+		if _, err := st.IssueInvoice(ctx, yearID, aID, 2095, time.Time{}); err != nil {
 			t.Fatalf("issue A: %v", err)
 		}
 		if ids, err := st.InvoicedNeighborIDs(ctx, yearID); err != nil {
@@ -305,7 +310,7 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 
 	t.Run("storno cancels the invoice, unlocks, and allows re-issue", func(t *testing.T) {
 		yearID, nid, _ := setup(t, 2086, "regel", "13")
-		iv, err := st.IssueInvoice(ctx, yearID, nid, 2086)
+		iv, err := st.IssueInvoice(ctx, yearID, nid, 2086, time.Time{})
 		if err != nil {
 			t.Fatalf("issue: %v", err)
 		}
@@ -338,7 +343,7 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 			t.Fatalf("neighbor should be unlocked after storno")
 		}
 		// Re-issue picks the next sequence in the year (gapless-ish).
-		again, err := st.IssueInvoice(ctx, yearID, nid, 2086)
+		again, err := st.IssueInvoice(ctx, yearID, nid, 2086, time.Time{})
 		if err != nil {
 			t.Fatalf("re-issue: %v", err)
 		}
@@ -357,7 +362,7 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 
 	t.Run("gutschrift splits the VAT and caps at the invoice gross", func(t *testing.T) {
 		yearID, nid, _ := setup(t, 2087, "regel", "13")
-		if _, err := st.IssueInvoice(ctx, yearID, nid, 2087); err != nil {
+		if _, err := st.IssueInvoice(ctx, yearID, nid, 2087, time.Time{}); err != nil {
 			t.Fatalf("issue: %v", err)
 		}
 		// 24.63 € gross Skonto at 13%: net 21.80, USt 2.83, stored negative.
@@ -391,7 +396,7 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 
 	t.Run("gutschrift on a Kleinunternehmer invoice is all net", func(t *testing.T) {
 		yearID, nid, _ := setup(t, 2088, "kleinunternehmer", "0")
-		if _, err := st.IssueInvoice(ctx, yearID, nid, 2088); err != nil {
+		if _, err := st.IssueInvoice(ctx, yearID, nid, 2088, time.Time{}); err != nil {
 			t.Fatalf("issue: %v", err)
 		}
 		g, err := st.GutschriftInvoice(ctx, yearID, nid, dec("20.00"), "Nachlass")
@@ -405,7 +410,7 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 
 	t.Run("storno also cancels the invoice's issued gutschriften", func(t *testing.T) {
 		yearID, nid, _ := setup(t, 2085, "regel", "13")
-		if _, err := st.IssueInvoice(ctx, yearID, nid, 2085); err != nil {
+		if _, err := st.IssueInvoice(ctx, yearID, nid, 2085, time.Time{}); err != nil {
 			t.Fatalf("issue: %v", err)
 		}
 		g, err := st.GutschriftInvoice(ctx, yearID, nid, dec("24.63"), "Skonto")
@@ -432,5 +437,27 @@ func TestInvoiceSnapshotIntegration(t *testing.T) {
 		if !found {
 			t.Fatalf("gutschrift %s missing from document history", g.Number)
 		}
+	})
+}
+
+// companyRowLockKey must match internal/server's companyLockKey: the company
+// row is one singleton shared by both packages' integration tests.
+const companyRowLockKey = 918273646
+
+func lockCompanyRow(t *testing.T, ctx context.Context, pool *sql.DB) {
+	t.Helper()
+	// Pinned connection: pg_advisory_lock is session-scoped, and the pool would
+	// happily run the unlock on a different one.
+	conn, err := pool.Conn(ctx)
+	if err != nil {
+		t.Fatalf("company lock conn: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, companyRowLockKey); err != nil {
+		_ = conn.Close()
+		t.Fatalf("company advisory lock: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, companyRowLockKey)
+		_ = conn.Close()
 	})
 }

@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -114,6 +116,9 @@ type aggRow struct {
 	Label string
 	Hours decimal.Decimal
 	Cost  decimal.Decimal
+	// URL makes a bar clickable: the chart names a figure, the link shows the
+	// bookings behind it (Ausbaukarte 82). Empty = not drillable.
+	URL string
 }
 
 // ledgerBar is one bar of the per-neighbor verrechnung chart. Amount is the
@@ -126,6 +131,32 @@ type ledgerBar struct {
 	Bar    decimal.Decimal
 	Half   string // bar width = magnitude/max * 50%
 	OweX   string // left edge for an "owe" bar = 50% − Half
+}
+
+// filterPeriodDays keeps the entries whose calendar day falls inside the
+// inclusive [from, to] window, comparing formatted days so the DATE column's
+// UTC midnight and parseDay's local midnight can never disagree.
+func filterPeriodDays(entries []models.Entry, from, to time.Time) []models.Entry {
+	const day = "2006-01-02"
+	fromDay, toDay := "", ""
+	if !from.IsZero() {
+		fromDay = from.Format(day)
+	}
+	if !to.IsZero() {
+		toDay = to.Format(day)
+	}
+	kept := entries[:0]
+	for _, e := range entries {
+		d := e.Date.Format(day)
+		if fromDay != "" && d < fromDay {
+			continue
+		}
+		if toDay != "" && d > toDay {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	return kept
 }
 
 // aggregate groups entries by the key returned from keyFn, summing hours/cost,
@@ -326,6 +357,18 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	// Zeitraum (Ausbaukarte 82). The year's entries are already in hand, so the
+	// window is applied here instead of adding a second query path; the machine
+	// and unit aggregations below take the same bounds in SQL.
+	from, to := parseDay(r.URL.Query().Get("from")), parseDay(r.URL.Query().Get("to"))
+	if !from.IsZero() || !to.IsZero() {
+		// Compare calendar DAYS, not instants: e.Date scans from the DATE column
+		// as midnight UTC while parseDay yields LOCAL midnight (the audit filter
+		// needs the local instant) — an instant comparison would drop every
+		// booking on the inclusive "to" day, while the SQL aggregates below
+		// ($::date, <=) keep it, and the page would disagree with itself.
+		entries = filterPeriodDays(entries, from, to)
+	}
 
 	// Neighbor id -> name for the by-neighbor aggregation.
 	names := map[int64]string{}
@@ -345,18 +388,43 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	byNeighbor := aggregate(entries, func(e models.Entry) string { return names[e.NeighborID] })
-	byTask := aggregate(entries, func(e models.Entry) string {
-		if e.TaskLabel == "" {
-			return "Sonstige"
-		}
-		return e.TaskLabel
-	})
+	byTask := aggregate(entries, func(e models.Entry) string { return e.TaskLabel })
 	byTractor := aggregate(entries, func(e models.Entry) string { return e.TractorLabel })
 	// Stunden je Maschine: a booking can run several machines (MachineLabels is the
 	// comma-joined set), and its cost is for the whole rig — so cost can't be split
 	// per machine cleanly. Hours-of-use CAN: attribute the booking's hours to each
 	// machine it ran. Answers "which machine is used most this year".
 	byMachine := aggregateMachineHours(entries)
+	// Drilldown (Ausbaukarte 82): every bar links to the bookings behind it,
+	// carrying the same period so the list shows what the chart counted.
+	period := statsPeriodQuery(r)
+	ids := map[string]int64{}
+	for id, n := range names {
+		ids[n] = id
+	}
+	for i := range byNeighbor {
+		if id, ok := ids[byNeighbor[i].Label]; ok {
+			byNeighbor[i].URL = fmt.Sprintf("/buchungen?year=%d&neighbor_id=%d%s", year.ID, id, period)
+		}
+	}
+	for i := range byTask {
+		if byTask[i].Label == "" {
+			byTask[i].Label = "Ohne Tätigkeit"
+			continue // No exact-match task filter exists for a missing label.
+		}
+		byTask[i].URL = fmt.Sprintf("/buchungen?year=%d&task=%s%s", year.ID, url.QueryEscape(byTask[i].Label), period)
+	}
+
+	machineUsage, err := s.store.MachineUsageForYear(r.Context(), year.ID, from, to)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	unitMetrics, err := s.store.UnitMetricsForYear(r.Context(), year.ID, from, to)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 
 	// Payment split (paid vs open), computed in a single query.
 	paidCost, openCost, creditCost, err := s.store.YearPaymentTotals(r.Context(), year.ID)
@@ -401,7 +469,12 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	// Mini trend sparklines from the per-year series (decorative — a failure
 	// here simply omits them rather than failing the page).
 	var revSpark, hoursSpark, netSpark *sparkView
-	if totals, err := s.store.YearlyTotals(r.Context()); err == nil && len(totals) >= 3 {
+	// A period filter makes these misleading: a sparkline point and the
+	// year-over-year comparison are whole YEARS, while the KPI beside them is
+	// the selected window. Under a filter they are omitted rather than shown
+	// with a quietly different meaning.
+	periodActive := !from.IsZero() || !to.IsZero()
+	if totals, err := s.store.YearlyTotals(r.Context()); err == nil && len(totals) >= 3 && !periodActive {
 		rev := make([]decimal.Decimal, len(totals))
 		hrs := make([]decimal.Decimal, len(totals))
 		net := make([]decimal.Decimal, len(totals))
@@ -443,9 +516,26 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["ByTractorMax"] = maxCost(byTractor)
 	data["ByMachine"] = byMachine
 	data["ByMachineMax"] = maxHours(byMachine)
+	data["MachineUsage"] = machineUsage
+	data["UnitMetrics"] = unitMetrics
+	data["From"] = r.URL.Query().Get("from")
+	data["To"] = r.URL.Query().Get("to")
+	data["Period"] = period
+	var marginTotal decimal.Decimal
+	var hasMargin bool
+	for _, m := range machineUsage {
+		if m.HasMargin() {
+			hasMargin = true
+			marginTotal = marginTotal.Add(m.Margin)
+		}
+	}
+	data["HasMachineMargin"] = hasMargin
+	data["MachineMarginTotal"] = marginTotal
 
-	// Year-over-year comparison with the previous billing year.
-	if prev, err := s.store.PreviousBillingYear(r.Context(), year.Year); err == nil {
+	data["PeriodActive"] = periodActive
+	// Year-over-year comparison with the previous billing year (whole years, so
+	// skipped while a period filter is active — see above).
+	if prev, err := s.store.PreviousBillingYear(r.Context(), year.Year); err == nil && !periodActive {
 		prevEntries, _ := s.store.ListEntriesByYear(r.Context(), prev.ID)
 		var pc, ph decimal.Decimal
 		for _, e := range prevEntries {
@@ -473,4 +563,90 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, r, "stats", data)
+}
+
+// statsPeriodQuery re-encodes the active period so drilldown links and the CSV
+// export show exactly what the chart counted.
+func statsPeriodQuery(r *http.Request) string {
+	v := url.Values{}
+	for _, k := range []string{"from", "to"} {
+		if s := strings.TrimSpace(r.URL.Query().Get(k)); s != "" {
+			v.Set(k, s)
+		}
+	}
+	if len(v) == 0 {
+		return ""
+	}
+	return "&" + v.Encode()
+}
+
+// handleStatsExport streams the year's aggregations as one CSV — the figures
+// the charts show, in a form a spreadsheet or a tax adviser can use.
+func (s *Server) handleStatsExport(w http.ResponseWriter, r *http.Request) {
+	year, ok := s.resolveYear(w, r)
+	if !ok {
+		return
+	}
+	entries, err := s.store.ListEntriesByYear(r.Context(), year.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	from, to := parseDay(r.URL.Query().Get("from")), parseDay(r.URL.Query().Get("to"))
+	if !from.IsZero() || !to.IsZero() {
+		entries = filterPeriodDays(entries, from, to) // day-based; see handleStats
+	}
+	names := map[int64]string{}
+	if ns, err := s.store.ListNeighbors(r.Context()); err == nil {
+		for _, n := range ns {
+			names[n.ID] = n.Name
+		}
+	}
+	byNeighbor := aggregate(entries, func(e models.Entry) string { return names[e.NeighborID] })
+	byTask := aggregate(entries, func(e models.Entry) string {
+		if e.TaskLabel == "" {
+			return "Ohne Tätigkeit"
+		}
+		return e.TaskLabel
+	})
+	byTractor := aggregate(entries, func(e models.Entry) string { return e.TractorLabel })
+	machines, err := s.store.MachineUsageForYear(r.Context(), year.ID, from, to)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	units, err := s.store.UnitMetricsForYear(r.Context(), year.ID, from, to)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+
+	filename := fmt.Sprintf("statistik-%d.csv", year.Year)
+	cw, finish := csvDownload(w, r, filename)
+	defer finish()
+	_ = cw.Write([]string{"Auswertung", "Bezeichnung", "Einheit", "Menge", "Stunden", "Betrag (€)", "je Einheit (€)"})
+	// csvSafe on every free-text column, like every other export: a neighbor,
+	// task or machine name starting with = + - @ would otherwise be evaluated as
+	// a formula by the spreadsheet this file is opened in. Amount columns stay
+	// raw — a quote would break the negative sign.
+	writeAgg := func(section string, rows []aggRow) {
+		for _, row := range rows {
+			_ = cw.Write([]string{section, csvSafe(row.Label), "", "", deDecimal(row.Hours), deDecimal(row.Cost), ""})
+		}
+	}
+	writeAgg("Nachbar", byNeighbor)
+	writeAgg("Tätigkeit", byTask)
+	writeAgg("Traktor", byTractor)
+	for _, m := range machines {
+		_ = cw.Write([]string{"Maschine · Schätzung zu aktuellen Sätzen", csvSafe(m.Name), "h", deDecimal(m.Hours), deDecimal(m.Hours),
+			deDecimal(m.Revenue), deDecimal(m.Rate)})
+		if m.HasMargin() {
+			_ = cw.Write([]string{"Maschine · Deckungsbeitrag · Schätzung zu aktuellen Sätzen", csvSafe(m.Name), "h", deDecimal(m.Hours), "",
+				deDecimal(m.Margin), deDecimal(m.SelfCost)})
+		}
+	}
+	for _, u := range units {
+		_ = cw.Write([]string{"Kennzahl", csvSafe(u.Task), csvSafe(u.Unit), deDecimal(u.Quantity), "",
+			deDecimal(u.Cost), deDecimal(u.PerUnit)})
+	}
 }

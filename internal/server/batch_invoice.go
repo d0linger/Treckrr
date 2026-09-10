@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -120,6 +121,9 @@ func (s *Server) handleBatchIssueCommit(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
+	if !s.requireOpenYear(w, r, yearID, dashboardURL(yearID)) {
+		return
+	}
 	if company, err := s.store.GetCompany(r.Context()); err != nil || strings.TrimSpace(company.Name) == "" {
 		s.setFlash(w, r, "error", "Bitte zuerst die Betriebsdaten (Absender) ausfüllen.")
 		redirect(w, r, dashboardURL(yearID))
@@ -130,13 +134,34 @@ func (s *Server) handleBatchIssueCommit(w http.ResponseWriter, r *http.Request) 
 		s.serverError(w, "batch issue: commit", err)
 		return
 	}
+	// Selection (Ausbaukarte 70): with checkboxes present, only the ticked
+	// neighbors are issued. An empty set means the form was submitted with
+	// nothing ticked — issue nothing rather than everything, which is the one
+	// mistake that cannot be undone without a Storno per invoice.
+	selected := map[int64]bool{}
+	hasSelection := len(r.PostForm["neighbor_id"]) > 0
+	batchIDs, okIDs := formIDs(r, "neighbor_id")
+	if !okIDs {
+		s.setFlash(w, r, "error", "Zu viele Nachbarn auf einmal ausgewählt.")
+		redirect(w, r, fmt.Sprintf("/years/%d/issue-all", yearID))
+		return
+	}
+	for _, id := range batchIDs {
+		selected[id] = true
+	}
+	if !hasSelection {
+		s.setFlash(w, r, "info", "Keine Nachbarn ausgewählt.")
+		redirect(w, r, fmt.Sprintf("/years/%d/issue-all", yearID))
+		return
+	}
+
 	issued, skipped := 0, 0
 	for _, row := range rows {
-		if !row.Issuable || row.AlreadyInvoiced {
+		if !row.Issuable || row.AlreadyInvoiced || !selected[row.Neighbor.ID] {
 			skipped++
 			continue
 		}
-		iv, err := s.store.IssueInvoice(r.Context(), yearID, row.Neighbor.ID, year.Year)
+		iv, err := s.store.IssueInvoice(r.Context(), yearID, row.Neighbor.ID, year.Year, time.Time{})
 		if err != nil {
 			// One failure doesn't roll back the others (each invoice is its own
 			// festgeschriebenes document); report progress and stop.

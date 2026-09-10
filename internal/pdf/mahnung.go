@@ -22,7 +22,11 @@ type MahnungData struct {
 	DueOn         time.Time // zero = omit
 	Open          decimal.Decimal
 	Paid          decimal.Decimal
-	Today         time.Time
+	// Fee is the Mahnspesen for this stage (0 = no fee line). GraceUntil is the
+	// Nachfrist ("zahlbar bis"); zero = omit.
+	Fee        decimal.Decimal
+	GraceUntil time.Time
+	Today      time.Time
 }
 
 // RenderMahnung builds an A4 reminder PDF.
@@ -74,10 +78,24 @@ func RenderMahnung(m MahnungData) ([]byte, error) {
 	}
 	y += 8
 
-	// Keep the amount box + paid line + Zahlung/IBAN block together above the footer
-	// (drawn at y=806): if a long intro pushed us near the bottom, this whole block
-	// (~80pt) would otherwise overrun it, so start a fresh page first.
-	if y > 700 {
+	// Reserve every optional line before drawing this indivisible block. The
+	// footer starts at 806; leave a gap and include the last line's text height.
+	total := m.Open.Add(m.Fee)
+	showPayment := strings.TrimSpace(m.IssuerIBAN) != "" && total.IsPositive()
+	blockHeight := 18.0 + 10
+	if m.Paid.IsPositive() {
+		blockHeight += 16
+	}
+	if m.Fee.IsPositive() {
+		blockHeight += 34
+	}
+	if !m.GraceUntil.IsZero() {
+		blockHeight += 16
+	}
+	if showPayment {
+		blockHeight += 13 + 14 + 12
+	}
+	if y+blockHeight > 790 {
 		pdf.AddPage()
 		y = 56
 	}
@@ -90,9 +108,23 @@ func RenderMahnung(m MahnungData) ([]byte, error) {
 		gtextR(pdf, right, y, 9.5, false, money(m.Paid))
 		y += 16
 	}
+	if m.Fee.IsPositive() {
+		gtext(pdf, marginL, y, 9.5, false, "Mahnspesen")
+		gtextR(pdf, right, y, 9.5, false, money(m.Fee))
+		y += 16
+		gtext(pdf, marginL, y, 11, true, "Zu zahlen gesamt")
+		gtextR(pdf, right, y, 13, true, money(total))
+		y += 18
+	}
+	if !m.GraceUntil.IsZero() {
+		// The Nachfrist is what makes a Mahnung legally usable: it names the new
+		// deadline instead of only pointing at the missed one.
+		gtext(pdf, marginL, y, 10, true, "Zahlbar bis "+m.GraceUntil.Format("02.01.2006"))
+		y += 16
+	}
 	y += 10
 
-	if strings.TrimSpace(m.IssuerIBAN) != "" && m.Open.IsPositive() {
+	if showPayment {
 		gtext(pdf, marginL, y, 9.5, true, "Zahlung")
 		y += 13
 		line := "IBAN " + m.IssuerIBAN
@@ -101,7 +133,7 @@ func RenderMahnung(m MahnungData) ([]byte, error) {
 		}
 		gtext(pdf, marginL, y, 9.5, false, line)
 		y += 14
-		gtext(pdf, marginL, y, 9.5, false, "Betrag: "+money(m.Open))
+		gtext(pdf, marginL, y, 9.5, false, "Betrag: "+money(total))
 	}
 
 	gfooter(pdf, m.IssuerName, m.IssuerAddress, "", m.IssuerIBAN)

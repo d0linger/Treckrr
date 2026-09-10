@@ -29,6 +29,8 @@ go.work.sum
 .idea/
 .vscode/
 .claude/
+# Machine-local junction to Claude's Treckrr memory (never the global Memory).
+/.agents/skills/treckrr-memory/
 launch.json
 *.swp
 *.swo

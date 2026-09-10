@@ -42,7 +42,12 @@
 				</select>
 			</label>
 			<label class="field"><span>Datum</span>
-				<input class="input" type="date" name="entry_date" value="{{.Today}}" required></label>
+				<input class="input" type="date" name="entry_date" value="{{.Today}}" required>
+				<span class="btnrow btnrow--tight">
+					<button class="btn btn--ghost btn--xs" type="button" data-days="0" data-target="entry_date">heute</button>
+					<button class="btn btn--ghost btn--xs" type="button" data-days="1" data-target="entry_date">gestern</button>
+					<button class="btn btn--ghost btn--xs" type="button" data-days="7" data-target="entry_date">vor 1 Woche</button>
+				</span></label>
 		</div>
 		<label class="field" data-unit-custom hidden><span>Eigene Einheit</span>
 			<input class="input" type="text" name="unit_custom" placeholder="z. B. Stk, Fuder" maxlength="16" data-unit-custom-input></label>
@@ -106,6 +111,15 @@
 			<input class="input" type="number" step="0.001" min="0" name="hours"
 				inputmode="decimal" data-hours required></label>
 
+		{{if .Persons}}
+		<label class="field"><span>Person (optional)</span>
+			<select class="select" name="person_id">
+				<option value="">— keine —</option>
+				{{range .Persons}}<option value="{{.ID}}"{{if not .HourlyRate.IsPositive}} disabled{{end}}>{{.Name}} ({{money .HourlyRate}}/h){{if not .HourlyRate.IsPositive}} — kein Satz{{end}}</option>{{end}}
+			</select>
+			<span class="muted small">Bucht zusätzlich Mannstunden über dieselben Stunden — als verknüpfte eigene Position.</span></label>
+		{{end}}
+
 		<div class="rate-preview" data-rate-preview aria-live="polite" aria-atomic="true">
 			<span class="rate-preview__main">
 				<span class="rate-preview__lbl">Kosten</span>
@@ -141,35 +155,66 @@
 			<input class="input" type="text" name="note"></label>
 
 		<button class="btn btn--primary btn--block" type="submit" title="Strg + Enter">Buchung speichern</button>
+		{{/* capture.js remembers unit/rig/task per neighbor (localStorage); this is
+		     the only way to clear that memory — the JS handler existed, the button
+		     was never rendered. */}}
+		<button class="btn btn--ghost btn--xs" type="button" data-defaults-reset>Gemerkte Vorgaben löschen</button>
 	</form>
 
 	<details class="card disclosure">
 		<summary>Schnellerfassung (mehrere Zeilen)</summary>
-		<form method="post" action="/entries/quick" class="form">
+		<form method="post" action="/entries/quick" class="form" data-quick-form>
 			<input type="hidden" name="year_id" value="{{.Year.ID}}">
 			<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
-			<p class="muted small">Je Zeile ein festes Gespann und die Stunden. Leere Zeilen werden ignoriert.</p>
+			<p class="muted small">Je Zeile ein festes Gespann und die Stunden{{if .Persons}}, auf Wunsch mit Person — dann werden deren Mannstunden über dieselben Stunden als verknüpfte Position mitgebucht{{end}}. Leere Zeilen werden ignoriert.</p>
 			<div class="tablewrap">
 				<table class="dtable">
-					<thead><tr><th>Datum</th><th>Gespann</th><th class="num">Stunden</th></tr></thead>
-					<tbody>
+					<thead><tr><th>Datum</th><th>Gespann</th><th class="num">Stunden</th>{{if .Persons}}<th>Person</th>{{end}}</tr></thead>
+					<tbody data-quick-rows>
 						{{range $i := seq 6}}
 						<tr>
 							<td><input class="input" type="date" name="q_date" value="{{$.Today}}"></td>
 							<td>
-								<select class="select" name="q_gespann">
+								<select class="select" name="q_gespann" aria-label="Gespann">
 									<option value="">—</option>
 									{{range $.Gespanne}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
 								</select>
 							</td>
-							<td><input class="input" name="q_hours" inputmode="decimal" placeholder="0"></td>
+							<td><input class="input" name="q_hours" inputmode="decimal" placeholder="0">
+							<input type="hidden" name="q_key" value="" data-quick-key></td>
+							{{if $.Persons}}
+							<td>
+								<select class="select" name="q_person" aria-label="Person">
+									<option value="">— keine —</option>
+									{{range $.Persons}}<option value="{{.ID}}"{{if not .HourlyRate.IsPositive}} disabled{{end}}>{{.Name}} ({{money .HourlyRate}}/h){{if not .HourlyRate.IsPositive}} — kein Satz{{end}}</option>{{end}}
+								</select>
+							</td>
+							{{end}}
 						</tr>
 						{{end}}
 					</tbody>
 				</table>
 			</div>
-			<button class="btn btn--primary" type="submit">Zeilen speichern</button>
+			<div class="btnrow">
+				<button class="btn btn--ghost btn--sm" type="button" data-quick-add>+ Zeile</button>
+				<button class="btn btn--primary" type="submit">Zeilen speichern</button>
+			</div>
 		</form>
+	</details>
+	{{end}}
+
+	{{if .Photos}}
+	<details class="card disclosure">
+		<summary>Belegfotos ({{len .Photos}})</summary>
+		<p class="muted small">Alle Wiegescheine und Belege dieses Jahres. Klick öffnet das Bild, der Titel führt zur Buchung.</p>
+		<div class="photogrid">
+			{{range .Photos}}
+			<a href="/entries/{{.EntryID}}/photos/{{.PhotoID}}" target="_blank" rel="noopener"
+				title="{{date .EntryDate}}{{if .TaskLabel}} · {{.TaskLabel}}{{end}}">
+				<img src="/entries/{{.EntryID}}/photos/{{.PhotoID}}" alt="Beleg vom {{date .EntryDate}}" loading="lazy">
+			</a>
+			{{end}}
+		</div>
 	</details>
 	{{end}}
 
@@ -203,38 +248,48 @@
 	<h2 class="section-title">Gesamtübersicht Buchungen</h2>
 	<div class="bookcards">
 		{{range .Entries}}
-		<div class="bcard {{if .Voided}}bcard--void{{end}}">
+		<div class="bcard {{if .Voided}}bcard--void{{end}}" id="entry-{{.ID}}">
 			<div class="bcard__head">
 				<span class="bcard__date">{{date .Date}}</span>
 				<span class="bcard__task">{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}</span>
-				{{if or .Voided (index $.Stale .ID)}}
+				{{$eid := .ID}}
+				{{$pl := index $.PairLabel .ID}}
+				{{if or .Voided (index $.Stale .ID) (index $.PhotoCounts .ID)}}
 				<span class="bcard__badges">
 					{{if .Voided}}<span class="chip2 chip2--void"><span class="chip2__g">{{template "ic-void"}}</span>Storniert</span>{{end}}
 					{{if index $.Stale .ID}}<span class="chip2 chip2--stale" title="Preis weicht von der aktuellen Grundlage ab"><span class="chip2__g">{{template "ic-warn"}}</span>Grundlage</span>{{end}}
+					{{with index $.PhotoCounts $eid}}<a class="chip2" href="/entries/{{$eid}}/edit" title="Belegfotos"><span class="chip2__g">{{template "ic-photo"}}</span>{{.}} Foto{{if gt . 1}}s{{end}}</a>{{end}}
 				</span>
 				{{end}}
 				<span class="bcard__cost">{{money .Cost}}</span>
 			</div>
 			<div class="bcard__foot">
-				<span class="bcard__detail">{{if eq .Unit "h"}}{{num .Hours}} h × {{money .HourlyRate}}/h{{if .TractorLabel}} · {{.TractorLabel}} · {{.LoadLabel}}{{else}} · ohne Traktor{{end}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{else}}{{num .Quantity}} {{.Unit}} × {{money .UnitPrice}}/{{.Unit}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
+				<span class="bcard__detail">{{if eq .Unit "h"}}{{num .Hours}} h × {{money .HourlyRate}}/h{{if .TractorLabel}} · {{.TractorLabel}} · {{.LoadLabel}}{{else}} · ohne Traktor{{end}}{{if .MachineLabels}} · {{.MachineLabels}}{{end}}{{else}}{{num .Quantity}} {{.Unit}} × {{money .UnitPrice}}/{{.Unit}}{{end}}{{if .Note}} · {{.Note}}{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}{{if .LinkedEntryID}} · <a class="bcard__link" href="#entry-{{.LinkedEntryID}}" title="Zur verknüpften Maschinenbuchung springen">↳ {{if $pl}}{{$pl}}{{else}}zur Maschinenbuchung{{end}}</a>{{end}}{{with (index $.LinkedFrom .ID)}} · <a class="bcard__link" href="#entry-{{.}}" title="Zur verknüpften Mannstunden-Buchung springen">＋ {{if $pl}}{{$pl}}{{else}}Mannstunden verknüpft{{end}}</a>{{end}}</span>
 				{{if not $.Completed}}
 				<span class="bcard__acts">
 					{{if .Voided}}
-					<form method="post" action="/entries/{{.ID}}/void">
+					<form method="post" action="/entries/{{.ID}}/void"
+						{{if $pl}}data-confirm="Stornierung aufheben?" data-confirm-check="Verknüpfte Buchung ({{$pl}}) ebenfalls wiederherstellen" data-confirm-check-name="cascade"{{end}}>
 						<input type="hidden" name="voided" value="false">
+						<input type="hidden" name="cascade" value="">
 						<button class="iconact" type="submit" title="Stornierung aufheben" aria-label="Stornierung aufheben">{{template "ic-undo"}}</button>
 					</form>
 					{{else}}
 					<a class="iconact" href="/entries/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">{{template "ic-edit"}}</a>
 					<a class="iconact" href="/entries/{{.ID}}/copy" title="Als neue Buchung kopieren" aria-label="Kopieren">{{template "ic-copy"}}</a>
 					<form method="post" action="/entries/{{.ID}}/void"
-						data-confirm-danger data-confirm="Buchung stornieren? (bleibt sichtbar, zählt nicht mehr)"
-						data-confirm-reason="Grund der Stornierung (optional)">
+						data-confirm-danger data-confirm="Buchung vom {{date .Date}} über {{money .Cost}} stornieren? (bleibt sichtbar, zählt nicht mehr)"
+						data-confirm-reason="Grund der Stornierung (optional)"
+						{{if $pl}}data-confirm-check="Verknüpfte Buchung ({{$pl}}) ebenfalls stornieren" data-confirm-check-name="cascade"{{end}}>
 						<input type="hidden" name="voided" value="true">
 						<input type="hidden" name="reason" value="">
+						<input type="hidden" name="cascade" value="">
 						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">{{template "ic-void"}}</button>
 					</form>
-					<form method="post" action="/entries/{{.ID}}/delete" data-confirm-danger data-confirm="Buchung endgültig löschen?">
+					<form method="post" action="/entries/{{.ID}}/delete" data-confirm-danger
+						data-confirm="Buchung vom {{date .Date}}{{if .TaskLabel}} ({{.TaskLabel}}){{end}} über {{money .Cost}} endgültig löschen?{{if $pl}} Sie ist mit {{$pl}} verknüpft.{{end}}"
+						{{if $pl}}data-confirm-check="Verknüpfte Buchung ({{$pl}}) ebenfalls löschen" data-confirm-check-name="cascade"{{end}}>
+						<input type="hidden" name="cascade" value="">
 						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
 					{{end}}
@@ -285,6 +340,7 @@
 						<button class="iconact" type="submit" title="Stornierung aufheben" aria-label="Stornierung aufheben">{{template "ic-undo"}}</button>
 					</form>
 					{{else}}
+					<a class="iconact" href="/ledger/{{.ID}}/copy" title="Als neue Position duplizieren" aria-label="Duplizieren">{{template "ic-copy"}}</a>
 					<a class="iconact" href="/ledger/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">{{template "ic-edit"}}</a>
 					<form method="post" action="/ledger/{{.ID}}/void"
 						data-confirm-danger data-confirm="{{if .TransferID}}Übertrag stornieren? Die Gegenbuchung im anderen Jahr wird ebenfalls storniert.{{else}}Position stornieren? (bleibt sichtbar, zählt nicht mehr){{end}}"
@@ -293,7 +349,7 @@
 						<input type="hidden" name="reason" value="">
 						<button class="iconact" type="submit" title="Stornieren" aria-label="Stornieren">{{template "ic-void"}}</button>
 					</form>
-					<form method="post" action="/ledger/{{.ID}}/delete" data-confirm-danger data-confirm="{{if .TransferID}}Übertrag rückgängig machen? Die Gegenbuchung im anderen Jahr wird ebenfalls entfernt — der Rest ist dort wieder offen.{{else}}Position endgültig löschen?{{end}}">
+					<form method="post" action="/ledger/{{.ID}}/delete" data-confirm-danger data-confirm="{{if .TransferID}}Übertrag rückgängig machen? Die Gegenbuchung im anderen Jahr wird ebenfalls entfernt — der Rest ist dort wieder offen.{{else}}Position vom {{date .Date}} über {{money .Amount}}{{if .Description}} „{{.Description}}“{{end}} endgültig löschen?{{end}}">
 						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
 					{{end}}
@@ -341,6 +397,51 @@
 		</details>
 		{{end}}
 
+	{{if and (not .Completed) (not .HasInvoice)}}
+	{{if .Persons}}
+	<details class="card disclosure">
+		<summary>+ Mannstunden erfassen</summary>
+		<p class="muted small">Arbeitszeit einer Person — der Satz kommt aus dem Personenstamm und kann hier einmalig überschrieben werden.</p>
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/mannstunden" class="form">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<div class="form__grid">
+				<label class="field"><span>Person</span>
+					<select class="select" name="person_id" required>
+						{{range .Persons}}<option value="{{.ID}}">{{.Name}} ({{money .HourlyRate}}/h)</option>{{end}}
+					</select></label>
+				<label class="field"><span>Stunden</span>
+					<input class="input" type="number" step="0.25" min="0" name="hours" required></label>
+				<label class="field"><span>Datum</span>
+					<input class="input" type="date" name="entry_date" value="{{.Today}}"></label>
+				<label class="field"><span>Satz abweichend (€/h)</span>
+					<input class="input" name="hourly_rate" inputmode="decimal" placeholder="optional"></label>
+			</div>
+			<label class="field"><span>Notiz</span>
+				<input class="input" name="note" placeholder="optional"></label>
+			<button class="btn btn--primary btn--sm" type="submit">Mannstunden buchen</button>
+		</form>
+	</details>
+	{{end}}
+	{{if .HasTravelRates}}
+	<details class="card disclosure">
+		<summary>+ Anfahrt verrechnen</summary>
+		<p class="muted small">Aus den Betriebsdaten: {{if .TravelFlat.IsPositive}}Pauschale {{money .TravelFlat}}{{end}}{{if and .TravelFlat.IsPositive .TravelPerKm.IsPositive}} · {{end}}{{if .TravelPerKm.IsPositive}}{{money .TravelPerKm}} je km{{end}}. Kilometer eintragen rechnet nach km, leer lassen bucht die Pauschale.</p>
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/anfahrt" class="form">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<div class="form__grid">
+				<label class="field"><span>Kilometer (leer = Pauschale)</span>
+					<input class="input" type="number" step="0.1" min="0" name="km" placeholder="z. B. 12"></label>
+				<label class="field"><span>Datum</span>
+					<input class="input" type="date" name="entry_date" value="{{.Today}}"></label>
+			</div>
+			<label class="field"><span>Notiz</span>
+				<input class="input" name="note" placeholder="optional"></label>
+			<button class="btn btn--ghost btn--sm" type="submit">Anfahrt buchen</button>
+		</form>
+	</details>
+	{{end}}
+	{{end}}
+
 	<h2 class="section-title">Zahlungen</h2>
 	<p class="muted small">Erhaltene Zahlungen — jederzeit erfassbar, auch nach Abschluss des Jahres.</p>
 	<div class="bookcards">
@@ -352,9 +453,11 @@
 				<span class="bcard__cost">−{{money .Amount}}</span>
 			</div>
 			<div class="bcard__foot">
-				<span class="bcard__detail">{{if .Note}}{{.Note}}{{else}}—{{end}}</span>
+				<span class="bcard__detail">{{if .Method}}{{.Method}}{{end}}{{if .InvoiceNumber}}{{if .Method}} · {{end}}Rechnung {{.InvoiceNumber}}{{end}}{{if .Note}}{{if or .Method .InvoiceNumber}} · {{end}}{{.Note}}{{end}}{{if not (or .Method .InvoiceNumber .Note)}}—{{end}}</span>
 				<span class="bcard__acts">
-					<form method="post" action="/payments/{{.ID}}/delete" data-confirm-danger data-confirm="Zahlung löschen?">
+					<a class="iconact" href="/payments/{{.ID}}/copy" title="Als neue Zahlung duplizieren" aria-label="Duplizieren">{{template "ic-copy"}}</a>
+					<a class="iconact" href="/payments/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">{{template "ic-edit"}}</a>
+					<form method="post" action="/payments/{{.ID}}/delete" data-confirm-danger data-confirm="Zahlung vom {{date .PaidOn}} über {{money .Amount}} löschen?">
 						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
 				</span>
@@ -378,8 +481,15 @@
 					<input class="input" type="number" step="0.01" min="0" name="amount" required></label>
 				<label class="field"><span>Datum</span>
 					<input class="input" type="date" name="paid_on" value="{{.Today}}"></label>
+				<label class="field"><span>Zahlungsart</span>
+					<select class="select" name="method">
+						<option value="">—</option>
+						<option value="überweisung">Überweisung</option>
+						<option value="bar">Bar</option>
+						<option value="verrechnung">Verrechnung</option>
+					</select></label>
 				<label class="field"><span>Notiz</span>
-					<input class="input" name="note" placeholder="z. B. Überweisung"></label>
+					<input class="input" name="note" placeholder="optional"></label>
 				{{if .HasInvoice}}
 				<label class="field"><span>Skonto % (§ 16, optional)</span>
 					<input class="input" type="number" step="0.1" min="0" max="10" name="skonto" placeholder="z. B. 2"></label>
@@ -390,12 +500,65 @@
 		</form>
 	</details>
 
+	{{if or .Installments (not .Remaining.IsZero)}}
+	<details class="card disclosure"{{if .Installments}} open{{end}}>
+		<summary>Ratenplan{{with .Installments}} ({{len .}}){{end}}</summary>
+		<p class="muted small">Vereinbarte Teilzahlungen. Der Status ergibt sich aus der Summe der erhaltenen Zahlungen — Zahlungen werden weiterhin normal erfasst.</p>
+		{{if .Installments}}
+		<div class="bookcards">
+			{{range .Installments}}
+			<div class="bcard">
+				<div class="bcard__head">
+					<span class="bcard__date">{{date .Plan.DueOn}}</span>
+					<span class="bcard__task">{{if .Plan.Note}}{{.Plan.Note}}{{else}}Rate{{end}}</span>
+					<span class="bcard__cost">{{money .Plan.Amount}}</span>
+				</div>
+				<div class="bcard__foot">
+					<span class="bcard__detail"><span class="tag{{if eq .Status "erledigt"}} tag--paid{{else if eq .Status "überfällig"}} tag--open{{end}}">{{.Status}}</span></span>
+					<span class="bcard__acts">
+						<form method="post" action="/installments/{{.Plan.ID}}/delete" data-confirm-danger data-confirm="Rate vom {{date .Plan.DueOn}} über {{money .Plan.Amount}} entfernen?">
+							<button class="iconact iconact--danger" type="submit" title="Entfernen" aria-label="Entfernen">{{template "ic-trash"}}</button>
+						</form>
+					</span>
+				</div>
+			</div>
+			{{end}}
+		</div>
+		{{end}}
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/installments" class="form">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<div class="form__grid">
+				<label class="field"><span>Fällig am</span>
+					<input class="input" type="date" name="due_on" value="{{.Today}}" required></label>
+				<label class="field"><span>Betrag (€)</span>
+					<input class="input" type="number" step="0.01" min="0" name="amount" required></label>
+				<label class="field"><span>Notiz</span>
+					<input class="input" name="note" placeholder="z. B. Monatsrate"></label>
+			</div>
+			<button class="btn btn--ghost btn--sm" type="submit">Rate hinzufügen</button>
+		</form>
+	</details>
+	{{end}}
+
 	{{if .Remaining.IsPositive}}
 	<form method="post" action="/neighbors/{{.Neighbor.ID}}/carry-forward" class="form"
 		data-confirm="Offenen Rest ({{money .Remaining}}) ins Folgejahr übernehmen? Das aktuelle Jahr wird damit ausgeglichen.">
 		<input type="hidden" name="year_id" value="{{.Year.ID}}">
 		<button class="btn btn--ghost btn--sm" type="submit">Rest ins Folgejahr übernehmen</button>
 	</form>
+	{{else if .Remaining.IsNegative}}
+	<div class="btnrow">
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/credit-payout" class="form"
+			data-confirm="Guthaben ({{money .CreditAmount}}) als ausbezahlt verbuchen?">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<button class="btn btn--ghost btn--sm" type="submit">Guthaben ({{money .CreditAmount}}) als ausbezahlt verbuchen</button>
+		</form>
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/carry-forward" class="form"
+			data-confirm="Guthaben ({{money .CreditAmount}}) ins Folgejahr übernehmen?">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<button class="btn btn--ghost btn--sm" type="submit">Guthaben ins Folgejahr übernehmen</button>
+		</form>
+	</div>
 	{{end}}
 
 	{{if not .Completed}}<a class="fab" href="#neue-buchung" aria-label="Neue Buchung" title="Neue Buchung">{{template "ic-plus"}}</a>{{end}}

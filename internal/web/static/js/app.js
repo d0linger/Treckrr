@@ -122,44 +122,55 @@
 		} catch (e) { /* keep the static favicon */ }
 	})();
 
-	// Live text search over [data-search]'s target selector, plus an optional
-	// "only open" companion checkbox ([data-open-filter]) that also hides rows
-	// without a data-open marker. Both signals feed one visibility pass so they
-	// never fight over the inline display value.
-	document.querySelectorAll("[data-search]").forEach(function (input) {
-		var sel = input.getAttribute("data-search");
-		var openCb = document.querySelector("[data-open-filter]");
-		function apply() {
-			var q = input.value.toLowerCase();
-			var onlyOpen = openCb && openCb.checked;
-			document.querySelectorAll(sel).forEach(function (item) {
-				var hit = item.textContent.toLowerCase().indexOf(q) >= 0;
-				if (onlyOpen && !item.hasAttribute("data-open")) hit = false;
-				item.style.display = hit ? "" : "none";
-			});
+	// Row filtering (Ausbaukarte 76). Text search, an "only open" checkbox and a
+	// category select all hide rows of the SAME list, so they share one
+	// visibility pass keyed by the target selector — otherwise the last control
+	// to fire wins and the other one silently stops working.
+	(function () {
+		var groups = {}; // target selector -> { search, open, category, empty, count }
+		function group(sel) {
+			if (!groups[sel]) groups[sel] = { sel: sel };
+			return groups[sel];
 		}
-		input.addEventListener("input", apply);
-		if (openCb) openCb.addEventListener("change", apply);
-	});
-
-	// Auto-submit the enclosing form when a marked select changes.
-	document.querySelectorAll("select[data-autosubmit]").forEach(function (sel) {
-		sel.addEventListener("change", function () {
-			if (sel.form) sel.form.submit();
+		document.querySelectorAll("[data-search]").forEach(function (input) {
+			var g = group(input.getAttribute("data-search"));
+			g.search = input;
+			if (input.getAttribute("data-search-empty")) g.empty = document.querySelector(input.getAttribute("data-search-empty"));
+			if (input.getAttribute("data-search-count")) g.count = document.querySelector(input.getAttribute("data-search-count"));
 		});
-	});
-
-	// Category filter for master-data lists (prices page).
-	document.querySelectorAll("[data-filter]").forEach(function (input) {
-		var targetSel = input.getAttribute("data-filter");
-		input.addEventListener("change", function () {
-			var val = input.value;
-			document.querySelectorAll(targetSel).forEach(function (row) {
-				var cat = row.getAttribute("data-category") || "";
-				row.style.display = (!val || cat === val) ? "" : "none";
-			});
+		document.querySelectorAll("[data-filter]").forEach(function (sel) {
+			group(sel.getAttribute("data-filter")).category = sel;
 		});
-	});
+		var openCb = document.querySelector("[data-open-filter]");
+
+		Object.keys(groups).forEach(function (sel) {
+			var g = groups[sel];
+			function apply() {
+				var q = g.search ? g.search.value.toLowerCase() : "";
+				var cat = g.category ? g.category.value : "";
+				var onlyOpen = openCb && openCb.checked;
+				var shown = 0, total = 0;
+				document.querySelectorAll(sel).forEach(function (item) {
+					total++;
+					var hit = !q || item.textContent.toLowerCase().indexOf(q) >= 0;
+					if (hit && cat) hit = (item.getAttribute("data-category") || "") === cat;
+					if (hit && onlyOpen && !item.hasAttribute("data-open")) hit = false;
+					item.style.display = hit ? "" : "none";
+					if (hit) shown++;
+				});
+				if (g.empty) g.empty.hidden = shown !== 0 || total === 0;
+				if (g.count) {
+					g.count.textContent = shown === total
+						? total + " Einträge"
+						: shown + " von " + total + " Einträgen";
+				}
+			}
+			if (g.search) g.search.addEventListener("input", apply);
+			if (g.category) g.category.addEventListener("change", apply);
+			if (openCb && g.search) openCb.addEventListener("change", apply);
+			apply();
+		});
+	})();
 
 	// Carry-over: toggle all neighbour checkboxes at once.
 	document.querySelectorAll("[data-carry-toggle-all]").forEach(function (btn) {
@@ -213,13 +224,33 @@
 		el.addEventListener("change", clear);
 	});
 
+	// A submit button that carries a name only reaches the server while it is
+	// enabled and while the submission carries a submitter. Both of those get
+	// broken below — the busy state disables the button, and the confirm modal
+	// re-sends with form.submit() — so the pair is parked in a hidden field
+	// instead. Without this, a form with several named actions (the bulk
+	// storno/delete row) arrives with no action at all.
+	function carrySubmitter(form, submitter) {
+		var old = form.querySelector("input[data-submitter]");
+		if (old) old.remove();
+		if (!submitter || !submitter.name) return;
+		var h = document.createElement("input");
+		h.type = "hidden";
+		h.name = submitter.name;
+		h.value = submitter.value;
+		h.setAttribute("data-submitter", "");
+		form.appendChild(h);
+	}
+
 	// Submit feedback: a POST form that passes validation shows a spinning state
 	// on its primary button. Submission still proceeds; the server redirects.
 	// Skipped for data-confirm forms (the modal drives those via form.submit()).
 	document.querySelectorAll("form").forEach(function (form) {
 		if ((form.getAttribute("method") || "").toLowerCase() !== "post") return;
 		form.addEventListener("submit", function (e) {
-			if (form.hasAttribute("data-confirm") && form.dataset.confirmed !== "1") return;
+			var asksFirst = form.hasAttribute("data-confirm") ||
+				(e.submitter && e.submitter.hasAttribute && e.submitter.hasAttribute("data-confirm"));
+			if (asksFirst && form.dataset.confirmed !== "1") return;
 			// Block a second submission (double-click or double-Enter) while the
 			// first POST is in flight — the server redirects, so this navigates away.
 			if (form.dataset.submitting === "1") { e.preventDefault(); return; }
@@ -230,6 +261,7 @@
 			var btn = (e.submitter && e.submitter.tagName === "BUTTON")
 				? e.submitter
 				: form.querySelector("button[type='submit']");
+			carrySubmitter(form, e.submitter);
 			if (btn) { btn.classList.add("is-submitting"); btn.setAttribute("aria-busy", "true"); btn.disabled = true; }
 		});
 	});
@@ -240,6 +272,13 @@
 	var msgEl = modal ? modal.querySelector("[data-modal-msg]") : null;
 	var inputEl = modal ? modal.querySelector("[data-modal-input]") : null;
 	var okBtn = modal ? modal.querySelector("[data-modal-ok]") : null;
+	// Optional checkbox row (data-confirm-check): "also apply to the linked
+	// booking?" — the answer lands in the form field named by
+	// data-confirm-check-name ("1" = yes, "" = no).
+	var checkWrap = modal ? modal.querySelector("[data-modal-check]") : null;
+	var checkInput = modal ? modal.querySelector("[data-modal-check-input]") : null;
+	var checkLabel = modal ? modal.querySelector("[data-modal-check-label]") : null;
+	var pendingCheckName = null;
 	var pendingForm = null;
 
 	if (modal && typeof modal.showModal === "function") {
@@ -251,6 +290,11 @@
 				if (inputEl && !inputEl.hidden) {
 					var target = form.querySelector("input[name='reason']");
 					if (target) target.value = inputEl.value.trim();
+				}
+				// Copy the checkbox answer (e.g. cascade over a linked booking).
+				if (checkWrap && !checkWrap.hidden && pendingCheckName) {
+					var ct = form.querySelector("input[name='" + pendingCheckName + "']");
+					if (ct) ct.value = (checkInput && checkInput.checked) ? "1" : "";
 				}
 				form.dataset.confirmed = "1";
 				// form.submit() fires no submit event, so the double-submit lock
@@ -264,6 +308,7 @@
 			}
 			// Never leak a typed reason (or its label) into the next modal.
 			if (inputEl) inputEl.value = "";
+			pendingCheckName = null;
 		});
 		// Enter inside the reason field must CONFIRM: the dialog's implicit
 		// submission picks its FIRST submit button, which is "Abbrechen" — the
@@ -297,11 +342,51 @@
 		});
 	});
 
-	document.querySelectorAll("form[data-confirm]").forEach(function (form) {
+	// The message and the optional reason prompt come from the SUBMITTER when it
+	// carries them, otherwise from the form — so one form can ask a different
+	// question per action.
+	function confirmAttrs(form, submitter) {
+		if (submitter && submitter.hasAttribute && submitter.hasAttribute("data-confirm")) {
+			return {
+				message: submitter.getAttribute("data-confirm"),
+				reason: submitter.getAttribute("data-confirm-reason"),
+				check: submitter.getAttribute("data-confirm-check"),
+				checkName: submitter.getAttribute("data-confirm-check-name"),
+			};
+		}
+		return {
+			message: form.getAttribute("data-confirm"),
+			reason: form.getAttribute("data-confirm-reason"),
+			check: form.getAttribute("data-confirm-check"),
+			checkName: form.getAttribute("data-confirm-check-name"),
+		};
+	}
+
+	// Auto-submitting selects (the Preisvergleich basis picker). Dropped by
+	// accident in the filter rewrite while the attribute stayed in the markup.
+	document.querySelectorAll("select[data-autosubmit]").forEach(function (sel) {
+		sel.addEventListener("change", function () {
+			if (sel.form) sel.form.submit();
+		});
+	});
+
+	// The question sits either on the form or on one of its buttons (one form,
+	// several actions asking different things). Collected by hand rather than with
+	// ":has()": an engine without it rejects the whole selector list as a
+	// SyntaxError, which aborts this file and takes every confirmation with it —
+	// including the irreversible Festschreibung, which would then submit silently.
+	var confirmForms = [];
+	document.querySelectorAll("form[data-confirm], button[data-confirm]").forEach(function (el) {
+		var f = el.tagName === "FORM" ? el : el.form;
+		if (f && confirmForms.indexOf(f) < 0) confirmForms.push(f);
+	});
+	confirmForms.forEach(function (form) {
 		form.addEventListener("submit", function (e) {
 			if (form.dataset.confirmed === "1") return;
-			var message = form.getAttribute("data-confirm");
-			var reasonLabel = form.getAttribute("data-confirm-reason");
+			var attrs = confirmAttrs(form, e.submitter);
+			if (!attrs.message) return; // this action asks nothing
+			var message = attrs.message;
+			var reasonLabel = attrs.reason;
 			if (!modal || typeof modal.showModal !== "function") {
 				if (!window.confirm(message)) { e.preventDefault(); return; }
 				// Native fallback: prompt for the reason if one was requested;
@@ -313,9 +398,15 @@
 					var target = form.querySelector("input[name='reason']");
 					if (target) target.value = v.trim();
 				}
+				// Checkbox question: OK = also apply to the linked booking.
+				if (attrs.check) {
+					var ctf = form.querySelector("input[name='" + (attrs.checkName || "cascade") + "']");
+					if (ctf) ctf.value = window.confirm(attrs.check) ? "1" : "";
+				}
 				return;
 			}
 			e.preventDefault();
+			carrySubmitter(form, e.submitter);
 			pendingForm = form;
 			if (msgEl) msgEl.textContent = message;
 			if (okBtn) {
@@ -335,6 +426,19 @@
 					inputEl.value = "";
 				} else {
 					inputEl.hidden = true;
+				}
+			}
+			if (checkWrap) {
+				if (attrs.check) {
+					checkWrap.hidden = false;
+					if (checkLabel) checkLabel.textContent = attrs.check;
+					// Checked by default: the pair was booked as ONE Einsatz, so
+					// acting on both is the expected case; unticking narrows it.
+					if (checkInput) checkInput.checked = true;
+					pendingCheckName = attrs.checkName || "cascade";
+				} else {
+					checkWrap.hidden = true;
+					pendingCheckName = null;
 				}
 			}
 			modal.returnValue = "";
@@ -1182,6 +1286,9 @@
 			else if (e.key === "ArrowUp") { e.preventDefault(); if (items.length) { sel = (sel - 1 + items.length) % items.length; highlight(); } }
 			else if (e.key === "Enter") { e.preventDefault(); if (sel >= 0) go(sel); }
 		}
+		document.querySelectorAll("[data-cmdk-open]").forEach(function (btn) {
+			btn.addEventListener("click", function () { if (ov) close(); else open(); });
+		});
 		document.addEventListener("keydown", function (e) {
 			if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); if (ov) close(); else open(); }
 		});

@@ -3,10 +3,14 @@ package server
 import (
 	"log/slog"
 	"net/http"
+	netmail "net/mail"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/d0linger/treckrr/internal/models"
+
+	"github.com/shopspring/decimal"
 )
 
 // handleCompany renders the Betriebsdaten (sender/invoice settings) form.
@@ -20,6 +24,9 @@ func (s *Server) handleCompany(w http.ResponseWriter, r *http.Request) {
 	data["Company"] = c
 	s.render(w, r, "company", data)
 }
+
+// prefixShape guards the Nummernkreis prefix (see 0046's CHECK constraint).
+var prefixShape = regexp.MustCompile(`^[A-Za-z0-9]{0,10}$`)
 
 // handleCompanySave persists the Betriebsdaten.
 func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +47,72 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 	case "kleinunternehmer", "pauschal", "regel":
 	default:
 		c.TaxMode = "pauschal"
+	}
+	// Mahnspesen: nie negativ; leer/ungültig bleibt 0 (keine Spesenzeile).
+	if f := formDecimal(r, "dunning_fee_1"); f.IsPositive() {
+		c.DunningFee1 = f
+	}
+	if f := formDecimal(r, "dunning_fee_2"); f.IsPositive() {
+		c.DunningFee2 = f
+	}
+	// Nummernkreis (Nr. 49): Präfix strikt alphanumerisch — ein Trennzeichen im
+	// Präfix würde die Sequenz-Erkennung (split_part) brechen, deshalb harte
+	// Ablehnung statt stillem Verwerfen.
+	prefix := trimmed(r, "invoice_prefix")
+	if !prefixShape.MatchString(prefix) {
+		s.setFlash(w, r, "error", "Rechnungs-Präfix: nur Buchstaben/Ziffern, max. 10 Zeichen.")
+		redirect(w, r, "/admin/company")
+		return
+	}
+	c.InvoicePrefix = prefix
+	c.InvoiceStart = 1
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("invoice_start"))); err == nil && v >= 1 && v <= 999999 {
+		c.InvoiceStart = v
+	}
+	// E-Mail-Vorlage und Kopie-Empfänger (Nr. 99). Eine ungültige CC-Adresse
+	// wird abgewiesen statt still verworfen — sonst glaubt der Betrieb, der
+	// Steuerberater bekomme Kopien, und niemand merkt das Gegenteil.
+	c.MailSignature = trimmed(r, "mail_signature")
+	c.MailCC = trimmed(r, "mail_cc")
+	if c.MailCC != "" {
+		if _, err := netmail.ParseAddress(c.MailCC); err != nil {
+			s.setFlash(w, r, "error", "Ungültige CC-Adresse für den Mail-Versand.")
+			redirect(w, r, "/admin/company")
+			return
+		}
+	}
+	if s.tooLong(w, r, "Signatur", c.MailSignature, maxNoteLen) ||
+		s.tooLong(w, r, "CC-Adresse", c.MailCC, maxNameLen) {
+		redirect(w, r, "/admin/company")
+		return
+	}
+	// Anfahrt (Nr. 58): 0 = kein Zuschlag, das Formular bleibt verborgen.
+	if f := formDecimal(r, "travel_flat"); f.IsPositive() {
+		c.TravelFlat = f
+	}
+	if f := formDecimal(r, "travel_per_km"); f.IsPositive() {
+		c.TravelPerKm = f
+	}
+	// Kleinunternehmergrenze (Nr. 55): 0 = Überwachung aus.
+	if f := formDecimal(r, "small_business_limit"); f.IsPositive() {
+		c.SmallBusinessLimit = f
+	}
+	// Skonto-Angebot: 0-10 %% / 0-90 Tage; beides 0 = keine Klausel.
+	if value := trimmed(r, "skonto_pct"); value != "" {
+		pct, ok := parseGermanDecimalOK(value)
+		if !ok || pct.IsNegative() || pct.GreaterThan(decimal.NewFromInt(10)) {
+			s.setFlash(w, r, "error", "Skonto muss zwischen 0 und 10 % liegen.")
+			redirect(w, r, "/admin/company")
+			return
+		}
+		c.SkontoPct = pct
+	}
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("skonto_days"))); err == nil && v >= 0 && v <= 90 {
+		c.SkontoDays = v
+	}
+	c.DunningGraceDays = 14
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("dunning_grace_days"))); err == nil && v >= 0 && v <= 365 {
+		c.DunningGraceDays = v
 	}
 	// Zahlungsziel: clamp to a sane 0–365 days; blank/invalid falls back to 14.
 	c.PaymentTermDays = 14

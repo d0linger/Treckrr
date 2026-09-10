@@ -102,6 +102,33 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Base"] = base
 	data["Neighbor"] = neighbor
 	data["Entries"] = entries
+	// Pair links: LinkedFrom gives each machine booking its companion's id (the
+	// reverse of the stored direction), PairLabel names the OTHER half for each
+	// side — task and hours, so with several pairs on one day the operator sees
+	// WHICH booking a link means, not just that one exists. Computed from the
+	// rows already loaded — companions always live in the same neighbor+year.
+	linkedFrom := map[int64]int64{}
+	pairLabel := map[int64]string{}
+	byID := map[int64]models.Entry{}
+	for _, e := range entries {
+		byID[e.ID] = e
+	}
+	for _, e := range entries {
+		if e.LinkedEntryID == nil {
+			continue
+		}
+		machine, ok := byID[*e.LinkedEntryID]
+		if !ok {
+			continue // partner deleted or filtered — chip falls back to the plain text
+		}
+		linkedFrom[machine.ID] = e.ID
+		// German decimal comma, matching every other number on the page.
+		de := func(d decimal.Decimal) string { return strings.ReplaceAll(d.String(), ".", ",") }
+		pairLabel[e.ID] = fmt.Sprintf("%s · %s h", machine.TaskLabel, de(machine.Hours))
+		pairLabel[machine.ID] = fmt.Sprintf("%s · %s h", e.TaskLabel, de(e.Quantity))
+	}
+	data["LinkedFrom"] = linkedFrom
+	data["PairLabel"] = pairLabel
 	data["TotalCost"] = cost
 	data["TotalHours"] = hours
 	data["Ledger"] = ledger
@@ -109,10 +136,51 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Saldo"] = cost.Add(ledgerSum)
 	data["Payments"] = payments
 	data["PaidSum"] = paidSum
-	data["Remaining"] = cost.Add(ledgerSum).Sub(paidSum)
+	plans, err := s.store.ListInstallments(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data["Installments"] = installmentViews(plans, paidSum)
+	remaining := cost.Add(ledgerSum).Sub(paidSum)
+	data["Remaining"] = remaining
+	// The credit shown on the payout/carry buttons: the negative rest, made
+	// positive for display ("Guthaben (45,00 €)").
+	data["CreditAmount"] = remaining.Neg()
 	// An issued invoice enables the Skonto (§16) option on the payment form.
 	_, invErr := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
 	data["HasInvoice"] = invErr == nil
+	// Mannstunden (Nr. 56/57) and Anfahrt (Nr. 58) get their own small forms on
+	// this page rather than extra fields in the main booking form, whose three
+	// stacked submit handlers and pricing fetch are not worth disturbing.
+	persons, err := s.store.ActivePersons(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	company, err := s.store.GetCompany(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	// Fotos sichtbar machen (Ausbaukarte 74): a chip per booking and a gallery,
+	// so a Wiegeschein is not buried behind a booking's edit page.
+	photoCounts, err := s.store.PhotoCounts(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	photos, err := s.store.ListNeighborPhotos(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data["PhotoCounts"] = photoCounts
+	data["Photos"] = photos
+	data["Persons"] = persons
+	data["TravelFlat"] = company.TravelFlat
+	data["TravelPerKm"] = company.TravelPerKm
+	data["HasTravelRates"] = company.TravelFlat.IsPositive() || company.TravelPerKm.IsPositive()
 	data["Tractors"] = tractors
 	data["Loads"] = loads
 	data["Machines"] = machines
@@ -161,11 +229,52 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 		totalHours = totalHours.Add(h.Hours)
 	}
 	company, _ := s.store.GetCompany(r.Context())
+	// The heading promised a Zahlungshistorie and rendered only year tiles
+	// (Ausbaukarte 79) — here are the payments themselves, across all years.
+	payments, err := s.store.ListNeighborPayments(r.Context(), neighbor.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	var paidTotal decimal.Decimal
+	for _, p := range payments {
+		paidTotal = paidTotal.Add(p.Amount)
+	}
 	data := s.newPage(w, r, neighbor.Name+" · Verlauf", "dashboard")
 	data["Neighbor"] = neighbor
 	data["Rows"] = rows
 	data["TotalCost"] = totalCost
 	data["TotalHours"] = totalHours
+	data["Payments"] = payments
+	data["PaidTotal"] = paidTotal
+	// Mehrjahresverlauf (Ausbaukarte 85): the tiles said what each year was,
+	// never where the relationship is going. Same bar-chart partial as the
+	// statistics page, one row per year.
+	series, err := s.store.NeighborYearSeries(r.Context(), neighbor.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	costTrend := make([]aggRow, 0, len(series))
+	hoursTrend := make([]aggRow, 0, len(series))
+	var costMax, hoursMax decimal.Decimal
+	for _, p := range series {
+		label := strconv.Itoa(p.Year)
+		costTrend = append(costTrend, aggRow{Label: label, Cost: p.Cost,
+			URL: fmt.Sprintf("/neighbors/%d?year=%d", neighbor.ID, p.YearID)})
+		hoursTrend = append(hoursTrend, aggRow{Label: label, Hours: p.Hours})
+		if p.Cost.GreaterThan(costMax) {
+			costMax = p.Cost
+		}
+		if p.Hours.GreaterThan(hoursMax) {
+			hoursMax = p.Hours
+		}
+	}
+	data["CostTrend"] = costTrend
+	data["CostTrendMax"] = costMax
+	data["HoursTrend"] = hoursTrend
+	data["HoursTrendMax"] = hoursMax
+	data["HasTrend"] = len(series) > 1
 	data["Company"] = company
 	data["Today"] = time.Now()
 	s.render(w, r, "neighbor_overview", data)
@@ -308,24 +417,6 @@ func (s *Server) handlePricingAPI(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
-// neighborInYearOrRedirect guards booking creation against orphan rows: a
-// booking for a neighbor not in the year is invisible on the (membership-driven)
-// dashboard yet counted by stats/CSV, skewing the year's totals. Ledger and
-// payment creation already enforce the same membership check.
-func (s *Server) neighborInYearOrRedirect(w http.ResponseWriter, r *http.Request, yearID, neighborID int64) bool {
-	in, err := s.store.NeighborInYear(r.Context(), yearID, neighborID)
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return false
-	}
-	if !in {
-		s.setFlash(w, r, "error", "Nachbar ist diesem Abrechnungsjahr nicht zugeordnet.")
-		redirect(w, r, dashboardURL(yearID))
-		return false
-	}
-	return true
-}
-
 // invoiceLocked reports whether a festgeschriebene (issued) Rechnung exists for
 // this neighbor+year. While one does, the neighbor's bookings and ledger for that
 // year are locked (BAO §131 Unveränderbarkeit): corrections go through a
@@ -356,8 +447,8 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	neighborID := formInt64(r, "neighbor_id")
 	yearID := formInt64(r, "year_id")
 	// An offline replay (offline.js) sets this header and wants a machine-readable
-	// status, not a redirect: 2xx = stored, 422 = permanent business rejection so
-	// the client drops it from the queue (and 401 from auth = retry after login).
+	// status, not a redirect: 2xx = stored, 422 = needs operator attention and
+	// stays recoverable in the queue (and 401 from auth = retry after login).
 	// This lets the queue distinguish "won't self-heal" from "retry later" instead
 	// of treating every redirect as success and silently discarding the booking.
 	replay := r.Header.Get("X-Offline-Replay") == "1"
@@ -399,7 +490,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if !errors.Is(err, store.ErrNotFound) {
 		// A real store failure (not "no invoice") is transient — return 500 so an
-		// offline replay retries rather than dropping the booking as a permanent 422.
+		// offline replay retries automatically instead of marking it for review.
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
@@ -418,10 +509,54 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	entry.BillingYearID = year.ID
 	entry.IdempotencyKey = idempotencyKey
 
-	newID, err := s.store.CreateEntry(r.Context(), entry, machineIDs)
+	// Person alongside the rig (optional): one submit books the machine AND the
+	// helper's Mannstunden as a linked companion entry. Hour bookings only — a
+	// quantity booking (ha, Ballen, …) carries no hours the helper's time could
+	// be derived from; those book their Mannstunden through the dedicated form.
+	var companion *models.Entry
+	if pid := formInt64(r, "person_id"); pid != 0 && (entry.Unit == "" || entry.Unit == "h") {
+		// Quantity bookings (ha, Ballen, …) silently drop a leftover person value:
+		// the select lives in the hours-only panel, so on that path it was hidden
+		// (and entry-form.js clears it) — a stale value is UI state, not intent,
+		// and rejecting would discard everything else the user typed.
+		person, err := s.store.GetPerson(r.Context(), pid)
+		if errors.Is(err, store.ErrNotFound) {
+			reject(http.StatusUnprocessableEntity, "Unbekannte Person.", neighborURL(neighborID, yearID))
+			return
+		} else if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+		if !person.HourlyRate.IsPositive() {
+			reject(http.StatusUnprocessableEntity, "Für "+person.Name+" ist kein Stundensatz hinterlegt — bitte im Personenstamm ergänzen.", neighborURL(neighborID, yearID))
+			return
+		}
+		companion = &models.Entry{
+			NeighborID: neighborID, BillingYearID: year.ID,
+			Date: entry.Date, TaskLabel: "Mannstunden " + person.Name,
+			Unit: unitMannstunde, Quantity: entry.Hours, UnitPrice: person.HourlyRate,
+			Cost:     entry.Hours.Mul(person.HourlyRate).Round(2),
+			PersonID: &person.ID,
+			// Derived, deterministic key so a replayed pair no-ops on both halves.
+			// Oversized derived keys are hashed to stay within the length limit.
+			IdempotencyKey: models.CompanionKey(idempotencyKey),
+		}
+	}
+
+	var newID, companionID int64
+	if companion != nil {
+		newID, companionID, err = s.store.CreateEntryPair(r.Context(), entry, machineIDs, companion)
+	} else {
+		newID, err = s.store.CreateEntry(r.Context(), entry, machineIDs)
+	}
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
+	}
+	if companionID != 0 {
+		s.audit(r, "create", "entry", companionID, fmt.Sprintf("%s · Mannstunden (verknüpft), %s h × %s = %s €",
+			s.neighborName(r, neighborID), companion.Quantity.String(),
+			companion.UnitPrice.StringFixed(2), companion.Cost.StringFixed(2)))
 	}
 	if newID == 0 { // duplicate replay of an offline booking — already recorded
 		if replay {
@@ -447,7 +582,11 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	s.setFlash(w, r, "success", "Buchung gespeichert.")
+	if companionID != 0 {
+		s.setFlash(w, r, "success", "Buchung + Mannstunden gespeichert.")
+	} else {
+		s.setFlash(w, r, "success", "Buchung gespeichert.")
+	}
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
 
@@ -559,13 +698,13 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	if err != nil {
 		return nil, nil, "Interner Fehler beim Laden der Maschinen."
 	}
-	// Without a tractor the machines ARE the price. If none of the submitted ids
-	// resolve — a stale form after a machine was deleted, or ids from another
-	// basis — the rate would come out at 0,00 € and the booking would be saved as
-	// "gespeichert" for nothing. Reproduced before this guard: 3 h at 0,0000 with
-	// cost 0,0000. With a tractor the rate is still meaningful, so that path keeps
-	// its long-standing behavior of ignoring ids it cannot resolve.
-	if tractor == nil && len(machines) == 0 {
+	// Every submitted machine id must resolve, tractor or not. The machines-only
+	// case priced at 0,00 € (reproduced: 3 h at 0,0000, "gespeichert"); WITH a
+	// tractor the silent drop was subtler and worse — the booking saved at the
+	// bare tractor rate, underbilling by the vanished machine's share without
+	// anyone noticing. A stale form after a machine was deleted is exactly when
+	// the user must be told, not accommodated (Ausbaukarte Nr. 61).
+	if len(machines) != len(machineIDs) {
 		return nil, nil, "Die gewählten Maschinen sind nicht mehr verfügbar — bitte die Seite neu laden."
 	}
 	hours := formDecimal(r, "hours")
@@ -668,6 +807,31 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "update", "entry", id, s.neighborName(r, existing.NeighborID)+" · "+entryUpdateDetail(existing, entry))
+	// Linked pair: mirror the edited hours onto the partner when the edit form's
+	// checkbox asked for it — machine and Mannstunden of one Einsatz share the
+	// same hours, each priced at its own frozen rate.
+	if r.FormValue("sync_pair") == "1" {
+		hours := entry.Hours
+		if entry.Unit != "" && entry.Unit != "h" {
+			hours = entry.Quantity
+		}
+		if pid, err := s.store.LinkedPartnerID(r.Context(), id); err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		} else if pid != 0 && hours.IsPositive() {
+			cost, err := s.store.SyncPairHours(r.Context(), pid, hours)
+			if err != nil {
+				s.setFlash(w, r, "error", "Buchung aktualisiert, aber die verknüpfte Buchung konnte nicht angepasst werden.")
+				redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
+				return
+			}
+			s.audit(r, "update", "entry", pid, fmt.Sprintf("%s · verknüpft angeglichen: %s h, %s €",
+				s.neighborName(r, existing.NeighborID), hours.String(), cost.StringFixed(2)))
+			s.setFlash(w, r, "success", "Buchung und verknüpfte Buchung aktualisiert.")
+			redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
+			return
+		}
+	}
 	s.setFlash(w, r, "success", "Buchung aktualisiert.")
 	redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
 }
@@ -699,14 +863,47 @@ func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	nb := s.neighborName(r, entry.NeighborID)
+	// Linked pair: mirror the action onto the partner only on the confirm
+	// dialog's explicit choice. Void is reversible, so two separate updates are
+	// acceptable — a failure between them stays visible and re-clickable.
+	partnerID := int64(0)
+	if r.FormValue("cascade") == "1" {
+		if pid, err := s.store.LinkedPartnerID(r.Context(), id); err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		} else {
+			partnerID = pid
+		}
+	}
 	if err := s.store.SetEntryVoided(r.Context(), id, void, reason); err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
-	} else if void {
-		s.audit(r, "void", "entry", id, fmt.Sprintf("%s · %s € %s", nb, entry.Cost.StringFixed(2), reason))
-		s.setFlash(w, r, "success", "Buchung storniert.")
 	} else {
-		s.audit(r, "unvoid", "entry", id, fmt.Sprintf("%s · %s €", nb, entry.Cost.StringFixed(2)))
-		s.setFlash(w, r, "success", "Stornierung aufgehoben.")
+		suffix := ""
+		if partnerID != 0 {
+			if err := s.store.SetEntryVoided(r.Context(), partnerID, void, reason); err != nil {
+				s.setFlash(w, r, "error", "Verknüpfte Buchung konnte nicht angepasst werden.")
+				redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
+				return
+			}
+			suffix = " (verknüpftes Paar)"
+		}
+		if void {
+			s.audit(r, "void", "entry", id, fmt.Sprintf("%s · %s € %s%s", nb, entry.Cost.StringFixed(2), reason, suffix))
+			if partnerID != 0 {
+				s.audit(r, "void", "entry", partnerID, fmt.Sprintf("%s · %s%s", nb, reason, suffix))
+				s.setFlash(w, r, "success", "Buchung und verknüpfte Buchung storniert.")
+			} else {
+				s.setFlash(w, r, "success", "Buchung storniert.")
+			}
+		} else {
+			s.audit(r, "unvoid", "entry", id, fmt.Sprintf("%s · %s €%s", nb, entry.Cost.StringFixed(2), suffix))
+			if partnerID != 0 {
+				s.audit(r, "unvoid", "entry", partnerID, nb+suffix)
+				s.setFlash(w, r, "success", "Stornierung beider Buchungen aufgehoben.")
+			} else {
+				s.setFlash(w, r, "success", "Stornierung aufgehoben.")
+			}
+		}
 	}
 	redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
 }
@@ -1073,6 +1270,26 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	data["UnitIsCustom"] = unitIsCustom(entry.Unit)
 	data["IsQtyEntry"] = entry.Unit != "" && entry.Unit != "h"
 	data["NextWeek"] = time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+	// Linked pair: name the partner so the form can offer to mirror edited hours.
+	if pid, err := s.store.LinkedPartnerID(r.Context(), id); err == nil && pid != 0 {
+		if partner, err := s.store.GetEntry(r.Context(), pid); err == nil {
+			label := partner.TaskLabel
+			if label == "" {
+				label = "verknüpfte Buchung"
+			}
+			data["PairPartnerLabel"] = label
+			// Only the helper half can be carried into a series (the machine half
+			// IS the series), only while it still stands (a stornierte companion
+			// must not come back every week), and only for an hour booking — the
+			// companion is priced over the machine booking's hours, which a
+			// quantity booking does not have. Named separately so the series card
+			// offers the choice only where it can be honored.
+			hourly := entry.Unit == "" || entry.Unit == "h"
+			if partner.PersonID != nil && partner.UnitPrice.IsPositive() && !partner.Voided && hourly {
+				data["PairPersonLabel"] = label
+			}
+		}
+	}
 	s.render(w, r, "entry_edit", data)
 }
 
@@ -1139,6 +1356,20 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	}
 	neighborID := formInt64(r, "neighbor_id")
 	yearID := formInt64(r, "year_id")
+	// An offline replay wants a machine-readable status, not a redirect — same
+	// contract as handleEntryCreate. The client reads the response with
+	// redirect:"manual", so a 303 arrives as an opaque status 0 that is neither
+	// success nor permanent rejection: the batch would sit in the queue forever,
+	// re-POSTed on every page load, with the badge stuck.
+	replay := r.Header.Get("X-Offline-Replay") == "1"
+	reject := func(status int, msg, redirectTo string) {
+		if replay {
+			http.Error(w, msg, status)
+			return
+		}
+		s.setFlash(w, r, "error", msg)
+		redirect(w, r, redirectTo)
+	}
 	// Every accepted row costs five database round trips — GetGespann, GetTractor,
 	// GetLoadLevel and MachinesByIDs inside buildGespannEntry, then CreateEntry —
 	// and the loop below is driven purely by how many q_gespann keys arrive. The
@@ -1153,8 +1384,7 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	// check sits ahead of every store call so an abusive submit costs no queries
 	// at all.
 	if n := len(r.Form["q_gespann"]); n > maxQuickEntries {
-		s.setFlash(w, r, "error", fmt.Sprintf("Zu viele Zeilen auf einmal (%d). Es können höchstens %d Zeilen gespeichert werden.", n, maxQuickEntries))
-		redirect(w, r, neighborURL(neighborID, yearID))
+		reject(http.StatusUnprocessableEntity, fmt.Sprintf("Zu viele Zeilen auf einmal (%d). Es können höchstens %d Zeilen gespeichert werden.", n, maxQuickEntries), neighborURL(neighborID, yearID))
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
@@ -1166,48 +1396,231 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if year.Completed() {
-		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen.")
-		redirect(w, r, neighborURL(neighborID, yearID))
+		reject(http.StatusUnprocessableEntity, "Das Abrechnungsjahr ist abgeschlossen.", neighborURL(neighborID, yearID))
 		return
 	}
-	if !s.neighborInYearOrRedirect(w, r, year.ID, neighborID) {
+	// Inlined rather than routed through a w,r-writing helper (as invoiceLocked
+	// still is elsewhere) so these gates can answer a replay with a status code —
+	// the same reason handleEntryCreate inlines them. The interactive messages and
+	// redirect targets are unchanged.
+	//
+	// The membership check guards against orphan rows: a booking for a neighbor not
+	// in the year is invisible on the (membership-driven) dashboard yet counted by
+	// stats/CSV, skewing the year's totals.
+	if in, err := s.store.NeighborInYear(r.Context(), year.ID, neighborID); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	} else if !in {
+		reject(http.StatusUnprocessableEntity, "Nachbar ist diesem Abrechnungsjahr nicht zugeordnet.", dashboardURL(yearID))
 		return
 	}
-	if s.invoiceLocked(w, r, year.ID, neighborID) {
+	if iv, err := s.store.GetInvoice(r.Context(), year.ID, neighborID); err == nil {
+		reject(http.StatusUnprocessableEntity, "Rechnung "+iv.Number+" ist festgeschrieben – Buchungen und Verrechnungen für diesen Nachbarn sind gesperrt. Für Korrekturen bitte die Rechnung stornieren.", neighborURL(neighborID, yearID))
+		return
+	} else if !errors.Is(err, store.ErrNotFound) {
+		// A real store failure is transient — 500 so a replay retries instead of
+		// dropping the rows as a permanent 422.
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 
 	dates := r.Form["q_date"]
 	gespanne := r.Form["q_gespann"]
 	hoursList := r.Form["q_hours"]
-	created := 0
+	// Offline replay (Ausbaukarte 100): the client sends one key PER ROW, since
+	// one submit becomes N bookings and a single key would let a replay create
+	// only the first of them. Absent for an online submit, which keeps the
+	// previous behavior exactly.
+	keys := r.Form["q_key"]
+	// A row may name a helper, exactly like the single booking form's person
+	// select: the row then books the machine AND that helper's Mannstunden as a
+	// linked companion, over the row's own hours. Empty when no helper is
+	// configured — the column is not rendered at all then.
+	personIDs := r.Form["q_person"]
+	created, paired, invalid := 0, 0, 0
+	var createErr error
+	// The same rig repeats across the rows of one submit — that is what quick
+	// entry is FOR — so each distinct Gespann is resolved once (5 queries) and
+	// reused, instead of 5 queries per row (a 100-row submit was ~500 SELECTs).
+	type resolvedRig struct {
+		entry      models.Entry
+		machineIDs []int64
+		ok         bool
+	}
+	rigs := map[int64]resolvedRig{}
+	// Helpers repeat across the rows of one submit for the same reason rigs do
+	// (one person, one afternoon, several fields), so each is resolved once —
+	// including the negative answer, which must not re-query per row either.
+	type resolvedPerson struct {
+		person models.Person
+		ok     bool
+	}
+	persons := map[int64]resolvedPerson{}
+rowLoop:
 	for i := range gespanne {
-		gid, _ := strconv.ParseInt(strings.TrimSpace(gespanne[i]), 10, 64)
-		hours := decimal.Zero
+		rawGespann := strings.TrimSpace(gespanne[i])
+		gid, _ := strconv.ParseInt(rawGespann, 10, 64)
+		rawHours := ""
 		if i < len(hoursList) {
-			hours = parseGermanDecimal(hoursList[i])
+			rawHours = strings.TrimSpace(hoursList[i])
 		}
+		if rawGespann == "" && rawHours == "" {
+			continue // an untouched blank row of the fixed table — not an error
+		}
+		hours := parseGermanDecimal(rawHours)
 		if gid == 0 || !hours.IsPositive() {
+			// The row WAS filled in but does not parse ("1.234,5", missing rig):
+			// silently dropping it reported "N Buchungen gespeichert" while a
+			// day of work vanished. Count it and say so.
+			invalid++
 			continue
 		}
 		dateStr := ""
 		if i < len(dates) {
 			dateStr = strings.TrimSpace(dates[i])
 		}
-		entry, machineIDs, ok := s.buildGespannEntry(r, gid, hours, dateStr)
-		if !ok {
+		rig, seen := rigs[gid]
+		if !seen {
+			e, mids, ok := s.buildGespannEntry(r, gid, decimal.NewFromInt(1), "")
+			rig = resolvedRig{machineIDs: mids, ok: ok}
+			if ok {
+				rig.entry = *e
+			}
+			rigs[gid] = rig
+		}
+		if !rig.ok {
+			invalid++
 			continue
 		}
+		entry := rig.entry // copy of the resolved template
+		entry.Hours = hours
+		entry.Cost = calc.Cost(hours, entry.HourlyRate)
+		entry.Quantity, entry.UnitPrice = decimal.Decimal{}, decimal.Decimal{}
+		if d, err := time.Parse("2006-01-02", dateStr); err == nil {
+			entry.Date = d
+		} else {
+			entry.Date = time.Now()
+		}
+		machineIDs := rig.machineIDs
 		entry.NeighborID = neighborID
 		entry.BillingYearID = year.ID
-		if _, err := s.store.CreateEntry(r.Context(), entry, machineIDs); err == nil {
+		if i < len(keys) {
+			key := strings.TrimSpace(keys[i])
+			if len(key) <= maxNameLen {
+				entry.IdempotencyKey = key
+			}
+		}
+		var companion *models.Entry
+		if i < len(personIDs) {
+			if pid, _ := strconv.ParseInt(strings.TrimSpace(personIDs[i]), 10, 64); pid != 0 {
+				p, seen := persons[pid]
+				if !seen {
+					person, perr := s.store.GetPerson(r.Context(), pid)
+					switch {
+					case perr == nil:
+						p = resolvedPerson{person: *person, ok: person.HourlyRate.IsPositive()}
+					case errors.Is(perr, store.ErrNotFound):
+						p = resolvedPerson{}
+					default:
+						// A store failure is transient, not a business rejection —
+						// and it must not skip the audit block below: rows already
+						// committed keep their § 132 trail regardless of where the
+						// batch stopped. Recorded like every other store failure,
+						// so the tail audits first and answers 500 afterwards.
+						createErr = errors.Join(createErr, perr)
+						break rowLoop
+					}
+					persons[pid] = p
+				}
+				if !p.ok {
+					// The row named a helper the master data cannot price (or no
+					// longer knows). Booking only the machine half would report
+					// success while filing the work as unmanned, so the row is
+					// skipped whole and counted like any other invalid row.
+					invalid++
+					continue
+				}
+				personID := p.person.ID
+				companion = &models.Entry{
+					NeighborID: neighborID, BillingYearID: year.ID,
+					Date: entry.Date, TaskLabel: "Mannstunden " + p.person.Name,
+					Unit: unitMannstunde, Quantity: hours, UnitPrice: p.person.HourlyRate,
+					Cost:     hours.Mul(p.person.HourlyRate).Round(2),
+					PersonID: &personID,
+					// Derived from the row's own key, so a replayed row no-ops on
+					// both halves (see models.CompanionKey).
+					IdempotencyKey: models.CompanionKey(entry.IdempotencyKey),
+				}
+			}
+		}
+		var (
+			id   int64
+			cerr error
+		)
+		if companion != nil {
+			var companionID int64
+			id, companionID, cerr = s.store.CreateEntryPair(r.Context(), &entry, machineIDs, companion)
+			if cerr == nil && companionID != 0 {
+				paired++
+			}
+		} else {
+			id, cerr = s.store.CreateEntry(r.Context(), &entry, machineIDs)
+		}
+		switch {
+		case cerr != nil:
+			// Joined, not last-wins: a partly failing batch should log every reason,
+			// not just the reason the final row failed.
+			createErr = errors.Join(createErr, cerr)
+		case id != 0:
 			created++
 		}
 	}
-	if created == 0 {
+	// Audit before answering, replay included: a replayed batch is a booking like
+	// any other, and its § 132 BAO trail must not depend on how it reached us.
+	if created > 0 || paired > 0 {
+		detail := fmt.Sprintf("%d Buchungen für %s", created, s.neighborName(r, neighborID))
+		if paired > 0 {
+			detail += fmt.Sprintf(" · %d Mannstunden (verknüpft)", paired)
+		}
+		s.audit(r, "quick_create", "entry", 0, detail)
+	}
+	// A store failure is transient, not a business rejection: answer 500 so a
+	// replay retries later. Rows that did save carry their idempotency key, so the
+	// retry adds only what is missing.
+	if createErr != nil {
+		s.serverError(w, "quick entries: create", createErr)
+		return
+	}
+	// An offline replay gets an explicit status, never a redirect (see above).
+	// 204 only for a fully-clean batch: invalid rows answer 422 with the honest
+	// count, so the client surfaces the message instead of silently dropping a
+	// day of captured work. The saved rows carry idempotency keys, so nothing
+	// duplicates if the operator retries the retained batch with its original keys.
+	if replay {
+		switch {
+		case created == 0 && paired == 0 && invalid == 0:
+			w.WriteHeader(http.StatusNoContent)
+		case invalid > 0:
+			http.Error(w, fmt.Sprintf("%d Buchung(en) + %d Mannstunden gespeichert, %d Zeile(n) ungültig (Gespann und Stunden erforderlich; eine gewählte Person braucht einen Stundensatz).", created, paired, invalid), http.StatusUnprocessableEntity)
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+		return
+	}
+	switch {
+	case created == 0 && paired == 0 && invalid == 0:
 		s.setFlash(w, r, "error", "Keine gültigen Zeilen (Gespann und Stunden erforderlich).")
-	} else {
-		s.audit(r, "quick_create", "entry", 0, fmt.Sprintf("%d Buchungen für %s", created, s.neighborName(r, neighborID)))
+	case invalid > 0:
+		s.setFlash(w, r, "error", fmt.Sprintf("%d Buchung(en) + %d Mannstunden gespeichert, %d Zeile(n) übersprungen — Gespann und gültige Stunden erforderlich; eine gewählte Person braucht einen Stundensatz.", created, paired, invalid))
+	case created == 0 && paired > 0:
+		// The machine halves were already recorded (a re-submit of a row that
+		// carries its key), and only the Mannstunden were new. Saying "keine
+		// gültigen Zeilen" here would deny a booking that just changed the
+		// neighbor's balance.
+		s.setFlash(w, r, "success", fmt.Sprintf("%d Mannstunden zu bereits erfassten Buchungen ergänzt.", paired))
+	case paired > 0:
+		s.setFlash(w, r, "success", fmt.Sprintf("%d Buchungen + %d Mannstunden gespeichert.", created, paired))
+	default:
 		s.setFlash(w, r, "success", fmt.Sprintf("%d Buchungen gespeichert.", created))
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
@@ -1240,9 +1653,9 @@ func (s *Server) buildGespannEntry(r *http.Request, gespannID int64, hours decim
 	if err != nil {
 		return nil, nil, false
 	}
-	// See buildEntryFromForm: a machines-only rig whose machines no longer resolve
-	// would book at a rate of zero.
-	if tractor == nil && len(machines) == 0 {
+	// See buildEntryFromForm: every stored machine id must resolve, or the row is
+	// priced without the missing machine's share and quietly underbills.
+	if len(machines) != len(g.MachineIDs) {
 		return nil, nil, false
 	}
 	entryDate, err := time.Parse("2006-01-02", dateStr)
@@ -1287,11 +1700,39 @@ func (s *Server) handleEntryDelete(w http.ResponseWriter, r *http.Request) {
 	if !s.entryYearOpen(w, r, entry, "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr gelöscht werden.") {
 		return
 	}
+	// Linked pair (person booked with the Gespann): the confirm dialog offered a
+	// "delete both" checkbox; cascade only on that explicit choice.
+	partnerID := int64(0)
+	if r.FormValue("cascade") == "1" {
+		if pid, err := s.store.LinkedPartnerID(r.Context(), id); err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		} else {
+			partnerID = pid
+		}
+	}
+	nb := s.neighborName(r, entry.NeighborID)
+	if partnerID != 0 {
+		partner, perr := s.store.GetEntry(r.Context(), partnerID)
+		if err := s.store.DeleteEntryPair(r.Context(), id, partnerID); err != nil {
+			s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
+		} else {
+			s.audit(r, "delete", "entry", id, fmt.Sprintf("%s · %s, %s h, %s € (verknüpftes Paar)",
+				nb, entry.TractorLabel, entry.Hours.StringFixed(2), entry.Cost.StringFixed(2)))
+			if perr == nil {
+				s.audit(r, "delete", "entry", partnerID, fmt.Sprintf("%s · %s, %s € (verknüpftes Paar)",
+					nb, partner.TaskLabel, partner.Cost.StringFixed(2)))
+			}
+			s.setFlash(w, r, "success", "Buchung und verknüpfte Buchung gelöscht.")
+		}
+		redirect(w, r, neighborURL(entry.NeighborID, entry.BillingYearID))
+		return
+	}
 	if err := s.store.DeleteEntry(r.Context(), id); err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
 		s.audit(r, "delete", "entry", id, fmt.Sprintf("%s · %s, %s h, %s €",
-			s.neighborName(r, entry.NeighborID), entry.TractorLabel,
+			nb, entry.TractorLabel,
 			entry.Hours.StringFixed(2), entry.Cost.StringFixed(2)))
 		s.setFlash(w, r, "success", "Buchung gelöscht.")
 	}

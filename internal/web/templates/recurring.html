@@ -19,9 +19,28 @@
 					<td>{{if .Active}}<span class="tag tag--paid">aktiv</span>{{else}}<span class="tag tag--open">pausiert</span>{{end}}</td>
 					<td>
 						<div class="recur__acts">
+							{{if .Active}}
+							<form method="post" action="/recurring/{{.ID}}/run-now"
+								data-confirm="Jetzt eine zusätzliche Buchung für heute erstellen? Der Rhythmus bleibt unverändert.">
+								<button class="btn btn--ghost btn--sm" type="submit">Jetzt ausführen</button></form>
+							{{end}}
 							<form method="post" action="/recurring/{{.ID}}/toggle"><button class="btn btn--ghost btn--sm" type="submit">{{if .Active}}Pausieren{{else}}Fortsetzen{{end}}</button></form>
 							<form method="post" action="/recurring/{{.ID}}/delete" data-confirm-danger data-confirm="Serie entfernen? Bereits erstellte Buchungen bleiben erhalten."><button class="btn btn--ghost btn--icon" type="submit" aria-label="Serie entfernen">{{template "ic-trash"}}</button></form>
 						</div>
+						<details class="disclosure disclosure--plain">
+							<summary>Rhythmus ändern</summary>
+							<form method="post" action="/recurring/{{.ID}}/update" class="form">
+								<label class="field"><span>Rhythmus</span>
+									<select class="select" name="interval_kind">
+										<option value="weekly" {{if eq .IntervalKind "weekly"}}selected{{end}}>wöchentlich</option>
+										<option value="monthly" {{if eq .IntervalKind "monthly"}}selected{{end}}>monatlich</option>
+									</select></label>
+								<label class="field"><span>Nächster Lauf</span>
+									<input class="input" type="date" name="next_run" value="{{dateInput .NextRun}}" required></label>
+								<button class="btn btn--primary btn--sm" type="submit">Speichern</button>
+							</form>
+							<p class="muted small">Die gebuchte Leistung selbst stammt aus der Ursprungsbuchung und bleibt unverändert — für einen anderen Inhalt die Serie entfernen und aus der korrigierten Buchung neu einrichten.</p>
+						</details>
 					</td>
 				</tr>
 				{{end}}
@@ -29,7 +48,11 @@
 		</table>
 	</div>
 	{{else}}
-	<p class="muted">Noch keine Serie eingerichtet.</p>
+	<div class="empty">
+		<span class="empty__title">Noch keine Serie eingerichtet</span>
+		<span class="muted small">Serien entstehen aus einer bestehenden Buchung: Nachbar öffnen, bei der Buchung auf „Bearbeiten“ und dort „Als Serie wiederholen“.</span>
+		<a class="btn btn--ghost btn--sm" href="/buchungen">Zu den Buchungen</a>
+	</div>
 	{{end}}
 </section>
 {{end}}

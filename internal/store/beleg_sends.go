@@ -56,3 +56,26 @@ func (s *Store) LastBelegSend(ctx context.Context, yearID, neighborID int64) (*m
 	}
 	return &b, nil
 }
+
+// ListBelegSends returns the full send history for a neighbor's year, oldest
+// first — part of the DSGVO Art. 15 export (Ausbaukarte 86), where "when was
+// this person's document handed over, and how" is exactly the kind of
+// processing record a data subject may ask about.
+func (s *Store) ListBelegSends(ctx context.Context, yearID, neighborID int64) ([]models.BelegSend, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, billing_year_id, neighbor_id, sent_at, channel FROM beleg_sends
+		  WHERE billing_year_id=$1 AND neighbor_id=$2 ORDER BY sent_at`, yearID, neighborID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.BelegSend
+	for rows.Next() {
+		var b models.BelegSend
+		if err := rows.Scan(&b.ID, &b.BillingYearID, &b.NeighborID, &b.SentAt, &b.Channel); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}

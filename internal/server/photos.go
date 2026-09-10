@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"image"
 	"image/jpeg"
 	"io"
@@ -131,37 +132,76 @@ func (s *Server) handleEntryPhotoUpload(w http.ResponseWriter, r *http.Request) 
 		redirect(w, r, "/entries/"+itoa64(entryID)+"/edit")
 		return
 	}
-	file, _, err := r.FormFile("photo")
-	if err != nil {
+	back := "/entries/" + itoa64(entryID) + "/edit"
+	// Several files per round-trip (Ausbaukarte 75): a Wiegeschein is rarely a
+	// single page. Each is decoded and stored on its own, so one unreadable
+	// image does not discard the ones that were fine — it is reported instead.
+	files := r.MultipartForm.File["photo"]
+	if len(files) == 0 {
 		s.setFlash(w, r, "error", "Bitte ein Bild wählen.")
-		redirect(w, r, "/entries/"+itoa64(entryID)+"/edit")
+		redirect(w, r, back)
 		return
 	}
-	defer file.Close()
-	raw, err := io.ReadAll(io.LimitReader(file, maxPhotoUpload))
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
+	// Anything over the cap is reported, never silently dropped: the operator
+	// picked those files and would otherwise read "10 Foto(s) angehängt" and
+	// believe the Wiegeschein was complete.
+	dropped := 0
+	if len(files) > maxPhotosPerUpload {
+		dropped = len(files) - maxPhotosPerUpload
+		files = files[:maxPhotosPerUpload]
 	}
-	// Bound concurrent decodes: this is the one request path that can allocate
-	// hundreds of MB, and nothing else caps how many run at once.
-	img, perr := s.decodePhoto(r.Context(), raw)
-	if perr != nil {
-		msg := "Kein gültiges Bild."
-		if pe, ok := perr.(*photoError); ok {
-			msg = pe.msg
+	added, failed := 0, 0
+	lastMsg := ""
+	for _, fh := range files {
+		file, err := fh.Open()
+		if err != nil {
+			failed++
+			continue
 		}
-		s.setFlash(w, r, "error", msg)
-		redirect(w, r, "/entries/"+itoa64(entryID)+"/edit")
-		return
+		raw, err := io.ReadAll(io.LimitReader(file, maxPhotoUpload))
+		_ = file.Close()
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+		// Bound concurrent decodes: this is the one request path that can allocate
+		// hundreds of MB, and nothing else caps how many run at once.
+		img, perr := s.decodePhoto(r.Context(), raw)
+		if perr != nil {
+			failed++
+			lastMsg = "Kein gültiges Bild."
+			if pe, ok := perr.(*photoError); ok {
+				lastMsg = pe.msg
+			}
+			continue
+		}
+		if _, err := s.store.AddEntryPhoto(r.Context(), entryID, img, "image/jpeg"); err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+		added++
 	}
-	if _, err := s.store.AddEntryPhoto(r.Context(), entryID, img, "image/jpeg"); err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
+	if added > 0 {
+		s.audit(r, "photo_add", "entry", entryID, fmt.Sprintf("%s · %d Foto(s)", s.neighborName(r, entry.NeighborID), added))
 	}
-	s.audit(r, "photo_add", "entry", entryID, s.neighborName(r, entry.NeighborID))
-	s.setFlash(w, r, "success", "Foto angehängt.")
-	redirect(w, r, "/entries/"+itoa64(entryID)+"/edit")
+	over := ""
+	if dropped > 0 {
+		over = fmt.Sprintf(" %d weitere(s) Bild(er) über dem Limit von %d wurden nicht übernommen — bitte einzeln nachreichen.",
+			dropped, maxPhotosPerUpload)
+	}
+	switch {
+	case added == 0:
+		s.setFlash(w, r, "error", orDefault(lastMsg, "Kein gültiges Bild.")+over)
+	case failed > 0 || dropped > 0:
+		msg := fmt.Sprintf("%d Foto(s) angehängt.", added)
+		if failed > 0 {
+			msg = fmt.Sprintf("%d Foto(s) angehängt, %d abgelehnt: %s", added, failed, lastMsg)
+		}
+		s.setFlash(w, r, "info", msg+over)
+	default:
+		s.setFlash(w, r, "success", fmt.Sprintf("%d Foto(s) angehängt.", added))
+	}
+	redirect(w, r, back)
 }
 
 // handleEntryPhotoServe streams a stored photo (scoped to its booking).
@@ -216,4 +256,16 @@ func (s *Server) handleEntryPhotoDelete(w http.ResponseWriter, r *http.Request) 
 		s.setFlash(w, r, "success", "Foto entfernt.")
 	}
 	redirect(w, r, "/entries/"+itoa64(entryID)+"/edit")
+}
+
+// maxPhotosPerUpload bounds one multi-file upload. Each photo is decoded and
+// re-encoded, so an unbounded set is an easy way to tie up the decode budget.
+const maxPhotosPerUpload = 10
+
+// orDefault returns s, or fallback when s is empty.
+func orDefault(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }

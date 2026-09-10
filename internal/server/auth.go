@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/d0linger/treckrr/internal/auth"
+	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
 	"github.com/d0linger/treckrr/internal/totp"
@@ -86,6 +87,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// deliberate trade-off; it is time-bounded and self-healing, and passkey
 	// login (a separate route) is unaffected, so it is not an unrecoverable lockout.
 	if s.logins.blocked(r.Context(), rlKey) || (accountLimited && s.logins.accountBlocked(r.Context(), username)) {
+		metrics.Inc(metrics.LoginBlocked)
 		s.auditLogin(r, username, "login_blocked", "zu viele Fehlversuche")
 		s.setFlash(w, r, "error", "Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen.")
 		redirect(w, r, "/login")
@@ -98,6 +100,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if accountLimited {
 			s.logins.accountFail(r.Context(), username)
 		}
+		metrics.Inc(metrics.LoginFailed)
 		s.auditLogin(r, username, "login_failed", "falsche Zugangsdaten")
 		s.setFlash(w, r, "error", "Benutzername oder Passwort falsch.")
 		redirect(w, r, "/login")
@@ -235,7 +238,11 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 		Value:  token,
 		MaxAge: int(sessionTTL.Seconds()),
 	})
-	_ = s.store.AddAudit(r.Context(), &user.ID, user.Username, "login", "auth", "", "", s.clientIP(r)) // best-effort audit line
+	if err := s.store.AddAudit(r.Context(), &user.ID, user.Username, "login", "auth", "", "", s.clientIP(r)); err != nil {
+		// The login itself must not fail on this, but a dropped auth event is
+		// exactly what an incident review needs — leave a trace.
+		slog.Warn("audit write failed", "action", "login", "err", sanitizeLog(err.Error()))
+	}
 	return true
 }
 
@@ -288,7 +295,9 @@ func (s *Server) clearPending2FA(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if u := s.currentUser(r); u != nil {
-		_ = s.store.AddAudit(r.Context(), &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r)) // best-effort audit line
+		if err := s.store.AddAudit(r.Context(), &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r)); err != nil {
+			slog.Warn("audit write failed", "action", "logout", "err", sanitizeLog(err.Error()))
+		}
 	}
 	if c, err := s.cookie(r, sessionCookie); err == nil && c.Value != "" {
 		// Invalidate the server-side session, not just the cookie: if this fails the

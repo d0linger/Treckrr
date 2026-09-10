@@ -59,7 +59,11 @@ jobs:
       - name: Verify modules
         run: go mod verify
       - name: Vet
-        run: go vet ./...
+        run: go vet -tags=integration ./...
+      - name: Install matching PostgreSQL client
+        env:
+          PG_MAJOR: "16"
+        run: bash .github/scripts/setup-postgres-client.sh
       # The same guard ci.yml carries, and it matters more here: this job decides
       # whether an image is published. Without it, a Postgres service that failed
       # to start would let every DB-backed test skip, the job would report green,
@@ -72,8 +76,10 @@ jobs:
             sleep 1
           done
           pg_isready -h localhost -p 5432 -U treckrr
-      - name: Test
-        run: go test -race ./...
+      # Match CI: include tagged regressions and serialize packages sharing
+      # the service database before allowing an image to be published.
+      - name: Test (unit + integration)
+        run: go test -race -tags=integration -p 1 ./...
       - name: Build
         run: go build ./...
 
@@ -129,6 +135,9 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
+            # Immutable per-build tag, so TRECKRR_TAG can pin the EXACT image a
+            # deploy was verified with — without waiting for a v* release tag.
+            type=sha,format=short,enable={{is_default_branch}}
 
       - name: Build and push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7

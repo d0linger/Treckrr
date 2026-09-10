@@ -159,7 +159,7 @@
 			<div class="beleg__payinfo">
 				<div class="beleg__payinfo-txt">
 					<span class="beleg__payinfo-k">Zahlung</span>
-					<span class="beleg__payinfo-v">Bitte {{money .InvRest}} unter Angabe der Referenz <strong>{{with .Invoice.PaymentReference}}{{.}}{{else}}{{$.Invoice.Number}}{{end}}</strong> überweisen.{{with .InvIBAN}} IBAN <strong>{{.}}</strong>.{{end}}</span>
+					<span class="beleg__payinfo-v">Bitte {{money .InvRest}} unter Angabe der Referenz <strong>{{with .Invoice.PaymentReference}}{{.}}{{else}}{{$.Invoice.Number}}{{end}}</strong> überweisen.{{with .InvIBAN}} IBAN <strong>{{.}}</strong>.{{end}}{{if .SkontoUntil}} Bei Zahlung bis <strong>{{date .SkontoUntil}}</strong>: <strong>{{num .SkontoPct}} % Skonto</strong>.{{end}}</span>
 				</div>
 				{{if .HasEpcQR}}
 				<img class="beleg__epcqr" src="/neighbors/{{.Neighbor.ID}}/invoice/epc-qr.png?year={{.Year.ID}}" width="118" height="118" alt="EPC-QR-Code zum Bezahlen (GiroCode)" loading="lazy">
@@ -171,9 +171,36 @@
 		<div class="beleg__foot">Stand {{.Today}} · Treckrr</div>
 	</div>
 
-	{{/* Werkblatt F1: print/export/share are equal-rank secondary plates — the ONE
-	     signal action of the page stays the business action (ausstellen/Gutschrift). */}}
+	{{/* Werkblatt F1: print/export/share stay equal-rank secondary plates — the
+	     ONE signal action of the page remains the business action
+	     (ausstellen/Gutschrift). What changed for Ausbaukarte 80 is grouping,
+	     not weight: eleven buttons in one row gave no clue which of them alters
+	     the view and which sends the document out of the house. */}}
 	<div class="beleg__actions no-print">
+		{{if or .CanBundle .HasGrund .HasInvoice}}
+		<div class="beleg__actgroup">
+			<span class="beleg__actlabel">Ansicht</span>
+			<div class="beleg__actrow">
+				{{if .CanBundle}}
+				<button type="button" class="btn btn--ghost" data-beleg-bundle aria-controls="beleg-items beleg-bundle" aria-pressed="{{if .Bundle}}true{{else}}false{{end}}">
+					<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 4.5-9 4.5-9-4.5 9-4.5Z"/><path d="m3 16.5 9 4.5 9-4.5"/><path d="m3 12 9 4.5 9-4.5"/></svg>Bündeln
+				</button>
+				{{end}}
+				{{if .HasGrund}}
+				<button type="button" class="btn btn--ghost" data-beleg-grund aria-controls="beleg-grund" aria-pressed="{{if .ShowGrund}}true{{else}}false{{end}}">
+					<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Grundlage
+				</button>
+				{{end}}
+				{{if .HasInvoice}}
+				<button type="button" class="btn btn--ghost" data-beleg-rechnung aria-pressed="{{if .Rechnung}}true{{else}}false{{end}}">
+					<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Rechnung
+				</button>
+				{{end}}
+			</div>
+		</div>
+		{{end}}
+		<div class="beleg__actgroup">
+			<span class="beleg__actlabel">Ausgeben &amp; weitergeben</span>
 		<div class="beleg__actrow">
 			<button type="button" class="btn btn--ghost" data-beleg-print>
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.6"/><path d="M7 17h10v4H7z"/></svg>
@@ -206,21 +233,6 @@
 				<button type="submit" class="btn btn--ghost">{{template "ic-check"}} Versendet</button>
 				{{end}}
 			</form>
-			{{end}}
-			{{if .CanBundle}}
-			<button type="button" class="btn btn--ghost" data-beleg-bundle aria-controls="beleg-items beleg-bundle" aria-pressed="{{if .Bundle}}true{{else}}false{{end}}">
-				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 4.5-9 4.5-9-4.5 9-4.5Z"/><path d="m3 16.5 9 4.5 9-4.5"/><path d="m3 12 9 4.5 9-4.5"/></svg>Bündeln
-			</button>
-			{{end}}
-			{{if .HasGrund}}
-			<button type="button" class="btn btn--ghost" data-beleg-grund aria-controls="beleg-grund" aria-pressed="{{if .ShowGrund}}true{{else}}false{{end}}">
-				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Grundlage
-			</button>
-			{{end}}
-			{{if .HasInvoice}}
-			<button type="button" class="btn btn--ghost" data-beleg-rechnung aria-pressed="{{if .Rechnung}}true{{else}}false{{end}}">
-				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Rechnung
-			</button>
 			{{end}}
 			{{/* Self-service public links (Parkrr portal-link pattern) live in a
 			     popup behind ONE compact button, so the page stays lean. Opens
@@ -263,11 +275,35 @@
 			</details>
 			{{end}}
 		</div>
+		</div>
 		{{with .LastSend}}
 		<p class="beleg__sent muted small">{{template "ic-check"}} Zuletzt versendet am {{.SentAt.Format "02.01.2006, 15:04"}} Uhr ({{.Channel}})</p>
 		{{end}}
-		{{if and (not .HasInvoice) (not .Shared)}}
+		{{if and (not .HasInvoice) (not .Shared) (not .Completed)}}
 		<a class="btn btn--primary btn--block" href="/neighbors/{{.Neighbor.ID}}/invoice/confirm?year={{.Year.ID}}">Rechnung ausstellen &amp; festschreiben</a>
+		{{end}}
+		{{if and .Completed (not .Shared)}}
+		<p class="muted small">Das Abrechnungsjahr ist abgeschlossen — Belege sind gesperrt. Für eine Korrektur das Jahr unter „Jahre“ mit Begründung wieder öffnen.</p>
+		{{end}}
+		{{if and .Anzahlungen (not .Shared)}}
+		<div class="beleg__doclist">
+			<div class="beleg__doclist-h">Abschläge · offen {{money .AnzahlungSum}}</div>
+			{{range .Anzahlungen}}
+			<div class="beleg__docrow">
+				<span class="beleg__docno">{{.Number}}</span>
+				<span class="beleg__dockind">{{if eq .Status "canceled"}}storniert{{else}}angefordert{{end}}</span>
+				{{if .Content}}<span class="beleg__r">{{money .Content.Gross}}</span>{{end}}
+				{{if and (eq .Status "issued") (not $.Completed)}}
+				<form method="post" action="/documents/{{.ID}}/storno"
+					data-confirm-danger data-confirm="Abschlag {{.Number}} stornieren? Es wird ein Storno-Beleg erstellt."
+					data-confirm-reason="Storno-Grund (optional, protokolliert)">
+					<input type="hidden" name="reason" value="">
+					<button class="iconact iconact--danger" type="submit" title="Stornieren" aria-label="Stornieren">{{template "ic-trash"}}</button>
+				</form>
+				{{end}}
+			</div>
+			{{end}}
+		</div>
 		{{end}}
 		{{if .HasDocuments}}
 		<div class="beleg__doclist">
@@ -275,7 +311,7 @@
 			{{range .Documents}}
 			<div class="beleg__docrow">
 				<span class="beleg__docno">{{.Number}}</span>
-				<span class="beleg__dockind">{{if eq .Kind "invoice"}}Rechnung{{if eq .Status "canceled"}} · storniert{{end}}{{else if eq .Kind "storno"}}Storno{{else}}Gutschrift{{if eq .Status "canceled"}} · storniert{{end}}{{end}}</span>
+				<span class="beleg__dockind">{{if eq .Kind "invoice"}}Rechnung{{if eq .Status "canceled"}} · storniert{{end}}{{else if eq .Kind "storno"}}Storno{{else if eq .Kind "anzahlung"}}Abschlag{{if eq .Status "canceled"}} · storniert{{end}}{{else}}Gutschrift{{if eq .Status "canceled"}} · storniert{{end}}{{end}}</span>
 				{{if .Content}}<span class="beleg__r">{{money .Content.Gross}}</span>{{end}}
 			</div>
 			{{end}}
@@ -283,14 +319,35 @@
 		{{end}}
 		{{/* Corrections are OWNER actions — never rendered on the public (Shared)
 		     read-only view, which must stay a pure document. */}}
-		{{if and .HasInvoice (not .Shared)}}
+		{{if and (not .HasInvoice) (not .Shared) (not .Completed)}}
+		<div class="beleg__invacts stack">
+			<form method="post" action="/neighbors/{{.Neighbor.ID}}/anzahlung" class="beleg__gform">
+				<input type="hidden" name="year_id" value="{{.Year.ID}}">
+				<div class="beleg__gform-h">Abschlag anfordern <span>· vor der Schlussrechnung</span></div>
+				<input class="input" type="text" inputmode="decimal" name="amount" placeholder="Betrag (€)" aria-label="Abschlagsbetrag" required>
+				<input class="input" type="text" name="label" maxlength="100" placeholder="Bezeichnung (z. B. 1. Abschlag)" aria-label="Bezeichnung">
+				<input class="input" type="date" name="due_on" value="{{.TodayISO}}" aria-label="Datum">
+				<button type="submit" class="btn btn--ghost">Abschlag erstellen</button>
+				<p class="muted small">Zahlungsaufforderung ohne USt-Ausweis — keine Rechnung nach § 11 UStG. Die Schlussrechnung bleibt der Steuerbeleg; eingegangene Zahlungen werden dort verrechnet.</p>
+			</form>
+			<form method="post" action="/neighbors/{{.Neighbor.ID}}/gutschrift" class="beleg__gform">
+				<input type="hidden" name="year_id" value="{{.Year.ID}}">
+				<div class="beleg__gform-h">Freie Gutschrift <span>· ohne Rechnungsbezug</span></div>
+				<input class="input" type="text" inputmode="decimal" name="amount" placeholder="Betrag brutto (€)" aria-label="Gutschrift-Betrag brutto" required>
+				<input class="input" type="text" name="note" maxlength="200" placeholder="Grund" aria-label="Grund der Gutschrift">
+				<button type="submit" class="btn btn--ghost">Gutschrift erstellen</button>
+			</form>
+		</div>
+		{{end}}
+		{{if and .HasInvoice (not .Shared) (not .Completed)}}
 		<div class="beleg__invacts stack">
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/gutschrift" class="beleg__gform">
 				<input type="hidden" name="year_id" value="{{.Year.ID}}">
-				<div class="beleg__gform-h">Gutschrift <span>· § 16 UStG</span></div>
+				<div class="beleg__gform-h">Gutschrift / Teilstorno <span>· § 16 UStG</span></div>
 				<input class="input" type="text" inputmode="decimal" name="amount" placeholder="Betrag brutto (€)" aria-label="Gutschrift-Betrag brutto" required>
 				<input class="input" type="text" name="note" maxlength="200" placeholder="Grund (z. B. Nachlass)" aria-label="Grund der Gutschrift">
 				<button type="submit" class="btn btn--primary">Gutschrift erstellen</button>
+				<p class="muted small">Ein Teilbetrag mindert das Entgelt anteilig — die Rechnung bleibt gültig. Nur der volle Widerruf braucht ein Storno.</p>
 			</form>
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/storno"
 				data-confirm-danger data-confirm="Rechnung {{.Invoice.Number}} stornieren? Es wird ein Storno-Beleg erstellt und die Buchungen werden wieder freigegeben."

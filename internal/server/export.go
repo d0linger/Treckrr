@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/csv"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"unicode"
@@ -59,7 +60,7 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filename := fmt.Sprintf("treckrr_%d.csv", year.Year)
-	s.writeCSV(w, filename, entries, names)
+	s.writeCSV(w, r, filename, entries, names)
 }
 
 // handleExportNeighbor exports one neighbor's entries within a billing year.
@@ -85,7 +86,7 @@ func (s *Server) handleExportNeighbor(w http.ResponseWriter, r *http.Request) {
 	}
 	names := map[int64]string{neighbor.ID: neighbor.Name}
 	filename := fmt.Sprintf("treckrr_%s_%d.csv", sanitizeFilename(neighbor.Name), year.Year)
-	s.writeCSV(w, filename, entries, names)
+	s.writeCSV(w, r, filename, entries, names)
 }
 
 func (s *Server) neighborNames(r *http.Request) (map[int64]string, error) {
@@ -101,17 +102,30 @@ func (s *Server) neighborNames(r *http.Request) (map[int64]string, error) {
 }
 
 // writeCSV renders entries as a German-locale, semicolon-separated CSV that
-// opens cleanly in Excel/LibreOffice.
-func (s *Server) writeCSV(w http.ResponseWriter, filename string, entries []models.Entry, names map[int64]string) {
+// csvDownload is the one CSV response preamble: content type, attachment
+// name, UTF-8 BOM (Excel needs it for umlauts), semicolon delimiter — a wire
+// contract with Excel/LibreOffice that had drifted across six hand-written
+// copies (one was not even deferred, so an early return skipped the flush).
+// Defer the returned finish; it flushes and logs a truncated download, since
+// the HTTP status is long gone by then.
+func csvDownload(w http.ResponseWriter, r *http.Request, filename string) (*csv.Writer, func()) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
-
-	// UTF-8 BOM so Excel detects the encoding and shows umlauts correctly.
 	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF})
-
 	cw := csv.NewWriter(w)
 	cw.Comma = ';'
-	defer cw.Flush()
+	return cw, func() {
+		cw.Flush()
+		if err := cw.Error(); err != nil {
+			slog.Warn("csv export incomplete", "path", sanitizeLog(r.URL.Path), "err", sanitizeLog(err.Error()))
+		}
+	}
+}
+
+// opens cleanly in Excel/LibreOffice.
+func (s *Server) writeCSV(w http.ResponseWriter, r *http.Request, filename string, entries []models.Entry, names map[int64]string) {
+	cw, finish := csvDownload(w, r, filename)
+	defer finish()
 
 	_ = cw.Write([]string{
 		"Nachbar", "Datum", "Tätigkeit", "Traktor", "Belastung",

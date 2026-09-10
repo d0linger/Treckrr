@@ -2,6 +2,8 @@
 package models
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"time"
 
@@ -54,6 +56,50 @@ type Session struct {
 	Current   bool // set at render time for the requesting session
 }
 
+// UnitMannstunde is the unit of a helper's hours. It lives here because both
+// the handlers and the store create such bookings — the recurring runner books
+// the companion of a series without a request in sight.
+const UnitMannstunde = "Mannstunde"
+
+// maxIdempotencyKeyLen mirrors the handlers' length validation for a submitted
+// idempotency key, so a derived key can never exceed what the same validation
+// would have accepted.
+const maxIdempotencyKeyLen = 100
+
+// CompanionKey derives the companion booking's idempotency key from the machine
+// booking's key ("" stays "" — online submits carry no key). Deterministic, so a
+// replayed pair resolves to the same two keys.
+//
+// A base that would not fit the column with the suffix is HASHED rather than
+// truncated: truncation is not injective, and the pair it collapses is exactly
+// the dangerous one — CompanionKey(x) == CompanionKey(x+"-p") at the limit, so
+// the companion's insert would conflict with the machine row inserted moments
+// earlier in the same transaction and the row would commit half-booked. Keys
+// the client actually sends are 36-character UUIDs, so the suffix path (and
+// with it every key already sitting in an offline queue) is unchanged.
+func CompanionKey(base string) string {
+	if base == "" {
+		return ""
+	}
+	if len(base) > maxIdempotencyKeyLen-2 {
+		sum := sha256.Sum256([]byte(base))
+		return "p:" + hex.EncodeToString(sum[:])
+	}
+	return base + "-p"
+}
+
+// RecurCompanion is the helper carried by a series alongside its machine
+// booking — the frozen counterpart of the person picked on the booking form.
+// The rate is frozen like every other rate in the template (a series repeats
+// the booking it was made from, not today's master data); the person id is
+// re-checked at run time, since a helper record can be removed once the
+// booking that referenced it is gone.
+type RecurCompanion struct {
+	PersonID int64           `json:"person_id"`
+	Name     string          `json:"name"`
+	Rate     decimal.Decimal `json:"rate"`
+}
+
 // RecurTemplate is the booking blueprint a recurring rule stores (JSON). It mirrors
 // the fields CreateEntry needs; Cost is stored for display and recomputed on create.
 type RecurTemplate struct {
@@ -72,6 +118,13 @@ type RecurTemplate struct {
 	MachineLabels string          `json:"machine_labels"`
 	TaskLabel     string          `json:"task_label"`
 	Note          string          `json:"note"`
+	// PersonID attributes the booking ITSELF to a helper — set when the series
+	// was made from a Mannstunden booking. Dropped before this existed, so every
+	// occurrence of such a series lost the attribution the source booking had.
+	PersonID *int64 `json:"person_id,omitempty"`
+	// Companion is the helper booked ALONGSIDE this (machine) booking, mirroring
+	// the person selected on the booking form. nil for a series without one.
+	Companion *RecurCompanion `json:"companion,omitempty"`
 }
 
 // Summary renders a one-line human description of the recurring booking.
@@ -86,7 +139,11 @@ func (t RecurTemplate) Summary() string {
 	if t.Unit != "" && t.Unit != "h" {
 		return label + " · " + t.Quantity.String() + " " + t.Unit
 	}
-	return label + " · " + t.Hours.String() + " h"
+	out := label + " · " + t.Hours.String() + " h"
+	if t.Companion != nil {
+		out += " · mit " + t.Companion.Name
+	}
+	return out
 }
 
 // RecurringEntry is a stored recurring-booking rule.
@@ -196,6 +253,10 @@ type Machine struct {
 	Active       bool
 	Category     string
 	SortOrder    int
+	// SelfCostPerH is what running this machine COSTS per hour (Ausbaukarte 83).
+	// The rate above is what it earns; without this there is only turnover and
+	// no Deckungsbeitrag. 0 = not configured, and the margin stays hidden.
+	SelfCostPerH decimal.Decimal
 }
 
 // HourlyRate returns the machine's contribution to a Gespann's hourly rate.
@@ -214,12 +275,18 @@ type Gespann struct {
 
 // Neighbor (Nachbar) is billed for booked work per year.
 type Neighbor struct {
-	ID       int64
-	Name     string
-	Note     string
-	Address  string // optional, for the invoice recipient block
-	TaxID    string // optional recipient UID/tax number (§ 11 on invoices > 10k)
-	Email    string // optional, for sending the Beleg/Rechnung by e-mail
+	ID      int64
+	Name    string
+	Note    string
+	Address string // optional, for the invoice recipient block
+	TaxID   string // optional recipient UID/tax number (§ 11 on invoices > 10k)
+	Email   string // optional, for sending the Beleg/Rechnung by e-mail
+	// PaymentTermDays overrides the company payment term for this neighbor
+	// (nil = company default) — individual terms between neighbors are common.
+	PaymentTermDays *int
+	// IBAN is the neighbor's account, used by the bank-import matcher as the
+	// second key after the invoice reference. Optional.
+	IBAN     string
 	Archived bool
 	// Anonymized marks a neighbor whose live personal data was erased (DSGVO
 	// Art. 17) while retained invoice snapshots stay intact. Such rows are also
@@ -257,6 +324,14 @@ type Entry struct {
 	// IdempotencyKey is set only for offline-captured bookings replayed from the
 	// client queue; a unique index makes a duplicate replay a no-op.
 	IdempotencyKey string
+	// PersonID attributes a Mannstunden booking to a helper (nil for machine
+	// bookings and everything booked before the Personenstamm existed).
+	PersonID *int64
+	// LinkedEntryID connects a companion booking to the machine booking it was
+	// created with (person booked alongside the Gespann): the Mannstunden entry
+	// points at the machine entry. Nil for everything else. The link is
+	// informational — storno/delete of one side never cascades to the other.
+	LinkedEntryID *int64
 }
 
 // WebauthnCredential is a registered passkey (public key only).
@@ -303,6 +378,25 @@ type Payment struct {
 	Amount        decimal.Decimal
 	PaidOn        time.Time
 	Note          string
+	// Method is how the money arrived (Überweisung, bar, Verrechnung, "").
+	Method string
+	// InvoiceID links the payment to the frozen invoice it settles (nil for
+	// payments recorded before an invoice existed, or from before 0044).
+	InvoiceID     *int64
+	InvoiceNumber string // joined for display; empty when unlinked
+	Created       time.Time
+}
+
+// PaymentPlan is one agreed installment (Ratenplan). Planned rows only — actual
+// money flows through payments; the UI derives the state per installment by
+// comparing the paid sum against the cumulative plan.
+type PaymentPlan struct {
+	ID            int64
+	BillingYearID int64
+	NeighborID    int64
+	DueOn         time.Time
+	Amount        decimal.Decimal
+	Note          string
 	Created       time.Time
 }
 
@@ -328,7 +422,52 @@ type Company struct {
 	IBAN    string // optional issuer bank account for a payable invoice
 	// PaymentTermDays is the Zahlungsziel: an invoice is due this many days after
 	// its issue date. Used only to flag overdue invoices in the dunning list.
+	// A neighbor's own payment_term_days overrides it.
 	PaymentTermDays int
+	// DunningFee1/2 are the Mahnspesen for the 1st and 2nd Mahnung. Default 0 =
+	// no fee line on the letter. Verzugszinsen are deliberately not modeled —
+	// the statutory rate is a moving legal target and belongs to the operator.
+	DunningFee1 decimal.Decimal
+	DunningFee2 decimal.Decimal
+	// DunningGraceDays is the Nachfrist printed on a Mahnung ("zahlbar bis").
+	DunningGraceDays int
+	// See EffectiveTermDays for the payment-term fallback rule.
+	// SkontoPct/SkontoDays are the Skonto OFFER printed on the invoice ("2 % bei
+	// Zahlung binnen 14 Tagen"). Both 0 = no clause. The § 16 credit that applies
+	// a taken Skonto at payment time exists independently of this.
+	SkontoPct  decimal.Decimal
+	SkontoDays int
+	// InvoicePrefix/InvoiceStart configure the Nummernkreis: number =
+	// prefix + JAHR-NNN, sequence starting at InvoiceStart (continuing an
+	// external sequence). Defaults ''/1 keep the historical format.
+	InvoicePrefix string
+	InvoiceStart  int
+	// SmallBusinessLimit is the Kleinunternehmer revenue ceiling to warn
+	// against (0 = monitoring off).
+	SmallBusinessLimit decimal.Decimal
+	// TravelFlat/TravelPerKm are the Anfahrt surcharges (Ausbaukarte 58) kept
+	// as master data instead of a retyped amount. Both 0 = the surcharge form
+	// stays hidden.
+	TravelFlat  decimal.Decimal
+	TravelPerKm decimal.Decimal
+	// MailSignature replaces the built-in closing under outgoing mails; empty
+	// keeps "Mit freundlichen Grüßen / <Betriebsname>". MailCC receives a copy
+	// of every Beleg and Mahnung (Steuerberater, second person on the farm);
+	// empty = no copy (Ausbaukarte 99).
+	MailSignature string
+	MailCC        string
+}
+
+// Person is a helper with an own hourly rate (Ausbaukarte 57). The ÖKL
+// Richtwerte state the Fahrerlohn separately from the machine rate, so
+// Mannstunden are billed from this master data instead of a hand-typed price.
+type Person struct {
+	ID         int64
+	Name       string
+	HourlyRate decimal.Decimal
+	Note       string
+	Archived   bool
+	Created    time.Time
 }
 
 // InvoiceParty is a frozen issuer/recipient block on an invoice snapshot.
@@ -366,12 +505,46 @@ type InvoiceContent struct {
 	Issuer      InvoiceParty    `json:"issuer"`
 	Recipient   InvoiceParty    `json:"recipient"`
 	Lines       []InvoiceLine   `json:"lines"`
+	// Skonto terms FROZEN at issuance (zero = no clause): the discount is part of
+	// the invoice's payment terms, so it must appear identically on the Beleg,
+	// the PDF and the share link, and must never change after Festschreibung.
+	// Rendering it live from the company row did neither — the PDF omitted it
+	// and the on-screen clause vanished once time.Now() passed the deadline.
+	// Snapshots from before this field simply carry no clause.
+	SkontoPct   decimal.Decimal `json:"skonto_pct,omitempty"`
+	SkontoUntil time.Time       `json:"skonto_until,omitempty"`
 	Hash        string          `json:"-"` // sha256 over the canonical content
 }
 
 // invoiceUIDThreshold is the gross amount (§ 11 Abs. 1 Z 6 UStG) above which the
 // recipient's UID is a mandatory invoice field.
 var invoiceUIDThreshold = decimal.NewFromInt(10000)
+
+// EffectiveTermDays is the payment term to apply: a negative value means
+// "unset" and falls back to the 14-day default, while a CONFIGURED 0 (due
+// immediately) is valid and must not be overridden. This rule was open-coded
+// at six call sites — with two of them treating 0 as unset — before it lived
+// here.
+func (c Company) EffectiveTermDays() int {
+	if c.PaymentTermDays < 0 {
+		return 14
+	}
+	return c.PaymentTermDays
+}
+
+// DunningStageTitle is the German document heading for a dunning stage — the
+// single source for the letter, the PDF, the audit lines and the history list
+// (the template func stageName), so a renamed stage cannot drift apart.
+func DunningStageTitle(stage int) string {
+	switch stage {
+	case 1:
+		return "1. Mahnung"
+	case 2:
+		return "2. Mahnung"
+	default:
+		return "Zahlungserinnerung"
+	}
+}
 
 // MandatoryCheck is one § 11 UStG line item for the pre-issuance checklist.
 type MandatoryCheck struct {

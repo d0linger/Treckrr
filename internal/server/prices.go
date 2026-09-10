@@ -262,13 +262,21 @@ func (s *Server) handleMachineSave(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, pricesURL(baseID))
 		return
 	}
+	// Selbstkosten je Einsatzstunde (Ausbaukarte 83): optional, never negative,
+	// 0 = not configured — the Deckungsbeitrag is then simply not shown.
+	selfCost := formDecimal(r, "self_cost_per_h")
+	if selfCost.IsNegative() {
+		s.setFlash(w, r, "error", "Die Selbstkosten dürfen nicht negativ sein.")
+		redirect(w, r, pricesURL(baseID))
+		return
+	}
 	var err error
 	action := "update"
 	if id == 0 {
 		action = "create"
-		id, err = s.store.CreateMachine(r.Context(), baseID, name, width, cost, category, sortOrder)
+		id, err = s.store.CreateMachine(r.Context(), baseID, name, width, cost, category, sortOrder, selfCost)
 	} else {
-		err = s.store.UpdateMachine(r.Context(), id, name, width, cost, category, sortOrder)
+		err = s.store.UpdateMachine(r.Context(), id, name, width, cost, category, sortOrder, selfCost)
 	}
 	if err == nil {
 		s.audit(r, action, "machine", id, name)

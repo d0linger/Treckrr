@@ -14,9 +14,49 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 )
+
+func TestCleanupLeftovers(t *testing.T) {
+	dir := t.TempDir()
+	old := time.Now().Add(-2 * time.Hour)
+	cases := []struct {
+		name        string
+		stale, keep bool
+	}{
+		{name: "treckrr-old.dump.enc.staging", stale: true},
+		{name: "treckrr-old.dump.enc.staging.1234.tmp", stale: true},
+		{name: "treckrr-active.dump.enc.staging.5678.tmp", keep: true},
+		{name: "treckrr-complete.dump.enc", stale: true, keep: true},
+		{name: "manual.dump", stale: true, keep: true},
+		{name: "manual.tmp", stale: true, keep: true},
+	}
+	for _, tc := range cases {
+		path := filepath.Join(dir, tc.name)
+		if err := os.WriteFile(path, []byte("fixture"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if tc.stale {
+			if err := os.Chtimes(path, old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	New(Options{Dir: dir}, nil)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := os.Stat(filepath.Join(dir, tc.name))
+			if tc.keep && err != nil {
+				t.Errorf("protected file removed: %v", err)
+			}
+			if !tc.keep && !os.IsNotExist(err) {
+				t.Errorf("stale file remains: %v", err)
+			}
+		})
+	}
+}
 
 // TestWriteFileAtomicConcurrent locks the status.json corruption fix: many
 // concurrent writers to the same path must never leave a partial/interleaved

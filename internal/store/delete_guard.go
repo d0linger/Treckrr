@@ -2,15 +2,15 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// ErrHasHistory is returned when the database itself refuses to delete a row
-// because financial or tax-relevant records still reference it (the 0039
-// RESTRICT constraints). Handlers translate it into the same refusal the
-// precheck produces, so the race between the two reads the same to the user.
+// ErrHasHistory is returned when deletion would lose retained financial or
+// delivery records. Handlers use the same refusal for a precheck, a protected
+// transaction, or a RESTRICT foreign-key violation.
 var ErrHasHistory = errors.New("record still referenced by financial history")
 
 // isForeignKeyViolation reports whether err is a Postgres referential-integrity
@@ -42,15 +42,10 @@ func isForeignKeyViolation(err error) bool {
 // DeleteBlockers counts the money- and tax-relevant records that a cascading
 // DELETE would destroy along with its parent row.
 //
-// Both neighbors and billing_years are referenced ON DELETE CASCADE by eight
-// tables (entries, billing_year_neighbors, neighbor_ledger, payments, invoices,
-// beleg_sends, recurring_entries, beleg_shares). Guarding on bookings alone let a
-// neighbor with no bookings but a carry-forward, a payment or an issued invoice
-// be deleted, taking that history with it silently — exactly the records § 132 BAO
-// requires to be kept for seven years, and the ones the Festschreibung is meant to
-// freeze. The four counted here are the ones that represent money or a tax
-// document; the rest (memberships, share links, recurring templates, send history)
-// carry no history of their own and may cascade.
+// Entries, payments, ledger, invoices and beleg_sends are protected by RESTRICT
+// foreign keys. Dunning history and retained outbox rows are protected by the
+// transactional delete guard below. Memberships, share links and recurring
+// templates may still cascade when none of this history exists.
 type DeleteBlockers struct {
 	Entries  int
 	Payments int
@@ -64,11 +59,19 @@ type DeleteBlockers struct {
 	// precheck had just declared fine — the unexplained failure this type exists
 	// to prevent.
 	Sends int
+	// These newer tables still have cascading foreign keys. The delete path
+	// checks them under a parent row lock, alongside the existing constraints.
+	DunningNotices int
+	// Include sent mail until normal purge: its history writes follow the sent
+	// status update, so excluding it would open a deletion gap between them.
+	Outbox int
 }
 
 // Any reports whether anything at all would be destroyed.
 func (b DeleteBlockers) Any() bool {
-	return b.Entries > 0 || b.Payments > 0 || b.Ledger > 0 || b.Invoices > 0 || b.Sends > 0
+	hasMoney := b.Entries > 0 || b.Payments > 0 || b.Ledger > 0 || b.Invoices > 0
+	hasDelivery := b.Sends > 0 || b.DunningNotices > 0 || b.Outbox > 0
+	return hasMoney || hasDelivery
 }
 
 // NeighborDeleteBlockers counts what a DELETE of the neighbor would hit, across
@@ -87,8 +90,10 @@ func (s *Store) NeighborDeleteBlockers(ctx context.Context, neighborID int64) (D
 		       (SELECT count(*) FROM payments        WHERE neighbor_id = $1),
 		       (SELECT count(*) FROM neighbor_ledger WHERE neighbor_id = $1),
 		       (SELECT count(*) FROM invoices        WHERE neighbor_id = $1),
-		       (SELECT count(*) FROM beleg_sends     WHERE neighbor_id = $1)`,
-		neighborID).Scan(&b.Entries, &b.Payments, &b.Ledger, &b.Invoices, &b.Sends)
+		       (SELECT count(*) FROM beleg_sends     WHERE neighbor_id = $1),
+		       (SELECT count(*) FROM dunning_notices WHERE neighbor_id = $1),
+		       (SELECT count(*) FROM mail_outbox WHERE neighbor_id = $1)`,
+		neighborID).Scan(&b.Entries, &b.Payments, &b.Ledger, &b.Invoices, &b.Sends, &b.DunningNotices, &b.Outbox)
 	return b, err
 }
 
@@ -100,7 +105,41 @@ func (s *Store) YearDeleteBlockers(ctx context.Context, yearID int64) (DeleteBlo
 		       (SELECT count(*) FROM payments        WHERE billing_year_id = $1),
 		       (SELECT count(*) FROM neighbor_ledger WHERE billing_year_id = $1),
 		       (SELECT count(*) FROM invoices        WHERE billing_year_id = $1),
-		       (SELECT count(*) FROM beleg_sends     WHERE billing_year_id = $1)`,
-		yearID).Scan(&b.Entries, &b.Payments, &b.Ledger, &b.Invoices, &b.Sends)
+		       (SELECT count(*) FROM beleg_sends     WHERE billing_year_id = $1),
+		       (SELECT count(*) FROM dunning_notices WHERE billing_year_id = $1),
+		       (SELECT count(*) FROM mail_outbox WHERE billing_year_id = $1)`,
+		yearID).Scan(&b.Entries, &b.Payments, &b.Ledger, &b.Invoices, &b.Sends, &b.DunningNotices, &b.Outbox)
 	return b, err
+}
+
+// deleteWithDeliveryGuard supplements the financial-history RESTRICT constraints
+// for newer delivery tables whose foreign keys still cascade. All query strings
+// are internal constants, never user input. Locking the parent first serializes
+// this check with child inserts through their foreign-key key-share locks.
+func (s *Store) deleteWithDeliveryGuard(ctx context.Context, id int64, lockQuery, historyQuery, deleteQuery string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	var lockedID int64
+	if err := tx.QueryRowContext(ctx, lockQuery, id).Scan(&lockedID); errors.Is(err, sql.ErrNoRows) {
+		return nil // preserve the idempotent delete contract
+	} else if err != nil {
+		return err
+	}
+	var hasHistory bool
+	if err := tx.QueryRowContext(ctx, historyQuery, id).Scan(&hasHistory); err != nil {
+		return err
+	}
+	if hasHistory {
+		return ErrHasHistory
+	}
+	if _, err := tx.ExecContext(ctx, deleteQuery, id); err != nil {
+		if isForeignKeyViolation(err) {
+			return ErrHasHistory
+		}
+		return err
+	}
+	return tx.Commit()
 }

@@ -146,7 +146,7 @@ func (s *Store) DeleteTractor(ctx context.Context, id int64) error {
 
 // ---- Machines ------------------------------------------------------------
 
-const machineCols = `id, base_id, name, working_width, cost_per_ab, active, category, sort_order`
+const machineCols = `id, base_id, name, working_width, cost_per_ab, active, category, sort_order, self_cost_per_h`
 
 // ListMachines returns all machines of a base (active and inactive).
 func (s *Store) ListMachines(ctx context.Context, baseID int64) ([]models.Machine, error) {
@@ -170,7 +170,7 @@ func (s *Store) queryMachines(ctx context.Context, query string, args ...any) ([
 	for rows.Next() {
 		var m models.Machine
 		if err := rows.Scan(&m.ID, &m.BaseID, &m.Name, &m.WorkingWidth, &m.CostPerAB,
-			&m.Active, &m.Category, &m.SortOrder); err != nil {
+			&m.Active, &m.Category, &m.SortOrder, &m.SelfCostPerH); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -220,20 +220,21 @@ func (s *Store) MachinesByIDs(ctx context.Context, ids []int64) ([]models.Machin
 }
 
 // CreateMachine inserts a machine.
-func (s *Store) CreateMachine(ctx context.Context, baseID int64, name string, width, cost decimal.Decimal, category string, sortOrder int) (int64, error) {
+func (s *Store) CreateMachine(ctx context.Context, baseID int64, name string, width, cost decimal.Decimal, category string, sortOrder int, selfCost decimal.Decimal) (int64, error) {
 	var id int64
 	err := s.db.QueryRowContext(ctx,
-		`INSERT INTO machines (base_id,name,working_width,cost_per_ab,category,sort_order)
-		 VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-		baseID, name, width, cost, category, sortOrder).Scan(&id)
+		`INSERT INTO machines (base_id,name,working_width,cost_per_ab,category,sort_order,self_cost_per_h)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+		baseID, name, width, cost, category, sortOrder, selfCost).Scan(&id)
 	return id, err
 }
 
 // UpdateMachine updates a machine.
-func (s *Store) UpdateMachine(ctx context.Context, id int64, name string, width, cost decimal.Decimal, category string, sortOrder int) error {
+func (s *Store) UpdateMachine(ctx context.Context, id int64, name string, width, cost decimal.Decimal, category string, sortOrder int, selfCost decimal.Decimal) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE machines SET name=$1, working_width=$2, cost_per_ab=$3, category=$4, sort_order=$5 WHERE id=$6`,
-		name, width, cost, category, sortOrder, id)
+		`UPDATE machines SET name=$1, working_width=$2, cost_per_ab=$3, category=$4, sort_order=$5,
+		        self_cost_per_h=$7 WHERE id=$6`,
+		name, width, cost, category, sortOrder, id, selfCost)
 	return err
 }
 

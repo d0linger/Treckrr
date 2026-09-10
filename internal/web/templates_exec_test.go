@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // execPage renders a page's full "layout" with the given data and fails on any
@@ -219,7 +221,37 @@ func TestCompanyPageRenders(t *testing.T) {
 		"Company": map[string]any{
 			"Name": "Hof Bergmann", "Address": "Feldweg 3\n4780 Schärding", "TaxID": "ATU12345678",
 			"TaxNote": "§ 22 UStG", "TaxMode": "pauschal", "VATRate": d(0),
+			"PaymentTermDays": 14, "DunningGraceDays": 14,
+			"DunningFee1": d(0), "DunningFee2": d(0),
+			"SkontoPct": d(0), "SkontoDays": 0,
+			"InvoicePrefix": "", "InvoiceStart": 1, "SmallBusinessLimit": d(0),
+			"TravelFlat": d(0), "TravelPerKm": d(0),
+			"MailSignature": "", "MailCC": "",
 		},
+	})
+}
+
+func TestYearClosingRenders(t *testing.T) {
+	// A clean year and an open one, so both branches of every check render.
+	execPage(t, "year_closing", map[string]any{
+		"Title": "Jahresabschluss",
+		"Year":  map[string]any{"ID": int64(1), "Year": 2026, "Status": "in_progress"},
+		// Real store values, not maps: the template calls .Clean and .More, and a
+		// map would silently answer nil for both — rendering only one branch.
+		"Checks": []store.ClosingCheck{
+			{Key: "uninvoiced", Label: "Buchungen ohne Rechnung", Detail: "d"},
+			{Key: "unpaid", Label: "Offene Beträge", Detail: "d",
+				Count: 7, Names: []string{"Huber", "Maier"}, Amount: decimal.NewFromInt(240)},
+		},
+		"OpenChecks": 1,
+	})
+}
+
+func TestRechnungsjournalRenders(t *testing.T) {
+	// Empty state (no documents yet) — the rich path runs in the integration test.
+	execPage(t, "rechnungsjournal", map[string]any{
+		"Title": "Rechnungsjournal",
+		"Year":  map[string]any{"ID": int64(1), "Year": 2026},
 	})
 }
 
@@ -232,7 +264,8 @@ func TestBackupPageRenders(t *testing.T) {
 			"LastBackup": time.Now().Add(-3 * time.Hour), "AgeHours": 3,
 			"SizeLabel": "4.2 MB", "Offhost": "ok",
 			"Encrypted": true, "SchemaVersion": "0021_neighbor_tax_id.sql",
-			"RestoreTested": time.Now().Add(-3 * time.Hour),
+			"RestoreTested":   time.Now().Add(-3 * time.Hour),
+			"ArchiveVerified": time.Now().Add(-1 * time.Hour),
 		},
 		"Settings":       map[string]any{"VolumeCron": "0 3 * * *", "VolumeKeep": 7, "S3Cron": "0 4 * * *", "S3Keep": 0},
 		"VolumeCronDesc": "Täglich um 03:00 Uhr.",

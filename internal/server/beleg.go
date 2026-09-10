@@ -18,6 +18,7 @@ import (
 	"github.com/d0linger/treckrr/internal/auth"
 	"github.com/d0linger/treckrr/internal/calc"
 	"github.com/d0linger/treckrr/internal/mail"
+	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
@@ -390,17 +391,38 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	data["InvPaidUSt"] = invPaidUSt
 	data["Documents"] = documents
 	data["HasDocuments"] = len(documents) > 1 // more than the invoice itself
-	data["InvCredits"] = invCredits           // negative sum of credit notes
+	// Abschläge (Nr. 54): listed with their own storno action while no
+	// Schlussrechnung exists; afterwards they stay in the Belegverlauf.
+	anzahlungen, err := s.store.ListAnzahlungen(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		return nil, err
+	}
+	anzSum, err := s.store.AnzahlungSum(r.Context(), year.ID, neighbor.ID)
+	if err != nil {
+		return nil, err
+	}
+	data["Anzahlungen"] = anzahlungen
+	data["AnzahlungSum"] = anzSum
+	// Separate from "Today", which is the German display date on this page.
+	data["TodayISO"] = time.Now().Format("2006-01-02")
+	data["InvCredits"] = invCredits // negative sum of credit notes
 	data["HasCredits"] = invCredits.IsNegative()
 	data["InvRest"] = invRest
+	// Skonto clause (Nr. 42): rendered from the FROZEN snapshot, so Beleg, PDF
+	// and share link show the same promise and it never changes after
+	// Festschreibung. No expiry check: what the issued document offered stays on
+	// the issued document — the old time.Now() comparison also mixed a UTC
+	// midnight DATE with local wall time and dropped the clause hours early.
+	// Pre-snapshot invoices carry no clause (their PDF never had one either).
+	if hasInvoice && invoice.Content != nil && invoice.Content.SkontoPct.IsPositive() && !invoice.Content.SkontoUntil.IsZero() {
+		data["SkontoUntil"] = invoice.Content.SkontoUntil
+		data["SkontoPct"] = invoice.Content.SkontoPct
+	}
 	// Due date + countdown for the invoice: same definition as the Mahnwesen list
 	// (issue date + company payment term). Only meaningful while something is still
 	// payable; the template shows "fällig am … (in N Tagen / seit N Tagen überfällig)".
 	if hasInvoice && !invoice.IssuedOn.IsZero() && invRest.IsPositive() {
-		term := company.PaymentTermDays
-		if term < 0 {
-			term = 14
-		}
+		term := company.EffectiveTermDays()
 		due := invoice.IssuedOn.AddDate(0, 0, term)
 		data["DueOn"] = due
 		// Whole-day, DST-safe difference (shared with the dunning overdue count).
@@ -762,19 +784,35 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	company, _ := s.store.GetCompany(r.Context())
-	from := strings.TrimSpace(company.Name)
-	if from == "" {
-		from = "Ihr Maschinenring"
-	}
-	body := "Guten Tag " + neighbor.Name + ",\n\nanbei die Rechnung " + iv.Number + " als PDF.\n\nMit freundlichen Grüßen\n" + from
+	body := mailBody(company, neighbor.Name, "anbei die Rechnung "+iv.Number+" als PDF.")
 	att := mail.Attachment{Filename: "Rechnung_" + sanitizeFilename(iv.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
-	if err := mail.Send(s.cfg, neighbor.Email, "Rechnung "+iv.Number, body, []mail.Attachment{att}); err != nil {
+	subject := "Rechnung " + iv.Number
+	if err := mail.Send(r.Context(), s.cfg, neighbor.Email, subject, body, []mail.Attachment{att}); err != nil {
+		metrics.Inc(metrics.MailFailed)
 		slog.Error("beleg email send failed", "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))
-		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
+		s.audit(r, "beleg_email_failed", "neighbor", neighbor.ID,
+			neighbor.Name+" · Rechnung "+iv.Number+" · "+err.Error())
+		// Park the exact message for retry by the maintenance loop. Before, the
+		// failure evaporated with the flash: one SMTP hiccup during the yearly
+		// invoice run meant re-clicking every affected neighbor by hand.
+		if qerr := s.store.EnqueueMail(r.Context(), store.OutboxMail{
+			Kind: "beleg", NeighborID: neighbor.ID, BillingYearID: year.ID,
+			Recipient: neighbor.Email, Subject: "Rechnung " + iv.Number, Body: body,
+			AttName: att.Filename, AttType: att.ContentType, AttData: att.Data,
+		}); qerr != nil {
+			slog.Error("beleg email enqueue failed", "neighbor", neighbor.ID, "err", sanitizeLog(qerr.Error()))
+			s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
+			redirect(w, r, back)
+			return
+		}
+		s.setFlash(w, r, "error", "Versand fehlgeschlagen — ein erneuter Versuch wurde eingeplant (automatisch, mit Protokoll im Audit-Log).")
 		redirect(w, r, back)
 		return
 	}
-	// Delivery succeeded; the send-trail marker is secondary. If recording it fails
+	// Delivery succeeded — send the configured CC its copy (Nr. 99) before the
+	// bookkeeping below; best-effort, it must not turn a good send into an error.
+	s.sendMailCopy(r.Context(), company, subject, body, []mail.Attachment{att})
+	// The send-trail marker is secondary. If recording it fails
 	// don't fail the request — log it and tell the user the send worked but the
 	// history entry didn't, so "zuletzt versendet am …" being absent isn't a mystery.
 	if err := s.store.RecordBelegSend(r.Context(), year.ID, neighbor.ID, "e-mail"); err != nil {
@@ -893,6 +931,7 @@ func (s *Server) handleInvoiceConfirm(w http.ResponseWriter, r *http.Request) {
 	data["CanIssue"] = len(content.MissingMandatory()) == 0
 	data["Content"] = content
 	data["BackURL"] = back
+	data["Today"] = time.Now().Format("2006-01-02")
 	s.render(w, r, "invoice_confirm", data)
 }
 
@@ -928,12 +967,28 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
+	if !s.requireOpenYear(w, r, yearID, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)) {
+		return
+	}
 	// A formal Rechnung needs a sender: don't fix an invoice number against empty
 	// Betriebsdaten — send the user to fill them in first.
-	if company, err := s.store.GetCompany(r.Context()); err != nil || strings.TrimSpace(company.Name) == "" {
+	company, err := s.store.GetCompany(r.Context())
+	if err != nil || strings.TrimSpace(company.Name) == "" {
 		s.setFlash(w, r, "error", "Bitte zuerst die Betriebsdaten (Absender) ausfüllen.")
 		redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
 		return
+	}
+	// Rechnungsdatum (Nr. 48): optional; empty = today. The store validates the
+	// § 11 sequence under its numbering lock.
+	var issuedOn time.Time
+	if raw := strings.TrimSpace(r.FormValue("issued_on")); raw != "" {
+		d, perr := time.Parse("2006-01-02", raw)
+		if perr != nil {
+			s.setFlash(w, r, "error", "Ungültiges Rechnungsdatum.")
+			redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
+			return
+		}
+		issuedOn = d
 	}
 	// § 11 UStG: only fix a number once every mandatory field is present. Build the
 	// content that will be frozen and block issuance if anything is missing, listing
@@ -953,14 +1008,21 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, "invoice: lookup", err)
 		return
 	}
-	iv, err := s.store.IssueInvoice(r.Context(), yearID, neighborID, year.Year)
+	iv, err := s.store.IssueInvoice(r.Context(), yearID, neighborID, year.Year, issuedOn)
 	if err != nil {
-		s.setFlash(w, r, "error", "Rechnung konnte nicht ausgestellt werden.")
+		msg := "Rechnung konnte nicht ausgestellt werden."
+		if errors.Is(err, store.ErrIssueDateInvalid) {
+			msg = "Rechnungsdatum unzulässig: nicht in der Zukunft und nicht vor dem jüngsten Dokument des Jahres."
+		}
+		if errors.Is(err, store.ErrGutschriftTooLarge) {
+			msg = "Bereits erteilte Gutschriften übersteigen die Rechnungssumme — bitte zuerst die Gutschrift stornieren."
+		}
+		s.setFlash(w, r, "error", msg)
 		redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
 		return
 	}
 	s.audit(r, "invoice_issue", "neighbor", neighborID, s.neighborName(r, neighborID)+" · Rechnung "+iv.Number)
-	s.setFlash(w, r, "success", "Rechnung "+iv.Number+" ausgestellt.")
+	s.setFlash(w, r, "success", "Rechnung "+iv.Number+" ausgestellt."+s.kuIssueNote(r, company, iv.IssuedOn.Year()))
 	redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID))
 }
 
@@ -982,6 +1044,9 @@ func (s *Server) handleInvoiceStorno(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
+	if !s.requireOpenYear(w, r, yearID, back) {
+		return
+	}
 	reason := trimmed(r, "reason")
 	if s.tooLong(w, r, "Grund", reason, maxNoteLen) {
 		redirect(w, r, back)
@@ -1022,6 +1087,9 @@ func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID)
+	if !s.requireOpenYear(w, r, yearID, back) {
+		return
+	}
 	note := trimmed(r, "note")
 	if s.tooLong(w, r, "Grund", note, maxNoteLen) {
 		redirect(w, r, back)

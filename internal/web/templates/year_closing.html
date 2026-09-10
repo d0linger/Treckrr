@@ -1,0 +1,51 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/years" aria-label="Zurück zu den Jahren">{{template "ic-back"}}</a>
+		<h1 class="pagehead__t">Jahresabschluss · {{.Year.Year}}</h1>
+	</div>
+	<p class="muted small">Vor dem Abschließen: was im Jahr noch offen ist. Die Liste hält niemanden auf — sie zeigt nur, was du sonst erst im nächsten Frühjahr merkst.</p>
+
+	{{if .Year.Completed}}
+	<div class="card">
+		<strong>Dieses Jahr ist bereits abgeschlossen.</strong>
+		<p class="muted small">Rechnungen, Storni, Gutschriften und Abschläge sind gesperrt. Für eine Korrektur muss das Jahr mit Begründung wieder geöffnet werden. Zahlungen bleiben jederzeit erfassbar.</p>
+	</div>
+	{{end}}
+
+	<div class="stack stack--tight">
+		{{range .Checks}}
+		<div class="list__row card">
+			<div class="list__main">
+				<span class="list__title">
+					{{.Label}}
+					{{if .Clean}}<span class="tag tag--paid">erledigt</span>{{else}}<span class="tag tag--open">{{.Count}} offen</span>{{end}}
+				</span>
+				<span class="list__sub">{{.Detail}}</span>
+				{{if not .Clean}}
+				<span class="list__sub">
+					{{range $i, $n := .Names}}{{if $i}}, {{end}}{{$n}}{{end}}{{if .More}} … und {{.More}} weitere{{end}}
+					{{if .Amount.IsPositive}} · Summe {{money .Amount}}{{end}}
+				</span>
+				{{end}}
+			</div>
+		</div>
+		{{end}}
+	</div>
+
+	{{if not .Year.Completed}}
+	<div class="card stack stack--tight">
+		{{if .OpenChecks}}
+		<p><strong>{{.OpenChecks}} Punkt(e) offen.</strong> Abschließen ist trotzdem möglich — du kennst deinen Betrieb besser als die Liste.</p>
+		{{else}}
+		<p><strong>Alles erledigt.</strong> Das Jahr kann abgeschlossen werden.</p>
+		{{end}}
+		<form method="post" action="/years/{{.Year.ID}}/status"
+			data-confirm="Abrechnungsjahr {{.Year.Year}} abschließen? Danach sind Buchungen und Belege gesperrt; Zahlungen bleiben erfassbar.">
+			<input type="hidden" name="status" value="completed">
+			<button class="btn btn--primary btn--sm" type="submit">Jahr {{.Year.Year}} abschließen</button>
+		</form>
+	</div>
+	{{end}}
+</section>
+{{end}}

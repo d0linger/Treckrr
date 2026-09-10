@@ -34,6 +34,8 @@
 		<p class="muted small">Nach dem Festschreiben ist die Rechnung <strong>unveränderbar</strong> (Snapshot + Integritäts-Hash). Korrekturen nur über Storno oder Gutschrift.</p>
 	</div>
 	<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice" data-confirm="Rechnung jetzt festschreiben? Die Nummer wird fest vergeben und der Inhalt eingefroren.">
+		<label class="field"><span>Rechnungsdatum (nicht in der Zukunft, nicht vor dem jüngsten Dokument des Jahres)</span>
+			<input class="input" type="date" name="issued_on" value="{{.Today}}"></label>
 		<input type="hidden" name="year_id" value="{{.Year.ID}}">
 		<div class="btnrow btnrow--split">
 			<a class="btn btn--ghost btn--sm" href="{{.BackURL}}">Abbrechen</a>

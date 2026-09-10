@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 	netmail "net/mail"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/shopspring/decimal"
@@ -268,18 +270,48 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// The IBAN is a matcher key for the bank import, so it is stored normalized
+	// (no spaces, upper case) and shape-checked — a typo would otherwise just
+	// silently never match a credit.
+	iban := strings.ToUpper(strings.ReplaceAll(trimmed(r, "iban"), " ", ""))
+	if iban != "" && !ibanShape.MatchString(iban) {
+		s.setFlash(w, r, "error", "Ungültige IBAN.")
+		redirect(w, r, neighborReturnURL(r, id))
+		return
+	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
-	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email); err != nil {
+	// Leeres Feld = Firmenstandard (NULL), sonst 0-365 Tage.
+	var paymentTerm *int
+	if v := strings.TrimSpace(r.FormValue("payment_term_days")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 || n > 365 {
+			s.setFlash(w, r, "error", "Zahlungsziel muss eine ganze Zahl zwischen 0 und 365 Tagen sein.")
+			redirect(w, r, neighborReturnURL(r, id))
+			return
+		}
+		paymentTerm = &n
+	}
+	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email, iban, paymentTerm); err != nil {
 		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")
 	} else {
 		detail := name
 		if before != nil {
-			if d := diffFields(
+			d := diffFields(
 				fieldChange{"Name", before.Name, name},
 				fieldChange{"Notiz", before.Note, note},
 				fieldChange{"Adresse", before.Address, address},
 				fieldChange{"UID/Steuernr.", before.TaxID, taxID},
-			); d != "" {
+			)
+			// Masked like the company IBAN: the audit log keeps only the change
+			// marker, never the full account number.
+			if m := ibanChangeMarker(before.IBAN, iban); m != "" {
+				if d == "" {
+					d = m
+				} else {
+					d += " · " + m
+				}
+			}
+			if d != "" {
 				detail = d
 			}
 		}
@@ -288,6 +320,9 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	redirect(w, r, neighborReturnURL(r, id))
 }
+
+// ibanShape is the light structural IBAN check (country, check digits, BBAN).
+var ibanShape = regexp.MustCompile(`^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$`)
 
 // neighborReturnURL points back to the central neighbor page when the request
 // originated there, otherwise to the neighbor within the current year.
@@ -350,6 +385,17 @@ func (s *Server) handleNeighborAnonymize(w http.ResponseWriter, r *http.Request)
 	id, err := pathID(r)
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	// Ausbaukarte 88: typed confirmation, like the restore. This deletes free
+	// text and photos for good; a mis-aimed click must not be enough.
+	if strings.TrimSpace(r.FormValue("confirm")) != "ANONYMISIEREN" {
+		s.setFlash(w, r, "error", "Zum Anonymisieren bitte ANONYMISIEREN eintippen (Großschreibung beachten).")
+		redirect(w, r, "/neighbors")
 		return
 	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)

@@ -2,23 +2,75 @@
 <section class="stack">
 	<div class="pagehead">
 		<a class="backbtn" href="/?year={{.Year.ID}}" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
-		<h1 class="pagehead__t">Mahnwesen · {{.Year.Year}}</h1>
+		<h1 class="pagehead__t">Mahnwesen{{if not .AllYears}} · {{.Year.Year}}{{end}}</h1>
 		{{if .Rows}}<a class="btn btn--ghost btn--sm pagehead__action" href="/mahnwesen/export.csv?year={{.Year.ID}}">{{template "ic-copy"}} Export CSV</a>{{end}}
 	</div>
-	<p class="muted small">Überfällige, festgeschriebene Rechnungen (Zahlungsziel {{.Term}} Tage). Bereits bezahlte oder noch nicht fällige Rechnungen erscheinen nicht.</p>
+	<p class="muted small">Überfällige, festgeschriebene Rechnungen. Zahlungsziel: Firmenstandard {{.Term}} Tage; ein je Nachbar hinterlegtes Ziel geht vor. Bereits bezahlte oder noch nicht fällige Rechnungen erscheinen nicht.</p>
+
+	<div class="btnrow">
+		{{if .AllYears}}
+		<a class="btn btn--ghost btn--sm" href="/mahnwesen?year={{.Year.ID}}">Nur {{.Year.Year}}</a>
+		<span class="btn btn--sm" aria-current="true">Offene Posten · alle Jahre</span>
+		{{else}}
+		<span class="btn btn--sm" aria-current="true">{{.Year.Year}}</span>
+		<a class="btn btn--ghost btn--sm" href="/mahnwesen?year={{.Year.ID}}&scope=alle">Offene Posten · alle Jahre</a>
+		{{end}}
+	</div>
+
+	{{if and .Rows .MailEnabled (not .AllYears)}}
+	<form method="post" action="/mahnwesen/batch-email" class="card form form--inline">
+		<input type="hidden" name="year" value="{{.Year.ID}}">
+		<label class="field field--inline"><span>Sammel-Mahnlauf</span>
+			<select class="select" name="stufe">
+				<option value="0">Zahlungserinnerung</option>
+				<option value="1">1. Mahnung</option>
+				<option value="2">2. Mahnung</option>
+			</select></label>
+		<button class="btn btn--primary btn--sm" type="submit"
+			data-confirm="Mahnungen dieser Stufe jetzt an alle überfälligen Nachbarn mit E-Mail-Adresse senden?">An alle per E-Mail senden</button>
+		<span class="muted small">Nachbarn ohne E-Mail-Adresse werden übersprungen und bleiben in der Liste.</span>
+	</form>
+	{{end}}
 
 	{{if .Rows}}
 	<div class="stack stack--tight">
 		{{range .Rows}}
 		<div class="list__row card">
 			<div class="list__main">
-				<span class="list__title">{{.Name}}</span>
-				<span class="list__sub">Rechnung {{.InvoiceNo}} · fällig {{date .DueOn}} · <strong>{{.DaysOverdue}} Tag{{if ne .DaysOverdue 1}}e{{end}} überfällig</strong></span>
+				<span class="list__title">{{.Name}}{{if $.AllYears}} <span class="muted">· {{.YearNo}}</span>{{end}}</span>
+				<span class="list__sub">Rechnung {{.InvoiceNo}} · fällig {{date .DueOn}} ·
+					<strong>{{.DaysOverdue}} Tag{{if ne .DaysOverdue 1}}e{{end}} überfällig</strong>
+					{{if ge .DaysOverdue 90}}<span class="tag tag--open">90+</span>
+					{{else if ge .DaysOverdue 60}}<span class="tag tag--open">60+</span>
+					{{else if ge .DaysOverdue 30}}<span class="tag">30+</span>{{end}}
+				</span>
+				{{if not $.AllYears}}
+				{{/* LastNotices is loaded for the SELECTED year and keyed by neighbor alone,
+				     so in the cross-year view it would claim this year's Mahnung for a row
+				     belonging to another year's invoice. */}}
+				{{with (index $.LastNotices .NeighborID)}}
+				<span class="list__sub muted">Zuletzt: {{stageName .Stage}} am {{date .SentAt}} ({{.Channel}})</span>
+				{{end}}
 				<span class="btnrow">
 					<a class="btn btn--ghost btn--sm" href="/neighbors/{{.NeighborID}}/mahnung?year={{$.Year.ID}}&stufe=0">Erinnerung</a>
 					<a class="btn btn--ghost btn--sm" href="/neighbors/{{.NeighborID}}/mahnung?year={{$.Year.ID}}&stufe=1">1. Mahnung</a>
 					<a class="btn btn--ghost btn--sm" href="/neighbors/{{.NeighborID}}/mahnung?year={{$.Year.ID}}&stufe=2">2. Mahnung</a>
+					<form method="post" action="/neighbors/{{.NeighborID}}/mahnung/mark-sent" class="inlineform">
+						<input type="hidden" name="year" value="{{$.Year.ID}}">
+						<select class="select select--sm" name="stufe" aria-label="Stufe für Vermerk">
+							<option value="0">Erinnerung</option>
+							<option value="1">1. Mahnung</option>
+							<option value="2">2. Mahnung</option>
+						</select>
+						<button class="btn btn--ghost btn--sm" type="submit" title="Versand außerhalb der App (Post, persönlich) im Verlauf festhalten">Versand vermerken</button>
+					</form>
 				</span>
+				{{else}}
+				<span class="btnrow">
+					<a class="btn btn--ghost btn--sm" href="/neighbors/{{.NeighborID}}/mahnung?year={{.YearID}}&stufe=1">Zur Mahnung</a>
+					<a class="btn btn--ghost btn--sm" href="/neighbors/{{.NeighborID}}?year={{.YearID}}">Zum Nachbarn</a>
+				</span>
+				{{end}}
 			</div>
 			<div class="list__value"><span class="tag tag--open">Offen {{money .Open}}</span></div>
 		</div>
@@ -27,7 +79,7 @@
 	{{else}}
 	<div class="card empty empty--slim">
 		<span class="empty__title">Keine überfälligen Rechnungen 🎉</span>
-		<span class="empty__sub">Alle festgeschriebenen Rechnungen in {{.Year.Year}} sind bezahlt oder noch nicht fällig.</span>
+		<span class="empty__sub">{{if .AllYears}}Über alle Jahre ist nichts überfällig.{{else}}Alle festgeschriebenen Rechnungen in {{.Year.Year}} sind bezahlt oder noch nicht fällig.{{end}}</span>
 	</div>
 	{{end}}
 </section>

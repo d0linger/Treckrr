@@ -17,32 +17,42 @@
 		</div>
 	</form>
 	{{else}}
-	<p class="muted small">{{.OKCount}} von {{.Total}} Zeilen importierbar. Fehlerhafte Zeilen werden übersprungen.</p>
-	<div class="tablewrap">
-		<table class="dtable">
-			<thead><tr><th>Zeile</th><th>Nachbar</th><th>Datum</th><th>Tätigkeit</th><th>Einheit</th><th class="num">Menge</th><th class="num">Satz</th><th class="num">Kosten</th><th>Status</th></tr></thead>
-			<tbody>
-				{{range .Rows}}
-				<tr class="{{if not .OK}}dtable__row--bad{{end}}">
-					<td>{{.Line}}</td><td>{{.Neighbor}}</td><td>{{.DateStr}}</td><td>{{.Task}}</td><td>{{.Unit}}</td>
-					<td class="num">{{num .Qty}}</td><td class="num">{{num .Price}}</td><td class="num">{{money .Cost}}</td>
-					<td>{{if .OK}}<span class="tag tag--paid">OK</span>{{else}}<span class="tag tag--open">{{.Err}}</span>{{end}}</td>
-				</tr>
-				{{end}}
-			</tbody>
-		</table>
-	</div>
-	<div class="btnrow">
-		{{if .OKCount}}
-		<form method="post" action="/entries/import" data-confirm="{{.OKCount}} Buchung(en) importieren?">
+	<p class="muted small">{{.OKCount}} von {{.Total}} Zeilen importierbar. Einzelne Zeilen lassen sich abwählen; fehlerhafte Zeilen können unten direkt korrigiert und erneut geprüft werden.</p>
+	<form method="post" action="/entries/import" data-confirm="{{.OKCount}} importierbare Buchung(en) — die ausgewählten jetzt importieren?">
+		<input type="hidden" name="year_id" value="{{.Year.ID}}">
+		<input type="hidden" name="csv" value="{{.CSV}}">
+		<input type="hidden" name="import_token" value="{{.ImportToken}}">
+		<div class="tablewrap">
+			<table class="dtable">
+				<thead><tr><th><span class="sr-only">Auswahl</span></th><th>Zeile</th><th>Nachbar</th><th>Datum</th><th>Tätigkeit</th><th>Einheit</th><th class="num">Menge</th><th class="num">Satz</th><th class="num">Kosten</th><th>Status</th></tr></thead>
+				<tbody>
+					{{range .Rows}}
+					<tr class="{{if not .OK}}dtable__row--bad{{end}}">
+						<td>{{if .OK}}<input type="checkbox" name="line" value="{{.Line}}" checked aria-label="Zeile {{.Line}} importieren">{{end}}</td>
+						<td>{{.Line}}</td><td>{{.Neighbor}}</td><td>{{.DateStr}}</td><td>{{.Task}}</td><td>{{.Unit}}</td>
+						<td class="num">{{num .Qty}}</td><td class="num">{{num .Price}}</td><td class="num">{{money .Cost}}</td>
+						<td>{{if .OK}}<span class="tag tag--paid">OK</span>{{else}}<span class="tag tag--open">{{.Err}}</span>{{end}}</td>
+					</tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+		<div class="btnrow">
+			{{if .OKCount}}<button class="btn btn--primary btn--sm" type="submit">Ausgewählte importieren</button>{{end}}
+			<a class="btn btn--ghost btn--sm" href="/entries/import?year={{.Year.ID}}">Abbrechen</a>
+		</div>
+	</form>
+
+	<details class="card disclosure">
+		<summary>Zeilen korrigieren</summary>
+		<p class="muted small">Die eingelesene CSV — hier korrigieren und erneut prüfen, statt die Datei neu hochzuladen. Die Zeilennummern oben entsprechen den Zeilen hier.</p>
+		<form method="post" action="/entries/import/preview" enctype="multipart/form-data" class="form">
 			<input type="hidden" name="year_id" value="{{.Year.ID}}">
-			<input type="hidden" name="csv" value="{{.CSV}}">
-			<input type="hidden" name="import_token" value="{{.ImportToken}}">
-			<button class="btn btn--primary btn--sm" type="submit">{{.OKCount}} importieren</button>
+			<label class="field"><span>CSV</span>
+				<textarea class="input input--code" name="csv" rows="12" spellcheck="false">{{.CSV}}</textarea></label>
+			<button class="btn btn--ghost btn--sm" type="submit">Erneut prüfen</button>
 		</form>
-		{{end}}
-		<a class="btn btn--ghost btn--sm" href="/entries/import?year={{.Year.ID}}">Abbrechen</a>
-	</div>
+	</details>
 	{{end}}
 </section>
 {{end}}

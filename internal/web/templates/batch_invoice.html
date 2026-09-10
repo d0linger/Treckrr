@@ -10,23 +10,26 @@
 	{{else}}
 	<p class="muted small">Vorschau aller Nachbarn mit Buchungen. Beim Festschreiben erhält jede Rechnung eine fortlaufende Nummer und wird gesperrt (§ 131 — nur per Storno korrigierbar). Bereits berechnete oder unvollständige Nachbarn werden übersprungen.</p>
 
+	<form method="post" action="/years/{{.Year.ID}}/issue-all">
 	<div class="tablewrap">
 		<table class="dtable">
-			<thead><tr><th>Nachbar</th><th class="num">Buchungen</th><th class="num">Brutto</th><th>Status</th></tr></thead>
+			<thead><tr><th><span class="sr-only">Auswahl</span></th><th>Nachbar</th><th class="num">Buchungen</th><th class="num">Brutto</th><th>Status</th></tr></thead>
 			<tbody>
 				{{range .Rows}}
 				<tr>
-					<td>{{.Neighbor.Name}}</td>
+					<td>{{if and .Issuable (not .AlreadyInvoiced)}}<input type="checkbox" name="neighbor_id" value="{{.Neighbor.ID}}" checked aria-label="{{.Neighbor.Name}} festschreiben">{{end}}</td>
+					<td><a href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}">{{.Neighbor.Name}}</a></td>
 					<td class="num">{{.Bookings}}</td>
 					<td class="num">{{if .AlreadyInvoiced}}–{{else}}{{money .Gross}}{{end}}</td>
 					<td>
 						{{if .AlreadyInvoiced}}<span class="tag">bereits berechnet</span>
 						{{else if .Issuable}}<span class="tag tag--paid">wird festgeschrieben</span>
-						{{else}}<span class="tag tag--open">unvollständig: {{range $i, $m := .Missing}}{{if $i}}, {{end}}{{$m}}{{end}}</span>{{end}}
+						{{else}}<span class="tag tag--open">unvollständig: {{range $i, $m := .Missing}}{{if $i}}, {{end}}{{$m}}{{end}}</span>
+						<a class="link small" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}">ergänzen</a>{{end}}
 					</td>
 				</tr>
 				{{else}}
-				<tr><td colspan="4" class="muted">Keine Nachbarn mit Buchungen in diesem Jahr.</td></tr>
+				<tr><td colspan="5" class="muted">Keine Nachbarn mit Buchungen in diesem Jahr.</td></tr>
 				{{end}}
 			</tbody>
 		</table>
@@ -34,15 +37,14 @@
 
 	<div class="card statusrow">
 		<div class="statusrow__info">
-			<strong>{{.Issuable}} Rechnung(en)</strong> werden festgeschrieben · Summe {{money .Total}}
+			<strong>bis zu {{.Issuable}} Rechnung(en)</strong> · Summe {{money .Total}} — einzelne Nachbarn lassen sich abwählen.
 		</div>
 		{{if .Issuable}}
-		<form method="post" action="/years/{{.Year.ID}}/issue-all"
-			data-confirm="{{.Issuable}} Rechnung(en) über {{money .Total}} jetzt endgültig festschreiben? Das ist irreversibel (nur per Storno korrigierbar).">
-			<button class="btn btn--primary btn--sm" type="submit">{{.Issuable}} festschreiben</button>
-		</form>
+		<button class="btn btn--primary btn--sm" type="submit"
+			data-confirm="Die ausgewählten Rechnungen jetzt endgültig festschreiben (wählbar: {{.Issuable}} über {{money .Total}})? Das ist irreversibel (nur per Storno korrigierbar).">Ausgewählte festschreiben</button>
 		{{end}}
 	</div>
+	</form>
 	{{end}}
 </section>
 {{end}}

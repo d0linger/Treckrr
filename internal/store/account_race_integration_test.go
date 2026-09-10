@@ -235,3 +235,57 @@ func TestSettleRemainingWaitsForAccountLockIntegration(t *testing.T) {
 		return err
 	})
 }
+
+// PayoutCredit derives what it posts from the account balance exactly like
+// SettleRemaining, so it needs the same lock. Before the fix the handler read
+// the credit outside any transaction and posted it afterwards, and concurrent
+// "Guthaben auszahlen" clicks each paid the same credit out.
+func TestPayoutCreditConcurrentIntegration(t *testing.T) {
+	ctx, _, st, yearID, _, nid, cleanup := raceSetup(t)
+	defer cleanup()
+
+	// raceSetup seeds +200; overshoot it so the account carries a credit of 300.
+	if _, err := st.AddNeighborLedger(ctx, yearID, nid,
+		decimal.RequireFromString("-500"), "Überzahlung", time.Now()); err != nil {
+		t.Fatalf("seed credit: %v", err)
+	}
+
+	paid := make([]decimal.Decimal, raceConcurrency)
+	errs := runConcurrently(raceConcurrency, func(i int) error {
+		amount, err := st.PayoutCredit(ctx, yearID, nid, time.Now(), "Guthaben ausbezahlt")
+		paid[i] = amount
+		return err
+	})
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("payout %d: %v", i, err)
+		}
+	}
+
+	// Exactly one call may report a payout; the rest must find nothing left.
+	posted := 0
+	total := decimal.Zero
+	for _, p := range paid {
+		if !p.IsZero() {
+			posted++
+			total = total.Add(p)
+		}
+	}
+	if posted != 1 || !total.Equal(decimal.RequireFromString("300")) {
+		t.Errorf("%d of %d concurrent payouts booked (total %s), want exactly 1 of 300",
+			posted, raceConcurrency, total)
+	}
+
+	rows, err := st.ListNeighborLedger(ctx, yearID, nid)
+	if err != nil {
+		t.Fatalf("ledger: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Errorf("account has %d ledger rows after %d concurrent payouts, want 3 (two seeds + one payout)",
+			len(rows), raceConcurrency)
+	}
+	sum, _ := st.NeighborLedgerSum(ctx, yearID, nid)
+	if !sum.IsZero() {
+		t.Errorf("balance = %s, want 0 — the credit was paid out more than once", sum)
+	}
+}

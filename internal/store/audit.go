@@ -79,33 +79,80 @@ func (s *Store) PurgeAuditLog(ctx context.Context, shortCutoff, longCutoff time.
 	return n, nil
 }
 
-// auditFilter is the shared WHERE clause matching an action filter and a
-// case-insensitive substring search across the visible columns. $1 = action
-// (empty = all), $2 = query (empty = all). It mirrors the previous in-memory
-// filter but runs in SQL so pagination/count cover the whole history.
+// AuditQuery narrows the audit trail. Empty/zero fields mean "no filter", so
+// the zero value returns the whole log — the behavior before Nr. 73.
+type AuditQuery struct {
+	Text     string
+	Action   string
+	Username string
+	From, To time.Time
+}
+
+// auditFilter is the shared WHERE clause: action, a case-insensitive substring
+// search across the visible columns, the acting user and a date range (Nr. 73 —
+// the log grows over years, so "who did what last March" must be answerable).
+// $1 = action, $2 = text, $3 = username, $4 = from, $5 = to; every one of them
+// disabled when empty/zero. One clause for both the page and the count, so the
+// pager can never disagree with the rows.
 const auditFilter = `
 	WHERE ($1 = '' OR action = $1)
 	  AND ($2 = '' OR strpos(
 	        lower(concat_ws(' ', username, action, entity, entity_id, detail, ip)),
-	        lower($2)) > 0)`
+	        lower($2)) > 0)
+	  AND ($3 = '' OR username = $3)
+	  AND ($4::timestamptz IS NULL OR created_at >= $4)
+	  AND ($5::timestamptz IS NULL OR created_at < $5)`
+
+// auditArgs turns the query into the placeholder values, mapping zero times to
+// NULL so the range conditions switch themselves off.
+func auditArgs(q AuditQuery) []any {
+	var from, to any
+	if !q.From.IsZero() {
+		from = q.From
+	}
+	if !q.To.IsZero() {
+		// Inclusive day: everything BEFORE the following midnight.
+		to = q.To.AddDate(0, 0, 1)
+	}
+	return []any{q.Action, q.Text, q.Username, from, to}
+}
 
 // CountAudit returns the number of audit rows matching the filter.
-func (s *Store) CountAudit(ctx context.Context, query, action string) (int, error) {
+func (s *Store) CountAudit(ctx context.Context, q AuditQuery) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM audit_log`+auditFilter, action, query).Scan(&n)
+		`SELECT count(*) FROM audit_log`+auditFilter, auditArgs(q)...).Scan(&n)
 	return n, err
+}
+
+// AuditUsers returns the distinct acting usernames, for the filter dropdown.
+func (s *Store) AuditUsers(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT username FROM audit_log WHERE username <> '' ORDER BY username`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
 }
 
 // ListAuditFiltered returns audit rows matching the filter, newest first. A
 // limit <= 0 returns all matching rows (used for CSV export); otherwise the
 // page is limit rows starting at offset.
-func (s *Store) ListAuditFiltered(ctx context.Context, query, action string, limit, offset int) ([]models.AuditEntry, error) {
+func (s *Store) ListAuditFiltered(ctx context.Context, aq AuditQuery, limit, offset int) ([]models.AuditEntry, error) {
 	q := `SELECT id, user_id, username, action, entity, entity_id, detail, ip, created_at
 	        FROM audit_log` + auditFilter + ` ORDER BY created_at DESC, id DESC`
-	args := []any{action, query}
+	args := auditArgs(aq)
 	if limit > 0 {
-		q += ` LIMIT $3 OFFSET $4`
+		q += ` LIMIT $6 OFFSET $7`
 		args = append(args, limit, offset)
 	}
 	rows, err := s.db.QueryContext(ctx, q, args...)

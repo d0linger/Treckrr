@@ -23,17 +23,18 @@ const backupMaxAge = 26 * time.Hour
 
 // backupStatus is the admin-panel view of the backup status.json.
 type backupStatus struct {
-	Enabled       bool   // a BACKUP_ENCRYPTION_KEY is configured (on-demand available)
-	Configured    bool   // a status.json exists (scheduled backups have run)
-	State         string // "ok" | "stale" | "failed" | "none"
-	LastBackup    time.Time
-	AgeHours      int
-	SizeLabel     string
-	Offhost       string
-	Encrypted     bool
-	SchemaVersion string
-	RestoreTested time.Time
-	S3            string
+	Enabled         bool   // a BACKUP_ENCRYPTION_KEY is configured (on-demand available)
+	Configured      bool   // a status.json exists (scheduled backups have run)
+	State           string // "ok" | "stale" | "failed" | "none"
+	LastBackup      time.Time
+	AgeHours        int
+	SizeLabel       string
+	Offhost         string
+	Encrypted       bool
+	SchemaVersion   string
+	RestoreTested   time.Time
+	ArchiveVerified time.Time
+	S3              string
 }
 
 // readBackupStatus loads and classifies the backup status file. Any problem
@@ -66,13 +67,14 @@ func readBackupStatus(path string) backupStatus {
 		return backupStatus{State: "none"}
 	}
 	st := backupStatus{
-		Configured:    true,
-		LastBackup:    d.LastBackup,
-		SizeLabel:     humanSize(d.SizeBytes),
-		Offhost:       "—",
-		Encrypted:     d.Encrypted,
-		SchemaVersion: d.SchemaVersion,
-		RestoreTested: d.RestoreTested,
+		Configured:      true,
+		LastBackup:      d.LastBackup,
+		SizeLabel:       humanSize(d.SizeBytes),
+		Offhost:         "—",
+		Encrypted:       d.Encrypted,
+		SchemaVersion:   d.SchemaVersion,
+		RestoreTested:   d.RestoreTested,
+		ArchiveVerified: d.ArchiveVerified,
 	}
 	if d.OffhostOK != nil {
 		if *d.OffhostOK {
@@ -578,7 +580,20 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 	// A restored backup can be a schema version behind this binary, and the
 	// --clean restore left the pool holding stale cached plans. Reconcile in one
 	// shot (reset pool → migrate → backfill) so no container restart is needed.
-	if err := s.store.ReconcileAfterRestore(rctx); err != nil {
+	if err := s.store.ReconcileAfterRestore(rctx); err == nil {
+		// Mirror the two idempotent boot steps main runs: a dump old enough can
+		// predate the backup_settings row or carry no matching admin, and without
+		// these the instance limps until the next container restart. Failures are
+		// logged, not fatal — the restore itself succeeded.
+		if err := s.store.EnsureAdmin(rctx, s.cfg.AdminUsername, s.cfg.AdminPassword, false); err != nil {
+			slog.Warn("post-restore: ensure admin failed", "err", sanitizeLog(err.Error()))
+		}
+		if err := s.store.EnsureBackupSettings(rctx, models.BackupSettings{
+			VolumeCron: "0 3 * * *", VolumeKeep: s.cfg.BackupKeep, S3Cron: "0 4 * * *",
+		}); err != nil {
+			slog.Warn("post-restore: ensure backup settings failed", "err", sanitizeLog(err.Error()))
+		}
+	} else if err != nil {
 		slog.Error("post-restore reconcile failed", "err", sanitizeLog(err.Error()))
 		s.audit(r, "backup_restore_partial", "backup", 0, "Wiederhergestellt, aber Schema-Reconcile fehlgeschlagen")
 		s.setFlash(w, r, "error", "Wiederhergestellt, aber das Schema-Upgrade schlug fehl — bitte die App neu starten, um es abzuschließen.")

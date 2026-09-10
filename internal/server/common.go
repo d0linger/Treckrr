@@ -97,5 +97,7 @@ func describeDeleteBlockers(b store.DeleteBlockers) string {
 	add(b.Ledger, "Ledger-Position", "Ledger-Positionen")
 	add(b.Invoices, "Rechnung", "Rechnungen")
 	add(b.Sends, "Versandvermerk", "Versandvermerke")
+	add(b.DunningNotices, "Mahnvermerk", "Mahnvermerke")
+	add(b.Outbox, "E-Mail-Versanddatensatz", "E-Mail-Versanddatensätze")
 	return strings.Join(parts, ", ")
 }

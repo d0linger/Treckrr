@@ -26,13 +26,27 @@ const sessionTouchInterval = 5 * time.Minute
 // ErrNotFound is returned when a requested row does not exist.
 var ErrNotFound = errors.New("not found")
 
-// ErrGutschriftTooLarge is returned when a credit note would exceed the invoice's
-// remaining (uncredited) gross amount.
+// ErrGutschriftTooLarge is returned when a credit operation would push the
+// neighbor+year's total issued credits above the invoice gross — or when an
+// invoice would be issued below what was already credited. The cap counts ALL
+// issued credit notes of the neighbor+year (attached and free alike), because
+// InvoiceRemaining subtracts all of them: a cap that only saw attached ones let
+// a free Gutschrift plus a full attached one drive the balance negative, and
+// the credit payout would then hand out cash that never came in.
 var ErrGutschriftTooLarge = errors.New("gutschrift exceeds invoice")
+
+// ErrInactiveRule refuses to run a paused recurring rule on demand: pausing is
+// a statement that this series should not book right now.
+var ErrInactiveRule = errors.New("recurring rule is paused")
 
 // ErrInvoiceIncomplete is returned when issuance is attempted on content that does
 // not satisfy the § 11 UStG mandatory fields (a store-side backstop to the UI).
 var ErrInvoiceIncomplete = errors.New("invoice content incomplete (§11)")
+
+// ErrIssueDateInvalid rejects a chosen Rechnungsdatum that lies in the future
+// or before the youngest document of the year's Nummernkreis (§ 11: numbers
+// must stay chronologically consistent within their sequence).
+var ErrIssueDateInvalid = errors.New("issue date out of sequence")
 
 // ErrLastAdmin is returned when a role/delete change would leave no admin user.
 var ErrLastAdmin = errors.New("cannot remove the last admin")

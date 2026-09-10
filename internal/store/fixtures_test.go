@@ -2,9 +2,108 @@ package store_test
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
+	neturl "net/url"
+	"os"
 	"testing"
+	"time"
+
+	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/store"
 )
+
+// scratchStore isolates tests that operate on singleton settings or global
+// queues. Random lowercase hex makes the SQL identifier safe and collision
+// resistant even when multiple containers reuse the same process ID.
+func scratchStore(t *testing.T) (*store.Store, *sql.DB) {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping DB integration test")
+	}
+	base, err := neturl.Parse(dsn)
+	if err != nil {
+		t.Fatalf("parse test database URL: %v", err)
+	}
+	adminURL := *base
+	adminURL.Path = "/postgres"
+	admin, err := sql.Open("pgx", adminURL.String())
+	if err != nil {
+		t.Fatalf("open test database admin: %v", err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	var suffix [16]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		t.Fatalf("generate scratch database name: %v", err)
+	}
+	name := "treckrr_test_" + hex.EncodeToString(suffix[:])
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := admin.ExecContext(ctx, `CREATE DATABASE `+name); err != nil {
+		t.Fatalf("create scratch database: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanupCancel()
+		if _, err := admin.ExecContext(cleanupCtx, `DROP DATABASE `+name+` WITH (FORCE)`); err != nil {
+			t.Errorf("drop owned scratch database %s: %v", name, err)
+		}
+	})
+	scratchURL := *base
+	scratchURL.Path = "/" + name
+	pool, err := db.Connect(ctx, scratchURL.String())
+	if err != nil {
+		t.Fatalf("connect scratch database: %v", err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate scratch database: %v", err)
+	}
+	return store.New(pool, "test-encryption-secret"), pool
+}
+
+func scratchBookingFixture(t *testing.T) (*store.Store, *sql.DB, int64, int64) {
+	t.Helper()
+	st, pool := scratchStore(t)
+	ctx := context.Background()
+	baseID, err := st.CreateEmptyBase(ctx, 2026, "Review fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	yearID, err := st.CreateBillingYear(ctx, 2026, baseID, "Review fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	neighborID, err := st.CreateNeighbor(ctx, "Review neighbor", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddNeighborToYear(ctx, yearID, neighborID); err != nil {
+		t.Fatal(err)
+	}
+	return st, pool, yearID, neighborID
+}
+
+func waitForDatabaseBlock(t *testing.T, ctx context.Context, pool *sql.DB, blockerPID int) {
+	t.Helper()
+	for {
+		var waiting bool
+		if err := pool.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))`, blockerPID).Scan(&waiting); err != nil {
+			t.Fatalf("wait for blocked query: %v", err)
+		}
+		if waiting {
+			return
+		}
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("query did not block: %v", ctx.Err())
+		}
+	}
+}
 
 // fixtures names what one DB-backed test creates, so it can be removed again.
 // Only the roots are listed; purgeFixtures knows which children to clear first.

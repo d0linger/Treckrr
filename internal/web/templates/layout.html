@@ -53,7 +53,13 @@
 				<span>Treckrr</span>
 			</a>
 			<h1 class="appbar__title">{{.Title}}</h1>
-			<span class="appbar__offline" data-offline-badge role="status" aria-live="polite" hidden title="Offline erfasste Buchungen, werden bei Verbindung gesendet"></span>
+			{{if .User}}
+			<button type="button" class="appbar__icon" data-cmdk-open aria-label="Schnellsuche (Strg+K)" title="Schnellsuche (Strg+K)">
+				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+			</button>
+			{{end}}
+			<button type="button" class="appbar__offline" data-offline-badge aria-live="polite" hidden
+				aria-haspopup="dialog" title="Offline erfasste Buchungen ansehen"></button>
 			{{with .BackupHealth}}
 			<div class="bkdot bkdot--{{.Tone}}" data-bk>
 				<button class="appbar__icon bkdot__btn" type="button" data-bk-toggle aria-expanded="false" aria-controls="bkPop" aria-label="Backup: {{.Title}}{{if .AgeLabel}}, {{.AgeLabel}}{{end}}">
@@ -119,6 +125,12 @@
 		<nav class="drawer__nav">
 			<a class="drawer__item {{if eq .Active "mahnwesen"}}is-active{{end}}" href="/mahnwesen{{if .Year}}?year={{.Year.ID}}{{end}}">
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M5 8h9a3 3 0 0 1 0 6H7"/></svg></span>Mahnwesen</a>
+			<a class="drawer__item {{if eq .Active "entries"}}is-active{{end}}" href="/buchungen{{if .Year}}?year={{.Year.ID}}{{end}}">
+				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>Buchungen</a>
+			<a class="drawer__item {{if eq .Active "persons"}}is-active{{end}}" href="/personen">
+				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5 20a7 7 0 0 1 14 0"/></svg></span>Personen</a>
+			<a class="drawer__item {{if eq .Active "journal"}}is-active{{end}}" href="/rechnungsjournal{{if .Year}}?year={{.Year.ID}}{{end}}">
+				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>Rechnungsjournal</a>
 			<a class="drawer__item {{if eq .Active "payimport"}}is-active{{end}}" href="/payments/import">
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span>Zahlungs-Import</a>
 			<a class="drawer__item {{if eq .Active "recurring"}}is-active{{end}}" href="/recurring">
@@ -173,6 +185,10 @@
 		<form method="dialog" class="modal__card">
 			<p class="modal__msg" id="confirmModalMsg" data-modal-msg></p>
 			<input class="input modal__input" type="text" data-modal-input hidden aria-label="Grund">
+			<label class="check modal__check" data-modal-check hidden>
+				<input type="checkbox" data-modal-check-input>
+				<span data-modal-check-label></span>
+			</label>
 			<div class="modal__actions">
 				<button class="btn btn--ghost" value="cancel" type="submit">Abbrechen</button>
 				<button class="btn btn--primary" value="confirm" type="submit" data-modal-ok autofocus>Bestätigen</button>
@@ -180,9 +196,23 @@
 		</form>
 	</dialog>
 
+	<div class="offlineq" data-offline-panel hidden role="dialog" aria-modal="true" aria-labelledby="offlineq-title">
+		<div class="offlineq__sheet card">
+			<div class="offlineq__head">
+				<h2 id="offlineq-title" class="section-title">Offline erfasste Buchungen</h2>
+				<button type="button" class="btn btn--ghost btn--sm" data-offline-close>Schließen</button>
+			</div>
+			<p class="muted small">Diese Buchungen werden bei Verbindung automatisch gesendet. Abgelehnte Buchungen bleiben hier erhalten: Daten prüfen oder sichern, die Ursache korrigieren und mit „Jetzt senden“ erneut versuchen. Nur „Verwerfen“ löscht ungesendete Daten.</p>
+			<div data-offline-list></div>
+			<div class="btnrow">
+				<button type="button" class="btn btn--primary btn--sm" data-offline-flush>Jetzt senden</button>
+			</div>
+		</div>
+	</div>
 	<script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
 	<script src="/static/js/passkey.js?v={{.AssetVersion}}" defer></script>
 	<script src="/static/js/offline.js?v={{.AssetVersion}}" defer></script>
+	<script src="/static/js/capture.js?v={{.AssetVersion}}" defer></script>
 	{{if .User}}<script src="/static/js/app-bg.js?v={{.AssetVersion}}" defer></script>{{end}}
 	{{block "scripts" .}}{{end}}
 </body>

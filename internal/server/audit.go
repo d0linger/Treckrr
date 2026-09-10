@@ -3,14 +3,19 @@ package server
 import (
 	"context"
 	"crypto/rand"
-	"encoding/csv"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/d0linger/treckrr/internal/metrics"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // newReqID returns a short random id used to correlate a request's access-log
@@ -31,10 +36,9 @@ const auditPageSize = 50
 // pagination. Filtering, counting and paging all run in SQL so they cover the
 // full audit history, not just a fixed recent batch.
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
-	q := sanitizeQueryParam(r.URL.Query().Get("q"), maxNameLen)
-	action := sanitizeQueryParam(r.URL.Query().Get("action"), maxNameLen)
+	aq := auditQueryFromRequest(r)
 
-	total, err := s.store.CountAudit(r.Context(), q, action)
+	total, err := s.store.CountAudit(r.Context(), aq)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -52,7 +56,7 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	offset := (page - 1) * auditPageSize
 
-	entries, err := s.store.ListAuditFiltered(r.Context(), q, action, auditPageSize, offset)
+	entries, err := s.store.ListAuditFiltered(r.Context(), aq, auditPageSize, offset)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -62,12 +66,22 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	users, err := s.store.AuditUsers(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 
 	data := s.newPage(w, r, "Protokoll", "admin")
 	data["Entries"] = entries
 	data["Actions"] = actions
-	data["Q"] = q
-	data["Action"] = action
+	data["Users"] = users
+	data["Q"] = aq.Text
+	data["Action"] = aq.Action
+	data["Username"] = aq.Username
+	data["From"] = r.URL.Query().Get("from")
+	data["To"] = r.URL.Query().Get("to")
+	data["FilterQuery"] = auditFilterQuery(r)
 	data["Total"] = total
 	data["Page"] = page
 	data["TotalPages"] = totalPages
@@ -86,21 +100,16 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 
 // handleAuditExport streams the (optionally filtered) audit trail as CSV.
 func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
-	q := sanitizeQueryParam(r.URL.Query().Get("q"), maxNameLen)
-	action := sanitizeQueryParam(r.URL.Query().Get("action"), maxNameLen)
+	aq := auditQueryFromRequest(r)
 
-	filtered, err := s.store.ListAuditFiltered(r.Context(), q, action, 0, 0)
+	filtered, err := s.store.ListAuditFiltered(r.Context(), aq, 0, 0)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=\"treckrr_audit.csv\"")
-	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF})
-	cw := csv.NewWriter(w)
-	cw.Comma = ';'
-	defer cw.Flush()
+	cw, finish := csvDownload(w, r, "treckrr_audit.csv")
+	defer finish()
 	_ = cw.Write([]string{"Zeitpunkt", "Benutzer", "Aktion", "Objekt", "ID", "Detail", "IP"})
 	for _, e := range filtered {
 		_ = cw.Write([]string{
@@ -309,6 +318,55 @@ func noisyPath(p string) bool {
 // accessLog logs one meaningful request per line to stdout (Docker logs).
 // Successful static/PWA/health requests are skipped to keep the log readable;
 // errors are always logged.
+// recoverPanic turns a handler panic into a logged 500 instead of a dropped
+// connection. Without it a panic bypasses slog entirely (net/http prints a raw
+// stack to stderr) and leaves no req_id to correlate. It sits INSIDE accessLog
+// so the stack line carries the same req_id as the request line and the request
+// itself is still logged, as a 500. http.ErrAbortHandler is re-raised: that is
+// net/http's sanctioned way to abort a response mid-stream and must keep its
+// special handling.
+func (s *Server) recoverPanic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			rec := recover()
+			if rec == nil {
+				return
+			}
+			if rec == http.ErrAbortHandler { //nolint:errorlint // sentinel comparison per net/http contract
+				panic(rec)
+			}
+			id, _ := r.Context().Value(reqIDKey).(string)
+			metrics.Inc(metrics.HTTPPanics)
+			slog.Error("handler panic",
+				"req_id", id,
+				"path", sanitizeLog(r.URL.Path),
+				"panic", sanitizeLog(fmt.Sprint(rec)),
+				"stack", string(debug.Stack()))
+			// Best effort: if the handler already streamed a body this writes into
+			// it, but the status recorder still flips to 500 for the access log.
+			http.Error(w, "Interner Fehler — bitte erneut versuchen.", http.StatusInternalServerError)
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// statusClass buckets a status code into the 2xx/3xx/4xx/5xx label. One series
+// per class rather than per code: the cardinality stays fixed and the question
+// a dashboard actually asks ("are we serving errors?") is answered directly.
+func statusClass(code int) string {
+	switch {
+	case code >= 500:
+		return "5xx"
+	case code >= 400:
+		return "4xx"
+	case code >= 300:
+		return "3xx"
+	case code >= 200:
+		return "2xx"
+	}
+	return "1xx"
+}
+
 func (s *Server) accessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -317,6 +375,13 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 		r = r.WithContext(context.WithValue(r.Context(), reqIDKey, id))
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
+		// Measured for EVERY request, including the noisy paths skipped by the log
+		// below: a health-check flood or a 404 storm is exactly what a rate graph
+		// should show, even when it would drown the log.
+		dur := time.Since(start)
+		metrics.Inc(metrics.HTTPRequests)
+		metrics.IncLabel(metrics.HTTPRequestsByClass, "class", statusClass(rec.status))
+		metrics.ObserveRequest(dur.Seconds())
 		if noisyPath(r.URL.Path) && rec.status < 400 {
 			return
 		}
@@ -329,8 +394,36 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 			"method", sanitizeLog(r.Method),
 			"path", sanitizeLog(r.URL.Path),
 			"status", rec.status,
-			"dur", time.Since(start).Round(time.Millisecond).String(),
+			"dur", dur.Round(time.Millisecond).String(),
 			"user", sanitizeLog(user),
 			"ip", sanitizeLog(s.clientIP(r)))
 	})
+}
+
+// auditQueryFromRequest reads the protocol filters, capping every text value
+// and ignoring an unparsable date rather than guessing one — a malformed
+// "from" must widen the view, never silently hide history.
+func auditQueryFromRequest(r *http.Request) store.AuditQuery {
+	return store.AuditQuery{
+		Text:     sanitizeQueryParam(r.URL.Query().Get("q"), maxNameLen),
+		Action:   sanitizeQueryParam(r.URL.Query().Get("action"), maxNameLen),
+		Username: sanitizeQueryParam(r.URL.Query().Get("username"), maxNameLen),
+		From:     parseDay(r.URL.Query().Get("from")),
+		To:       parseDay(r.URL.Query().Get("to")),
+	}
+}
+
+// auditFilterQuery re-encodes the active filters, so the pager and the CSV
+// link keep them instead of resetting the view.
+func auditFilterQuery(r *http.Request) string {
+	v := url.Values{}
+	for _, k := range []string{"q", "action", "username", "from", "to"} {
+		if s := strings.TrimSpace(r.URL.Query().Get(k)); s != "" {
+			v.Set(k, s)
+		}
+	}
+	if len(v) == 0 {
+		return ""
+	}
+	return "&" + v.Encode()
 }

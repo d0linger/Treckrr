@@ -66,15 +66,16 @@ func (r *mockEmailRows) Columns() []string {
 			"kind", "status", "references_invoice_id", "payment_reference",
 			"net", "vat_rate", "vat_amount", "gross", "show_vat", "tax_mode", "tax_note",
 			"service_period_from", "service_period_to", "issuer_json", "recipient_json", "lines_json", "content_hash",
+			"skonto_pct", "skonto_until", // 0051
 		}
 	case strings.Contains(q, "payments p"):
 		return []string{"net", "paid"}
 	case strings.Contains(q, "company"):
-		return []string{"name", "address", "tax_id", "tax_note", "tax_mode", "vat_rate", "iban", "payment_term_days"}
+		return []string{"name", "address", "tax_id", "tax_note", "tax_mode", "vat_rate", "iban", "payment_term_days", "dunning_fee_1", "dunning_fee_2", "dunning_grace_days", "skonto_pct", "skonto_days", "invoice_prefix", "invoice_start", "small_business_limit", "travel_flat", "travel_per_km", "mail_signature", "mail_cc"}
 	case strings.Contains(q, "from billing_years"):
 		return []string{"y_id", "y_year", "y_base_id", "y_label", "y_status", "y_created", "b_id", "b_year", "b_name", "b_locked", "b_created"}
 	case strings.Contains(q, "from neighbors"):
-		return []string{"id", "name", "note", "address", "tax_id", "email", "archived", "anonymized", "created_at"}
+		return []string{"id", "name", "note", "address", "tax_id", "email", "iban", "payment_term_days", "archived", "anonymized", "created_at"}
 	default:
 		return []string{"val"}
 	}
@@ -114,6 +115,8 @@ func (r *mockEmailRows) Next(dest []driver.Value) error {
 		dest[20] = []byte(`{}`)
 		dest[21] = []byte(`[]`)
 		dest[22] = "hash"
+		dest[23] = nil // skonto_pct (0051)
+		dest[24] = nil // skonto_until
 	case strings.Contains(q, "payments p"):
 		dest[0] = "100.00"
 		dest[1] = "0.00"
@@ -126,6 +129,18 @@ func (r *mockEmailRows) Next(dest []driver.Value) error {
 		dest[5] = "20"
 		dest[6] = "AT123456789012345678"
 		dest[7] = int64(14)
+		dest[8] = "0.00"
+		dest[9] = "0.00"
+		dest[10] = int64(14)
+		dest[11] = "0.0"
+		dest[12] = int64(0)
+		dest[13] = "" // invoice_prefix
+		dest[14] = int64(1)
+		dest[15] = "0.00"
+		dest[16] = "0.00" // travel_flat
+		dest[17] = "0.00"
+		dest[18] = "" // mail_signature
+		dest[19] = ""
 	case strings.Contains(q, "from billing_years"):
 		dest[0] = int64(1)
 		dest[1] = 2026
@@ -145,9 +160,11 @@ func (r *mockEmailRows) Next(dest []driver.Value) error {
 		dest[3] = "Test Address"
 		dest[4] = ""
 		dest[5] = "neighbor@example.com"
-		dest[6] = false
-		dest[7] = false
-		dest[8] = time.Now()
+		dest[6] = ""  // iban
+		dest[7] = nil // payment_term_days: Firmenstandard
+		dest[8] = false
+		dest[9] = false
+		dest[10] = time.Now()
 	default:
 		dest[0] = "100.00"
 	}
@@ -194,7 +211,9 @@ func TestEmailSendFailureDoesNotLeakInternalErrors(t *testing.T) {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
 		flashCookie := flashText(t, s, rr)
-		if !strings.Contains(flashCookie, "Versand fehlgeschlagen.") {
+		// Property, not wording: the flash may explain the retry plan (outbox),
+		// but it must stay generic — the leak checks below are the real guard.
+		if !strings.Contains(flashCookie, "Versand fehlgeschlagen") {
 			t.Errorf("expected generic error flash, got cookie: %q", flashCookie)
 		}
 		if strings.Contains(flashCookie, "connection") || strings.Contains(flashCookie, "refused") || strings.Contains(flashCookie, "dial") {
@@ -218,7 +237,9 @@ func TestEmailSendFailureDoesNotLeakInternalErrors(t *testing.T) {
 			t.Errorf("expected status SeeOther, got %v", rr.Code)
 		}
 		flashCookie := flashText(t, s, rr)
-		if !strings.Contains(flashCookie, "Versand fehlgeschlagen.") {
+		// Property, not wording: the flash may explain the retry plan (outbox),
+		// but it must stay generic — the leak checks below are the real guard.
+		if !strings.Contains(flashCookie, "Versand fehlgeschlagen") {
 			t.Errorf("expected generic error flash, got cookie: %q", flashCookie)
 		}
 		if strings.Contains(flashCookie, "connection") || strings.Contains(flashCookie, "refused") || strings.Contains(flashCookie, "dial") {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -17,7 +18,7 @@ import (
 // gutschrift) with its frozen content and returns it. The document number is used
 // as the payment reference. refID links a storno/gutschrift to the invoice it
 // corrects (nil for a plain invoice).
-func insertInvoiceDoc(ctx context.Context, tx *sql.Tx, yearID, neighborID int64, number, kind string, refID *int64, c models.InvoiceContent) (models.Invoice, error) {
+func insertInvoiceDoc(ctx context.Context, tx *sql.Tx, yearID, neighborID int64, number, kind string, refID *int64, issuedOn time.Time, c models.InvoiceContent) (models.Invoice, error) {
 	issuerJSON, _ := json.Marshal(c.Issuer)
 	recipientJSON, _ := json.Marshal(c.Recipient)
 	linesJSON, _ := json.Marshal(c.Lines)
@@ -25,12 +26,14 @@ func insertInvoiceDoc(ctx context.Context, tx *sql.Tx, yearID, neighborID int64,
 		INSERT INTO invoices
 		  (billing_year_id, neighbor_id, number, kind, status, references_invoice_id, payment_reference,
 		   net, vat_rate, vat_amount, gross, show_vat, tax_mode, tax_note,
-		   service_from, service_to, issuer, recipient, lines, content_hash)
-		VALUES ($1,$2,$3,$4,'issued',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+		   service_from, service_to, issuer, recipient, lines, content_hash, issued_on,
+		   skonto_pct, skonto_until)
+		VALUES ($1,$2,$3,$4,'issued',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
 		RETURNING `+invoiceCols,
 		yearID, neighborID, number, kind, refID, number,
 		c.Net, c.VATRate, c.VATAmount, c.Gross, c.ShowVAT, c.TaxMode, c.TaxNote,
-		nullDate(c.ServiceFrom), nullDate(c.ServiceTo), issuerJSON, recipientJSON, linesJSON, c.Hash))
+		nullDate(c.ServiceFrom), nullDate(c.ServiceTo), issuerJSON, recipientJSON, linesJSON, c.Hash, issuedOn,
+		nullSkonto(c.SkontoPct), nullDate(c.SkontoUntil)))
 }
 
 // reverseContent mirrors an invoice's frozen substance into a Storno: the net,
@@ -52,6 +55,10 @@ func reverseContent(c models.InvoiceContent, origNumber, reason string) models.I
 		note += " Grund: " + reason + "."
 	}
 	rev.TaxNote = strings.TrimSpace(note + " " + c.TaxNote)
+	// A reversal offers no payment terms — carrying the original's Skonto clause
+	// onto a Storno would print a discount on a document that asks for nothing.
+	rev.SkontoPct = decimal.Decimal{}
+	rev.SkontoUntil = time.Time{}
 	rev.Hash = invoiceContentHash(rev)
 	return rev
 }
@@ -85,7 +92,7 @@ func (s *Store) StornoInvoice(ctx context.Context, yearID, neighborID int64, rea
 	if err != nil {
 		return models.Invoice{}, err
 	}
-	sv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+"-S", "storno", &orig.ID, reverseContent(content, orig.Number, reason))
+	sv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+"-S", "storno", &orig.ID, time.Now(), reverseContent(content, orig.Number, reason))
 	if err != nil {
 		return models.Invoice{}, err
 	}
@@ -138,11 +145,16 @@ func (s *Store) GutschriftInvoice(ctx context.Context, yearID, neighborID int64,
 	}
 
 	// A Gutschrift may not exceed the invoice's remaining (uncredited) gross.
+	// Counted over ALL issued credit notes of the neighbor+year, not just the
+	// ones attached to this invoice: free Gutschriften (references NULL) reduce
+	// InvoiceRemaining exactly the same way, and ignoring them here allowed
+	// total credits above the invoice gross — a phantom Guthaben the payout
+	// button would have paid out in cash (see ErrGutschriftTooLarge).
 	var creditedGross decimal.Decimal
 	if err := tx.QueryRowContext(ctx,
 		`SELECT COALESCE(-SUM(gross), 0) FROM invoices
-		  WHERE references_invoice_id=$1 AND kind='gutschrift' AND status='issued'`,
-		orig.ID).Scan(&creditedGross); err != nil {
+		  WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='gutschrift' AND status='issued'`,
+		yearID, neighborID).Scan(&creditedGross); err != nil {
 		return models.Invoice{}, err
 	}
 	if grossReduction.GreaterThan(base.Gross.Sub(creditedGross)) {
@@ -183,7 +195,7 @@ func (s *Store) GutschriftInvoice(ctx context.Context, yearID, neighborID int64,
 	if cnt > 0 {
 		suffix = fmt.Sprintf("-G%d", cnt+1)
 	}
-	gv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+suffix, "gutschrift", &orig.ID, credit)
+	gv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+suffix, "gutschrift", &orig.ID, time.Now(), credit)
 	if err != nil {
 		return models.Invoice{}, err
 	}
@@ -199,6 +211,16 @@ func (s *Store) contentOrBuild(ctx context.Context, iv models.Invoice, yearID, n
 		return *iv.Content, nil
 	}
 	return s.BuildInvoiceContent(ctx, yearID, neighborID)
+}
+
+// contentOrBuildWith is contentOrBuild with the company already in hand — the
+// journal exports rebuild many legacy rows in a loop and the company row is
+// the same for every one of them.
+func (s *Store) contentOrBuildWith(ctx context.Context, company models.Company, iv models.Invoice, yearID, neighborID int64) (models.InvoiceContent, error) {
+	if iv.Content != nil {
+		return *iv.Content, nil
+	}
+	return s.buildInvoiceContentWith(ctx, company, yearID, neighborID)
 }
 
 // ListInvoiceDocuments returns every invoice-family document (invoice, its storno,

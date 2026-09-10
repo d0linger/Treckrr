@@ -158,21 +158,21 @@ func (s *Store) CloneBase(ctx context.Context, srcBaseID int64, newYear int, nam
 	}
 
 	machineMap, err := copyRows(ctx, tx,
-		`SELECT id, name, working_width, cost_per_ab, active, category, sort_order FROM machines WHERE base_id=$1`, srcBaseID,
+		`SELECT id, name, working_width, cost_per_ab, active, category, sort_order, self_cost_per_h FROM machines WHERE base_id=$1`, srcBaseID,
 		func(scan func(...any) error) (int64, func(int64) (int64, error), error) {
 			var oldID int64
 			var name, category string
-			var ab, cost decimal.Decimal
+			var ab, cost, selfCost decimal.Decimal
 			var active bool
 			var sortOrder int
-			if err := scan(&oldID, &name, &ab, &cost, &active, &category, &sortOrder); err != nil {
+			if err := scan(&oldID, &name, &ab, &cost, &active, &category, &sortOrder, &selfCost); err != nil {
 				return 0, nil, err
 			}
 			insert := func(nb int64) (int64, error) {
 				var nid int64
 				err := tx.QueryRowContext(ctx,
-					`INSERT INTO machines (base_id,name,working_width,cost_per_ab,active,category,sort_order)
-					 VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, nb, name, ab, cost, active, category, sortOrder).Scan(&nid)
+					`INSERT INTO machines (base_id,name,working_width,cost_per_ab,active,category,sort_order,self_cost_per_h)
+					 VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, nb, name, ab, cost, active, category, sortOrder, selfCost).Scan(&nid)
 				return nid, err
 			}
 			return oldID, insert, nil

@@ -60,7 +60,7 @@ func TestRecalcMachinesOnlyIntegration(t *testing.T) {
 	}
 
 	mixerID, err := st.CreateMachine(ctx, baseID, "Zwangsmischer",
-		decimal.RequireFromString("1.7"), decimal.RequireFromString("6.471"), "Sonstige", 1)
+		decimal.RequireFromString("1.7"), decimal.RequireFromString("6.471"), "Sonstige", 1, decimal.Zero)
 	if err != nil {
 		t.Fatalf("machine: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestRecalcMachinesOnlyIntegration(t *testing.T) {
 	// Raise the implement to 12,00 €/h. Without the fix this reported no change,
 	// leaving the booking priced at the old rate for good.
 	if err := st.UpdateMachine(ctx, mixerID, "Zwangsmischer",
-		decimal.RequireFromString("1.7"), decimal.RequireFromString("7.0588"), "Sonstige", 1); err != nil {
+		decimal.RequireFromString("1.7"), decimal.RequireFromString("7.0588"), "Sonstige", 1, decimal.Zero); err != nil {
 		t.Fatalf("update machine: %v", err)
 	}
 	rows, err = st.RecalcPreview(ctx, yearID, &nid)
@@ -176,7 +176,7 @@ func TestRecalcLeavesQuantityBookingsAloneIntegration(t *testing.T) {
 	// A machine exists in the basis but is attached to nothing — repricing the
 	// quantity booking as a rig would still land on 0, which is the failure mode.
 	if _, err := st.CreateMachine(ctx, baseID, "Zwangsmischer",
-		decimal.RequireFromString("1.7"), decimal.RequireFromString("6.471"), "Sonstige", 1); err != nil {
+		decimal.RequireFromString("1.7"), decimal.RequireFromString("6.471"), "Sonstige", 1, decimal.Zero); err != nil {
 		t.Fatalf("machine: %v", err)
 	}
 

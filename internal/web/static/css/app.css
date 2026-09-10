@@ -36,12 +36,13 @@
 	/* danger = CRIMSON, deliberately pulled away from the signal orange so a
 	   destructive control can never be confused with the primary action. */
 	--danger: #a4262e;
+	--danger-text: #a4262e; /* light: the fill already clears AA as text */
 	--danger-tint: #f4dcdd;
 	--accent: #c8891f;
 	/* Darker amber used only where amber is TEXT (links, warn chips, status tags):
 	   passes 4.5:1 in light mode where the vivid --accent does not. In dark mode it
 	   equals --accent, which already passes. */
-	--accent-text: #8a5e12;
+	--accent-text: #835911; /* clears 4.5:1 on the accent tint too, not only on paper */
 	/* High-contrast keyboard-focus ring (WCAG 2.4.7). */
 	--focus: #1f6feb;
 	/* chart marks: a touch more chroma than the brand green so a bar doesn't read
@@ -50,6 +51,11 @@
 	--data-track: #e8ece8;
 	--pay: #2f8457;
 	--owe: #c05635;
+	/* Text variants: the fills above sit at ~4.0:1 on the page ground, which is
+	   fine for a bar but under AA's 4.5:1 for text. Measured 4.84 / 4.77 on the
+	   page and better on cards. */
+	--pay-text: #2a764e;
+	--owe-text: #ac4d2f;
 	/* Chassis — the machine frame: app bar + nav rail/tab bar stay this dark
 	   green-black in BOTH themes (a deliberate constant, like the white appbar
 	   icons); the orange marker is the only moving part. */
@@ -134,6 +140,7 @@
 		--signal-tint: rgba(255, 129, 66, .16);
 		--signal-text: #ff9a68;
 		--danger: #e04b55; /* crimson — clearly apart from the #ff8142 signal */
+		--danger-text: #e66f77; /* the fill is 4.12 on a card; this clears 4.5 on card and tint */
 		--danger-tint: #341a1c;
 		--accent: #e0a640;
 		--accent-text: #e0a640;
@@ -142,6 +149,8 @@
 		--data-track: #26302a;
 		--pay: #52b184;
 		--owe: #e0805f;
+		--pay-text: #5ab48a;
+		--owe-text: #e18667;
 		--chassis: #16201b;
 		--chassis-muted: #93a49a;
 		--chassis-line: #263329;
@@ -193,6 +202,7 @@
 	--signal-tint: rgba(255, 129, 66, .16);
 	--signal-text: #ff9a68;
 	--danger: #e04b55; /* crimson — clearly apart from the #ff8142 signal */
+	--danger-text: #e66f77; /* the fill is 4.12 on a card; this clears 4.5 on card and tint */
 	--danger-tint: #341a1c;
 	--accent: #e0a640;
 	--accent-text: #e0a640;
@@ -235,6 +245,8 @@
 	--data-track: #26302a;
 	--pay: #52b184;
 	--owe: #e0805f;
+	--pay-text: #5ab48a;
+	--owe-text: #e18667;
 }
 
 * { box-sizing: border-box; }
@@ -501,6 +513,16 @@ em { font-style: normal; color: var(--muted); }
 /* When the row wraps, the payment chip/toggle keeps right alignment on its own line. */
 .list__row > .paytoggle, .list__row > .paychip { margin-left: auto; }
 .list__actions { display: flex; gap: .4rem; align-items: center; }
+/* Pair link between a machine booking and its Mannstunden companion (booked in
+   one submit): quiet inline anchor jumping to the other card. */
+.bcard__link { color: var(--accent-text, var(--muted)); text-decoration: none; white-space: nowrap; }
+.bcard__link:hover { text-decoration: underline; }
+/* Jumping between the halves of a pair: the target card gets a visible ring —
+   with several pairs on one day, scrolling alone leaves the operator guessing
+   which card the link meant. scroll-margin keeps it clear of the app bar. */
+.bcard { scroll-margin-top: 4.5rem; }
+.bcard:target { outline: 2px solid var(--accent-text, var(--accent, #8a5e12)); outline-offset: 2px; }
+.modal__check { margin-top: .65rem; display: flex; gap: .5rem; align-items: center; }
 .list__actions form { margin: 0; }
 .list__main--link { text-decoration: none; color: inherit; flex: 1 1 auto; min-width: 0; }
 .list__row--plain { padding: 0; }
@@ -619,11 +641,21 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 /* Werkblatt danger: crimson OUTLINE by default — a destructive action must never
    read like the page's signal action. The filled crimson is reserved for the
    final confirmation step (btn--danger.btn--primary). */
-.btn--danger { color: var(--danger); background: transparent; border-color: var(--danger); }
+.btn--danger { color: var(--danger-text); background: transparent; border-color: var(--danger); }
 .btn--danger:hover { background: var(--danger-tint); }
 .btn--danger.btn--primary { background: var(--danger); color: #fff; box-shadow: var(--shadow); }
 .btn--ghost { background: transparent; border-color: var(--border); color: var(--primary); }
 .btn--sm { min-height: 36px; padding: .35rem .8rem; font-size: .75rem; } /* below the .82rem base — small stays small */
+/* Monospace field for raw CSV correction in the import preview. */
+.input--code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .78rem; white-space: pre; overflow-x: auto; }
+
+/* Beleg action bar, grouped by purpose (Ausbaukarte 80): view toggles above,
+   output/handover below, each row under a quiet label. */
+.beleg__actgroup { display: flex; flex-direction: column; gap: .35rem; }
+.beleg__actlabel { font-size: .68rem; font-weight: 700; letter-spacing: .04em;
+	text-transform: uppercase; color: var(--muted); }
+
+.btn--xs { min-height: 30px; padding: .2rem .55rem; font-size: .7rem; }
 .btn--block { width: 100%; }
 .btn--icon { padding: 0; width: var(--tap); min-height: var(--tap); border-radius: 50%; font-size: 1.1rem; }
 
@@ -790,7 +822,7 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .tag--progress { background: color-mix(in srgb, #d89b00 20%, transparent); color: var(--accent-text); }
 .tag--done { background: var(--primary-tint); color: var(--primary-strong); }
 .tag--paid { background: var(--primary-tint); color: var(--primary-strong); }
-.tag--open { background: var(--danger-tint); color: var(--danger); }
+.tag--open { background: var(--danger-tint); color: var(--danger-text); }
 
 /* ---- Flash ------------------------------------------------------------ */
 .flash { padding: .7rem 1rem; border-radius: var(--radius-sm); font-size: .9rem; font-weight: 500; }
@@ -906,6 +938,8 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .btnrow .btn { flex: 1 1 auto; }
 /* Split row: backlink on the left, action(s) on the right (non-stretching). */
 .btnrow--split { align-items: center; justify-content: space-between; }
+.btnrow--tight { gap: .3rem; margin-top: .3rem; }
+.btnrow--tight .btn { flex: 0 0 auto; }
 .btnrow--split .btn { flex: 0 0 auto; }
 .carryover { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
 .statusrow { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
@@ -1008,8 +1042,8 @@ span.paychip { cursor: default; }
 .kpi__value { font-size: clamp(1rem, 4.2vw, 1.5rem); font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: .12rem; white-space: nowrap; }
 .delta { display: inline-flex; align-items: center; gap: .22rem; align-self: flex-start; font-size: .72rem; font-weight: 700;
 	margin-top: .35rem; padding: .08rem .42rem; border-radius: 999px; }
-.delta--up { color: var(--data); background: color-mix(in srgb, var(--data) 15%, transparent); }
-.delta--down { color: var(--owe); background: color-mix(in srgb, var(--owe) 16%, transparent); }
+.delta--up { color: var(--pay-text); background: color-mix(in srgb, var(--data) 15%, transparent); }
+.delta--down { color: var(--owe-text); background: color-mix(in srgb, var(--owe) 16%, transparent); }
 /* Tile trend sparkline: inline SVG, coloured by the tile's role accent. Stretched
    to full width (preserveAspectRatio none) with a non-scaling stroke so the line
    keeps its 2px weight. */
@@ -1076,8 +1110,8 @@ span.paychip { cursor: default; }
 .dchart__fill--owe { fill: var(--owe); transform-origin: right center; }
 .dchart__fill--pay { fill: url(#payGrad); transform-origin: left center; }
 .dchart__val { font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.dchart__val--owe { color: var(--owe); }
-.dchart__val--pay { color: var(--pay); }
+.dchart__val--owe { color: var(--owe-text); }
+.dchart__val--pay { color: var(--pay-text); }
 .dchart__legend { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: .1rem; font-size: .74rem; color: var(--muted); }
 .dchart__legend span { display: inline-flex; align-items: center; gap: .35rem; }
 .dchart__sw { width: 10px; height: 10px; border-radius: 3px; }
@@ -1115,7 +1149,7 @@ span.paychip { cursor: default; }
 .chip2 { display: inline-flex; align-items: center; gap: .3rem; font-size: .7rem; font-weight: 800;
 	padding: .14rem .5rem; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; line-height: 1.3; }
 .chip2__g { font-size: .74rem; line-height: 1; }
-.chip2--paid { color: var(--pay); background: color-mix(in srgb, var(--pay) 14%, transparent); border-color: color-mix(in srgb, var(--pay) 30%, transparent); }
+.chip2--paid { color: var(--pay-text); background: color-mix(in srgb, var(--pay) 14%, transparent); border-color: color-mix(in srgb, var(--pay) 30%, transparent); }
 .chip2--open { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
 .chip2--void { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
 .chip2--stale { color: var(--accent-text); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
@@ -1258,7 +1292,7 @@ span.paychip { cursor: default; }
 .beleg__t small { display: block; font-family: var(--font-mono); font-weight: 400; font-size: .66rem; color: var(--muted); margin-top: 1px; }
 .beleg__h { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .85rem; color: var(--muted); }
 .beleg__b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .92rem; font-weight: 500; white-space: nowrap; }
-.beleg__b--neg { color: var(--owe); }
+.beleg__b--neg { color: var(--owe-text); }
 .beleg__lrow--void .beleg__t, .beleg__lrow--void .beleg__b { text-decoration: line-through; color: var(--muted); }
 .beleg__lsub { border-top: 1px solid var(--border); background: var(--surface-2); font-weight: 600; }
 .beleg__lsub .beleg__r { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
@@ -1783,6 +1817,13 @@ span.paychip { cursor: default; }
 	.list, .bookcards, .logcards, .yearcards, .yearstats {
 		display: grid; grid-template-columns: 1fr 1fr; align-items: start;
 	}
+	/* Grid items refuse to shrink below their content's min-content width, and
+	   .list__sub is nowrap — one long line (a session's user agent) would blow
+	   both 1fr tracks out to ~900px each and push the second column off-screen.
+	   min-width: 0 restores the ellipsis instead. */
+	.list > .list__row, .list > .disclosure--row, .bookcards > *, .logcards > *, .yearcards > *, .yearstats > * {
+		min-width: 0;
+	}
 	/* Opt back out of two columns (admin users list, audit log): these read
 	   better as a single top-to-bottom column. Placed after the rule above so
 	   it wins the cascade. */
@@ -1984,12 +2025,33 @@ span.paychip { cursor: default; }
 	   the Beleg print treatment). */
 	.stack--statement {
 		--surface: #fff; --surface-2: #f4f6f2; --text: #191c1a; --muted: #5b655d; --border: #dfe4dd;
+		--card-grad: #fff; --card-hairline: rgba(20, 40, 30, .07); --card-shadow: none;
 		-webkit-print-color-adjust: exact; print-color-adjust: exact;
 	}
 	.stack--statement, .stack--statement * { color: #111 !important; }
 	.stack--statement .statement-head__meta, .stack--statement .muted { color: #666 !important; }
-	.stack--statement .yearcard, .stack--statement .summary-card { break-inside: avoid; box-shadow: none; }
+	.stack--statement .yearcard, .stack--statement .summary-card, .stack--statement .card { break-inside: avoid; box-shadow: none; }
 	.stack--statement .yearcard { background: #fff !important; border-color: #dfe4dd !important; }
+	/* The hero and the trend cards paint their own dark surfaces (primary
+	   gradient / --card-grad), which the token pinning above cannot reach — under
+	   the flat #111 text rule they printed dark-on-dark. Same treatment as the
+	   Beleg hero: a light tint with full-ink text. */
+	.stack--statement .card { background: #fff !important; border-color: #dfe4dd !important; }
+	/* After the .card rule: the hero carries BOTH classes (summary-card card),
+	   and at equal specificity the later background would win. */
+	.stack--statement .summary-card { background: #e9efe9 !important; border: 1px solid #dfe4dd; }
+	.stack--statement .summary-card * { color: #10241a !important; opacity: 1; }
+	/* Bars draw at full width immediately — a print snapshot must not catch the
+	   entrance animation at 0 width. */
+	.stack--statement .bchart__fill { animation: none !important; }
+	/* The track token stays dark in dark mode — a zero-value year then printed as
+	   one solid dark bar, indistinguishable from a full one. */
+	.stack--statement { --data-track: #e7ebe5; }
+	/* The bar gradient's stops are classed elements under :root, out of reach of
+	   the token pinning above — under data-theme="dark" they kept the dark-theme
+	   mint. Print always uses the light-theme greens. */
+	.gs-strong { stop-color: #0f5233 !important; }
+	.gs-data, .gs-pay { stop-color: #58c286 !important; }
 }
 
 /* Standalone error page (404/500). Token-based; follows system theme. */
@@ -2050,6 +2112,25 @@ span.paychip { cursor: default; }
 .toast__undobtn:hover { background: rgba(255, 255, 255, .18); }
 
 /* Offline pending-count badge in the appbar. */
+/* Offline-Warteschlange (Ausbaukarte 72): the badge opens this sheet, which
+   lists the queued bookings so they can be reviewed or discarded. */
+.appbar__offline { border: 0; cursor: pointer; font-family: inherit; }
+.offlineq { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end;
+	justify-content: center; background: rgba(0, 0, 0, .45); padding: 0; }
+.offlineq[hidden] { display: none; }
+.offlineq__sheet { width: min(46rem, 100%); max-height: 85vh; overflow-y: auto;
+	border-radius: 16px 16px 0 0; margin: 0; }
+.offlineq__head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.offlineq__row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem;
+	padding: .5rem 0; border-top: 1px solid var(--border); }
+.offlineq__row:first-child { border-top: 0; }
+.offlineq__meta { display: flex; flex: 1 1 16rem; flex-direction: column; gap: .1rem; min-width: 0; overflow-wrap: anywhere; }
+.offlineq__data { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; }
+@media (min-width: 48rem) {
+	.offlineq { align-items: center; padding: 1rem; }
+	.offlineq__sheet { border-radius: 16px; }
+}
+
 .appbar__offline { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px;
 	background: var(--owe, #c05635); color: #fff; white-space: nowrap; }
 

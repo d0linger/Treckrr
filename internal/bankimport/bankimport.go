@@ -1,5 +1,7 @@
-// Package bankimport parses incoming bank credits from a CSV export or a camt.053
-// (ISO 20022) statement, so payments can be matched to invoices by reference.
+// Package bankimport parses incoming bank credits from a CSV export, an ISO
+// 20022 message (camt.052 report, camt.053 statement, camt.054 notification) or
+// a minimal MT940 statement, so payments can be matched to invoices by
+// reference or to neighbors by payer IBAN.
 package bankimport
 
 import (
@@ -8,6 +10,8 @@ import (
 	"encoding/hex"
 	"encoding/xml"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,12 +24,36 @@ type Txn struct {
 	Amount    decimal.Decimal
 	Reference string // Verwendungszweck / remittance info
 	Name      string // payer, when available
-	Hash      string // stable per-transaction id for import de-duplication
+	IBAN      string // payer account, when available — matcher fallback key.
+	// IBAN is deliberately NOT part of the de-dup hash: adding it would change
+	// the hash of every previously imported credit and re-book old statements.
+	Hash string // stable per-transaction id for import de-duplication
 }
 
 func (t *Txn) setHash() {
 	sum := sha256.Sum256([]byte(t.Date.Format("2006-01-02") + "|" + t.Amount.StringFixed(2) + "|" + strings.TrimSpace(t.Reference) + "|" + strings.TrimSpace(t.Name)))
 	t.Hash = hex.EncodeToString(sum[:])
+}
+
+// disambiguateDuplicateHashes re-hashes the 2nd, 3rd, … occurrence of an
+// identical hash with its occurrence index. Two legitimately identical credits
+// in one statement (same payer, day, amount and text — routine for split
+// transfers) would otherwise collapse to one hash, and ImportPayment's
+// ON CONFLICT would silently drop the second: money received but never booked,
+// shown forever as "bereits importiert". Statements list transactions in a
+// stable order, so a re-import of the same file reproduces the same suffixes
+// and de-duplication still works; the first occurrence keeps its historical
+// hash, so statements imported before this fix stay recognized.
+func disambiguateDuplicateHashes(txns []Txn) {
+	seen := make(map[string]int, len(txns))
+	for i := range txns {
+		h := txns[i].Hash
+		if n := seen[h]; n > 0 {
+			sum := sha256.Sum256([]byte(h + "#dup" + strconv.Itoa(n)))
+			txns[i].Hash = hex.EncodeToString(sum[:])
+		}
+		seen[h]++
+	}
 }
 
 // parseAmount accepts German ("1.234,56") or plain ("1234.56") decimals.
@@ -35,10 +63,19 @@ func parseAmount(raw string) (decimal.Decimal, bool) {
 	if s == "" {
 		return decimal.Zero, false
 	}
-	// German grouping+comma: strip thousands dots, comma→dot. Detect by a comma
-	// present with a dot before it, or a comma as the decimal sep.
-	if strings.Contains(s, ",") {
+	// Which separator is the decimal one? The LAST of the two decides:
+	// "1.234,56" (German) vs "1,234.56" (en-US bank exports) — treating every
+	// comma as German silently divided an en-US amount by 1000 and booked the
+	// wrong figure with nothing to warn anyone. A lone comma stays the German
+	// decimal comma (the dominant case for AT statements).
+	di, ci := strings.LastIndex(s, "."), strings.LastIndex(s, ",")
+	switch {
+	case ci >= 0 && di >= 0 && ci > di: // German: 1.234,56
 		s = strings.ReplaceAll(s, ".", "")
+		s = strings.ReplaceAll(s, ",", ".")
+	case ci >= 0 && di >= 0: // en-US: 1,234.56
+		s = strings.ReplaceAll(s, ",", "")
+	case ci >= 0: // 12,5
 		s = strings.ReplaceAll(s, ",", ".")
 	}
 	d, err := decimal.NewFromString(s)
@@ -82,8 +119,11 @@ func ParseCSV(data []byte) ([]Txn, error) {
 	if len(rows) < 2 {
 		return nil, fmt.Errorf("CSV enthält keine Datenzeilen")
 	}
-	find := func(header []string, keys ...string) int {
-		for i, h := range header {
+	find := func(skip int, keys ...string) int {
+		for i, h := range rows[0] {
+			if i == skip {
+				continue
+			}
 			hl := strings.ToLower(strings.TrimSpace(h))
 			for _, k := range keys {
 				if strings.Contains(hl, k) {
@@ -93,11 +133,13 @@ func ParseCSV(data []byte) ([]Txn, error) {
 		}
 		return -1
 	}
-	head := rows[0]
-	di := find(head, "datum", "buchung")
-	ai := find(head, "betrag", "umsatz", "amount")
-	ri := find(head, "verwendungszweck", "zweck", "referenz", "reference")
-	ni := find(head, "auftraggeber", "name", "empfänger", "zahler")
+	di := find(-1, "datum", "buchung")
+	ai := find(-1, "betrag", "umsatz", "amount")
+	ri := find(-1, "verwendungszweck", "zweck", "referenz", "reference")
+	ii := find(-1, "iban")
+	nameKeys := []string{"auftraggeber", "name", "empfänger", "zahler"}
+	legacyNameIndex := find(-1, nameKeys...)
+	ni := find(ii, nameKeys...)
 	if ai < 0 || ri < 0 {
 		return nil, fmt.Errorf("es braucht mindestens die Spalten Betrag und Verwendungszweck")
 	}
@@ -108,13 +150,21 @@ func ParseCSV(data []byte) ([]Txn, error) {
 			continue // skip non-credits / unparsable
 		}
 		date, _ := parseDate(col(rec, di))
-		t := Txn{Amount: amt, Reference: col(rec, ri), Name: col(rec, ni), Date: date}
-		t.setHash()
+		t := Txn{Amount: amt, Reference: col(rec, ri), Name: col(rec, ni), IBAN: normIBAN(col(rec, ii)), Date: date}
+		hashTxn := t
+		if legacyNameIndex == ii {
+			// This header order historically omitted the payer name. Keep that
+			// de-duplication key, while returning the corrected name to the matcher.
+			hashTxn.Name = ""
+		}
+		hashTxn.setHash()
+		t.Hash = hashTxn.Hash
 		out = append(out, t)
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("keine Zahlungseingänge (Gutschriften) gefunden")
 	}
+	disambiguateDuplicateHashes(out)
 	return out, nil
 }
 
@@ -125,11 +175,31 @@ func col(rec []string, i int) string {
 	return ""
 }
 
-// ---- camt.053 (ISO 20022) --------------------------------------------------
+// normIBAN strips spaces and uppercases, so stored and parsed IBANs compare.
+func normIBAN(s string) string {
+	return strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(s), " ", ""))
+}
+
+// ---- camt.052 / .053 / .054 (ISO 20022) ------------------------------------
+//
+// The three messages differ only in the envelope around the same Ntry element:
+// 052 is an intraday report, 053 the end-of-day statement, 054 a credit
+// notification. One struct collects the entries from whichever root is present.
 
 type camtDoc struct {
-	Entries []camtEntry `xml:"BkToCstmrStmt>Stmt>Ntry"`
+	Stmt   []camtEntry `xml:"BkToCstmrStmt>Stmt>Ntry"`
+	Rpt    []camtEntry `xml:"BkToCstmrAcctRpt>Rpt>Ntry"`
+	Ntfctn []camtEntry `xml:"BkToCstmrDbtCdtNtfctn>Ntfctn>Ntry"`
 }
+
+func (d camtDoc) entries() []camtEntry {
+	out := make([]camtEntry, 0, len(d.Stmt)+len(d.Rpt)+len(d.Ntfctn))
+	out = append(out, d.Stmt...)
+	out = append(out, d.Rpt...)
+	out = append(out, d.Ntfctn...)
+	return out
+}
+
 type camtEntry struct {
 	Amt         camtAmt      `xml:"Amt"`
 	CdtDbtInd   string       `xml:"CdtDbtInd"`
@@ -146,18 +216,41 @@ type camtDt struct {
 	DtTm string `xml:"DtTm"`
 }
 type camtTxDtls struct {
-	Ustrd  []string `xml:"RmtInf>Ustrd"`
-	DbtrNm string   `xml:"RltdPties>Dbtr>Nm"`
+	Ustrd    []string `xml:"RmtInf>Ustrd"`
+	DbtrNm   string   `xml:"RltdPties>Dbtr>Nm"`
+	DbtrIBAN string   `xml:"RltdPties>DbtrAcct>Id>IBAN"`
+	// Per-transaction amount, present on batch entries. camt.054 tends to put it
+	// directly in Amt, statements in AmtDtls>TxAmt.
+	Amt   camtAmt `xml:"Amt"`
+	TxAmt camtAmt `xml:"AmtDtls>TxAmt>Amt"`
 }
 
-// ParseCamt053 reads a camt.053 statement and returns the incoming credits.
-func ParseCamt053(data []byte) ([]Txn, error) {
+// amount returns the detail's own EUR amount, or false when it has none.
+func (d camtTxDtls) amount() (decimal.Decimal, bool) {
+	for _, a := range []camtAmt{d.Amt, d.TxAmt} {
+		if strings.TrimSpace(a.Value) == "" {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(a.Ccy), "EUR") {
+			return decimal.Zero, false
+		}
+		amt, ok := parseAmount(a.Value)
+		if ok && amt.IsPositive() {
+			return amt, true
+		}
+		return decimal.Zero, false
+	}
+	return decimal.Zero, false
+}
+
+// ParseCamt reads a camt.052/.053/.054 message and returns the incoming credits.
+func ParseCamt(data []byte) ([]Txn, error) {
 	var doc camtDoc
 	if err := xml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("camt.053 konnte nicht gelesen werden: %w", err)
+		return nil, fmt.Errorf("camt-Datei konnte nicht gelesen werden: %w", err)
 	}
 	var out []Txn
-	for _, e := range doc.Entries {
+	for _, e := range doc.entries() {
 		if !strings.EqualFold(strings.TrimSpace(e.CdtDbtInd), "CRDT") {
 			continue // only money received
 		}
@@ -171,27 +264,41 @@ func ParseCamt053(data []byte) ([]Txn, error) {
 		if !ok || !amt.IsPositive() {
 			continue
 		}
-		// A batch entry (several TxDtls) carries one aggregate Amt but multiple
-		// remittance texts. Joining them into a single Txn would book the batch
-		// total against a merged reference and mis-attribute the money, so skip it
-		// rather than emit a wrong booking.
-		if len(e.Details) > 1 {
-			continue
-		}
-		var refs []string
-		name := ""
-		for _, d := range e.Details {
-			refs = append(refs, d.Ustrd...)
-			if name == "" {
-				name = strings.TrimSpace(d.DbtrNm)
-			}
-		}
 		date := e.BookgDt.Dt
 		if date == "" && len(e.BookgDt.DtTm) >= 10 {
 			date = e.BookgDt.DtTm[:10]
 		}
 		bookg, _ := parseDate(date)
-		t := Txn{Amount: amt, Reference: strings.TrimSpace(strings.Join(refs, " ")), Name: name, Date: bookg}
+		// A batch entry (several TxDtls) carries one aggregate Amt but multiple
+		// remittance texts. When every detail states its own EUR amount, split the
+		// batch into one Txn per detail — that is what a SEPA Sammler in camt.054
+		// looks like. When any detail lacks its amount the whole entry is skipped:
+		// booking the batch total against a merged reference would mis-attribute
+		// the money.
+		if len(e.Details) > 1 {
+			split := splitBatch(e, bookg)
+			total := decimal.Zero
+			for _, t := range split {
+				total = total.Add(t.Amount)
+			}
+			// Every detail must account for the entry's entire credited amount.
+			if total.Equal(amt) {
+				out = append(out, split...)
+			}
+			continue
+		}
+		var refs []string
+		name, iban := "", ""
+		for _, d := range e.Details {
+			refs = append(refs, d.Ustrd...)
+			if name == "" {
+				name = strings.TrimSpace(d.DbtrNm)
+			}
+			if iban == "" {
+				iban = normIBAN(d.DbtrIBAN)
+			}
+		}
+		t := Txn{Amount: amt, Reference: strings.TrimSpace(strings.Join(refs, " ")), Name: name, IBAN: iban, Date: bookg}
 		// Prefer the bank's own unique entry reference for de-duplication: the
 		// date/amount/reference/name tuple collides for two legitimately identical
 		// credits (same payer, same amount, same day) and would silently drop the
@@ -205,16 +312,152 @@ func ParseCamt053(data []byte) ([]Txn, error) {
 		out = append(out, t)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("keine Zahlungseingänge in der camt.053-Datei")
+		return nil, fmt.Errorf("keine Zahlungseingänge in der camt-Datei")
 	}
+	disambiguateDuplicateHashes(out)
 	return out, nil
 }
 
-// Parse picks the parser by sniffing the content (XML → camt.053, else CSV).
+// splitBatch turns one batch entry into per-detail credits. Returns nil unless
+// EVERY detail states its own positive EUR amount — a partial split would book
+// some money twice (details + a later manual booking of the rest).
+func splitBatch(e camtEntry, bookg time.Time) []Txn {
+	txns := make([]Txn, 0, len(e.Details))
+	for i, d := range e.Details {
+		amt, ok := d.amount()
+		if !ok {
+			return nil
+		}
+		t := Txn{
+			Amount:    amt,
+			Reference: strings.TrimSpace(strings.Join(d.Ustrd, " ")),
+			Name:      strings.TrimSpace(d.DbtrNm),
+			IBAN:      normIBAN(d.DbtrIBAN),
+			Date:      bookg,
+		}
+		// De-dup: the bank's entry reference plus the detail's position. The
+		// single-detail form keeps its historical hash (no suffix), so statements
+		// imported before batch support stay recognized.
+		if ref := strings.TrimSpace(e.AcctSvcrRef); ref != "" {
+			sum := sha256.Sum256([]byte("camt:acctsvcrref:" + ref + "#" + fmt.Sprint(i)))
+			t.Hash = hex.EncodeToString(sum[:])
+		} else {
+			t.setHash()
+		}
+		txns = append(txns, t)
+	}
+	return txns
+}
+
+// ---- MT940 (SWIFT) ---------------------------------------------------------
+
+// mt61 matches the start of a :61: statement line: value date YYMMDD, optional
+// entry date MMDD, debit/credit mark (C, D, RC, RD), optional funds code letter,
+// then the comma-decimal amount.
+var mt61 = regexp.MustCompile(`^(\d{6})(\d{4})?(R?[CD])[A-Z]?(\d+,\d*)`)
+
+// parse86 splits a structured SEPA :86: text (?20-?29 plus ?60-?63 remittance,
+// ?32/?33 payer name, ?31 payer IBAN) into its parts. Unstructured text passes
+// through as the reference.
+func parse86(s string) (ref, name, iban string) {
+	if !strings.Contains(s, "?") {
+		return strings.TrimSpace(s), "", ""
+	}
+	var refs []string
+	for _, part := range strings.Split(s, "?") {
+		if len(part) < 2 {
+			continue
+		}
+		code, text := part[:2], strings.TrimSpace(part[2:])
+		switch {
+		// ?20-?29 hold the Verwendungszweck and ?60-?63 CONTINUE it — German
+		// banks spill into the 60s as soon as the text outgrows ten fields.
+		// Dropping them truncated exactly the tail an invoice number lands in,
+		// so a long remittance text matched nothing.
+		case (code >= "20" && code <= "29") || (code >= "60" && code <= "63"):
+			text = strings.TrimPrefix(text, "SVWZ+")
+			if text != "" {
+				refs = append(refs, text)
+			}
+		case code == "31":
+			iban = normIBAN(text)
+		case code == "32" || code == "33":
+			if name == "" {
+				name = text
+			} else {
+				name += " " + text
+			}
+		}
+	}
+	return strings.Join(refs, " "), name, iban
+}
+
+// ParseMT940 reads a minimal MT940 statement: :61: lines carry date, direction
+// and amount, the following :86: block the remittance text. Credits only ("C" —
+// RC/RD reversals are corrections, not income).
+func ParseMT940(data []byte) ([]Txn, error) {
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	var out []Txn
+	var cur *Txn
+	var raw86 string
+	flush := func() {
+		if cur == nil {
+			return
+		}
+		ref, name, iban := parse86(raw86)
+		cur.Reference, cur.Name, cur.IBAN = ref, name, iban
+		cur.setHash()
+		out = append(out, *cur)
+		cur, raw86 = nil, ""
+	}
+	in86 := false
+	for _, ln := range lines {
+		switch {
+		case strings.HasPrefix(ln, ":61:"):
+			flush()
+			in86 = false
+			m := mt61.FindStringSubmatch(ln[4:])
+			if m == nil || m[3] != "C" {
+				continue
+			}
+			amt, ok := parseAmount(m[4])
+			if !ok || !amt.IsPositive() {
+				continue
+			}
+			date, _ := time.Parse("060102", m[1])
+			cur = &Txn{Date: date, Amount: amt}
+		case strings.HasPrefix(ln, ":86:"):
+			if cur != nil {
+				raw86 = strings.TrimSpace(ln[4:])
+				in86 = true
+			}
+		case in86 && cur != nil && !strings.HasPrefix(ln, ":") && !strings.HasPrefix(ln, "-") && strings.TrimSpace(ln) != "":
+			// :86: continuation lines (no tag) belong to the running text.
+			raw86 += "\n" + strings.TrimSpace(ln)
+		default:
+			in86 = false
+			if strings.HasPrefix(ln, ":") {
+				flush()
+			}
+		}
+	}
+	flush()
+	if len(out) == 0 {
+		return nil, fmt.Errorf("keine Zahlungseingänge in der MT940-Datei")
+	}
+	disambiguateDuplicateHashes(out)
+	return out, nil
+}
+
+// Parse picks the parser by sniffing the content: XML → camt.052/053/054,
+// SWIFT tags → MT940, else CSV.
 func Parse(data []byte) ([]Txn, error) {
 	trimmed := strings.TrimSpace(strings.TrimPrefix(string(data), "\uFEFF"))
 	if strings.HasPrefix(trimmed, "<?xml") || strings.HasPrefix(trimmed, "<Document") {
-		return ParseCamt053(data)
+		return ParseCamt(data)
+	}
+	if strings.HasPrefix(trimmed, ":20:") || strings.HasPrefix(trimmed, "{1:") || strings.Contains(trimmed, "\n:61:") {
+		return ParseMT940(data)
 	}
 	return ParseCSV(data)
 }

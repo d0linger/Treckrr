@@ -85,15 +85,16 @@ func (s *Store) UpdateBillingYear(ctx context.Context, id, baseID int64, label s
 	return err
 }
 
-// DeleteBillingYear removes a billing year and its entries/memberships.
+// DeleteBillingYear removes a billing year without retained financial or delivery history.
 func (s *Store) DeleteBillingYear(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM billing_years WHERE id=$1`, id)
-	// See DeleteNeighbor: the 0039 RESTRICT constraints close the window between
-	// the handler's precheck and this statement.
-	if isForeignKeyViolation(err) {
-		return ErrHasHistory
-	}
-	return err
+	return s.deleteWithDeliveryGuard(
+		ctx,
+		id,
+		`SELECT id FROM billing_years WHERE id=$1 FOR UPDATE`,
+		`SELECT EXISTS(SELECT 1 FROM dunning_notices WHERE billing_year_id=$1)
+		     OR EXISTS(SELECT 1 FROM mail_outbox WHERE billing_year_id=$1)`,
+		`DELETE FROM billing_years WHERE id=$1`,
+	)
 }
 
 // SetYearStatus sets the workflow status of a billing year.

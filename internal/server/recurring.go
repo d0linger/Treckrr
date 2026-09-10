@@ -69,8 +69,62 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 		GespannID: entry.GespannID, TractorID: entry.TractorID, LoadLevelID: entry.LoadLevelID, MachineIDs: machineIDs,
 		TractorLabel: entry.TractorLabel, LoadLabel: entry.LoadLabel, MachineLabels: entry.MachineLabels,
 		TaskLabel: entry.TaskLabel, Note: entry.Note,
+		// A series made from a Mannstunden booking keeps booking it for that
+		// helper — the attribution is part of the booking, not decoration.
+		PersonID: entry.PersonID,
 	}
-	if err := s.store.CreateRecurring(r.Context(), entry.NeighborID, tmpl, kind, start); err != nil {
+	// A booking made together with a helper repeats WITH the helper unless the
+	// operator says otherwise on the form: the pair is the work as it happens
+	// every week, and a series that quietly drops half of it would understate
+	// every occurrence. The rate is frozen from the companion actually booked,
+	// so a one-off rate on the source booking is what the series repeats.
+	if r.FormValue("with_person") == "1" && (entry.Unit == "" || entry.Unit == "h") {
+		partnerID, perr := s.store.LinkedPartnerID(r.Context(), id)
+		if perr != nil {
+			s.serverError(w, r.URL.Path, perr)
+			return
+		}
+		if partnerID != 0 {
+			partner, gerr := s.store.GetEntry(r.Context(), partnerID)
+			if gerr != nil && !errors.Is(gerr, store.ErrNotFound) {
+				// Reading the partner failed for a real reason. Creating the rule
+				// anyway would freeze a helper-less template the operator cannot
+				// correct afterwards (UpdateRecurring keeps templates frozen), so
+				// this fails loudly instead of quietly building the wrong series.
+				s.serverError(w, r.URL.Path, gerr)
+				return
+			}
+			// A voided companion is a statement that those hours should not have
+			// been booked — the same reason a voided SOURCE cannot start a series.
+			if gerr == nil && partner.PersonID != nil && partner.UnitPrice.IsPositive() && !partner.Voided {
+				person, err := s.store.GetPerson(r.Context(), *partner.PersonID)
+				if errors.Is(err, store.ErrNotFound) {
+					s.setFlash(w, r, "error", "Die verknüpfte Person ist nicht mehr vorhanden. Bitte die Buchung neu laden.")
+					redirect(w, r, "/recurring")
+					return
+				} else if err != nil {
+					s.serverError(w, r.URL.Path, err)
+					return
+				}
+				tmpl.Companion = &models.RecurCompanion{
+					PersonID: *partner.PersonID,
+					Name:     person.Name,
+					Rate:     partner.UnitPrice,
+				}
+			}
+		}
+	}
+	if err := s.store.CreateRecurring(r.Context(), id, entry.NeighborID, tmpl, kind, start); err != nil {
+		if errors.Is(err, store.ErrSourceEntryVoided) {
+			s.setFlash(w, r, "error", "Aus einer stornierten Buchung kann keine Serie eingerichtet werden.")
+			redirect(w, r, "/recurring")
+			return
+		}
+		if errors.Is(err, store.ErrSourceCompanionUnavailable) {
+			s.setFlash(w, r, "error", "Die verknüpften Mannstunden wurden geändert, storniert oder gelöscht. Bitte die Buchung neu laden.")
+			redirect(w, r, "/recurring")
+			return
+		}
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
@@ -121,5 +175,65 @@ func (s *Server) handleRecurringDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "recurring_delete", "recurring", id, s.neighborName(r, neighborID)+" · Serie entfernt")
 	s.setFlash(w, r, "success", "Serie entfernt.")
+	redirect(w, r, "/recurring")
+}
+
+// handleRecurringUpdate changes a rule's cadence and next run (Ausbaukarte 68).
+func (s *Server) handleRecurringUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	kind := r.FormValue("interval_kind")
+	next, perr := time.Parse("2006-01-02", trimmed(r, "next_run"))
+	if perr != nil {
+		s.setFlash(w, r, "error", "Bitte ein gültiges Datum für den nächsten Lauf angeben.")
+		redirect(w, r, "/recurring")
+		return
+	}
+	switch err := s.store.UpdateRecurring(r.Context(), id, kind, next); {
+	case errors.Is(err, store.ErrNotFound):
+		http.NotFound(w, r)
+		return
+	case err != nil:
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+	default:
+		s.audit(r, "update", "recurring", id, kind+" · nächster Lauf "+next.Format("02.01.2006"))
+		s.setFlash(w, r, "success", "Serie aktualisiert.")
+	}
+	redirect(w, r, "/recurring")
+}
+
+// handleRecurringRunNow books one extra occurrence for today (Ausbaukarte 68).
+func (s *Server) handleRecurringRunNow(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	entryID, booked, err := s.store.RunRecurringNow(r.Context(), id)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		http.NotFound(w, r)
+		return
+	case errors.Is(err, store.ErrInactiveRule):
+		s.setFlash(w, r, "error", "Die Serie ist pausiert — bitte zuerst aktivieren.")
+	case err != nil:
+		s.serverError(w, r.URL.Path, err)
+		return
+	case !booked:
+		s.setFlash(w, r, "error", "Für heute gibt es kein offenes Abrechnungsjahr, dem dieser Nachbar zugeordnet ist.")
+	case entryID == 0:
+		// The idempotency key already existed: today's occurrence is there.
+		s.setFlash(w, r, "info", "Für heute wurde bereits eine Buchung dieser Serie erstellt.")
+	default:
+		s.audit(r, "run_now", "recurring", id, "eine Buchung für heute erstellt")
+		s.setFlash(w, r, "success", "Buchung für heute erstellt.")
+	}
 	redirect(w, r, "/recurring")
 }

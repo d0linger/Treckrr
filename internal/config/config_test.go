@@ -22,6 +22,14 @@ func TestLoadRejectsPlaceholders(t *testing.T) {
 		}
 	})
 
+	t.Run("negative S3 retention is rejected", func(t *testing.T) {
+		setValid(t)
+		t.Setenv("S3_KEEP", "-1")
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "S3_KEEP") {
+			t.Fatalf("expected S3_KEEP validation error, got %v", err)
+		}
+	})
+
 	t.Run("placeholder SESSION_SECRET is rejected", func(t *testing.T) {
 		setValid(t)
 		t.Setenv("SESSION_SECRET", placeholderSessionSecret)

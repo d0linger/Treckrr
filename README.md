@@ -55,7 +55,7 @@ neighbour that satisfies § 11 UStG.
 
 ## ✨ Features
 
-- **Bookings** priced from a shared rate basis — tractor PS × load level, or per unit/area — with implements, rigs ("Gespanne"), receipt photos, recurring series, quick capture, copy-from-existing, a duplicate warning, and storno that voids without deleting.
+- **Bookings** priced from a shared rate basis — tractor PS × load level, or per unit/area — with implements, rigs ("Gespanne"), receipt photos, recurring series, quick capture, copy-from-existing, a duplicate warning, and storno that voids without deleting. A helper from the Personenstamm can ride along with a rig booking — on the form, in the quick-entry table and in a series — as linked man-hours priced from their own rate.
 - **Rate bases** per year: tractors, load levels, implements and rigs. Compare two bases side by side, and lock one so its prices stop moving.
 - **Recalculation**: after a rate change, preview every affected booking old → new and apply it in one step. Bookings on an already-issued invoice are left alone.
 - **Billing years** per neighbour with ledger positions, partial payments (7-day undo), carry-forward between years, carrying members over from last year, plus archiving and GDPR anonymisation.
@@ -126,8 +126,11 @@ Pin a release rather than tracking `latest` with `TRECKRR_TAG=1.4`.
 | **ADMIN_PASSWORD_RESET** | Break-glass: reset the admin password on next boot | `false` | No |
 | **BACKUP_ENCRYPTION_KEY** | Min. 16 chars; empty disables backups entirely | — | No |
 | **BACKUP_DIR** / **BACKUP_STATUS_FILE** | Dump directory and status file | `/backups` | No |
-| **BACKUP_KEEP** | Number of dumps to retain | `7` | No |
+| **BACKUP_KEEP** | Dumps to retain — seeds the GUI value on first boot only, after that Admin → Backup wins | `7` | No |
+| **BACKUP_ENCRYPTION_KEY_OLD** | Previous key, for `rotate-key` (see below) | — | No |
+| **BACKUP_REHEARSE_URL** | Postgres URL allowed to create/drop a scratch DB; enables real restore rehearsals | — | No |
 | **S3_ENDPOINT** / **S3_BUCKET** | Off-box backup target; empty disables it | — | No |
+| **S3_KEEP** | Objects to keep in the bucket, 0 = all; seeds the GUI value on first boot only | `0` | No |
 | **S3_ACCESS_KEY** / **S3_SECRET_KEY** / **S3_PREFIX** | S3 credentials and key prefix | — | No |
 | **S3_USE_SSL** | TLS for the S3 endpoint | `true` | No |
 | **SMTP_HOST** / **SMTP_FROM** | E-mail delivery; both must be set to enable it | — | No |
@@ -135,6 +138,42 @@ Pin a release rather than tracking `latest` with `TRECKRR_TAG=1.4`.
 | **SMTP_STARTTLS** | Use STARTTLS | `true` | No |
 | **METRICS_TOKEN** | Min. 16 chars; enables `GET /metrics` behind a bearer token | — | No |
 | **LOG_FORMAT** / **LOG_LEVEL** | `text`\|`json`, `debug`\|`info`\|`warn`\|`error` | `text` / `info` | No |
+
+### Rotating the backup key
+
+Changing `BACKUP_ENCRYPTION_KEY` on its own orphans every existing dump: new
+backups use the new key, older ones can no longer be opened. Rotate instead:
+
+```bash
+# BACKUP_ENCRYPTION_KEY = the new key, BACKUP_ENCRYPTION_KEY_OLD = the previous one
+docker compose run --rm app rotate-key
+```
+
+Every dump is re-encrypted, verified as restorable **with the new key**, and only
+then replaced atomically. A dump that fails verification is left untouched and
+reported, so a partial run degrades to "some files still use the old key" — never
+to an unreadable archive. The command is resumable: run it again after fixing
+whatever failed. Remove `BACKUP_ENCRYPTION_KEY_OLD` once it reports everything
+rotated.
+
+The same applies to `ENCRYPTION_SECRET` (TOTP secrets at rest): pin it to the old
+value before rotating `SESSION_SECRET`, as the table above notes.
+
+### Rehearsing a restore
+
+The backup panel's "Restore getestet" used to be stamped by a table-of-contents
+read — that proves the file is a well-formed archive, not that it loads. Set
+`BACKUP_REHEARSE_URL` to a Postgres URL that may create and drop a scratch
+database, then:
+
+```bash
+docker compose run --rm app rehearse-restore
+```
+
+It restores the newest dump into `treckrr_restore_rehearsal`, checks the applied
+migrations and the money tables, drops the scratch database and reports timings.
+Only this stamps `restore_tested`; the cheap per-backup check now reports itself
+separately as `archive_verified`.
 
 The backup schedule is a cron expression set in the admin Backup panel, not an environment variable.
 
@@ -316,6 +355,10 @@ Everything works the same under rootless Docker or Podman.
 - **Second factor**: TOTP with one-time recovery codes, seeds encrypted at rest
   under a key derived separately from the session secret. Passkeys (WebAuthn)
   require user verification, and each ceremony is server-side and single-use.
+  Known edge (go-webauthn 0.18): a client that returns *unsolicited* extension
+  outputs fails the ceremony by design; password + TOTP remain available as the
+  fallback, so a login is never lost — if a passkey suddenly stops working after
+  a browser update, that is the first thing to check.
 - **Rate limits** on login by IP *and* by target account, on the 2FA step, on
   password step-up, and on passkey challenge creation — all in PostgreSQL, so
   they survive a restart.

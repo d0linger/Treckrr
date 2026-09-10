@@ -7,9 +7,14 @@
 
 	<!-- Belastungsstufen --------------------------------------------------->
 	<h2 class="section-title">Belastungsstufen <span class="badge">{{len .Loads}}</span> <span class="muted">(€ / PS · h)</span></h2>
+	{{if gt (len .Loads) 5}}
+	<input class="input" type="search" placeholder="Stufe suchen …" aria-label="Belastungsstufe suchen"
+		data-search="[data-load-row]" data-search-empty="[data-load-empty]">
+	<p class="muted small" data-load-empty hidden>Keine Stufe passt zur Suche.</p>
+	{{end}}
 	<div class="list">
 		{{range .Loads}}
-		<details class="card disclosure disclosure--row">
+		<details class="card disclosure disclosure--row" data-load-row>
 			<summary>
 				<span class="list__title">{{.Name}}</span>
 				<span class="list__value">{{num .CostPerPS}} €/PS·h</span>
@@ -27,7 +32,7 @@
 					<button class="btn btn--primary btn--sm" type="submit">Speichern</button>
 				</div>
 			</form>
-			<form method="post" action="/prices/loadlevels/{{.ID}}/delete" data-confirm-danger data-confirm="Belastungsstufe löschen?">
+			<form method="post" action="/prices/loadlevels/{{.ID}}/delete" data-confirm-danger data-confirm="Belastungsstufe „{{.Name}}“ löschen?">
 				<input type="hidden" name="base_id" value="{{$.Base.ID}}">
 				<button class="btn btn--danger btn--sm" type="submit">Löschen</button>
 			</form>
@@ -52,9 +57,15 @@
 
 	<!-- Traktoren ---------------------------------------------------------->
 	<h2 class="section-title">Traktoren <span class="badge">{{len .TractorViews}}</span> <span class="muted">(Stundensatz = PS × €/PS·h)</span></h2>
+	{{if gt (len .TractorViews) 5}}
+	<input class="input" type="search" placeholder="Traktor suchen …" aria-label="Traktor suchen"
+		data-search="[data-tractor-row]" data-search-empty="[data-tractor-empty]" data-search-count="[data-tractor-count]">
+	<p class="muted small"><span data-tractor-count></span></p>
+	<p class="muted small" data-tractor-empty hidden>Kein Traktor passt zur Suche.</p>
+	{{end}}
 	<div class="list">
 		{{range .TractorViews}}
-		<details class="card disclosure disclosure--row {{if not .Tractor.Active}}is-inactive{{end}}">
+		<details class="card disclosure disclosure--row {{if not .Tractor.Active}}is-inactive{{end}}" data-tractor-row>
 			<summary>
 				<span class="list__main">
 					<span class="list__title">{{.Tractor.Label}}{{if not .Tractor.Active}}<span class="pill-off">inaktiv</span>{{end}}</span>
@@ -115,6 +126,10 @@
 	<datalist id="machine-cats">
 		{{range .Categories}}<option value="{{.}}"></option>{{end}}
 	</datalist>
+	<input class="input" type="search" placeholder="Maschine suchen …" aria-label="Maschine suchen"
+		data-search="[data-machine-row]" data-search-empty="[data-machine-empty]" data-search-count="[data-machine-count]">
+	<p class="muted small"><span data-machine-count></span></p>
+	<p class="muted small" data-machine-empty hidden>Keine Maschine passt zu Suche und Kategorie.</p>
 	{{if .Categories}}
 	<label class="field">
 		<span>Filter nach Kategorie</span>
@@ -147,6 +162,7 @@
 					<label class="field"><span>€ / AB·h</span><input class="input" name="cost_per_ab" inputmode="decimal" value="{{num .Machine.CostPerAB}}" required></label>
 					<label class="field"><span>Kategorie</span><input class="input" name="category" value="{{.Machine.Category}}" list="machine-cats" placeholder="z. B. Mähen"></label>
 					<label class="field"><span>Reihenfolge</span><input class="input" type="number" name="sort_order" value="{{.Machine.SortOrder}}"></label>
+					<label class="field"><span>Selbstkosten €/h (optional, 0 = keine Auswertung)</span><input class="input" name="self_cost_per_h" inputmode="decimal" value="{{num .Machine.SelfCostPerH}}"></label>
 				</div>
 				<div class="btnrow">
 					<button class="btn btn--primary btn--sm" type="submit">Speichern</button>
@@ -178,6 +194,7 @@
 				<label class="field"><span>€ / AB·h</span><input class="input" name="cost_per_ab" inputmode="decimal" placeholder="5" required></label>
 				<label class="field"><span>Kategorie</span><input class="input" name="category" list="machine-cats" placeholder="z. B. Mähen"></label>
 				<label class="field"><span>Reihenfolge</span><input class="input" type="number" name="sort_order" value="0"></label>
+				<label class="field"><span>Selbstkosten €/h (optional)</span><input class="input" name="self_cost_per_h" inputmode="decimal" placeholder="0"></label>
 			</div>
 			<button class="btn btn--primary" type="submit">Hinzufügen</button>
 		</form>

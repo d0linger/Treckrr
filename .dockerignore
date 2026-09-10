@@ -14,6 +14,9 @@
 *.xlsx
 .idea/
 .vscode/
+# Project-local agent configuration and linked memory never belong in images.
+/.agents/
+/.claude/
 Dockerfile
 docker-compose.yml
 

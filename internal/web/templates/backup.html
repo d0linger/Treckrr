@@ -12,7 +12,8 @@
 		<dl class="bkp__meta">
 			<div><dt>Letztes Volume-Backup</dt><dd>{{if .LastBackup.IsZero}}—{{else}}{{date .LastBackup}} · vor {{.AgeHours}} h{{end}}</dd></div>
 			<div><dt>Größe</dt><dd>{{.SizeLabel}}</dd></div>
-			<div><dt>Restore getestet</dt><dd>{{if .RestoreTested.IsZero}}<span class="bkp__warn">nie</span>{{else}}{{date .RestoreTested}}{{end}}</dd></div>
+			<div><dt>Archiv geprüft</dt><dd>{{if .ArchiveVerified.IsZero}}<span class="bkp__warn">nie</span>{{else}}{{date .ArchiveVerified}}{{end}}</dd></div>
+			<div><dt>Restore geprobt</dt><dd>{{if .RestoreTested.IsZero}}<span class="bkp__warn">nie</span>{{else}}{{date .RestoreTested}}{{end}}</dd></div>
 			<div><dt>Schema-Stand</dt><dd>{{if .SchemaVersion}}{{.SchemaVersion}}{{else}}—{{end}}</dd></div>
 			{{if $.S3Enabled}}<div><dt>S3-Kopie</dt><dd>{{if .S3}}{{.S3}}{{else}}—{{end}}</dd></div>{{end}}
 		</dl>

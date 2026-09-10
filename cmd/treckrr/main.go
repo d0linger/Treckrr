@@ -18,6 +18,8 @@ import (
 	"github.com/d0linger/treckrr/internal/backup"
 	"github.com/d0linger/treckrr/internal/config"
 	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/mail"
+	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/server"
 	"github.com/d0linger/treckrr/internal/store"
@@ -96,6 +98,7 @@ func newBackup(cfg *config.Config, pool *sql.DB, st *store.Store) *backup.Servic
 		Dir:         cfg.BackupDir,
 		StatusFile:  cfg.BackupStatusFile,
 		Keep:        cfg.BackupKeep,
+		RehearseURL: cfg.BackupRehearseURL,
 		S3: backup.S3Options{
 			Endpoint:  cfg.S3Endpoint,
 			Bucket:    cfg.S3Bucket,
@@ -107,7 +110,10 @@ func newBackup(cfg *config.Config, pool *sql.DB, st *store.Store) *backup.Servic
 		SettingsFn: func(ctx context.Context) backup.Settings {
 			s, err := st.GetBackupSettings(ctx)
 			if err != nil {
-				return backup.Settings{VolumeCron: "0 3 * * *", VolumeKeep: cfg.BackupKeep, S3Cron: "0 4 * * *"}
+				return backup.Settings{
+					VolumeCron: "0 3 * * *", VolumeKeep: cfg.BackupKeep,
+					S3Cron: "0 4 * * *", S3Keep: cfg.S3Keep,
+				}
 			}
 			return backup.Settings(s)
 		},
@@ -168,7 +174,12 @@ func run() error {
 	// Background maintenance: purge expired sessions and stale rate-limit rows on a
 	// timer, so cleanup no longer depends on /healthz being hit — and /healthz can
 	// stay a cheap, side-effect-free probe instead of running DELETEs per request.
-	go purgeLoop(ctx, st)
+	// Waited for at shutdown like the backup loop: without the wait, pool.Close()
+	// fired under an in-flight tick — a mail could be DELIVERED but its
+	// status='sent' write fail on the closed pool, and the next boot re-sent it.
+	var purgeWG sync.WaitGroup
+	purgeWG.Add(1)
+	go func() { defer purgeWG.Done(); purgeLoop(ctx, cfg, st) }()
 
 	// Encrypted backups: scheduled writer (in-app) + on-demand download handler.
 	// Seed the schedule from env on first boot; thereafter it is GUI-editable.
@@ -176,6 +187,7 @@ func run() error {
 		VolumeCron: "0 3 * * *",
 		VolumeKeep: cfg.BackupKeep,
 		S3Cron:     "0 4 * * *",
+		S3Keep:     cfg.S3Keep,
 	}); err != nil {
 		return err
 	}
@@ -201,6 +213,10 @@ func run() error {
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		// Server-internal errors (TLS handshakes, port problems, its own panic
+		// lines) otherwise go through the std log package and never reach the
+		// JSON log stream everything else uses.
+		ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError),
 	}
 
 	go func() {
@@ -225,6 +241,12 @@ func run() error {
 	if !waitTimeout(&bkWG, 30*time.Second) {
 		slog.Warn("shutdown: a scheduled backup was still running after 30s; exiting anyway")
 	}
+	// The maintenance tick stops BETWEEN outbox mails on ctx cancel and each
+	// mail's own budget is 45s — this wait lets an in-flight delivery finish its
+	// bookkeeping instead of leaving a delivered-but-still-pending row behind.
+	if !waitTimeout(&purgeWG, 50*time.Second) {
+		slog.Warn("shutdown: the maintenance tick was still running after 50s; exiting anyway")
+	}
 	return err
 }
 
@@ -243,11 +265,13 @@ func waitTimeout(wg *sync.WaitGroup, d time.Duration) bool {
 
 // purgeLoop periodically removes expired sessions and stale rate-limit rows until
 // ctx is canceled. It runs one purge shortly after boot, then on a fixed tick.
-func purgeLoop(ctx context.Context, st *store.Store) {
+func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store) {
 	purge := func() {
 		bg, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
+		metrics.Inc(metrics.MaintenanceRuns)
 		if err := st.PurgeExpiredSessions(bg); err != nil {
+			metrics.Inc(metrics.MaintenanceFails)
 			slog.Error("purge sessions", "err", err)
 		}
 		if err := st.PurgeStaleRateLimits(bg); err != nil {
@@ -262,8 +286,10 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 		}
 		// Materialize any due recurring bookings (idempotent).
 		if n, err := st.RunDueRecurring(bg); err != nil {
+			metrics.Inc(metrics.MaintenanceFails)
 			slog.Error("recurring generation", "err", err)
 		} else if n > 0 {
+			metrics.Add(metrics.RecurringCreated, int64(n))
 			slog.Info("recurring bookings created", "count", n)
 			// These are system-created bookings (no HTTP request / user), so record a
 			// system-actor audit line — otherwise the entries appear in the DB with no
@@ -279,10 +305,46 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 		// events are kept for the long window (§ 132 BAO, 7 years). The classification
 		// lives in the store (shortLivedAuditActions); everything not listed defaults to
 		// the long window, so a new action is never dropped early by omission.
+		// Deliver parked mail (failed synchronous sends). The sender is injected so
+		// the store stays free of a config dependency; each delivery gets its own
+		// bounded context so one slow SMTP dialog cannot eat the whole tick.
+		if cfg.MailEnabled() {
+			// The LOOP ctx, not bg: between mails it is the shutdown stop signal,
+			// while each mail runs on its own detached 45s budget inside the
+			// store — the old shared 1-minute bg could expire between a
+			// successful SMTP dialog and the status='sent' write, and the next
+			// tick re-sent a delivered invoice.
+			sent, gaveUp, err := st.ProcessMailOutbox(ctx, func(ctx context.Context, to, subject, body, attName, attType string, attData []byte) error {
+				sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				var atts []mail.Attachment
+				if attName != "" {
+					atts = append(atts, mail.Attachment{Filename: attName, ContentType: attType, Data: attData})
+				}
+				return mail.Send(sctx, cfg, to, subject, body, atts)
+			})
+			if err != nil {
+				metrics.Inc(metrics.MaintenanceFails)
+				slog.Error("mail outbox", "err", err)
+			}
+			if sent > 0 {
+				metrics.Add(metrics.MailSent, int64(sent))
+				slog.Info("mail outbox delivered", "count", sent)
+			}
+			if gaveUp > 0 {
+				metrics.Add(metrics.MailFailed, int64(gaveUp))
+				slog.Warn("mail outbox gave up", "count", gaveUp)
+			}
+		}
+		if err := st.PurgeSentMail(bg, time.Now().Add(-30*24*time.Hour)); err != nil {
+			slog.Error("purge sent mail", "err", err)
+		}
 		shortCutoff, longCutoff := auditRetentionCutoffs(time.Now())
 		if n, err := st.PurgeAuditLog(bg, shortCutoff, longCutoff); err != nil {
+			metrics.Inc(metrics.MaintenanceFails)
 			slog.Error("purge audit log", "err", err)
 		} else if n > 0 {
+			metrics.Add(metrics.AuditPurged, n)
 			slog.Info("audit log purged", "count", n)
 		}
 	}
@@ -307,8 +369,12 @@ func runCommand(cmd string, args []string) error {
 		return runRestore(args)
 	case "backup":
 		return runBackupCLI(args)
+	case "rotate-key":
+		return runRotateKeyCLI(args)
+	case "rehearse-restore":
+		return runRehearseCLI(args)
 	default:
-		return fmt.Errorf("unknown command %q (known: restore, backup)", cmd)
+		return fmt.Errorf("unknown command %q (known: restore, backup, rotate-key, rehearse-restore)", cmd)
 	}
 }
 
@@ -394,5 +460,69 @@ func runBackupCLI(args []string) error {
 		return err
 	}
 	slog.Info("encrypted backup written")
+	return nil
+}
+
+// runRotateKeyCLI re-encrypts every stored dump from the previous key to the one
+// now in BACKUP_ENCRYPTION_KEY. CLI-only: it rewrites every recovery point.
+//
+// The previous key is read from BACKUP_ENCRYPTION_KEY_OLD rather than an
+// argument, so it never lands in the shell history or a process list.
+func runRotateKeyCLI(args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("usage: treckrr rotate-key   (set BACKUP_ENCRYPTION_KEY to the new key and BACKUP_ENCRYPTION_KEY_OLD to the previous one)")
+	}
+	oldKey := os.Getenv("BACKUP_ENCRYPTION_KEY_OLD")
+	if oldKey == "" {
+		return fmt.Errorf("BACKUP_ENCRYPTION_KEY_OLD is not set — it must hold the key the existing dumps were written with")
+	}
+	_, pool, bk, err := openBackup()
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	res, err := bk.RotateKey(context.Background(), oldKey)
+	for _, n := range res.Rotated {
+		slog.Info("rotated", "file", n)
+	}
+	for _, n := range res.Skipped {
+		slog.Warn("skipped", "detail", n)
+	}
+	if err != nil {
+		return err
+	}
+	slog.Info("key rotation finished", "rotated", len(res.Rotated), "skipped", len(res.Skipped))
+	return nil
+}
+
+// runRehearseCLI restores the newest dump into a scratch database and queries it
+// — the real drill behind the panel's "Restore getestet" line.
+func runRehearseCLI(args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("usage: treckrr rehearse-restore   (needs BACKUP_REHEARSE_URL)")
+	}
+	_, pool, bk, err := openBackup()
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	files, err := bk.List()
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		return fmt.Errorf("no stored dump to rehearse")
+	}
+	enc, err := bk.Open(files[0].Name)
+	if err != nil {
+		return err
+	}
+	rep, err := bk.RehearseRestore(context.Background(), enc)
+	if err != nil {
+		return err
+	}
+	slog.Info("restore rehearsal succeeded",
+		"file", files[0].Name, "migrations", rep.Migrations,
+		"tables", rep.Tables, "rows", rep.Rows, "took", rep.Duration.String())
 	return nil
 }
