@@ -48,6 +48,16 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 	default:
 		c.TaxMode = "pauschal"
 	}
+	// Bound length on decimal input fields to prevent resource and memory exhaustion DoS.
+	if s.tooLong(w, r, "Mahnspesen 1. Stufe", r.FormValue("dunning_fee_1"), maxDecimalLen) ||
+		s.tooLong(w, r, "Mahnspesen 2. Stufe", r.FormValue("dunning_fee_2"), maxDecimalLen) ||
+		s.tooLong(w, r, "USt-Satz", r.FormValue("vat_rate"), maxDecimalLen) ||
+		s.tooLong(w, r, "Anfahrt pauschal", r.FormValue("travel_flat"), maxDecimalLen) ||
+		s.tooLong(w, r, "Anfahrt je km", r.FormValue("travel_per_km"), maxDecimalLen) ||
+		s.tooLong(w, r, "Kleinunternehmergrenze", r.FormValue("small_business_limit"), maxDecimalLen) {
+		redirect(w, r, "/admin/company")
+		return
+	}
 	// Mahnspesen: nie negativ; leer/ungültig bleibt 0 (keine Spesenzeile).
 	if f := formDecimal(r, "dunning_fee_1"); f.IsPositive() {
 		c.DunningFee1 = f

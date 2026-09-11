@@ -175,4 +175,26 @@ func TestCompanySecurity(t *testing.T) {
 			t.Errorf("expected StatusForbidden (403), got %v", rr.Code)
 		}
 	})
+
+	t.Run("admin POST /admin/company rejects oversized dunning fees", func(t *testing.T) {
+		currentTestRole = "admin"
+		oversized := strings.Repeat("9", 35)
+		form := "dunning_fee_1=" + oversized
+		req := httptest.NewRequest(http.MethodPost, "/admin/company", strings.NewReader(form))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: "some-session-token"})
+		rr := httptest.NewRecorder()
+		s.admin(s.handleCompanySave).ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected StatusSeeOther (303), got %v", rr.Code)
+		}
+		if loc := rr.Header().Get("Location"); loc != "/admin/company" {
+			t.Errorf("expected redirect to /admin/company, got %q", loc)
+		}
+		msg := flashText(t, s, rr)
+		if !strings.Contains(msg, "Mahnspesen 1. Stufe darf höchstens 32 Zeichen lang sein.") {
+			t.Errorf("expected validation flash error, got %q", msg)
+		}
+	})
 }
