@@ -256,22 +256,22 @@ func auditReason(reason string) string {
 func (s *Server) handleLedgerCopy(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	yearID, neighborID, e, err := s.store.GetLedgerEntry(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), neighborID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	e.Date = time.Now() // a copy is a fresh posting for today
@@ -289,12 +289,12 @@ func (s *Server) handleLedgerCopy(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePaymentCopy(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	p, err := s.store.GetPayment(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	p.PaidOn = time.Now()

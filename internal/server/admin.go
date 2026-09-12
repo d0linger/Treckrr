@@ -108,10 +108,12 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/admin/users")
 }
 
+// handleUserPassword validates an administrator's password reset and revokes the
+// target user's sessions on success, optionally requiring a change at next login.
 func (s *Server) handleUserPassword(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -137,7 +139,7 @@ func (s *Server) handleUserPassword(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	role := r.FormValue("role")
@@ -167,12 +169,12 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	_, err = s.store.GetUser(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	username := trimmed(r, "username")
@@ -218,12 +220,12 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUserResetTotp(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	target, err := s.store.GetUser(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// One transaction: disable the factor, discard the recovery codes, revoke every
@@ -239,10 +241,12 @@ func (s *Server) handleUserResetTotp(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/admin/users")
 }
 
+// handleUserDelete retires an account without deleting its audit history.
+// It rejects self-deactivation and honors the store's last-administrator safeguard.
 func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	current := userFromCtx(r)

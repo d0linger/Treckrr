@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-11T00:00:00+02:00",
+  "title": "Design System: Treckrr",
+  "extensions": {
+    "colorMeta": {
+      "iron-green": {
+        "role": "primary",
+        "displayName": "Iron Green",
+        "canonical": "#115638",
+        "tonalRamp": ["#04170d", "#082c1b", "#115638", "#2f6f4f", "#5c9675", "#91bba2", "#c5ddce", "#edf6f0"]
+      },
+      "action-orange": {
+        "role": "secondary",
+        "displayName": "Safety Orange",
+        "canonical": "#e05910",
+        "tonalRamp": ["#2b0d02", "#612005", "#963508", "#c84a0c", "#e96f32", "#f1a071", "#f8cfb3", "#fff3e9"]
+      },
+      "danger-crimson": {
+        "role": "tertiary",
+        "displayName": "Danger Crimson",
+        "canonical": "#a4262e",
+        "tonalRamp": ["#250609", "#501016", "#7a1b22", "#a4262e", "#c5555c", "#dc8b90", "#efc1c4", "#fcedee"]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Werkblatt Paper",
+        "canonical": "#edf1ec",
+        "tonalRamp": ["#172019", "#303b32", "#4c5a4f", "#69786d", "#8b998e", "#afb9b1", "#d3dad4", "#f3f6f3"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ledger Ink",
+        "canonical": "#19211d",
+        "tonalRamp": ["#101512", "#252e29", "#414b45", "#606a64", "#818b85", "#a5ada8", "#ccd1ce", "#f0f2f1"]
+      },
+      "mint-selection": {
+        "role": "primary",
+        "displayName": "Selection Mint",
+        "canonical": "#85d7a9",
+        "tonalRamp": ["#0a2115", "#17452c", "#286a45", "#3e9161", "#5db77f", "#85d7a9", "#b8ead0", "#edf9f2"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Ledger Display", "purpose": "Major money totals, page titles, and machine-ledger identity." },
+      "body": { "displayName": "Operator Body", "purpose": "Forms, instructions, and readable transactional content." },
+      "label": { "displayName": "Stamped Label", "purpose": "Short states, actions, and scan-heavy metadata." }
+    },
+    "shadows": [
+      { "name": "sheet-rest", "value": "0 1px 2px rgba(24, 45, 35, .05)", "purpose": "Near-flat lift for bordered work sheets." },
+      { "name": "overlay", "value": "0 10px 26px rgba(0, 0, 0, .22)", "purpose": "True overlays and transient feedback only." },
+      { "name": "action-contact", "value": "0 4px 14px rgba(21, 31, 25, .16)", "purpose": "Neutral contact shadow for the primary action." }
+    ],
+    "motion": [
+      { "name": "press", "value": "80ms ease", "purpose": "One-pixel button press response." },
+      { "name": "state", "value": "150ms ease", "purpose": "Hover and color-state transitions." },
+      { "name": "reduced", "value": "0.01ms", "purpose": "Global effective stand-down under prefers-reduced-motion." }
+    ],
+    "breakpoints": [
+      { "name": "narrow", "value": "480px" },
+      { "name": "mobile", "value": "640px" },
+      { "name": "rail", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single orange action signal for a region.",
+      "html": "<button class=\"ds-btn-primary\">BUCHUNG SPEICHERN</button>",
+      "css": ".ds-btn-primary{min-height:44px;padding:.6rem 1.05rem;border:1px solid transparent;border-radius:8px;background:linear-gradient(135deg,var(--signal,#e05910),var(--signal-press,#c74d0c));color:var(--on-signal,#1c1006);font:700 .75rem 'JetBrains Mono',monospace;letter-spacing:.04em;text-transform:uppercase;box-shadow:0 4px 14px rgba(21,31,25,.16);cursor:pointer;transition:filter .15s ease,transform .08s ease}.ds-btn-primary:hover{filter:brightness(1.06)}.ds-btn-primary:active{transform:translateY(1px)}.ds-btn-primary:focus-visible{outline:2px solid var(--focus,#1f6feb);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Quiet secondary action with a crisp boundary.",
+      "html": "<button class=\"ds-btn-ghost\">CSV EXPORT</button>",
+      "css": ".ds-btn-ghost{min-height:44px;padding:.6rem 1.05rem;border:1px solid var(--border,#ccd4ce);border-radius:8px;background:transparent;color:var(--primary,#115638);font:700 .75rem 'JetBrains Mono',monospace;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;transition:background .15s ease}.ds-btn-ghost:hover{background:var(--surface-2,#eff2ef)}.ds-btn-ghost:focus-visible{outline:2px solid var(--focus,#1f6feb);outline-offset:2px}"
+    },
+    {
+      "name": "Werkblatt Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Explicitly labelled field nested into a quiet sheet.",
+      "html": "<label class=\"ds-field\"><span>STUNDEN</span><input value=\"5,00\"></label>",
+      "css": ".ds-field{display:flex;flex-direction:column;gap:.25rem;color:var(--text,#19211d);font:700 .72rem 'JetBrains Mono',monospace;letter-spacing:.04em}.ds-field input{min-height:44px;padding:.65rem .75rem;border:1px solid var(--border,#ccd4ce);border-radius:6px;background:var(--surface-2,#eff2ef);color:var(--text,#19211d);font:400 1rem 'Hanken Grotesk',sans-serif;caret-color:var(--signal,#e05910)}.ds-field input:focus{border-color:var(--signal,#e05910);outline:2px solid var(--focus,#1f6feb);outline-offset:2px}"
+    },
+    {
+      "name": "Work Sheet Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "The flat bordered surface used for operational groups.",
+      "html": "<article class=\"ds-card\"><span class=\"ds-card-label\">GESAMTKOSTEN 2026</span><strong>5.352,67 €</strong></article>",
+      "css": ".ds-card{display:flex;flex-direction:column;gap:.3rem;padding:.9rem 1rem;border:1px solid rgba(20,40,30,.16);border-radius:10px;background:var(--surface,#f9fbf9);color:var(--text,#19211d);box-shadow:0 1px 2px rgba(24,45,35,.05)}.ds-card strong{font:700 1.5rem 'JetBrains Mono',monospace}.ds-card-label{color:var(--muted,#57645c);font:700 .75rem 'JetBrains Mono',monospace;letter-spacing:.04em}"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "description": "Text-first semantic state reinforced by tint and border.",
+      "html": "<span class=\"ds-chip\">● OFFEN · 338,63 €</span>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;min-height:24px;padding:.12rem .55rem;border:1px solid color-mix(in srgb,var(--accent,#c8891f) 45%,transparent);border-radius:999px;background:color-mix(in srgb,var(--accent,#c8891f) 14%,transparent);color:var(--accent-text,#835911);font:700 .72rem 'JetBrains Mono',monospace;letter-spacing:.04em;white-space:nowrap}"
+    },
+    {
+      "name": "Chassis Navigation",
+      "kind": "nav",
+      "description": "Explicit active navigation shared by bottom tabs and the desktop rail.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item ds-active\" aria-current=\"page\">01&nbsp; Übersicht</a><a class=\"ds-nav-item\">02&nbsp; Jahre</a></nav>",
+      "css": ".ds-nav{display:flex;gap:.25rem;padding:.55rem;background:var(--chassis,#fbfaf5);border:1px solid var(--chassis-line,#1f4d38)}.ds-nav-item{min-height:44px;display:inline-flex;align-items:center;padding:.55rem .6rem;border-radius:8px;color:var(--chassis-muted,#5c6b62);font:700 .75rem 'JetBrains Mono',monospace;text-decoration:none}.ds-nav-item:hover{background:rgba(31,77,56,.1)}.ds-nav-item.ds-active{background:var(--chassis-chip,#1f4d38);color:var(--chassis-on-chip,#85d7a9)}.ds-nav-item:focus-visible{outline:2px solid var(--focus,#1f6feb);outline-offset:2px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Working Werkblatt",
+    "overview": "Treckrr should feel like a well-kept machine ledger brought into the field: technical, calm, compact, and trustworthy. Blueprint paper, stamped mono labels, restrained green structure, and precise tabular figures create character without competing with operational work. The interface is dense enough for billing and audit tasks but never cramped. Decoration stays quiet and static; state, hierarchy, and readable numbers carry the experience.",
+    "keyCharacteristics": [
+      "Blueprint-paper ground with crisp bordered sheets.",
+      "Mono machine-ledger headings and figures over a humanist body face.",
+      "Deep green structure, mint selection, orange action, and crimson danger.",
+      "Mobile-first controls sized for field use, with compact desktop density."
+    ],
+    "rules": [
+      { "name": "The One Signal Rule", "body": "Orange is for the page's primary action, not navigation, decoration, or ordinary selection.", "section": "colors" },
+      { "name": "The Semantic Foreground Rule", "body": "Fill tokens may define borders and solid controls; text and icons use their contrast-safe foreground token.", "section": "colors" },
+      { "name": "The Ledger Voice Rule", "body": "Use mono where operators scan identity, state, time, or money; use the body face where they must read a sentence.", "section": "typography" },
+      { "name": "The Flat-by-Default Rule", "body": "Prefer boundaries and tonal layers at rest; reserve visible elevation for overlays or active interaction.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep orange rare and action-specific.",
+      "Do use mono type for scan-heavy operational data and short labels.",
+      "Do preserve 44px controls for mobile and coarse pointers.",
+      "Do provide explicit empty, loading, failure, focus, and reduced-motion behavior."
+    ],
+    "donts": [
+      "Don't introduce continuous decorative animation or colored glow shadows.",
+      "Don't use danger fill colors directly for text or icons.",
+      "Don't add generic dashboard decoration that does not encode data or state.",
+      "Don't replace the bottom-tab/desktop-rail information architecture without product evidence."
+    ]
+  }
+}

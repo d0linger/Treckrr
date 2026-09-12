@@ -168,12 +168,12 @@ func dsgvoInvoiceFrom(iv models.Invoice) dsgvoInvoice {
 func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	n, err := s.store.GetNeighbor(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	years, err := s.store.ListBillingYears(r.Context())

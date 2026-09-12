@@ -48,7 +48,7 @@
 	<a class="skip" href="#main">Zum Inhalt springen</a>
 	<div class="topstack">
 		<header class="appbar">
-			<a class="appbar__brand" href="/">
+			<a class="appbar__brand" href="/" aria-label="Treckrr – zur Übersicht">
 				<svg class="appbar__brand-mark" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#m-traktor"/></svg>
 				<span>Treckrr</span>
 			</a>
@@ -72,7 +72,7 @@
 				</div>
 			</div>
 			{{end}}
-			<button class="appbar__icon" type="button" data-theme-toggle title="Design wechseln" aria-label="Hell/Dunkel umschalten">
+			<button class="appbar__icon appbar__theme" type="button" data-theme-toggle title="Design wechseln" aria-label="Hell/Dunkel umschalten">
 				<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
 					<circle cx="12" cy="12" r="9"/><path d="M12 3v18" fill="currentColor" stroke="none"/>
 					<path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/>
@@ -114,7 +114,7 @@
 
 {{if .User}}
 	<div class="drawer__scrim" data-drawer-close hidden></div>
-	<aside class="drawer" id="drawer" aria-hidden="true" inert aria-label="Menü">
+	<aside class="drawer" id="drawer" aria-hidden="true" inert role="dialog" aria-modal="true" aria-label="Menü">
 		<div class="drawer__head">
 			<span class="drawer__avatar" aria-hidden="true">{{initials .User.Username}}</span>
 			<span class="drawer__id">
@@ -123,28 +123,28 @@
 			</span>
 		</div>
 		<nav class="drawer__nav">
-			<a class="drawer__item {{if eq .Active "mahnwesen"}}is-active{{end}}" href="/mahnwesen{{if .Year}}?year={{.Year.ID}}{{end}}">
+			<a class="drawer__item {{if eq .Active "mahnwesen"}}is-active{{end}}" href="/mahnwesen{{if .Year}}?year={{.Year.ID}}{{end}}" {{if eq .Active "mahnwesen"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M5 8h9a3 3 0 0 1 0 6H7"/></svg></span>Mahnwesen</a>
-			<a class="drawer__item {{if eq .Active "entries"}}is-active{{end}}" href="/buchungen{{if .Year}}?year={{.Year.ID}}{{end}}">
+			<a class="drawer__item {{if eq .Active "entries"}}is-active{{end}}" href="/buchungen{{if .Year}}?year={{.Year.ID}}{{end}}" {{if eq .Active "entries"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>Buchungen</a>
-			<a class="drawer__item {{if eq .Active "persons"}}is-active{{end}}" href="/personen">
+			<a class="drawer__item {{if eq .Active "persons"}}is-active{{end}}" href="/personen" {{if eq .Active "persons"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5 20a7 7 0 0 1 14 0"/></svg></span>Personen</a>
-			<a class="drawer__item {{if eq .Active "journal"}}is-active{{end}}" href="/rechnungsjournal{{if .Year}}?year={{.Year.ID}}{{end}}">
+			<a class="drawer__item {{if eq .Active "journal"}}is-active{{end}}" href="/rechnungsjournal{{if .Year}}?year={{.Year.ID}}{{end}}" {{if eq .Active "journal"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>Rechnungsjournal</a>
-			<a class="drawer__item {{if eq .Active "payimport"}}is-active{{end}}" href="/payments/import">
+			<a class="drawer__item {{if eq .Active "payimport"}}is-active{{end}}" href="/payments/import" {{if eq .Active "payimport"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span>Zahlungs-Import</a>
-			<a class="drawer__item {{if eq .Active "recurring"}}is-active{{end}}" href="/recurring">
+			<a class="drawer__item {{if eq .Active "recurring"}}is-active{{end}}" href="/recurring" {{if eq .Active "recurring"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg></span>Wiederkehrend</a>
-			<a class="drawer__item {{if eq .Active "profile"}}is-active{{end}}" href="/profile">
+			<a class="drawer__item {{if eq .Active "profile"}}is-active{{end}}" href="/profile" {{if eq .Active "profile"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span>Einstellungen</a>
 			{{if .User.IsAdmin}}
-			<a class="drawer__item {{if eq .Active "admin"}}is-active{{end}}" href="/admin/users">
+			<a class="drawer__item {{if eq .Active "admin"}}is-active{{end}}" href="/admin/users" {{if eq .Active "admin"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.1 2.4-5 5.5-5s5.5 1.9 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16.5 15.3c2.5.4 4 2.1 4 4.7"/></svg></span>Benutzer</a>
-			<a class="drawer__item {{if eq .Active "audit"}}is-active{{end}}" href="/admin/audit">
+			<a class="drawer__item {{if eq .Active "audit"}}is-active{{end}}" href="/admin/audit" {{if eq .Active "audit"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span>Audit‑Log</a>
-			<a class="drawer__item {{if eq .Active "backup"}}is-active{{end}}" href="/admin/backup">
+			<a class="drawer__item {{if eq .Active "backup"}}is-active{{end}}" href="/admin/backup" {{if eq .Active "backup"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span>Backup</a>
-			<a class="drawer__item {{if eq .Active "company"}}is-active{{end}}" href="/admin/company">
+			<a class="drawer__item {{if eq .Active "company"}}is-active{{end}}" href="/admin/company" {{if eq .Active "company"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18M6 21V7l6-4 6 4v14"/><path d="M10 12h4M10 16h4"/></svg></span>Betriebsdaten</a>
 			{{end}}
 			<button class="drawer__item" type="button" data-theme-toggle>
@@ -158,22 +158,22 @@
 	</aside>
 
 	<nav class="tabbar">
-		<a class="tabbar__item {{if eq .Active "dashboard"}}is-active{{end}}" href="/">
+		<a class="tabbar__item {{if eq .Active "dashboard"}}is-active{{end}}" href="/" {{if eq .Active "dashboard"}}aria-current="page"{{end}}>
 			<span class="tabbar__pill"><svg class="tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 				<path d="M3 11l9-8 9 8"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/>
 			</svg></span><span>Übersicht</span>
 		</a>
-		<a class="tabbar__item {{if eq .Active "years"}}is-active{{end}}" href="/years">
+		<a class="tabbar__item {{if eq .Active "years"}}is-active{{end}}" href="/years" {{if eq .Active "years"}}aria-current="page"{{end}}>
 			<span class="tabbar__pill"><svg class="tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 				<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><line x1="3.5" y1="10" x2="20.5" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/>
 			</svg></span><span>Jahre</span>
 		</a>
-		<a class="tabbar__item {{if eq .Active "neighbors"}}is-active{{end}}" href="/neighbors">
+		<a class="tabbar__item {{if eq .Active "neighbors"}}is-active{{end}}" href="/neighbors" {{if eq .Active "neighbors"}}aria-current="page"{{end}}>
 			<span class="tabbar__pill"><svg class="tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 				<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.1 2.4-5 5.5-5s5.5 1.9 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16.5 15.3c2.5.4 4 2.1 4 4.7"/>
 			</svg></span><span>Nachbarn</span>
 		</a>
-		<a class="tabbar__item {{if or (eq .Active "bases") (eq .Active "prices") (eq .Active "gespanne")}}is-active{{end}}" href="/bases">
+		<a class="tabbar__item {{if or (eq .Active "bases") (eq .Active "prices") (eq .Active "gespanne")}}is-active{{end}}" href="/bases" {{if or (eq .Active "bases") (eq .Active "prices") (eq .Active "gespanne")}}aria-current="page"{{end}}>
 			<span class="tabbar__pill"><svg class="tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 				<circle cx="7.5" cy="16.5" r="3.8"/><circle cx="18" cy="18" r="2.4"/><path d="M11.3 16.5h4.3"/><path d="M4.3 12.7V6.5h5.9l2 6.2"/><path d="M12.2 12.7h4.6V15.6"/>
 			</svg></span><span>Grundlagen</span>
@@ -196,7 +196,7 @@
 		</form>
 	</dialog>
 
-	<div class="offlineq" data-offline-panel hidden role="dialog" aria-modal="true" aria-labelledby="offlineq-title">
+	{{if .User}}<div class="offlineq" data-offline-panel hidden role="dialog" aria-modal="true" aria-labelledby="offlineq-title">
 		<div class="offlineq__sheet card">
 			<div class="offlineq__head">
 				<h2 id="offlineq-title" class="section-title">Offline erfasste Buchungen</h2>
@@ -208,12 +208,11 @@
 				<button type="button" class="btn btn--primary btn--sm" data-offline-flush>Jetzt senden</button>
 			</div>
 		</div>
-	</div>
+	</div>{{end}}
 	<script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
-	<script src="/static/js/passkey.js?v={{.AssetVersion}}" defer></script>
-	<script src="/static/js/offline.js?v={{.AssetVersion}}" defer></script>
+	{{if .User}}<script src="/static/js/offline.js?v={{.AssetVersion}}" defer></script>
 	<script src="/static/js/capture.js?v={{.AssetVersion}}" defer></script>
-	{{if .User}}<script src="/static/js/app-bg.js?v={{.AssetVersion}}" defer></script>{{end}}
+	<script src="/static/js/app-bg.js?v={{.AssetVersion}}" defer></script>{{end}}
 	{{block "scripts" .}}{{end}}
 </body>
 </html>{{end}}

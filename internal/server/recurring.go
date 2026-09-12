@@ -31,7 +31,7 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// Check the raw value before trimming or reading the booking. The request
@@ -48,7 +48,7 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	entry, err := s.store.GetEntry(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// A storno is a statement that this booking should not have been made. Copying
@@ -149,12 +149,12 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRecurringToggle(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	active, err := s.store.ToggleRecurring(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	} else if err != nil {
 		s.serverError(w, r.URL.Path, err)
@@ -174,12 +174,12 @@ func (s *Server) handleRecurringToggle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRecurringDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighborID, err := s.store.DeleteRecurring(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	} else if err != nil {
 		s.serverError(w, r.URL.Path, err)
@@ -194,7 +194,7 @@ func (s *Server) handleRecurringDelete(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRecurringUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -220,7 +220,7 @@ func (s *Server) handleRecurringUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	switch err := s.store.UpdateRecurring(r.Context(), id, kind, next); {
 	case errors.Is(err, store.ErrNotFound):
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	case err != nil:
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
@@ -235,13 +235,13 @@ func (s *Server) handleRecurringUpdate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRecurringRunNow(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	entryID, booked, err := s.store.RunRecurringNow(r.Context(), id)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	case errors.Is(err, store.ErrInactiveRule):
 		s.setFlash(w, r, "error", "Die Serie ist pausiert — bitte zuerst aktivieren.")

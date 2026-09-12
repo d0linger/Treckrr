@@ -2,7 +2,7 @@
 <section class="stack">
 	<div class="pagehead">
 		<a class="backbtn" href="/" aria-label="Zurück">{{template "ic-back"}}</a>
-		<h1 class="pagehead__t">Zahlungen importieren</h1>
+		<h2 class="pagehead__t">Zahlungen importieren</h2>
 	</div>
 
 	{{if not .Rows}}
@@ -16,7 +16,7 @@
 	<p class="muted small">{{.Importable}} von {{.Total}} Eingängen werden automatisch zugeordnet.{{if .Assignable}} Offene Eingänge können unten manuell einer Rechnung zugewiesen werden.{{end}}</p>
 	<form method="post" action="/payments/import" data-confirm="Ausgewählte Zahlungen wie zugeordnet verbuchen?">
 		<input type="hidden" name="raw" value="{{.Raw}}">
-		<div class="tablewrap">
+		<div class="tablewrap" role="region" aria-label="Vorschau des Zahlungsimports" tabindex="0">
 			<table class="dtable">
 				<thead><tr><th>Datum</th><th class="num">Betrag</th><th>Verwendungszweck</th><th>Zuordnung</th></tr></thead>
 				<tbody>

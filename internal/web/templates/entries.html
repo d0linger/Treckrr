@@ -2,7 +2,7 @@
 <section class="stack">
 	<div class="pagehead">
 		<a class="backbtn" href="/?year={{.Year.ID}}" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
-		<h1 class="pagehead__t">Buchungen · {{.Year.Year}}</h1>
+		<h2 class="pagehead__t">Buchungen · {{.Year.Year}}</h2>
 	</div>
 
 	<form method="get" action="/buchungen" class="card form">
@@ -54,7 +54,7 @@
 	<form method="post" action="/buchungen/bulk">
 		<input type="hidden" name="year_id" value="{{.Year.ID}}">
 		<input type="hidden" name="return_to" value="{{.ReturnTo}}">
-		<div class="tablewrap">
+		<div class="tablewrap" role="region" aria-label="Buchungsliste" tabindex="0">
 			<table class="dtable">
 				<thead><tr><th><span class="sr-only">Auswahl</span></th><th>Datum</th><th>Nachbar</th><th>Tätigkeit</th><th>Menge</th><th class="num">Betrag</th></tr></thead>
 				<tbody>

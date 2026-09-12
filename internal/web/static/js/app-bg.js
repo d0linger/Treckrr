@@ -1,14 +1,13 @@
-/* App-wide worksheet backdrop.
+/** App-wide worksheet backdrop.
  *
  * Paints one of three flüsterleise Werkblatt surfaces onto the fixed
- * <canvas id="app-bg"> that sits behind every authenticated page. Which one is
- * chosen at random on each load, the way the appbar picks a random machine mark:
+ * <canvas id="app-bg"> that sits behind every authenticated page. The selected
+ * surface is reused across navigation until the reload/session rule below
+ * requests another random choice:
  *
- *   werkraster — the app's 26px blueprint grid with faint nodes; now and then a
- *                soft green pulse expands from a node.
- *   taglicht   — no marks; a very soft warm/cool wash whose light drifts like the
- *                sun. The quietest surface.
- *   saatraster — a fine seed-dot grid; a diagonal drill pass dabs a few dots green.
+ *   werkraster — the app's 26px blueprint grid with faint nodes.
+ *   taglicht   — no marks; a very soft warm/cool wash. The quietest surface.
+ *   saatraster — a fine seed-dot grid with a quiet diagonal drill pass.
  *
  * The surface is deliberately barely-there (3–9% contrast) so it disappears
  * behind tables and forms all day; .main is transparent, so it shows only in the
@@ -16,10 +15,9 @@
  * sitting above it. Colours are read from the live design tokens (--bg/--text/
  * --primary/--accent), so it tracks Hell/Nachtschicht and re-themes on the fly.
  *
- * Good-citizen rendering: the static layer (grid / dots) is drawn once to an
- * offscreen canvas and blitted each frame; only the pulse / sun / drill overlay
- * animates. Runs regardless of prefers-reduced-motion (see the note at start()
- * in login-bg.js), pauses when the tab is hidden, DPR-capped, opaque context.
+ * Good-citizen rendering: the surface is painted once, then only repainted after
+ * a resize or theme change. Keeping this decorative canvas static avoids a large
+ * idle rendering cost on every authenticated page. DPR-capped, opaque context.
  * Purely decorative:
  * aria-hidden, pointer-inert; degrades to the plain --bg background when JS is
  * off or the 2D context is unavailable. CSP-safe — no inline code.
@@ -94,10 +92,12 @@
 				c.fillStyle = g; c.fillRect(0, 0, w, h);
 			}
 		},
+		/** Keeps the seed-grid overlay's pass position private to this surface variant. */
 		saatraster: (function () {
-			var pass = -0.3;
+			var pass = 0.35;
 			return {
-				reset: function () { pass = -0.3; },
+				/** Restores a visible drill-pass position before the one-shot composition. */
+				reset: function () { pass = 0.35; },
 				build: function (o, w, h, p) {
 					o.fillStyle = RGB(p.bg); o.fillRect(0, 0, w, h);
 					var g = 22, x, y; o.fillStyle = mix(p.bg, p.ink, 0.07);
@@ -150,14 +150,11 @@
 	var KEYS = ["werkraster", "taglicht", "saatraster"];
 	var v = VARIANTS[pickVariant("treckrr-appbg", KEYS)];
 
-	/* ---- driver: cached static layer + animated overlay ------------------ */
-	var DPR = Math.min(1.5, window.devicePixelRatio || 1);
+	/* ---- driver: cached static layer + one-shot overlay ----------------- */
+	var DPR = Math.min(1.25, window.devicePixelRatio || 1);
 	var stat = document.createElement("canvas"), sctx = stat.getContext("2d", { alpha: false });
-	// t is read off the wall clock rather than a random phase, so the travelling
-	// light / sun / drill picks up where the previous page left it instead of
-	// jumping on a reload that deliberately kept the same surface.
-	var W = 0, H = 0, pal = palette(), t = Date.now() / 1000, prev = 0, running = false, raf = 0;
-	var lastRaf = 0, fallback = 0;
+	// Wall-clock phase keeps the one-shot composition varied without a render loop.
+	var W = 0, H = 0, pal = palette(), t = Date.now() / 1000;
 	// Whether the visible canvas has ever been composed. The ground is only handed
 	// over to it (see markActive) once this is true.
 	var painted = false;
@@ -202,50 +199,15 @@
 		ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 		v.overlay(ctx, W, H, t, dt, pal);
 	}
-	// See login-bg.js for the reasoning: requestAnimationFrame stops being delivered
-	// when Chrome considers the window occluded — a remote-desktop session does that
-	// routinely — while document.hidden stays false, so nothing notices and the loop
-	// dies silently. lastRaf is stamped only here; the fallback timer below never
-	// touches it, so it cannot mask a stall and keep itself running.
-	function frame(now) {
-		if (!running) return;
-		// Must happen here, not at the watchdog's next tick: this path and the
-		// fallback both advance `t`, so any overlap runs the backdrop at double
-		// speed until the watchdog gets round to noticing.
-		if (fallback) { clearInterval(fallback); fallback = 0; }
-		lastRaf = Date.now();
-		var dt = Math.min(0.05, (now - prev) / 1000 || 0.016); prev = now; t += dt;
-		compose(dt); raf = requestAnimationFrame(frame);
-	}
-	// Deliberately not gated on prefers-reduced-motion; the reasoning is written out
-	// at start() in login-bg.js. The CSS animations elsewhere still honour it.
-	function start() {
-		if (running || document.hidden || !W) return;
-		running = true; prev = performance.now(); lastRaf = Date.now(); raf = requestAnimationFrame(frame);
-	}
-	function stop() {
-		running = false;
-		if (raf) cancelAnimationFrame(raf); raf = 0;
-		if (fallback) clearInterval(fallback); fallback = 0;
-	}
-	setInterval(function () {
-		if (!running || document.hidden || !W) return;
-		var stalled = Date.now() - lastRaf > 800;
-		if (stalled && !fallback) fallback = setInterval(function () { t += 0.04; compose(0.04); }, 40);
-		else if (!stalled && fallback) { clearInterval(fallback); fallback = 0; }
-	}, 500);
-	function retheme() { pal = palette(); if (W) { v.build(sctx, W, H, pal); if (!running) compose(0); } }
+	/** Rebuilds the static layer with current theme tokens and repaints only after a nonzero layout exists. */
+	function retheme() { pal = palette(); if (W) { v.build(sctx, W, H, pal); compose(0); } }
 
 	v.reset();
-	// size() paints the first frame itself, so a hidden load (background tab,
-	// session restore, prerender) never sits on an unpainted canvas. start() is
-	// idempotent, and the resize paths call it too so a first size() that failed
-	// (canvas not laid out yet) still gets the loop going once it succeeds.
-	if (size()) start();
+	// size() paints the first frame itself, including after a hidden initial load.
+	size();
 
-	if (window.ResizeObserver) new ResizeObserver(function () { if (size()) start(); }).observe(canvas);
-	else window.addEventListener("resize", function () { if (size()) start(); });
-	document.addEventListener("visibilitychange", function () { if (document.hidden) stop(); else start(); });
+	if (window.ResizeObserver) new ResizeObserver(size).observe(canvas);
+	else window.addEventListener("resize", size);
 	var dark = window.matchMedia ? matchMedia("(prefers-color-scheme: dark)") : null;
 	if (dark && dark.addEventListener) dark.addEventListener("change", retheme);
 	if (window.MutationObserver) new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });

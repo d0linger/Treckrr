@@ -1,9 +1,8 @@
-// Offline booking capture: when a booking is submitted with no connection, it is
-// queued in IndexedDB and replayed automatically when the connection returns.
-// Each booking carries a client UUID (idempotency_key) so a double-replay can't
-// double-book (the server's unique index makes the second insert a no-op). Works
-// in every browser (no Background Sync dependency) — it flushes on the `online`
-// event and on every page load while online.
+/**
+ * Queues offline bookings in IndexedDB and attempts replay on page load and the
+ * online event, without Background Sync. Client UUIDs let the server deduplicate
+ * repeated submissions. Browsers without IndexedDB skip this enhancement.
+ */
 (function () {
 	"use strict";
 	if (!("indexedDB" in window)) return;
@@ -288,6 +287,7 @@
 	var panel = document.querySelector("[data-offline-panel]");
 	var list = document.querySelector("[data-offline-list]");
 	var badgeEl = document.querySelector("[data-offline-badge]");
+	var panelLastFocus = null;
 	var editableFields = {
 		entry_date: "Datum", task_label: "Tätigkeit", hours: "Stunden", unit: "Einheit",
 		quantity: "Menge", unit_price: "Einzelpreis", note: "Notiz",
@@ -435,18 +435,22 @@
 		});
 	}
 
+	/** Loads the current user's queue before revealing the sheet and moving focus to its close control. */
 	function openPanel() {
 		if (!panel) return;
+		panelLastFocus = document.activeElement;
 		renderQueue().then(function () {
 			panel.hidden = false;
 			var close = panel.querySelector("[data-offline-close]");
 			if (close) close.focus();
 		});
 	}
+	/** Hides the queue sheet and restores its opener's focus without discarding or replaying queued bookings. */
 	function closePanel() {
 		if (!panel) return;
 		panel.hidden = true;
-		if (badgeEl) badgeEl.focus();
+		if (panelLastFocus && typeof panelLastFocus.focus === "function") panelLastFocus.focus();
+		panelLastFocus = null;
 	}
 
 	if (badgeEl) badgeEl.addEventListener("click", openPanel);
@@ -462,8 +466,11 @@
 		}
 		// Click on the backdrop (not the sheet) and Escape both close it.
 		panel.addEventListener("click", function (e) { if (e.target === panel) closePanel(); });
+		/** Handles Escape and, when the shared guard is available, wraps focus only while the sheet is visible. */
 		document.addEventListener("keydown", function (e) {
-			if (e.key === "Escape" && !panel.hidden) closePanel();
+			if (panel.hidden) return;
+			if (e.key === "Escape") { e.preventDefault(); closePanel(); }
+			else if (window.TreckrrDialog) window.TreckrrDialog.trapFocus(panel, e);
 		});
 	}
 

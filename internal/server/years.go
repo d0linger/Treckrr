@@ -117,10 +117,12 @@ func (s *Server) handleYearCreate(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, dashboardURL(id))
 }
 
+// handleYearUpdate edits a year's label and pricing basis, rejecting basis
+// changes once bookings exist. Its audit diff distinguishes even like-named bases.
 func (s *Server) handleYearUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -139,7 +141,7 @@ func (s *Server) handleYearUpdate(w http.ResponseWriter, r *http.Request) {
 	// missing/unreadable year from the URL path is a 404, as before.
 	before, err := s.store.GetBillingYear(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 
@@ -200,7 +202,7 @@ func (s *Server) handleYearUpdate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleYearStatus(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -246,10 +248,12 @@ func (s *Server) handleYearStatus(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/years")
 }
 
+// handleYearDelete removes a year only when it has no dependent billing history.
+// It reports both preflight blockers and history added before the store's delete.
 func (s *Server) handleYearDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// Same cascade as the neighbor delete: billing_years is the FK parent of
@@ -315,12 +319,12 @@ func (s *Server) requireOpenYear(w http.ResponseWriter, r *http.Request, yearID 
 func (s *Server) handleYearClosing(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	checks, err := s.store.YearClosingChecks(r.Context(), id)

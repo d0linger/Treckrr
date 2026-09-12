@@ -2,7 +2,7 @@
 <section class="stack">
 	<div class="pagehead">
 		<a class="backbtn" href="/?year={{.Year.ID}}" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
-		<h1 class="pagehead__t">Mahnwesen{{if not .AllYears}} · {{.Year.Year}}{{end}}</h1>
+		<h2 class="pagehead__t">Mahnwesen{{if not .AllYears}} · {{.Year.Year}}{{end}}</h2>
 		{{if .Rows}}<a class="btn btn--ghost btn--sm pagehead__action" href="/mahnwesen/export.csv?year={{.Year.ID}}">{{template "ic-copy"}} Export CSV</a>{{end}}
 	</div>
 	<p class="muted small">Überfällige, festgeschriebene Rechnungen. Zahlungsziel: Firmenstandard {{.Term}} Tage; ein je Nachbar hinterlegtes Ziel geht vor. Bereits bezahlte oder noch nicht fällige Rechnungen erscheinen nicht.</p>

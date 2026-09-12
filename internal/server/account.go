@@ -149,12 +149,12 @@ func (s *Server) handleTwoFactor(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTwoFactorQR(w http.ResponseWriter, r *http.Request) {
 	user := userFromCtx(r)
 	if user.TotpEnabled {
-		http.NotFound(w, r) // QR only relevant during setup
+		s.notFound(w, r) // QR only relevant during setup
 		return
 	}
 	secret, err := s.store.GetTotpSecret(r.Context(), user.ID)
 	if err != nil || secret == "" {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	png, err := qrPNG(totp.ProvisioningURI(secret, user.Username, "Treckrr"))

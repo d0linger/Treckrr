@@ -27,6 +27,10 @@ func scratchStore(t *testing.T) (*store.Store, *sql.DB) {
 	if err != nil {
 		t.Fatalf("parse test database URL: %v", err)
 	}
+	// A query-level dbname overrides the path for both derived connections.
+	query := base.Query()
+	query.Del("dbname")
+	base.RawQuery = query.Encode()
 	adminURL := *base
 	adminURL.Path = "/postgres"
 	admin, err := sql.Open("pgx", adminURL.String())

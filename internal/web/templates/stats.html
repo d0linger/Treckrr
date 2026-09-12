@@ -84,7 +84,7 @@
 	<div class="card">
 		<h2 class="section-title">Maschinen-Auslastung</h2>
 		<p class="muted small">Geschätzter Umsatzanteil und Deckungsbeitrag: erfasste Stunden × heutige Maschinen- bzw. Selbstkostensätze. Änderungen im Preisstamm verändern auch diese Auswertung alter Jahre. Historische Einzelsätze wurden nicht gespeichert. Deckungsbeiträge erscheinen nur bei hinterlegten Selbstkosten.</p>
-		<div class="tablewrap">
+		<div class="tablewrap" role="region" aria-label="Maschinen-Auslastung" tabindex="0">
 			<table class="dtable">
 				<thead><tr><th>Maschine</th><th class="num">Stunden</th><th class="num">Aktueller Satz</th><th class="num">Umsatzanteil (geschätzt)</th>{{if .HasMachineMargin}}<th class="num">Selbstkosten (geschätzt)</th><th class="num">Deckungsbeitrag (geschätzt)</th>{{end}}</tr></thead>
 				<tbody>
@@ -113,7 +113,7 @@
 	<div class="card">
 		<h2 class="section-title">Kennzahlen je Einheit</h2>
 		<p class="muted small">Was eine Tätigkeit je Hektar, Ballen oder Fuhre gekostet hat — aus den Buchungen mit eigener Einheit.</p>
-		<div class="tablewrap">
+		<div class="tablewrap" role="region" aria-label="Kennzahlen je Einheit" tabindex="0">
 			<table class="dtable">
 				<thead><tr><th>Tätigkeit</th><th>Einheit</th><th class="num">Menge</th><th class="num">Buchungen</th><th class="num">Summe</th><th class="num">je Einheit</th></tr></thead>
 				<tbody>

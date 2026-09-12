@@ -15,6 +15,7 @@ const PASS = process.env.E2E_ADMIN_PASS || "e2e-admin-password-123";
 
 test.describe.configure({ mode: "serial" });
 
+/** Signs into the seeded admin account before changing the isolated invoice fixture through the UI. */
 async function login(page) {
   await page.goto("/login");
   await page.locator('input[name="username"]').fill(USER);
@@ -23,6 +24,10 @@ async function login(page) {
   await expect(page.locator(".appbar")).toBeVisible();
 }
 
+/**
+ * Builds the issuer and recipient prerequisites, then checks invoice and reminder document visibility.
+ * Also verifies that marking an invoice sent can be undone through the confirmation and toast flow.
+ */
 test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page }) => {
   await login(page);
 
@@ -95,6 +100,15 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   await page.goto("/neighbors/1/beleg?year=1&rechnung=1");
   await expect(page.getByText(/RECHNUNG Nr\./)).toBeVisible();
   await expect(page.locator(".beleg__inv-due")).toBeVisible();
+
+  // A reminder always uses the formal document presentation, including parties
+  // and the open amount; it has no invoice-mode toggle to reveal hidden details.
+  await page.goto("/neighbors/1/mahnung?year=1&stufe=1");
+  await expect(page.locator(".beleg__invoice")).toBeVisible();
+  await expect(page.locator(".beleg__invoice")).toContainText("Hof Bergmann");
+  await expect(page.locator(".beleg__invoice")).toContainText("E2E Nachbar");
+  await expect(page.getByText("Offener Betrag", { exact: true })).toBeVisible();
+  await expect(page.locator(".beleg__hv.beleg__sum-invoice")).toBeVisible();
 
   // --- mark sent (confirm modal) → chip flips → undo via toast ---
   await page.goto("/neighbors/1/beleg?year=1");

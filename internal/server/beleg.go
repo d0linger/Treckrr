@@ -449,12 +449,12 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, ok := s.resolveYear(w, r)
@@ -554,12 +554,12 @@ func (s *Server) verifyLegacyBelegShare(token string) (neighborID, yearID int64,
 func (s *Server) handleBelegShareCreate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, ok := s.resolveYear(w, r)
@@ -605,7 +605,7 @@ func (s *Server) handleBelegShareCreate(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleBelegShareRevoke(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, ok := s.resolveYear(w, r)
@@ -637,7 +637,7 @@ func (s *Server) handleBelegShareRevoke(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleSharedBeleg(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	if len(token) > maxBelegShareTokenLen {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// The only unauthenticated route that touches the database, and it runs
@@ -647,7 +647,7 @@ func (s *Server) handleSharedBeleg(w http.ResponseWriter, r *http.Request) {
 	// throttled is not distinguishable from a bad token.
 	clientIP := s.clientIP(r)
 	if s.logins.shareBlocked(r.Context(), clientIP) {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	var nID, yID int64
@@ -669,21 +669,21 @@ func (s *Server) handleSharedBeleg(w http.ResponseWriter, r *http.Request) {
 	}
 	if !ok {
 		s.logins.shareMiss(r.Context(), clientIP)
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), nID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if _, err := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID); err != nil {
-		http.NotFound(w, r) // not festgeschrieben (or gone) → no public view
+		s.notFound(w, r) // not festgeschrieben (or gone) → no public view
 		return
 	}
 	data, err := s.buildBelegData(w, r, neighbor, year)
@@ -702,12 +702,12 @@ func (s *Server) handleSharedBeleg(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleBelegPDF(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, ok := s.resolveYear(w, r)
@@ -749,12 +749,12 @@ func (s *Server) absoluteURL(r *http.Request, path string) string {
 func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, ok := s.resolveYear(w, r)
@@ -833,12 +833,12 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleBelegMarkSent(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, ok := s.resolveYear(w, r)
@@ -862,12 +862,12 @@ func (s *Server) handleBelegMarkSent(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleBelegUnsend(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, ok := s.resolveYear(w, r)
@@ -892,7 +892,7 @@ func (s *Server) handleBelegUnsend(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleInvoiceConfirm(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	yearID := formInt64(r, "year")
@@ -902,7 +902,7 @@ func (s *Server) handleInvoiceConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
@@ -916,7 +916,7 @@ func (s *Server) handleInvoiceConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), neighborID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	content, err := s.store.BuildInvoiceContent(r.Context(), yearID, neighborID)
@@ -940,7 +940,7 @@ func (s *Server) handleInvoiceConfirm(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -1030,7 +1030,7 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleInvoiceStorno(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -1068,7 +1068,7 @@ func (s *Server) handleInvoiceStorno(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -1109,7 +1109,7 @@ func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleInvoiceEpcQR(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	yearID := formInt64(r, "year")
@@ -1119,7 +1119,7 @@ func (s *Server) handleInvoiceEpcQR(w http.ResponseWriter, r *http.Request) {
 	}
 	iv, err := s.store.GetInvoice(r.Context(), yearID, neighborID)
 	if err != nil || iv.Content == nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// Encode the amount STILL PAYABLE (gross less credits/ledger/payments), not the
@@ -1130,7 +1130,7 @@ func (s *Server) handleInvoiceEpcQR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !rest.IsPositive() {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	iban := iv.Content.Issuer.IBAN // frozen at issuance
@@ -1140,7 +1140,7 @@ func (s *Server) handleInvoiceEpcQR(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if strings.TrimSpace(iban) == "" {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	ref := iv.PaymentReference

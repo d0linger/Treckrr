@@ -167,7 +167,7 @@
 			<input type="hidden" name="year_id" value="{{.Year.ID}}">
 			<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
 			<p class="muted small">Je Zeile ein festes Gespann und die Stunden{{if .Persons}}, auf Wunsch mit Person — dann werden deren Mannstunden über dieselben Stunden als verknüpfte Position mitgebucht{{end}}. Leere Zeilen werden ignoriert.</p>
-			<div class="tablewrap">
+			<div class="tablewrap" role="region" aria-label="Schnellerfassung" tabindex="0">
 				<table class="dtable">
 					<thead><tr><th>Datum</th><th>Gespann</th><th class="num">Stunden</th>{{if .Persons}}<th>Person</th>{{end}}</tr></thead>
 					<tbody data-quick-rows>

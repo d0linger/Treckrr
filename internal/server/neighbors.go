@@ -128,7 +128,7 @@ func (s *Server) handleCarryOverNeighbors(w http.ResponseWriter, r *http.Request
 	yearID := s.yearIDFromForm(r)
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	prev, err := s.store.PreviousBillingYear(r.Context(), year.Year)
@@ -197,7 +197,7 @@ func (s *Server) handleCarryOverNeighbors(w http.ResponseWriter, r *http.Request
 func (s *Server) handleNeighborArchive(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {

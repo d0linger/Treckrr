@@ -2,7 +2,7 @@
 <section class="stack">
 	<div class="pagehead">
 		<a class="backbtn" href="{{.Back}}" aria-label="Zurück">{{template "ic-back"}}</a>
-		<h1 class="pagehead__t">{{if .Copy}}Zahlung duplizieren{{else}}Zahlung bearbeiten{{end}}</h1>
+		<h2 class="pagehead__t">{{if .Copy}}Zahlung duplizieren{{else}}Zahlung bearbeiten{{end}}</h2>
 	</div>
 	<p class="muted small">{{.NeighborName}}{{if not .Copy}} · erfasst am {{date .Payment.Created}}{{if .Payment.InvoiceNumber}} · Rechnung {{.Payment.InvoiceNumber}}{{end}}{{else}} · Kopie einer bestehenden Zahlung — wird erst beim Speichern angelegt{{end}}</p>
 	<form method="post" action="{{if .Copy}}/neighbors/{{.Payment.NeighborID}}/payments{{else}}/payments/{{.Payment.ID}}/update{{end}}" class="card form">

@@ -2,11 +2,11 @@
 <section class="stack">
 	<div class="pagehead">
 		<a class="backbtn" href="/" aria-label="Zurück">{{template "ic-back"}}</a>
-		<h1 class="pagehead__t">Wiederkehrende Buchungen</h1>
+		<h2 class="pagehead__t">Wiederkehrende Buchungen</h2>
 	</div>
 	<p class="muted small">Fällige Buchungen werden automatisch im offenen Jahr des Nachbarn angelegt. Eine Serie richtest du über eine bestehende Buchung ein („Bearbeiten" → „Als Serie wiederholen").</p>
 	{{if .Rules}}
-	<div class="tablewrap">
+	<div class="tablewrap" role="region" aria-label="Wiederkehrende Buchungen" tabindex="0">
 		<table class="dtable">
 			<thead><tr><th>Nachbar</th><th>Buchung</th><th>Rhythmus</th><th>Nächster Lauf</th><th>Status</th><th></th></tr></thead>
 			<tbody>

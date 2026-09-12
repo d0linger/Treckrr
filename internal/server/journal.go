@@ -275,7 +275,7 @@ func (s *Server) kuIssueNote(r *http.Request, company models.Company, calYear in
 func (s *Server) handleFreeGutschrift(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -321,7 +321,7 @@ func (s *Server) handleFreeGutschrift(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAnzahlungCreate(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -376,7 +376,7 @@ func (s *Server) handleAnzahlungCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDocumentStorno(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -390,7 +390,7 @@ func (s *Server) handleDocumentStorno(w http.ResponseWriter, r *http.Request) {
 	}
 	sv, err := s.store.StornoDocument(r.Context(), id, reason)
 	if errors.Is(err, store.ErrNotFound) {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if errors.Is(err, store.ErrYearCompleted) {

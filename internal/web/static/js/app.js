@@ -1,6 +1,23 @@
-// Treckrr — progressive enhancement. No external dependencies.
+/** Adds optional client-side interactions to Treckrr's server-rendered pages without external dependencies. */
 (function () {
 	"use strict";
+
+	/** Returns visible, enabled tab stops for custom dialogs that lack native <dialog> focus handling. */
+	function dialogFocusables(root) {
+		return Array.prototype.filter.call(root.querySelectorAll(
+			'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+		), function (el) { return !el.hidden && el.getClientRects().length > 0; });
+	}
+	/** Wraps Tab/Shift+Tab at a custom dialog's boundaries; blocks Tab when no focusable control exists. */
+	function trapDialogFocus(root, e) {
+		if (e.key !== "Tab") return;
+		var nodes = dialogFocusables(root);
+		if (!nodes.length) { e.preventDefault(); return; }
+		var first = nodes[0], last = nodes[nodes.length - 1];
+		if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+		else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+	}
+	window.TreckrrDialog = { trapFocus: trapDialogFocus };
 
 	// Theme persistence: mirror the server-chosen theme into localStorage and
 	// re-apply it on pages that render without the cookie (login, offline, or a
@@ -635,7 +652,7 @@
 		btn.addEventListener("click", function () { window.print(); });
 	});
 
-	// Side drawer (menu) open/close.
+	/** Wires the side drawer's visibility, inert state and keyboard focus restoration when it exists. */
 	(function () {
 		var drawer = document.getElementById("drawer");
 		if (!drawer) return;
@@ -667,7 +684,12 @@
 		document.querySelectorAll("[data-drawer-close]").forEach(function (b) {
 			b.addEventListener("click", function () { setOpen(false); });
 		});
-		document.addEventListener("keydown", function (e) { if (e.key === "Escape") setOpen(false); });
+		/** Handles Escape and focus wrapping only while the drawer is open. */
+		document.addEventListener("keydown", function (e) {
+			if (!drawer.classList.contains("is-open")) return;
+			if (e.key === "Escape") { e.preventDefault(); setOpen(false); }
+			else trapDialogFocus(drawer, e);
+		});
 	})();
 
 	// Instant dark/light toggle: apply immediately, mirror to localStorage, and
@@ -1001,7 +1023,7 @@
 		});
 	}
 
-	// ---- Backup panel: cron schedule builder (mode toggle + next-runs) -------
+	/** Enhances backup schedule fields with friendly modes and a client-side preview of upcoming runs. */
 	(function () {
 		var cols = document.querySelectorAll("[data-sched-col]");
 		if (!cols.length) return;
@@ -1066,12 +1088,13 @@
 				return { mode: "hours", n: m[1] };
 			return { mode: "cron" };
 		}
+		/** Builds labeled schedule controls from preset/numeric values; raw cron mode needs no extra rows. */
 		function buildRows(mode, init) {
-			if (mode === "daily") return '<div class="bkp__arow">um <input type="time" data-k="time" value="' + (init.time || "03:00") + '"> Uhr</div>';
-			if (mode === "hours") return '<div class="bkp__arow">alle <input class="input input--num" data-k="n" type="number" min="1" value="' + (init.n || 6) + '"> Stunden</div>';
-			if (mode === "weekly") return '<div class="bkp__arow">jeden <select class="input" data-k="dow">' +
+			if (mode === "daily") return '<div class="bkp__arow">um <input type="time" data-k="time" aria-label="Uhrzeit" value="' + (init.time || "03:00") + '"> Uhr</div>';
+			if (mode === "hours") return '<div class="bkp__arow">alle <input class="input input--num" data-k="n" aria-label="Intervall in Stunden" type="number" min="1" value="' + (init.n || 6) + '"> Stunden</div>';
+			if (mode === "weekly") return '<div class="bkp__arow">jeden <select class="input" data-k="dow" aria-label="Wochentag">' +
 				[1, 2, 3, 4, 5, 6, 0].map(function (i) { return '<option value="' + i + '">' + DOW[i] + '</option>'; }).join("") +
-				'</select> um <input type="time" data-k="time" value="' + (init.time || "03:00") + '"></div>';
+				'</select> um <input type="time" data-k="time" aria-label="Uhrzeit" value="' + (init.time || "03:00") + '"></div>';
 			return ""; // cron mode: the raw input is shown instead
 		}
 		function cronFrom(col, mode) {
@@ -1197,11 +1220,9 @@
 		});
 	})();
 
-	// Command palette (Ctrl/Cmd+K): fuzzy jump to any master-data hit — neighbor,
-	// invoice, basis, tractor, machine, load level or gespann — plus static nav
-	// targets, via the /api/search endpoint. Debounced; keyboard-navigable.
+	/** Wires Ctrl/Cmd+K search with local navigation, debounced /api/search results and keyboard selection. */
 	(function () {
-		var ov = null, input = null, list = null, items = [], sel = -1, timer = null, seq = 0;
+		var ov = null, input = null, list = null, items = [], sel = -1, timer = null, seq = 0, lastFocus = null;
 		// Werkblatt F4: stamped mono type plates per result kind instead of emoji —
 		// the palette speaks the same machine-ledger voice as the rest of the app.
 		var ICON = { neighbor: "NB", invoice: "RE", base: "GL", tractor: "TR", machine: "MA", load: "ST", gespann: "GE", nav: "NAV" };
@@ -1222,31 +1243,47 @@
 			return COMMANDS.filter(function (c) { return fold(c.label + " " + c.kw).indexOf(f) !== -1; })
 				.map(function (c) { return { kind: "nav", label: c.label, sub: c.sub, url: c.url }; });
 		}
-		// Bump seq so an in-flight /api/search response is ignored once closed; otherwise
-		// it would repopulate items/sel on the now-detached list and a later reopen+Enter
-		// could jump to a hit the user never saw.
-		function close() { if (ov) { ov.remove(); ov = null; items = []; sel = -1; seq++; } }
+		/**
+		 * Closes the palette, restores focus and invalidates in-flight search results so
+		 * reopening cannot select an unseen result from the previous search.
+		 */
+		function close() {
+			if (!ov) return;
+			ov.remove(); ov = null; items = []; sel = -1; seq++;
+			if (lastFocus && typeof lastFocus.focus === "function") lastFocus.focus();
+			lastFocus = null;
+		}
+		/** Creates and focuses the search dialog once, preserving the opener for close-time focus restoration. */
 		function open() {
 			if (ov) return;
+			lastFocus = document.activeElement;
 			ov = document.createElement("div"); ov.className = "cmdk"; ov.setAttribute("role", "dialog");
+			ov.setAttribute("aria-modal", "true");
 			ov.setAttribute("aria-label", "Suche");
 			var box = document.createElement("div"); box.className = "cmdk__box";
 			input = document.createElement("input"); input.className = "cmdk__input input";
 			input.type = "search"; input.placeholder = "Suchen: Nachbar, Rechnung, Traktor, Grundlagen …";
-			input.setAttribute("aria-label", "Suche"); input.autocomplete = "off";
-			list = document.createElement("ul"); list.className = "cmdk__list";
+			input.setAttribute("aria-label", "Suche"); input.setAttribute("role", "combobox");
+			input.setAttribute("aria-autocomplete", "list"); input.setAttribute("aria-controls", "cmdk-list");
+			input.setAttribute("aria-expanded", "true"); input.autocomplete = "off";
+			list = document.createElement("ul"); list.className = "cmdk__list"; list.id = "cmdk-list";
+			list.setAttribute("role", "listbox");
 			box.appendChild(input); box.appendChild(list); ov.appendChild(box);
 			ov.addEventListener("mousedown", function (e) { if (e.target === ov) close(); });
+			ov.addEventListener("keydown", function (e) { trapDialogFocus(ov, e); });
 			input.addEventListener("input", function () { query(input.value); });
 			input.addEventListener("keydown", onKey);
 			document.body.appendChild(ov); input.focus();
 		}
+		/** Replaces palette results using text nodes and synchronizes the initial selection's ARIA state. */
 		function render(res) {
 			items = res; sel = res.length ? 0 : -1; list.textContent = "";
+			/** Builds one selectable result without interpreting its label or subtitle as HTML. */
 			res.forEach(function (r, i) {
 				var li = document.createElement("li");
 				li.className = "cmdk__item" + (i === sel ? " is-sel" : "");
-				li.setAttribute("role", "option");
+				li.id = "cmdk-opt-" + i; li.setAttribute("role", "option");
+				li.setAttribute("aria-selected", i === sel ? "true" : "false");
 				var ic = document.createElement("span");
 				ic.className = "cmdk__ic" + (r.kind === "nav" ? " cmdk__ic--nav" : "");
 				ic.textContent = ICON[r.kind] || "··";
@@ -1258,9 +1295,20 @@
 				li.addEventListener("mousedown", function (e) { e.preventDefault(); go(i); });
 				list.appendChild(li);
 			});
+			if (sel >= 0) input.setAttribute("aria-activedescendant", "cmdk-opt-" + sel);
+			else input.removeAttribute("aria-activedescendant");
 		}
+		/** Keeps visual selection, screen-reader active descendant and scrolling aligned with the selected index. */
 		function highlight() {
-			Array.prototype.forEach.call(list.children, function (li, i) { li.classList.toggle("is-sel", i === sel); });
+			Array.prototype.forEach.call(list.children, function (li, i) {
+				li.classList.toggle("is-sel", i === sel);
+				li.setAttribute("aria-selected", i === sel ? "true" : "false");
+			});
+			if (sel >= 0) {
+				input.setAttribute("aria-activedescendant", "cmdk-opt-" + sel);
+				var active = list.children[sel];
+				if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest" });
+			}
 		}
 		function go(i) { var r = items[i]; if (r && r.url) window.location.href = r.url; }
 		function query(q) {
@@ -1294,19 +1342,28 @@
 		});
 	})();
 
-	// Keyboard shortcuts: "/" focuses search, "g" then d/n/s/m/y/p navigates, "?"
-	// toggles a cheatsheet. Ignored while typing in a field so normal input works.
+	/** Adds navigation/search shortcuts and a help dialog while leaving ordinary text entry unaffected. */
 	(function () {
 		var nav = { d: "/", n: "/neighbors", s: "/stats", m: "/mahnwesen", y: "/years", p: "/prices" };
-		var gPending = false, gTimer = null;
+		var gPending = false, gTimer = null, helpLastFocus = null;
 		function typing(el) {
 			if (!el) return false;
 			var t = (el.tagName || "").toLowerCase();
 			return t === "input" || t === "textarea" || t === "select" || el.isContentEditable;
 		}
+		/** Removes the shortcut help dialog and returns focus to its opener when available. */
+		function closeHelp() {
+			var ex = document.getElementById("kbd-help");
+			if (!ex) return;
+			ex.remove();
+			if (helpLastFocus && typeof helpLastFocus.focus === "function") helpLastFocus.focus();
+			helpLastFocus = null;
+		}
+		/** Toggles the shortcut reference dialog with an initially focused close control and keyboard focus wrapping. */
 		function help() {
 			var ex = document.getElementById("kbd-help");
-			if (ex) { ex.remove(); return; }
+			if (ex) { closeHelp(); return; }
+			helpLastFocus = document.activeElement;
 			var rows = [
 				["Strg K", "Schnellsuche (Palette)"], ["/", "Suche fokussieren"],
 				["g d", "Übersicht"], ["g n", "Nachbarn"], ["g s", "Statistik"],
@@ -1315,10 +1372,14 @@
 			];
 			var ov = document.createElement("div");
 			ov.id = "kbd-help"; ov.className = "kbd-help"; ov.setAttribute("role", "dialog");
+			ov.setAttribute("aria-modal", "true");
 			ov.setAttribute("aria-label", "Tastaturkürzel");
 			var card = document.createElement("div"); card.className = "kbd-help__card";
+			var head = document.createElement("div"); head.className = "kbd-help__head";
 			var h = document.createElement("h2"); h.className = "kbd-help__h"; h.textContent = "Tastaturkürzel";
-			card.appendChild(h);
+			var close = document.createElement("button"); close.type = "button"; close.className = "btn btn--ghost btn--sm";
+			close.textContent = "Schließen"; close.addEventListener("click", closeHelp);
+			head.appendChild(h); head.appendChild(close); card.appendChild(head);
 			rows.forEach(function (r) {
 				var row = document.createElement("div"); row.className = "kbd-help__row";
 				var k = document.createElement("kbd"); k.textContent = r[0];
@@ -1326,11 +1387,18 @@
 				row.appendChild(k); row.appendChild(d); card.appendChild(row);
 			});
 			ov.appendChild(card);
-			ov.addEventListener("click", function (e) { if (e.target === ov) ov.remove(); });
+			ov.addEventListener("click", function (e) { if (e.target === ov) closeHelp(); });
+			/** Closes help on Escape and keeps Tab navigation inside the dialog. */
+			ov.addEventListener("keydown", function (e) {
+				if (e.key === "Escape") { e.preventDefault(); closeHelp(); }
+				else trapDialogFocus(ov, e);
+			});
 			document.body.appendChild(ov);
+			close.focus();
 		}
+		/** Dispatches unmodified shortcuts outside editable fields, with a 1.2-second window for g-prefix navigation. */
 		document.addEventListener("keydown", function (e) {
-			if (e.key === "Escape") { var h = document.getElementById("kbd-help"); if (h) h.remove(); }
+			if (e.key === "Escape" && document.getElementById("kbd-help")) { closeHelp(); return; }
 			if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
 			if (gPending) {
 				gPending = false; clearTimeout(gTimer);

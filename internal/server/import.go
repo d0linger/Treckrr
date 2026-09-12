@@ -227,7 +227,7 @@ func (s *Server) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 	yearID := formInt64(r, "year_id")
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if year.Completed() {
@@ -303,7 +303,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if year.Completed() {

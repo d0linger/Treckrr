@@ -69,12 +69,12 @@ func (s *Server) batchIssueRows(r *http.Request, yearID int64) ([]batchIssueRow,
 func (s *Server) handleBatchIssuePreview(w http.ResponseWriter, r *http.Request) {
 	yearID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	rows, issuable, err := s.batchIssueRows(r, yearID)
@@ -109,7 +109,7 @@ func (s *Server) handleBatchIssuePreview(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleBatchIssueCommit(w http.ResponseWriter, r *http.Request) {
 	yearID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -118,7 +118,7 @@ func (s *Server) handleBatchIssueCommit(w http.ResponseWriter, r *http.Request) 
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if !s.requireOpenYear(w, r, yearID, dashboardURL(yearID)) {

@@ -2,7 +2,7 @@
 <section class="stack">
 	<div class="pagehead">
 		<a class="backbtn" href="/?year={{.Year.ID}}" aria-label="Zurück">{{template "ic-back"}}</a>
-		<h1 class="pagehead__t">Buchungen importieren · {{.Year.Year}}</h1>
+		<h2 class="pagehead__t">Buchungen importieren · {{.Year.Year}}</h2>
 	</div>
 
 	{{if not .Rows}}
@@ -22,7 +22,7 @@
 		<input type="hidden" name="year_id" value="{{.Year.ID}}">
 		<input type="hidden" name="csv" value="{{.CSV}}">
 		<input type="hidden" name="import_token" value="{{.ImportToken}}">
-		<div class="tablewrap">
+		<div class="tablewrap" role="region" aria-label="Vorschau des Buchungsimports" tabindex="0">
 			<table class="dtable">
 				<thead><tr><th><span class="sr-only">Auswahl</span></th><th>Zeile</th><th>Nachbar</th><th>Datum</th><th>Tätigkeit</th><th>Einheit</th><th class="num">Menge</th><th class="num">Satz</th><th class="num">Kosten</th><th>Status</th></tr></thead>
 				<tbody>

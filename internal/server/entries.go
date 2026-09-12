@@ -17,15 +17,18 @@ import (
 	"github.com/d0linger/treckrr/internal/store"
 )
 
+// handleNeighborDetail assembles the selected year's bookings, ledger, payments,
+// and capture forms for one neighbor. Stale-price markers are best-effort and do
+// not prevent the account page from rendering when their lookups fail.
 func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, ok := s.resolveYear(w, r)
@@ -198,12 +201,12 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// One query for the whole history (membership, totals, ledger, paid flag)
@@ -288,12 +291,12 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleNeighborOverviewPDF(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	history, err := s.store.NeighborYearHistory(r.Context(), id)
@@ -368,7 +371,7 @@ func summarizeByTask(entries []models.Entry) []taskSummary {
 func (s *Server) handlePricingAPI(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	tractors, _ := s.store.ListActiveTractors(r.Context(), id)
@@ -784,7 +787,7 @@ func entryUpdateDetail(prev, cur *models.Entry) string {
 func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -793,7 +796,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	existing, err := s.store.GetEntry(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if !s.entryYearOpen(w, r, existing, "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr geändert werden.") {
@@ -845,7 +848,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -854,7 +857,7 @@ func (s *Server) handleEntryVoid(w http.ResponseWriter, r *http.Request) {
 	}
 	entry, err := s.store.GetEntry(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if !s.entryYearOpen(w, r, entry, "Das Abrechnungsjahr ist abgeschlossen.") {
@@ -1008,7 +1011,7 @@ func (s *Server) entryYearOpen(w http.ResponseWriter, r *http.Request, e *models
 func (s *Server) handleLedgerAdd(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -1056,22 +1059,22 @@ func (s *Server) handleLedgerAdd(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLedgerEditForm(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	yearID, neighborID, e, err := s.store.GetLedgerEntry(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), neighborID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	data := s.newPage(w, r, "Position bearbeiten", "dashboard")
@@ -1087,7 +1090,7 @@ func (s *Server) handleLedgerEditForm(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLedgerUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -1096,7 +1099,7 @@ func (s *Server) handleLedgerUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	yearID, neighborID, _, err := s.store.GetLedgerEntry(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
@@ -1121,7 +1124,7 @@ func (s *Server) handleLedgerUpdate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -1130,7 +1133,7 @@ func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
 	}
 	yearID, neighborID, e, err := s.store.GetLedgerEntry(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
@@ -1172,12 +1175,12 @@ func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLedgerDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	yearID, neighborID, e, err := s.store.GetLedgerEntry(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
@@ -1216,22 +1219,22 @@ func unitIsCustom(u string) bool { return u != "" && !knownUnits[u] }
 func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	entry, err := s.store.GetEntry(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), entry.NeighborID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), entry.BillingYearID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if year.Completed() {
@@ -1291,22 +1294,22 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleEntryCopy(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	entry, err := s.store.GetEntry(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), entry.NeighborID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), entry.BillingYearID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if year.Completed() {
@@ -1677,15 +1680,18 @@ func (s *Server) buildGespannEntry(r *http.Request, gespannID int64, hours decim
 	return entry, ids, true
 }
 
+// handleEntryDelete removes a booking only while its year remains open.
+// A linked companion is deleted with it only when the form explicitly requests
+// cascade deletion; successful deletions are audited before returning to the account.
 func (s *Server) handleEntryDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	entry, err := s.store.GetEntry(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if !s.entryYearOpen(w, r, entry, "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr gelöscht werden.") {

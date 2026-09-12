@@ -2,7 +2,7 @@
 <section class="stack">
 	<div class="pagehead">
 		<a class="backbtn" href="/" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
-		<h1 class="pagehead__t">Einstellungen</h1>
+		<h2 class="pagehead__t">Einstellungen</h2>
 	</div>
 
 	<div class="card">
@@ -113,22 +113,15 @@
 
 	<div class="card stack stack--tight">
 		<h2 class="section-title">Aktive Sitzungen</h2>
-		<div class="list">
-			{{range .Sessions}}
-			<div class="list__row list__row--plain">
-				<div class="list__main">
-					<span class="list__title">{{if .Current}}Diese Sitzung{{else}}Sitzung{{end}} · {{.IP}}</span>
-					<span class="list__sub muted" title="{{.UserAgent}}">{{.UserAgent}} · zuletzt {{date .LastSeen}}</span>
-				</div>
-				{{if not .Current}}
-				<form method="post" action="/account/sessions/revoke">
-					<input type="hidden" name="token" value="{{.Token}}">
-					<button class="btn btn--ghost btn--sm" type="submit">Beenden</button>
-				</form>
-				{{end}}
-			</div>
-			{{end}}
-		</div>
+		{{if gt (len .Sessions) 5}}
+		<p class="muted small">{{len .Sessions}} aktive Sitzungen. Die vollständige Liste bleibt kompakt, bis du sie brauchst.</p>
+		<details class="disclosure session-disclosure">
+			<summary>Alle aktiven Sitzungen anzeigen</summary>
+			{{template "session-list" .Sessions}}
+		</details>
+		{{else}}
+		{{template "session-list" .Sessions}}
+		{{end}}
 		<form method="post" action="/account/sessions/revoke-others"
 			data-confirm="Alle anderen Sitzungen beenden?">
 			<button class="btn btn--ghost btn--sm" type="submit">Alle anderen abmelden</button>
@@ -140,3 +133,23 @@
 	</form>
 </section>
 {{end}}
+
+{{define "session-list"}}
+<div class="list list--onecol">
+	{{range .}}
+	<div class="list__row list__row--plain">
+		<div class="list__main">
+			<span class="list__title">{{if .Current}}Diese Sitzung{{else}}Sitzung{{end}} · {{.IP}}</span>
+			<span class="list__sub muted" title="{{.UserAgent}}">{{.UserAgent}} · zuletzt {{date .LastSeen}}</span>
+		</div>
+		{{if not .Current}}
+		<form method="post" action="/account/sessions/revoke">
+			<input type="hidden" name="token" value="{{.Token}}">
+			<button class="btn btn--ghost btn--sm" type="submit">Beenden</button>
+		</form>
+		{{end}}
+	</div>
+	{{end}}
+</div>
+{{end}}
+{{define "scripts"}}<script src="/static/js/passkey.js?v={{.AssetVersion}}" defer></script>{{end}}

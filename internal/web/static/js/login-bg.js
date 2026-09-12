@@ -1,20 +1,20 @@
-/* Login worksheet background.
+/** Login worksheet background.
  *
  * Paints a paper "worksheet" onto the pre-auth <canvas id="login-bg">, dusted
  * with Treckrr's full 16-machine icon set — the same glyphs the appbar picks
  * from — each drawn at most once (no repeats), scattered across the whole sheet
- * like a field of favicons. A slow light band travels across and lifts each
- * column of machines as it passes.
+ * like a field of favicons. A fixed-phase light band highlights the composition
+ * without a continuous animation loop.
  *
- * One of two sheets is chosen at random on every load, the way the appbar picks
- * a random machine mark: "graph" (fine engineering grid, green ink, a small
+ * One of two sheets is selected using the reload/session rule below and reused
+ * across ordinary navigation: "graph" (fine engineering grid, green ink, a small
  * orange dimension line under each machine) or "hatch" (engraved diagonal
  * hatch, plain ink emboss).
  *
  * Colours are read from the live CSS design tokens (--bg, --text, --primary,
  * --signal, --muted), so the sheet tracks the active theme (Hell / Nachtschicht)
- * and re-themes on the fly. Animates regardless of prefers-reduced-motion — see
- * the note at start() for why. Purely decorative: aria-hidden and
+ * and re-themes on the fly. It repaints on resize or theme changes only.
+ * Purely decorative: aria-hidden and
  * pointer-inert, so it never touches the form. CSP-safe — no inline code, all
  * drawing happens on the canvas.
  */
@@ -155,7 +155,7 @@
 	}
 
 	/* ---- driver ---------------------------------------------------------- */
-	var DPR = Math.min(1.75, window.devicePixelRatio || 1);
+	var DPR = Math.min(1.25, window.devicePixelRatio || 1);
 	// A hard reload bypasses the service worker, so the page loads uncontrolled —
 	// the one signal that separates it from an F5. Without a SW (plain-HTTP IP
 	// origin) fall back to once-per-session. Computed ONCE: the sheet and the icon
@@ -203,26 +203,11 @@
 	}
 	var draw = pickVariant("treckrr-loginbg", ["graph", "hatch"]) === "graph" ? graph : hatch;
 	var seed = pickSeed("treckrr-loginbg-seed");
-	// The light band is a pure function of t, so read t off the wall clock instead
-	// of a random phase: a reload then picks the sweep up where the previous page
-	// left it, rather than jumping the bar to a new position.
-	// requestAnimationFrame is not guaranteed to keep firing. Chrome pauses it when
-	// it decides the WINDOW is occluded — which a remote-desktop session routinely
-	// triggers — and document.hidden stays false throughout, so visibilitychange
-	// never fires and nothing notices. `running` is still true, so start() refuses
-	// to do anything, and the loop is silently dead until the page is reloaded.
-	//
-	// Two changes make that survivable. The phase is read straight off the wall
-	// clock rather than integrated from frame deltas, so any stall or throttle
-	// resumes at the correct position instead of lagging behind by however long it
-	// was paused. And a watchdog notices when frames stop arriving and drives the
-	// drawing from a timer until they come back — timers keep running where rAF
-	// does not. Because the animation is a pure function of the clock, the
-	// timer-driven frames are indistinguishable from the real ones.
-	var W = 0, H = 0, items = [], pal = palette(), running = false, raf = 0;
-	var lastRaf = 0, fallback = 0;
-	function clock() { return Date.now() / 1000; }
+	// Pick a stable composition phase once. This decorative surface remains still
+	// after the first paint so the login screen consumes no continuous idle CPU.
+	var W = 0, H = 0, items = [], pal = palette(), phase = Date.now() / 1000;
 
+	/** Rebuilds the bitmap and deterministic icon layout for a visible canvas; hidden layouts are left untouched. */
 	function resize() {
 		var r = canvas.getBoundingClientRect();
 		if (!r.width || !r.height) return;
@@ -230,59 +215,14 @@
 		canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
 		ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 		items = layoutIcons(W, H, seed);
-		if (!running) draw(W, H, clock(), pal, items); // keep the static/paused frame current
+		draw(W, H, phase, pal, items);
 	}
-	function frame() {
-		if (!running) return;
-		// Stand the fallback down the instant a real frame arrives, rather than at
-		// the watchdog's next tick: until then both would be drawing.
-		if (fallback) { clearInterval(fallback); fallback = 0; }
-		lastRaf = Date.now();
-		draw(W, H, clock(), pal, items);
-		raf = requestAnimationFrame(frame);
-	}
-	// This backdrop deliberately does NOT gate on prefers-reduced-motion.
-	//
-	// It used to, and the effect was that the sweep stood still on any machine with
-	// Windows' "animate controls and elements inside windows" switched off: that is
-	// what SPI_GETCLIENTAREAANIMATION reports, and it is what Chrome and Edge map
-	// the media query to. That box is commonly unchecked for reasons that have
-	// nothing to do with motion sensitivity — performance tweaks, remote-desktop
-	// defaults, hand-me-down "make Windows faster" advice — so the query was
-	// suppressing the backdrop for people who never asked for less motion, with no
-	// way to tell the two groups apart. Measured on the live instance: the phase is
-	// read off the wall clock, so the single static frame landed somewhere new on
-	// every load, which read as "the bar only moves when I refresh".
-	//
-	// Product decision: the sweep runs by default, and there is no per-user switch.
-	// The rest of the app still honours the query — page fade-in, card hover, the
-	// modal, toasts, chart fills and the backup pulse all stand down under it, see
-	// the prefers-reduced-motion blocks in app.css.
-	function start() {
-		if (running || document.hidden) return;
-		running = true; lastRaf = Date.now(); raf = requestAnimationFrame(frame);
-	}
-	function stop() {
-		running = false;
-		if (raf) cancelAnimationFrame(raf); raf = 0;
-		if (fallback) clearInterval(fallback); fallback = 0;
-	}
-	// lastRaf is stamped ONLY by frame(), never by the fallback, so the fallback
-	// painting cannot mask a stall and keep itself alive.
-	setInterval(function () {
-		if (!running || document.hidden) return;
-		var stalled = Date.now() - lastRaf > 800;
-		if (stalled && !fallback) fallback = setInterval(function () { draw(W, H, clock(), pal, items); }, 40);
-		else if (!stalled && fallback) { clearInterval(fallback); fallback = 0; }
-	}, 500);
-	function retheme() { pal = palette(); if (!running) draw(W, H, clock(), pal, items); }
+	/** Repaints an initialized login canvas with current theme tokens while preserving its layout and phase. */
+	function retheme() { pal = palette(); if (W) draw(W, H, phase, pal, items); }
 
 	if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
 	else window.addEventListener("resize", resize);
 	resize();
-	start();
-
-	document.addEventListener("visibilitychange", function () { if (document.hidden) stop(); else start(); });
 	var dark = window.matchMedia ? matchMedia("(prefers-color-scheme: dark)") : null;
 	if (dark && dark.addEventListener) dark.addEventListener("change", retheme);
 	if (window.MutationObserver) new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });

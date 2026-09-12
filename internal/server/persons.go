@@ -106,7 +106,7 @@ func (s *Server) handlePersonCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePersonUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -142,7 +142,7 @@ func (s *Server) handlePersonUpdate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePersonArchive(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -168,7 +168,7 @@ func (s *Server) handlePersonArchive(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePersonDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	name := s.personName(r, id)
@@ -176,7 +176,7 @@ func (s *Server) handlePersonDelete(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrHasHistory):
 		s.setFlash(w, r, "error", "Diese Person hat bereits Buchungen — bitte archivieren statt löschen.")
 	case errors.Is(err, store.ErrNotFound):
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	case err != nil:
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
@@ -230,7 +230,7 @@ func (s *Server) bookExtra(w http.ResponseWriter, r *http.Request, neighborID, y
 func (s *Server) handleMannstundenAdd(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -292,7 +292,7 @@ func (s *Server) handleMannstundenAdd(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAnfahrtAdd(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
