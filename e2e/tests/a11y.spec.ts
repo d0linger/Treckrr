@@ -13,6 +13,7 @@ const USER = process.env.E2E_ADMIN_USER || "admin";
 const PASS = process.env.E2E_ADMIN_PASS || "e2e-admin-password-123";
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
+/** Signs into the seeded admin account and waits for the authenticated shell before scanning. */
 async function login(page) {
   await page.goto("/login");
   await page.locator('input[name="username"]').fill(USER);
@@ -102,6 +103,7 @@ test("login page passes in dark mode too", async ({ page }) => {
   expect(await seriousViolations(page)).toEqual([]);
 });
 
+/** Keeps recovery pages in the accessibility gate even though they do not require a session. */
 test("offline and branded error pages have no serious accessibility violations", async ({ page }) => {
   for (const path of ["/offline", "/missing-page"]) {
     await page.goto(path);
@@ -110,7 +112,10 @@ test("offline and branded error pages have no serious accessibility violations",
   }
 });
 
-// Run with the initial seed, before the write-based specs close the year.
+/**
+ * Checks mobile labels, keyboard access to overflowing data, and current-section semantics.
+ * Requires the initial seed, before the write-based specs close the year.
+ */
 test("page semantics remain explicit on mobile and data-heavy views", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
@@ -136,6 +141,7 @@ test("page semantics remain explicit on mobile and data-heavy views", async ({ p
 });
 
 for (const scheme of ["light", "dark"] as const) {
+  /** Rejects failed page loads, ambiguous page headings, and blocking axe findings in each palette. */
   test(`all authenticated pages pass in ${scheme} mode`, async ({ page }) => {
     test.slow(); // The full authenticated page matrix is well past the default timeout.
     await page.emulateMedia({ colorScheme: scheme });

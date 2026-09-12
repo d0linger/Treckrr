@@ -1,20 +1,20 @@
-/* Login worksheet background.
+/** Login worksheet background.
  *
  * Paints a paper "worksheet" onto the pre-auth <canvas id="login-bg">, dusted
  * with Treckrr's full 16-machine icon set — the same glyphs the appbar picks
  * from — each drawn at most once (no repeats), scattered across the whole sheet
- * like a field of favicons. A slow light band travels across and lifts each
- * column of machines as it passes.
+ * like a field of favicons. A fixed-phase light band highlights the composition
+ * without a continuous animation loop.
  *
- * One of two sheets is chosen at random on every load, the way the appbar picks
- * a random machine mark: "graph" (fine engineering grid, green ink, a small
+ * One of two sheets is selected using the reload/session rule below and reused
+ * across ordinary navigation: "graph" (fine engineering grid, green ink, a small
  * orange dimension line under each machine) or "hatch" (engraved diagonal
  * hatch, plain ink emboss).
  *
  * Colours are read from the live CSS design tokens (--bg, --text, --primary,
  * --signal, --muted), so the sheet tracks the active theme (Hell / Nachtschicht)
- * and re-themes on the fly. Animates regardless of prefers-reduced-motion — see
- * the note at start() for why. Purely decorative: aria-hidden and
+ * and re-themes on the fly. It repaints on resize or theme changes only.
+ * Purely decorative: aria-hidden and
  * pointer-inert, so it never touches the form. CSP-safe — no inline code, all
  * drawing happens on the canvas.
  */
@@ -207,6 +207,7 @@
 	// after the first paint so the login screen consumes no continuous idle CPU.
 	var W = 0, H = 0, items = [], pal = palette(), phase = Date.now() / 1000;
 
+	/** Rebuilds the bitmap and deterministic icon layout for a visible canvas; hidden layouts are left untouched. */
 	function resize() {
 		var r = canvas.getBoundingClientRect();
 		if (!r.width || !r.height) return;
@@ -216,6 +217,7 @@
 		items = layoutIcons(W, H, seed);
 		draw(W, H, phase, pal, items);
 	}
+	/** Repaints an initialized login canvas with current theme tokens while preserving its layout and phase. */
 	function retheme() { pal = palette(); if (W) draw(W, H, phase, pal, items); }
 
 	if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);

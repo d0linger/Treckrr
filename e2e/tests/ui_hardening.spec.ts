@@ -3,6 +3,7 @@ import { test, expect } from "@playwright/test";
 const USER = process.env.E2E_ADMIN_USER || "admin";
 const PASS = process.env.E2E_ADMIN_PASS || "e2e-admin-password-123";
 
+/** Signs into the seeded admin account and waits for the shell before checking shared UI controls. */
 async function login(page) {
   await page.goto("/login");
   await page.locator('input[name="username"]').fill(USER);
@@ -11,6 +12,7 @@ async function login(page) {
   await expect(page.locator(".appbar")).toBeVisible();
 }
 
+/** Guards the script-loading boundary between login, authenticated pages, and passkey-enabled profiles. */
 test("loads page-specific enhancement scripts only where needed", async ({ page }) => {
   await page.goto("/login");
   await expect(page.locator('script[src*="/passkey.js"]')).toHaveCount(1);
@@ -29,6 +31,10 @@ test("loads page-specific enhancement scripts only where needed", async ({ page 
   await expect(page.locator('script[src*="/passkey.js"]')).toHaveCount(1);
 });
 
+/**
+ * Enforces the mobile touch-target floor for live controls and temporary contextual-control probes.
+ * Removes the probes after measurement so they cannot affect subsequent interactions.
+ */
 test("mobile chrome keeps primary controls comfortably tappable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
@@ -74,6 +80,7 @@ test("mobile chrome keeps primary controls comfortably tappable", async ({ page 
   ).toEqual([]);
 });
 
+/** Checks keyboard focus containment and Escape dismissal across the drawer, command palette, and help. */
 test("custom dialogs contain focus and return it to their trigger", async ({ page }) => {
   await login(page);
 

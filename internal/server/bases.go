@@ -165,6 +165,8 @@ func (s *Server) handleBaseUnlock(w http.ResponseWriter, r *http.Request) {
 	s.setBaseLock(w, r, false)
 }
 
+// setBaseLock serves both basis lock actions, recording the requested lock state
+// in the audit log after a successful store update and returning to the basis list.
 func (s *Server) setBaseLock(w http.ResponseWriter, r *http.Request, locked bool) {
 	id, err := pathID(r)
 	if err != nil {

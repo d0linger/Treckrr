@@ -114,6 +114,8 @@ func (s *Server) handleLoadLevelSave(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, pricesURL(baseID))
 }
 
+// handleLoadLevelDelete checks the selected basis lock before deleting a load
+// level, then reports the store result and audits a successful deletion.
 func (s *Server) handleLoadLevelDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -181,6 +183,8 @@ func (s *Server) handleTractorSave(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, pricesURL(baseID))
 }
 
+// handleTractorToggle changes availability for new bookings without removing the
+// tractor from existing bookings. Changes are blocked by the selected basis lock.
 func (s *Server) handleTractorToggle(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -209,6 +213,8 @@ func (s *Server) handleTractorToggle(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, pricesURL(baseID))
 }
 
+// handleTractorDelete checks the selected basis lock before deleting a tractor,
+// then reports the store result and audits a successful deletion.
 func (s *Server) handleTractorDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -285,6 +291,8 @@ func (s *Server) handleMachineSave(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, pricesURL(baseID))
 }
 
+// handleMachineToggle changes availability for new bookings while preserving
+// existing machine references. Changes are blocked by the selected basis lock.
 func (s *Server) handleMachineToggle(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -313,6 +321,8 @@ func (s *Server) handleMachineToggle(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, pricesURL(baseID))
 }
 
+// handleMachineDelete checks the selected basis lock before deleting a machine,
+// then reports the store result and audits a successful deletion.
 func (s *Server) handleMachineDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {

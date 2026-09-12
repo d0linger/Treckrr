@@ -286,6 +286,8 @@ func TestBackupPageRenders(t *testing.T) {
 	})
 }
 
+// TestProfileSessionDisclosurePreservesControls checks collapse above five sessions,
+// per-session revoke targets, and global account actions outside the disclosure.
 func TestProfileSessionDisclosurePreservesControls(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -382,6 +384,8 @@ func TestProfileSessionDisclosurePreservesControls(t *testing.T) {
 	}
 }
 
+// TestMahnungPagePreservesDocumentAndPaymentActions checks reminder content,
+// optional payment details, and correctly scoped PDF, QR, and email actions across stages.
 func TestMahnungPagePreservesDocumentAndPaymentActions(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

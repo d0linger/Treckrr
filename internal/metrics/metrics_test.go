@@ -34,6 +34,8 @@ func isolateRegistry(t *testing.T) {
 	})
 }
 
+// TestCounterAndLabelRendering checks counter totals and a single TYPE header per
+// labeled family, so the Prometheus exposition remains parseable.
 func TestCounterAndLabelRendering(t *testing.T) {
 	isolateRegistry(t)
 	Inc("treckrr_test_plain_total")
@@ -99,6 +101,8 @@ func TestHistogramIsCumulative(t *testing.T) {
 	}
 }
 
+// TestConcurrentIncIsRaceFree exercises counter and histogram writes from four
+// goroutines for race-enabled runs and verifies that counter increments are not lost.
 func TestConcurrentIncIsRaceFree(t *testing.T) {
 	isolateRegistry(t)
 	const n = 200
@@ -120,6 +124,8 @@ func TestConcurrentIncIsRaceFree(t *testing.T) {
 	}
 }
 
+// TestRegistryIsolationRestoresState verifies that a subtest starts with an empty
+// metrics registry and restores its parent's counters, labels, and histograms.
 func TestRegistryIsolationRestoresState(t *testing.T) {
 	isolateRegistry(t)
 	empty := render()

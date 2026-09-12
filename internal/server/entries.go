@@ -17,6 +17,9 @@ import (
 	"github.com/d0linger/treckrr/internal/store"
 )
 
+// handleNeighborDetail assembles the selected year's bookings, ledger, payments,
+// and capture forms for one neighbor. Stale-price markers are best-effort and do
+// not prevent the account page from rendering when their lookups fail.
 func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -1677,6 +1680,9 @@ func (s *Server) buildGespannEntry(r *http.Request, gespannID int64, hours decim
 	return entry, ids, true
 }
 
+// handleEntryDelete removes a booking only while its year remains open.
+// A linked companion is deleted with it only when the form explicitly requests
+// cascade deletion; successful deletions are audited before returning to the account.
 func (s *Server) handleEntryDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {

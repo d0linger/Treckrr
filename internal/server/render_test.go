@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+// TestNotFoundUsesBrandedPageForHTMLNavigation checks that only HTML GET requests
+// receive branded 404s while other clients retain plain responses and no-store.
 func TestNotFoundUsesBrandedPageForHTMLNavigation(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -84,6 +86,8 @@ func TestNotFoundUsesBrandedPageForHTMLNavigation(t *testing.T) {
 	}
 }
 
+// TestInvalidRecordIDsPreserveResponseContracts checks representative handlers
+// for branded page recovery and compact non-page 404s without accessing a store.
 func TestInvalidRecordIDsPreserveResponseContracts(t *testing.T) {
 	t.Parallel()
 	s := &Server{}

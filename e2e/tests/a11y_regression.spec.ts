@@ -5,6 +5,7 @@ import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 const USER = process.env.E2E_ADMIN_USER || "admin";
 const PASS = process.env.E2E_ADMIN_PASS || "e2e-admin-password-123";
 
+/** Signs into the seeded admin account within the supplied page's isolated browser context. */
 async function login(page: Page) {
   await page.goto("/login");
   await page.locator('input[name="username"]').fill(USER);
@@ -13,6 +14,10 @@ async function login(page: Page) {
   await expect(page.locator(".appbar")).toBeVisible();
 }
 
+/**
+ * Exercises keyboard revocation through the collapsed list and checks that other sessions survive.
+ * Creates and cleans up its own auxiliary sessions without revoking sessions owned by other tests.
+ */
 test("collapsed sessions remain keyboard-accessible and revoke only the selected session", async ({ page, browser, baseURL }) => {
   test.setTimeout(90_000);
   const sessions: { context: BrowserContext; page: Page; label: string }[] = [];
@@ -70,6 +75,7 @@ test("collapsed sessions remain keyboard-accessible and revoke only the selected
   }
 });
 
+/** Keeps browser recovery links usable while preserving the plain 404 contract for image requests. */
 test("missing records offer recovery without changing image-client responses", async ({ page }) => {
   await login(page);
   const response = await page.goto("/neighbors/invalid?year=1");
@@ -86,6 +92,7 @@ test("missing records offer recovery without changing image-client responses", a
   expect(await image.text()).toBe("404 page not found\n");
 });
 
+/** Checks labeled native file selection and clearing without submitting or persisting an upload. */
 test("booking photo selection has a usable label and preserves native input behavior", async ({ page }) => {
   await login(page);
   await page.goto("/entries/1/edit");
@@ -104,6 +111,7 @@ test("booking photo selection has a usable label and preserves native input beha
   // covered by the server integration tests; no upload is made by this test.
 });
 
+/** Guards chart touch targets, page overflow, and keyboard navigation at 320px and 390px in both themes. */
 test("chart links remain reachable at narrow mobile widths in both themes", async ({ page }) => {
   await login(page);
   for (const colorScheme of ["light", "dark"] as const) {
@@ -128,6 +136,7 @@ test("chart links remain reachable at narrow mobile widths in both themes", asyn
   }
 });
 
+/** Verifies server-rendered authentication and profile navigation with browser scripting disabled. */
 test("login, profile, and navigation remain usable without JavaScript", async ({ browser, baseURL }) => {
   const context = await browser.newContext({ baseURL, javaScriptEnabled: false });
   try {

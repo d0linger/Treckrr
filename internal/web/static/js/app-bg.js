@@ -1,8 +1,9 @@
-/* App-wide worksheet backdrop.
+/** App-wide worksheet backdrop.
  *
  * Paints one of three flüsterleise Werkblatt surfaces onto the fixed
- * <canvas id="app-bg"> that sits behind every authenticated page. Which one is
- * chosen at random on each load, the way the appbar picks a random machine mark:
+ * <canvas id="app-bg"> that sits behind every authenticated page. The selected
+ * surface is reused across navigation until the reload/session rule below
+ * requests another random choice:
  *
  *   werkraster — the app's 26px blueprint grid with faint nodes.
  *   taglicht   — no marks; a very soft warm/cool wash. The quietest surface.
@@ -91,9 +92,11 @@
 				c.fillStyle = g; c.fillRect(0, 0, w, h);
 			}
 		},
+		/** Keeps the seed-grid overlay's pass position private to this surface variant. */
 		saatraster: (function () {
 			var pass = 0.35;
 			return {
+				/** Restores a visible drill-pass position before the one-shot composition. */
 				reset: function () { pass = 0.35; },
 				build: function (o, w, h, p) {
 					o.fillStyle = RGB(p.bg); o.fillRect(0, 0, w, h);
@@ -196,7 +199,7 @@
 		ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 		v.overlay(ctx, W, H, t, dt, pal);
 	}
-	// Theme and resize observers below are the only reasons to repaint.
+	/** Rebuilds the static layer with current theme tokens and repaints only after a nonzero layout exists. */
 	function retheme() { pal = palette(); if (W) { v.build(sctx, W, H, pal); compose(0); } }
 
 	v.reset();

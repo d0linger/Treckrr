@@ -216,6 +216,9 @@ func (s *Server) buildMahnungDataWith(r *http.Request, neighborID int64, stage i
 	return v, true, nil
 }
 
+// handleNeighborMahnung renders a reminder for the requested neighbor and year,
+// including the outstanding balance, stage-specific fees, and payment actions.
+// A missing year is a bad request; unknown stages use the initial reminder.
 func (s *Server) handleNeighborMahnung(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {

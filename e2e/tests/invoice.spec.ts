@@ -15,6 +15,7 @@ const PASS = process.env.E2E_ADMIN_PASS || "e2e-admin-password-123";
 
 test.describe.configure({ mode: "serial" });
 
+/** Signs into the seeded admin account before changing the isolated invoice fixture through the UI. */
 async function login(page) {
   await page.goto("/login");
   await page.locator('input[name="username"]').fill(USER);
@@ -23,6 +24,10 @@ async function login(page) {
   await expect(page.locator(".appbar")).toBeVisible();
 }
 
+/**
+ * Builds the issuer and recipient prerequisites, then checks invoice and reminder document visibility.
+ * Also verifies that marking an invoice sent can be undone through the confirmation and toast flow.
+ */
 test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page }) => {
   await login(page);
 

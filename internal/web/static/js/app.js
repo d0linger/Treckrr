@@ -1,14 +1,14 @@
-// Treckrr — progressive enhancement. No external dependencies.
+/** Adds optional client-side interactions to Treckrr's server-rendered pages without external dependencies. */
 (function () {
 	"use strict";
 
-	// Shared keyboard guard for custom dialogs. Native <dialog> handles this by
-	// itself; the drawer, command palette and offline sheet use ordinary elements.
+	/** Returns visible, enabled tab stops for custom dialogs that lack native <dialog> focus handling. */
 	function dialogFocusables(root) {
 		return Array.prototype.filter.call(root.querySelectorAll(
 			'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 		), function (el) { return !el.hidden && el.getClientRects().length > 0; });
 	}
+	/** Wraps Tab/Shift+Tab at a custom dialog's boundaries; blocks Tab when no focusable control exists. */
 	function trapDialogFocus(root, e) {
 		if (e.key !== "Tab") return;
 		var nodes = dialogFocusables(root);
@@ -652,7 +652,7 @@
 		btn.addEventListener("click", function () { window.print(); });
 	});
 
-	// Side drawer (menu) open/close.
+	/** Wires the side drawer's visibility, inert state and keyboard focus restoration when it exists. */
 	(function () {
 		var drawer = document.getElementById("drawer");
 		if (!drawer) return;
@@ -684,6 +684,7 @@
 		document.querySelectorAll("[data-drawer-close]").forEach(function (b) {
 			b.addEventListener("click", function () { setOpen(false); });
 		});
+		/** Handles Escape and focus wrapping only while the drawer is open. */
 		document.addEventListener("keydown", function (e) {
 			if (!drawer.classList.contains("is-open")) return;
 			if (e.key === "Escape") { e.preventDefault(); setOpen(false); }
@@ -1022,7 +1023,7 @@
 		});
 	}
 
-	// ---- Backup panel: cron schedule builder (mode toggle + next-runs) -------
+	/** Enhances backup schedule fields with friendly modes and a client-side preview of upcoming runs. */
 	(function () {
 		var cols = document.querySelectorAll("[data-sched-col]");
 		if (!cols.length) return;
@@ -1087,6 +1088,7 @@
 				return { mode: "hours", n: m[1] };
 			return { mode: "cron" };
 		}
+		/** Builds labeled schedule controls from preset/numeric values; raw cron mode needs no extra rows. */
 		function buildRows(mode, init) {
 			if (mode === "daily") return '<div class="bkp__arow">um <input type="time" data-k="time" aria-label="Uhrzeit" value="' + (init.time || "03:00") + '"> Uhr</div>';
 			if (mode === "hours") return '<div class="bkp__arow">alle <input class="input input--num" data-k="n" aria-label="Intervall in Stunden" type="number" min="1" value="' + (init.n || 6) + '"> Stunden</div>';
@@ -1218,9 +1220,7 @@
 		});
 	})();
 
-	// Command palette (Ctrl/Cmd+K): fuzzy jump to any master-data hit — neighbor,
-	// invoice, basis, tractor, machine, load level or gespann — plus static nav
-	// targets, via the /api/search endpoint. Debounced; keyboard-navigable.
+	/** Wires Ctrl/Cmd+K search with local navigation, debounced /api/search results and keyboard selection. */
 	(function () {
 		var ov = null, input = null, list = null, items = [], sel = -1, timer = null, seq = 0, lastFocus = null;
 		// Werkblatt F4: stamped mono type plates per result kind instead of emoji —
@@ -1243,15 +1243,17 @@
 			return COMMANDS.filter(function (c) { return fold(c.label + " " + c.kw).indexOf(f) !== -1; })
 				.map(function (c) { return { kind: "nav", label: c.label, sub: c.sub, url: c.url }; });
 		}
-		// Bump seq so an in-flight /api/search response is ignored once closed; otherwise
-		// it would repopulate items/sel on the now-detached list and a later reopen+Enter
-		// could jump to a hit the user never saw.
+		/**
+		 * Closes the palette, restores focus and invalidates in-flight search results so
+		 * reopening cannot select an unseen result from the previous search.
+		 */
 		function close() {
 			if (!ov) return;
 			ov.remove(); ov = null; items = []; sel = -1; seq++;
 			if (lastFocus && typeof lastFocus.focus === "function") lastFocus.focus();
 			lastFocus = null;
 		}
+		/** Creates and focuses the search dialog once, preserving the opener for close-time focus restoration. */
 		function open() {
 			if (ov) return;
 			lastFocus = document.activeElement;
@@ -1273,8 +1275,10 @@
 			input.addEventListener("keydown", onKey);
 			document.body.appendChild(ov); input.focus();
 		}
+		/** Replaces palette results using text nodes and synchronizes the initial selection's ARIA state. */
 		function render(res) {
 			items = res; sel = res.length ? 0 : -1; list.textContent = "";
+			/** Builds one selectable result without interpreting its label or subtitle as HTML. */
 			res.forEach(function (r, i) {
 				var li = document.createElement("li");
 				li.className = "cmdk__item" + (i === sel ? " is-sel" : "");
@@ -1294,6 +1298,7 @@
 			if (sel >= 0) input.setAttribute("aria-activedescendant", "cmdk-opt-" + sel);
 			else input.removeAttribute("aria-activedescendant");
 		}
+		/** Keeps visual selection, screen-reader active descendant and scrolling aligned with the selected index. */
 		function highlight() {
 			Array.prototype.forEach.call(list.children, function (li, i) {
 				li.classList.toggle("is-sel", i === sel);
@@ -1337,8 +1342,7 @@
 		});
 	})();
 
-	// Keyboard shortcuts: "/" focuses search, "g" then d/n/s/m/y/p navigates, "?"
-	// toggles a cheatsheet. Ignored while typing in a field so normal input works.
+	/** Adds navigation/search shortcuts and a help dialog while leaving ordinary text entry unaffected. */
 	(function () {
 		var nav = { d: "/", n: "/neighbors", s: "/stats", m: "/mahnwesen", y: "/years", p: "/prices" };
 		var gPending = false, gTimer = null, helpLastFocus = null;
@@ -1347,6 +1351,7 @@
 			var t = (el.tagName || "").toLowerCase();
 			return t === "input" || t === "textarea" || t === "select" || el.isContentEditable;
 		}
+		/** Removes the shortcut help dialog and returns focus to its opener when available. */
 		function closeHelp() {
 			var ex = document.getElementById("kbd-help");
 			if (!ex) return;
@@ -1354,6 +1359,7 @@
 			if (helpLastFocus && typeof helpLastFocus.focus === "function") helpLastFocus.focus();
 			helpLastFocus = null;
 		}
+		/** Toggles the shortcut reference dialog with an initially focused close control and keyboard focus wrapping. */
 		function help() {
 			var ex = document.getElementById("kbd-help");
 			if (ex) { closeHelp(); return; }
@@ -1382,6 +1388,7 @@
 			});
 			ov.appendChild(card);
 			ov.addEventListener("click", function (e) { if (e.target === ov) closeHelp(); });
+			/** Closes help on Escape and keeps Tab navigation inside the dialog. */
 			ov.addEventListener("keydown", function (e) {
 				if (e.key === "Escape") { e.preventDefault(); closeHelp(); }
 				else trapDialogFocus(ov, e);
@@ -1389,6 +1396,7 @@
 			document.body.appendChild(ov);
 			close.focus();
 		}
+		/** Dispatches unmodified shortcuts outside editable fields, with a 1.2-second window for g-prefix navigation. */
 		document.addEventListener("keydown", function (e) {
 			if (e.key === "Escape" && document.getElementById("kbd-help")) { closeHelp(); return; }
 			if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;

@@ -192,6 +192,8 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/profile")
 }
 
+// handlePasskeyDelete removes only a credential belonging to the current user.
+// Missing or foreign credentials are treated as an already-completed deletion.
 func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 	user := userFromCtx(r)
 	id, err := pathID(r)

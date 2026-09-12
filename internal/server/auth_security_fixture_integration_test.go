@@ -13,6 +13,9 @@ import (
 	"github.com/d0linger/treckrr/internal/db"
 )
 
+// TestSecurityTestStoreIgnoresDatabaseQueryOverride checks that URL dbname query
+// overrides cannot redirect the authentication fixture away from its scratch DB,
+// whether the override names the parent database or a nonexistent database.
 func TestSecurityTestStoreIgnoresDatabaseQueryOverride(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {

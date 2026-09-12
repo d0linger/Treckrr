@@ -117,6 +117,8 @@ func (s *Server) handleYearCreate(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, dashboardURL(id))
 }
 
+// handleYearUpdate edits a year's label and pricing basis, rejecting basis
+// changes once bookings exist. Its audit diff distinguishes even like-named bases.
 func (s *Server) handleYearUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -246,6 +248,8 @@ func (s *Server) handleYearStatus(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/years")
 }
 
+// handleYearDelete removes a year only when it has no dependent billing history.
+// It reports both preflight blockers and history added before the store's delete.
 func (s *Server) handleYearDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {

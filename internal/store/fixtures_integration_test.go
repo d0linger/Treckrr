@@ -13,6 +13,9 @@ import (
 	"github.com/d0linger/treckrr/internal/db"
 )
 
+// TestScratchStoreIgnoresDatabaseQueryOverride checks that URL dbname query
+// overrides cannot redirect the store fixture away from its scratch database,
+// including when the override names the parent or a nonexistent database.
 func TestScratchStoreIgnoresDatabaseQueryOverride(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {

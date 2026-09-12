@@ -216,6 +216,8 @@ func (s *Server) handleGespannSave(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, gespanneURL(baseID))
 }
 
+// handleGespannDelete removes a saved equipment combination after checking the
+// selected basis lock, then audits success and returns to that basis's combinations.
 func (s *Server) handleGespannDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {

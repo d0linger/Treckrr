@@ -114,6 +114,8 @@ func (s *Server) recalcApply(w http.ResponseWriter, r *http.Request, yearID int6
 	redirect(w, r, backURL)
 }
 
+// handleNeighborRecalcPreview scopes the price comparison to one neighbor and
+// the requested year, rejecting an invoice lock before rendering the preview.
 func (s *Server) handleNeighborRecalcPreview(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
@@ -133,6 +135,8 @@ func (s *Server) handleNeighborRecalcPreview(w http.ResponseWriter, r *http.Requ
 		fmt.Sprintf("/neighbors/%d/recalc", neighborID))
 }
 
+// handleNeighborRecalcApply reprices one neighbor's bookings in the submitted year
+// after checking its invoice lock, then returns to that neighbor's account.
 func (s *Server) handleNeighborRecalcApply(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
@@ -154,6 +158,8 @@ func (s *Server) handleNeighborRecalcApply(w http.ResponseWriter, r *http.Reques
 	s.recalcApply(w, r, yearID, &neighborID, "neighbor", neighborID, neighborURL(neighborID, yearID))
 }
 
+// handleYearRecalcPreview opens a year-wide price comparison without selecting
+// a neighbor; the shared preview handler rejects completed years.
 func (s *Server) handleYearRecalcPreview(w http.ResponseWriter, r *http.Request) {
 	yearID, err := pathID(r)
 	if err != nil {
@@ -163,6 +169,8 @@ func (s *Server) handleYearRecalcPreview(w http.ResponseWriter, r *http.Request)
 	s.recalcPreview(w, r, yearID, nil, "", dashboardURL(yearID), fmt.Sprintf("/years/%d/recalc", yearID))
 }
 
+// handleYearRecalcApply delegates year-wide repricing to the shared handler,
+// which checks year status, audits changes, and returns to the year's dashboard.
 func (s *Server) handleYearRecalcApply(w http.ResponseWriter, r *http.Request) {
 	yearID, err := pathID(r)
 	if err != nil {

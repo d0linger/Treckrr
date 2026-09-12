@@ -37,6 +37,8 @@ func TestBadRequestRendersBrandedPage(t *testing.T) {
 	}
 }
 
+// TestBadRequestHandlesBlankAndUntrustedMessages checks the fallback for blank
+// messages and HTML escaping of untrusted text while preserving the 400 status.
 func TestBadRequestHandlesBlankAndUntrustedMessages(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
