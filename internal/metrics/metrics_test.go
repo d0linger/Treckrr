@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -11,7 +12,30 @@ func render() string {
 	return b.String()
 }
 
+// Registry tests must remain sequential: the production registry is process-global.
+func isolateRegistry(t *testing.T) {
+	t.Helper()
+	mu.Lock()
+	previousCounters := counters
+	counters = make(map[string]*atomic.Int64)
+	mu.Unlock()
+	histMu.Lock()
+	previousCounts, previousSum := histCounts, histSum
+	histCounts = make([]int64, len(histBuckets)+1)
+	histSum = 0
+	histMu.Unlock()
+	t.Cleanup(func() {
+		mu.Lock()
+		counters = previousCounters
+		mu.Unlock()
+		histMu.Lock()
+		histCounts, histSum = previousCounts, previousSum
+		histMu.Unlock()
+	})
+}
+
 func TestCounterAndLabelRendering(t *testing.T) {
+	isolateRegistry(t)
 	Inc("treckrr_test_plain_total")
 	Add("treckrr_test_plain_total", 4)
 	IncLabel("treckrr_test_labeled_total", "class", "5xx")
@@ -39,6 +63,7 @@ func TestCounterAndLabelRendering(t *testing.T) {
 // The histogram must be cumulative — bucket le=0.1 counts everything at or below
 // 0.1, not just what fell between 0.025 and 0.1 — and _count must equal +Inf.
 func TestHistogramIsCumulative(t *testing.T) {
+	isolateRegistry(t)
 	for _, d := range []float64{0.001, 0.05, 0.05, 3, 30} {
 		ObserveRequest(d)
 	}
@@ -75,6 +100,7 @@ func TestHistogramIsCumulative(t *testing.T) {
 }
 
 func TestConcurrentIncIsRaceFree(t *testing.T) {
+	isolateRegistry(t)
 	const n = 200
 	done := make(chan struct{})
 	for range 4 {
@@ -91,5 +117,29 @@ func TestConcurrentIncIsRaceFree(t *testing.T) {
 	}
 	if !strings.Contains(render(), "treckrr_test_concurrent_total 800") {
 		t.Error("concurrent increments lost counts")
+	}
+}
+
+func TestRegistryIsolationRestoresState(t *testing.T) {
+	isolateRegistry(t)
+	empty := render()
+	Add("treckrr_test_isolation_total", 7)
+	IncLabel("treckrr_test_isolation_labeled_total", "class", "2xx")
+	ObserveRequest(0.001)
+	ObserveRequest(30)
+	before := render()
+
+	t.Run("fresh registry", func(t *testing.T) {
+		isolateRegistry(t)
+		if got := render(); got != empty {
+			t.Fatalf("isolated registry contains prior metrics:\n%s", got)
+		}
+		Inc("treckrr_test_isolation_total")
+		IncLabel("treckrr_test_isolation_labeled_total", "class", "5xx")
+		ObserveRequest(0.5)
+	})
+
+	if got := render(); got != before {
+		t.Errorf("registry was not restored after subtest:\ngot:\n%s\nwant:\n%s", got, before)
 	}
 }

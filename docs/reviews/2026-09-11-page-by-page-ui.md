@@ -88,3 +88,7 @@ The initial 129-result matrix used the local development dataset. Because it con
 - Independent finish review: `ship`; chart-label truncation and reminder content omissions both scored resolved. Documentation review found no design-system contract change and preserved the existing design files, including the previously stale sidecar.
 
 An initial full-suite attempt against the local development dataset hit four fixture failures because year 1 was already closed. The company name/address and neighbor address changed by that attempt were restored to the exact prior values recorded in the audit log; its single test payment (ID 18) was soft-deleted through the normal reversible application action. The successful write-based run used the isolated database.
+
+## Functional confirmation
+
+The subsequent [2026-09-12 functional regression report](2026-09-12-functional-regression.md) records complete race-enabled PostgreSQL 16/18 runs, expanded unit/render/browser coverage, fixes to test isolation, final coverage, and explicit external-service verification limits.

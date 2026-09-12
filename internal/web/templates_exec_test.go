@@ -2,12 +2,16 @@ package web
 
 import (
 	"bytes"
+	"html"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/shopspring/decimal"
 
+	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -280,4 +284,210 @@ func TestBackupPageRenders(t *testing.T) {
 		"S3Files":     []map[string]any{{"Name": "treckrr-2026-08-01-040000.dump.enc", "Size": "57 KB", "ModTime": time.Now()}},
 		"S3FilesMore": []map[string]any{{"Name": "treckrr-2026-07-31-040000.dump.enc", "Size": "56 KB", "ModTime": time.Now()}},
 	})
+}
+
+func TestProfileSessionDisclosurePreservesControls(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		count     int
+		collapsed bool
+	}{
+		{name: "empty", count: 0},
+		{name: "current_session_only", count: 1},
+		{name: "five_sessions_expanded", count: 5},
+		{name: "six_sessions_collapsed", count: 6, collapsed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sessions := make([]models.Session, tc.count)
+			for i := range sessions {
+				sessions[i] = models.Session{
+					Token:     "test-session-" + strconv.Itoa(i),
+					UserAgent: "Test Browser " + strconv.Itoa(i),
+					IP:        "192.0.2." + strconv.Itoa(i+1),
+					LastSeen: time.Date(
+						2026,
+						time.September,
+						1,
+						12,
+						0,
+						0,
+						0,
+						time.UTC,
+					),
+					Current: i == 0,
+				}
+			}
+			page := execPage(t, "profile", map[string]any{
+				"Title":    "Einstellungen",
+				"User":     models.User{Username: "test-user", Role: models.RoleEditor},
+				"Sessions": sessions,
+			})
+
+			const disclosure = `<details class="disclosure session-disclosure">`
+			if got := strings.Contains(page, disclosure); got != tc.collapsed {
+				t.Fatalf("collapsed session disclosure = %v, want %v", got, tc.collapsed)
+			}
+			controls := page
+			outside := page
+			if tc.collapsed {
+				before, after, _ := strings.Cut(page, disclosure)
+				var closed bool
+				controls, outside, closed = strings.Cut(after, "</details>")
+				if !closed {
+					t.Fatal("session disclosure is not closed")
+				}
+				outside = before + outside
+				if !strings.Contains(controls, "Alle aktiven Sitzungen anzeigen") {
+					t.Error("collapsed session list has no visible expansion control")
+				}
+			}
+			for _, session := range sessions {
+				if got := strings.Count(controls, session.IP+"</span>"); got != 1 {
+					t.Errorf("session %q rendered %d times, want once", session.IP, got)
+				}
+			}
+			wantCurrent := min(tc.count, 1)
+			if got := strings.Count(controls, "Diese Sitzung"); got != wantCurrent {
+				t.Errorf("current-session labels = %d, want %d", got, wantCurrent)
+			}
+
+			// Match each revoke form with its token, not merely the aggregate button count.
+			revokeForms := regexp.MustCompile(
+				`<form method="post" action="/account/sessions/revoke">\s*`+
+					`<input type="hidden" name="token" value="([^"]+)">`,
+			).FindAllStringSubmatch(controls, -1)
+			wantRevokes := max(tc.count-1, 0)
+			if len(revokeForms) != wantRevokes {
+				t.Fatalf("individual revoke forms = %d, want %d", len(revokeForms), wantRevokes)
+			}
+			if got := strings.Count(controls, `type="submit">Beenden</button>`); got != wantRevokes {
+				t.Errorf("individual revoke buttons = %d, want %d", got, wantRevokes)
+			}
+			for i, form := range revokeForms {
+				if want := sessions[i+1].Token; form[1] != want {
+					t.Errorf("revoke form token = %q, want %q", form[1], want)
+				}
+			}
+			if strings.Contains(controls, `name="token" value="test-session-0"`) {
+				t.Error("current session must not have an individual revoke control")
+			}
+			for _, action := range []string{"/account/sessions/revoke-others", "/logout"} {
+				if !strings.Contains(outside, `method="post" action="`+action+`"`) {
+					t.Errorf("global action %q must remain outside the collapsed session list", action)
+				}
+			}
+		})
+	}
+}
+
+func TestMahnungPagePreservesDocumentAndPaymentActions(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name                   string
+		stage                  int
+		fee, paid              int64
+		wantTotal              string
+		dates, qr, mailEnabled bool
+		email                  string
+		wantEmail              bool
+	}{
+		{name: "reminder_without_optional_details", stage: 0, wantTotal: "100,00 €"},
+		{
+			name: "first_reminder_with_payment_details", stage: 1, fee: 5, paid: 20,
+			wantTotal: "105,00 €", dates: true, qr: true,
+			mailEnabled: true, email: "neighbor@example.invalid", wantEmail: true,
+		},
+		{
+			name: "second_reminder_without_recipient_email", stage: 2, fee: 12,
+			wantTotal: "112,00 €", mailEnabled: true,
+		},
+		{
+			name: "email_disabled_with_recipient_address", stage: 1, fee: 5,
+			wantTotal: "105,00 €", email: "neighbor@example.invalid",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			date := time.Date(
+				2026,
+				time.September,
+				1,
+				12,
+				0,
+				0,
+				0,
+				time.UTC,
+			)
+			data := map[string]any{
+				"Title":      models.DunningStageTitle(tc.stage),
+				"Intro":      "Bitte begleichen Sie den offenen Betrag.",
+				"Stage":      tc.stage,
+				"Year":       models.BillingYear{ID: 7, Year: 2026},
+				"Neighbor":   models.Neighbor{ID: 12, Name: "Testnachbar", Address: "Feldweg 2"},
+				"Company":    models.Company{Name: "Hof <Bergmann>", Address: "Dorfweg 1", IBAN: "TEST-IBAN"},
+				"InvoiceNo":  "2026-012",
+				"Today":      date,
+				"IssuedOn":   time.Time{},
+				"Open":       decimal.NewFromInt(100),
+				"Paid":       decimal.NewFromInt(tc.paid),
+				"Fee":        decimal.NewFromInt(tc.fee),
+				"TotalDue":   decimal.NewFromInt(100 + tc.fee),
+				"GraceUntil": time.Time{},
+				"HasEpcQR":   tc.qr, "MailEnabled": tc.mailEnabled, "NeighborEmail": tc.email,
+			}
+			if tc.dates {
+				data["IssuedOn"] = date.AddDate(0, 0, -21)
+				data["DueOn"] = date.AddDate(0, 0, -7)
+				data["GraceUntil"] = date.AddDate(0, 0, 10)
+			}
+			page := execPage(t, "mahnung", data)
+			for _, want := range []string{
+				`class="beleg beleg--rechnung"`,
+				"Hof &lt;Bergmann&gt;", "Dorfweg 1", "Testnachbar", "Feldweg 2",
+				models.DunningStageTitle(tc.stage), "Rechnung Nr. 2026-012",
+				"Offener Betrag", "100,00 €", "<strong>" + tc.wantTotal + "</strong>",
+				"TEST-IBAN", `href="/mahnwesen?year=7"`,
+			} {
+				if !strings.Contains(page, want) {
+					t.Errorf("reminder HTML missing %q", want)
+				}
+			}
+			for _, optional := range []struct {
+				text string
+				want bool
+			}{
+				{text: "Mahnspesen", want: tc.fee > 0},
+				{text: "bereits bezahlt 20,00 €", want: tc.paid > 0},
+				{text: "Rechnung vom 11.08.2026", want: tc.dates},
+				{text: "fällig war 25.08.2026", want: tc.dates},
+				{text: "bis <strong>11.09.2026</strong>", want: tc.dates},
+				{text: `class="beleg__epcqr"`, want: tc.qr},
+				{text: "Per E-Mail senden", want: tc.wantEmail},
+			} {
+				if got := strings.Contains(page, optional.text); got != optional.want {
+					t.Errorf(
+						"optional content %q present = %v, want %v",
+						optional.text,
+						got,
+						optional.want,
+					)
+				}
+			}
+			// HTML escaping of query separators must not obscure the actual action URL.
+			decoded := html.UnescapeString(page)
+			query := "?year=7&stufe=" + strconv.Itoa(tc.stage)
+			if !strings.Contains(decoded, `href="/neighbors/12/mahnung.pdf`+query+`"`) {
+				t.Error("PDF link does not preserve neighbor, year, and reminder stage")
+			}
+			if tc.qr && !strings.Contains(decoded, `src="/neighbors/12/mahnung/epc-qr.png`+query+`"`) {
+				t.Error("EPC QR link does not preserve neighbor, year, and reminder stage")
+			}
+			emailAction := `method="post" action="/neighbors/12/mahnung/email` + query + `"`
+			if got := strings.Contains(decoded, emailAction); got != tc.wantEmail {
+				t.Errorf("correctly targeted email form present = %v, want %v", got, tc.wantEmail)
+			}
+		})
+	}
 }

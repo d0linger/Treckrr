@@ -36,3 +36,34 @@ func TestBadRequestRendersBrandedPage(t *testing.T) {
 		t.Errorf("empty message should use the default text")
 	}
 }
+
+func TestBadRequestHandlesBlankAndUntrustedMessages(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		msg  string
+		want string
+	}{
+		{name: "whitespace fallback", msg: " \t\n", want: "Die Anfrage war ungültig."},
+		{
+			name: "HTML is displayed as text", msg: `<script>alert("test")</script> & Daten`,
+			want: `&lt;script&gt;alert(&#34;test&#34;)&lt;/script&gt; &amp; Daten`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rr := httptest.NewRecorder()
+			(&Server{}).badRequest(rr, tc.msg)
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", rr.Code)
+			}
+			body := rr.Body.String()
+			if !strings.Contains(body, tc.want) {
+				t.Errorf("rendered response is missing %q", tc.want)
+			}
+			if strings.Contains(body, "<script>") {
+				t.Error("error page rendered executable markup from its message")
+			}
+		})
+	}
+}
