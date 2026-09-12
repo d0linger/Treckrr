@@ -85,7 +85,7 @@ func (s *Server) handleBaseCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleBaseUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -130,7 +130,7 @@ func (s *Server) handleBaseUpdate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleBaseDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	inUse, err := s.store.BaseInUse(r.Context(), id)
@@ -168,7 +168,7 @@ func (s *Server) handleBaseUnlock(w http.ResponseWriter, r *http.Request) {
 func (s *Server) setBaseLock(w http.ResponseWriter, r *http.Request, locked bool) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	name := ""

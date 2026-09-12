@@ -2,7 +2,7 @@
 <section class="stack">
 	<div class="pagehead">
 		<a class="backbtn" href="/" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
-		<h1 class="pagehead__t">Personen</h1>
+		<h2 class="pagehead__t">Personen</h2>
 	</div>
 	<p class="muted small">Helfer mit eigenem Stundensatz. Die ÖKL-Richtwerte weisen den Fahrerlohn getrennt von der Maschine aus — hier steht er einmal, statt bei jeder Buchung neu getippt zu werden. Erfasst wird beim Nachbarn unter „Mannstunden“.</p>
 
@@ -23,7 +23,7 @@
 
 	{{if .PersonHours}}
 	<h2 class="section-title">Mannstunden {{.Year.Year}}</h2>
-	<div class="tablewrap">
+	<div class="tablewrap" role="region" aria-label="Mannstunden" tabindex="0">
 		<table class="dtable">
 			<thead><tr><th>Person</th><th class="num">Stunden</th><th class="num">Kosten</th></tr></thead>
 			<tbody>

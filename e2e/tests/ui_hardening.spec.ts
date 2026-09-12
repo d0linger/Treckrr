@@ -37,7 +37,7 @@ test("mobile chrome keeps primary controls comfortably tappable", async ({ page 
   await expect(page.locator('.tabbar__item[aria-current="page"]')).toHaveCount(1);
 
   const controls = page.locator(
-    ".appbar__brand:visible, .appbar__icon:visible, .yearpill:visible, .btn--sm:visible, .btn--xs:visible, .iconact:visible, .backbtn:visible"
+    ".appbar__brand:visible, .appbar__icon:visible, .yearpill:visible, .btn--sm:visible, .btn--xs:visible, .iconact:visible, .backbtn:visible, .backlink:visible, .workspace__back:visible, .barchart__label:visible, .switch:visible"
   );
   expect(await controls.count()).toBeGreaterThan(2);
   const undersized = await controls.evaluateAll((nodes) =>

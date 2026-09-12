@@ -96,6 +96,15 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   await expect(page.getByText(/RECHNUNG Nr\./)).toBeVisible();
   await expect(page.locator(".beleg__inv-due")).toBeVisible();
 
+  // A reminder always uses the formal document presentation, including parties
+  // and the open amount; it has no invoice-mode toggle to reveal hidden details.
+  await page.goto("/neighbors/1/mahnung?year=1&stufe=1");
+  await expect(page.locator(".beleg__invoice")).toBeVisible();
+  await expect(page.locator(".beleg__invoice")).toContainText("Hof Bergmann");
+  await expect(page.locator(".beleg__invoice")).toContainText("E2E Nachbar");
+  await expect(page.getByText("Offener Betrag", { exact: true })).toBeVisible();
+  await expect(page.locator(".beleg__hv.beleg__sum-invoice")).toBeVisible();
+
   // --- mark sent (confirm modal) → chip flips → undo via toast ---
   await page.goto("/neighbors/1/beleg?year=1");
   await page.locator('form[action*="mark-sent"] button').click();

@@ -451,7 +451,7 @@ em { font-style: normal; color: var(--muted); }
 .drawer__ico svg { width: 20px; height: 20px; display: block; color: var(--muted); }
 .drawer__item.is-active .drawer__ico svg { color: var(--primary-strong); }
 .drawer__item--danger .drawer__ico svg { color: var(--danger-text); }
-.backlink { color: var(--primary); font-weight: 600; font-size: .9rem; display: inline-block; }
+.backlink { color: var(--primary); font-weight: 600; font-size: .9rem; display: inline-flex; align-items: center; }
 
 /* ---- Base selector ---------------------------------------------------- */
 .basebar {
@@ -930,9 +930,11 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 @media (max-width: 640px), (pointer: coarse) {
 	.appbar__brand, .appbar__icon, .appbar__offline, .yearpill,
 	.btn--sm, .btn--xs, .iconact, .backbtn, .subtab,
+	.backlink, .workspace__back, .barchart__label, .switch,
 	.disclosure > summary, .bkp__more > summary, .bkp__seg button {
 		min-height: var(--tap);
 	}
+	.barchart__label { line-height: var(--tap); }
 	.appbar__brand { min-width: var(--tap); justify-content: center; }
 	.appbar__icon, .iconact, .backbtn { width: var(--tap); height: var(--tap); }
 }
@@ -1015,7 +1017,7 @@ span.paychip { cursor: default; }
 .carryover .muted { font-size: .82rem; }
 
 /* ---- Data tables (Excel-like overview) -------------------------------- */
-.tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 0; }
+.tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 0; border-radius: var(--radius-sm); }
 .dtable { width: 100%; border-collapse: collapse; font-size: .86rem; }
 .dtable th, .dtable td { padding: .5rem .6rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
 .dtable thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); white-space: nowrap; }
@@ -1092,7 +1094,7 @@ span.paychip { cursor: default; }
    fill scales in with a gentle staggered grow-in. Magnitude → one hue (green). */
 .barchart { display: flex; flex-direction: column; gap: .6rem; }
 .barchart__row { display: grid; grid-template-columns: minmax(64px, 28%) 1fr auto; align-items: center; gap: .7rem; }
-.barchart__label { font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barchart__label { font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 .barchart__val { font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bchart { display: block; width: 100%; height: 10px; }
 .gradient-defs { position: absolute; width: 0; height: 0; }
@@ -1948,6 +1950,9 @@ span.paychip { cursor: default; }
 .pkrow__t { font-weight: 700; overflow-wrap: anywhere; }
 .pkrow__s { color: var(--muted); font-size: .82rem; font-variant-numeric: tabular-nums; }
 .pkrow form { margin-left: auto; flex: 0 0 auto; margin-bottom: 0; }
+
+.session-disclosure { border-top: 1px solid var(--border); padding-top: .35rem; }
+.session-disclosure > summary { min-height: var(--tap); color: var(--primary); }
 
 /* ---- Recalc as cards (replaces the 6-column sideways table) ----------- */
 .rcards { display: flex; flex-direction: column; gap: .5rem; }

@@ -34,7 +34,7 @@ func parsePaidOn(v string) time.Time {
 func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -131,12 +131,12 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePaymentDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	p, err := s.store.GetPayment(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	deleted, err := s.store.DeletePayment(r.Context(), id)
@@ -155,12 +155,12 @@ func (s *Server) handlePaymentDelete(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePaymentRestore(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	p, err := s.store.GetPayment(r.Context(), id) // by-id, sees soft-deleted rows
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	restored, err := s.store.RestorePayment(r.Context(), id)
@@ -209,7 +209,7 @@ func (s *Server) handleNeighborSettle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleNeighborCarryForward(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -291,12 +291,12 @@ func paymentMethod(r *http.Request) string {
 func (s *Server) handlePaymentEditForm(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	p, err := s.store.GetPayment(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	} else if err != nil {
 		s.serverError(w, r.URL.Path, err)
@@ -313,7 +313,7 @@ func (s *Server) handlePaymentEditForm(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -322,7 +322,7 @@ func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := s.store.GetPayment(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	} else if err != nil {
 		s.serverError(w, r.URL.Path, err)
@@ -397,7 +397,7 @@ func installmentViews(plans []models.PaymentPlan, paid decimal.Decimal) []instal
 func (s *Server) handleInstallmentAdd(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -440,12 +440,12 @@ func (s *Server) handleInstallmentAdd(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleInstallmentDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	p, err := s.store.DeleteInstallment(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	} else if err != nil {
 		s.serverError(w, r.URL.Path, err)
@@ -464,7 +464,7 @@ func (s *Server) handleInstallmentDelete(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleCreditPayout(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {

@@ -113,12 +113,12 @@ func (e *photoError) Error() string { return e.msg }
 func (s *Server) handleEntryPhotoUpload(w http.ResponseWriter, r *http.Request) {
 	entryID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	entry, err := s.store.GetEntry(r.Context(), entryID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// Receipt photos are evidence for the booking: once its year is closed or the
@@ -208,17 +208,17 @@ func (s *Server) handleEntryPhotoUpload(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleEntryPhotoServe(w http.ResponseWriter, r *http.Request) {
 	entryID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	photoID, err := formInt64FromPath(r, "pid")
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	img, ct, err := s.store.GetEntryPhoto(r.Context(), entryID, photoID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", ct)
@@ -232,17 +232,17 @@ func (s *Server) handleEntryPhotoServe(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleEntryPhotoDelete(w http.ResponseWriter, r *http.Request) {
 	entryID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	photoID, err := formInt64FromPath(r, "pid")
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	entry, err := s.store.GetEntry(r.Context(), entryID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// Same immutability guard as upload: no removing evidence from a frozen booking.

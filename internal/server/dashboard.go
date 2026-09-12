@@ -226,7 +226,7 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -337,7 +337,7 @@ func neighborReturnURL(r *http.Request, id int64) string {
 func (s *Server) handleNeighborDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// A neighbor carrying ANY financial or tax-relevant history must not be
@@ -384,7 +384,7 @@ func (s *Server) handleNeighborDelete(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleNeighborAnonymize(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -401,7 +401,7 @@ func (s *Server) handleNeighborAnonymize(w http.ResponseWriter, r *http.Request)
 	before, _ := s.store.GetNeighbor(r.Context(), id)
 	if err := s.store.AnonymizeNeighbor(r.Context(), id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.NotFound(w, r)
+			s.notFound(w, r)
 			return
 		}
 		s.setFlash(w, r, "error", "Anonymisieren fehlgeschlagen.")

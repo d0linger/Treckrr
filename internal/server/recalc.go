@@ -16,7 +16,7 @@ import (
 func (s *Server) recalcPreview(w http.ResponseWriter, r *http.Request, yearID int64, neighborID *int64, title, backURL, applyURL string) {
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if year.Completed() {
@@ -76,7 +76,7 @@ func (s *Server) recalcPreview(w http.ResponseWriter, r *http.Request, yearID in
 func (s *Server) recalcApply(w http.ResponseWriter, r *http.Request, yearID int64, neighborID *int64, entity string, entityID int64, backURL string) {
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if year.Completed() {
@@ -117,7 +117,7 @@ func (s *Server) recalcApply(w http.ResponseWriter, r *http.Request, yearID int6
 func (s *Server) handleNeighborRecalcPreview(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	yearID := formInt64(r, "year") // link uses ?year= like the rest of the neighbor flow
@@ -136,7 +136,7 @@ func (s *Server) handleNeighborRecalcPreview(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleNeighborRecalcApply(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -157,7 +157,7 @@ func (s *Server) handleNeighborRecalcApply(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleYearRecalcPreview(w http.ResponseWriter, r *http.Request) {
 	yearID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	s.recalcPreview(w, r, yearID, nil, "", dashboardURL(yearID), fmt.Sprintf("/years/%d/recalc", yearID))
@@ -166,7 +166,7 @@ func (s *Server) handleYearRecalcPreview(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleYearRecalcApply(w http.ResponseWriter, r *http.Request) {
 	yearID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	s.recalcApply(w, r, yearID, nil, "year", yearID, dashboardURL(yearID))

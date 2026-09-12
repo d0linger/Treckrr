@@ -376,7 +376,7 @@ func (s *Server) handleBackupS3Test(w http.ResponseWriter, r *http.Request) {
 // handleBackupS3File streams a stored dump from the bucket (still encrypted).
 func (s *Server) handleBackupS3File(w http.ResponseWriter, r *http.Request) {
 	if s.backup == nil || !s.backup.S3Enabled() {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	name := r.PathValue("name")
@@ -385,7 +385,7 @@ func (s *Server) handleBackupS3File(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	data, err := s.backup.S3Get(ctx, name)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	s.audit(r, "backup_download", "backup", 0, "S3 · "+name)
@@ -406,14 +406,14 @@ type backupFileView struct {
 // handleBackupFile streams a stored (scheduled) encrypted dump for download.
 func (s *Server) handleBackupFile(w http.ResponseWriter, r *http.Request) {
 	if s.backup == nil || !s.backup.Enabled() {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	name := r.PathValue("name")
 	extendWriteDeadline(w, 10*time.Minute)
 	data, err := s.backup.OpenContext(r.Context(), name)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	s.audit(r, "backup_download", "backup", 0, name)

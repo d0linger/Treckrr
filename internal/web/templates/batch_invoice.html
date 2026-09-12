@@ -2,7 +2,7 @@
 <section class="stack">
 	<div class="pagehead">
 		<a class="backbtn" href="/?year={{.Year.ID}}" aria-label="Zurück">{{template "ic-back"}}</a>
-		<h1 class="pagehead__t">Sammel-Festschreibung · {{.Year.Year}}</h1>
+		<h2 class="pagehead__t">Sammel-Festschreibung · {{.Year.Year}}</h2>
 	</div>
 
 	{{if not .CompanyOK}}
@@ -11,7 +11,7 @@
 	<p class="muted small">Vorschau aller Nachbarn mit Buchungen. Beim Festschreiben erhält jede Rechnung eine fortlaufende Nummer und wird gesperrt (§ 131 — nur per Storno korrigierbar). Bereits berechnete oder unvollständige Nachbarn werden übersprungen.</p>
 
 	<form method="post" action="/years/{{.Year.ID}}/issue-all">
-	<div class="tablewrap">
+	<div class="tablewrap" role="region" aria-label="Nachbarn für die Sammel-Festschreibung" tabindex="0">
 		<table class="dtable">
 			<thead><tr><th><span class="sr-only">Auswahl</span></th><th>Nachbar</th><th class="num">Buchungen</th><th class="num">Brutto</th><th>Status</th></tr></thead>
 			<tbody>

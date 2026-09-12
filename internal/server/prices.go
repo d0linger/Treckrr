@@ -117,7 +117,7 @@ func (s *Server) handleLoadLevelSave(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLoadLevelDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	baseID := s.baseIDFromForm(r)
@@ -184,7 +184,7 @@ func (s *Server) handleTractorSave(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTractorToggle(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -212,7 +212,7 @@ func (s *Server) handleTractorToggle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTractorDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	baseID := s.baseIDFromForm(r)
@@ -288,7 +288,7 @@ func (s *Server) handleMachineSave(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMachineToggle(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -316,7 +316,7 @@ func (s *Server) handleMachineToggle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMachineDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	baseID := s.baseIDFromForm(r)

@@ -70,6 +70,16 @@ func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
 		"Diese Seite existiert nicht oder wurde verschoben.")
 }
 
+// notFound keeps non-page clients on net/http's compact plain response while
+// giving browser navigations the same recoverable page as the mux fallback.
+func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/html") {
+		s.handleNotFound(w, r)
+		return
+	}
+	http.NotFound(w, r)
+}
+
 // badRequest renders the branded error page for a 400 on a user-facing HTML route
 // (a manipulated URL, a stale form, a missing/invalid parameter) instead of
 // net/http's bare plain-text default. Do NOT use it on JSON/fetch API endpoints —

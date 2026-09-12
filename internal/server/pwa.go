@@ -20,7 +20,7 @@ func (s *Server) handleManifest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleServiceWorker(w http.ResponseWriter, r *http.Request) {
 	data, err := fs.ReadFile(web.StaticFS(), "sw.js")
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	body := strings.ReplaceAll(string(data), "__CACHE_VERSION__", web.AssetVersion())

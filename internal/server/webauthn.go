@@ -196,7 +196,7 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 	user := userFromCtx(r)
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	_, err = s.store.DeleteWebauthnCredential(r.Context(), user.ID, id)

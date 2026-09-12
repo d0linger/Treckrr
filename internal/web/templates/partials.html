@@ -17,10 +17,10 @@
 			<strong>{{.Base.Year}} — {{.Base.Name}}</strong>
 			{{if .Base.Locked}}<span class="badge">{{template "ic-lock"}} gesperrt</span>{{end}}
 		</div>
-		<nav class="subtabs" role="tablist">
-			<a class="subtab {{if eq .Active "prices"}}is-active{{end}}" href="/prices?base={{.Base.ID}}" role="tab">Kosten</a>
-			<a class="subtab {{if eq .Active "gespanne"}}is-active{{end}}" href="/gespanne?base={{.Base.ID}}" role="tab">Gespanne</a>
-			<a class="subtab {{if eq .Active "compare"}}is-active{{end}}" href="/prices/compare?base={{.Base.ID}}" role="tab">Vergleich</a>
+		<nav class="subtabs" aria-label="Bereich der Bemessungsgrundlage">
+			<a class="subtab {{if eq .Active "prices"}}is-active{{end}}" href="/prices?base={{.Base.ID}}" {{if eq .Active "prices"}}aria-current="page"{{end}}>Kosten</a>
+			<a class="subtab {{if eq .Active "gespanne"}}is-active{{end}}" href="/gespanne?base={{.Base.ID}}" {{if eq .Active "gespanne"}}aria-current="page"{{end}}>Gespanne</a>
+			<a class="subtab {{if eq .Active "compare"}}is-active{{end}}" href="/prices/compare?base={{.Base.ID}}" {{if eq .Active "compare"}}aria-current="page"{{end}}>Vergleich</a>
 		</nav>
 	</div>
 {{end}}

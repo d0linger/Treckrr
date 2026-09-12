@@ -2,7 +2,7 @@
 <section class="stack">
 	<div class="pagehead">
 		<a class="backbtn" href="/?year={{.Year.ID}}" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
-		<h1 class="pagehead__t">Rechnungsjournal · {{.Year.Year}}</h1>
+		<h2 class="pagehead__t">Rechnungsjournal · {{.Year.Year}}</h2>
 		{{if .Rows}}<a class="btn btn--ghost btn--sm pagehead__action" href="/rechnungsjournal/export.csv?year={{.Year.ID}}">{{template "ic-copy"}} Export CSV</a>{{end}}
 	</div>
 	<p class="muted small">Alle ausgestellten Dokumente des Jahres mit Netto, USt und Brutto — die Grundlage für Buchhaltung und Steuerberater. Stornierte Rechnungen bleiben sichtbar; die Summe zählt Rechnung und Storno gegeneinander.</p>
@@ -16,7 +16,7 @@
 	{{end}}
 
 	{{if .Rows}}
-	<div class="tablewrap">
+	<div class="tablewrap" role="region" aria-label="Ausgestellte Dokumente" tabindex="0">
 		<table class="dtable">
 			<thead><tr><th>Nummer</th><th>Datum</th><th>Art</th><th>Nachbar</th><th class="num">Netto</th><th class="num">USt</th><th class="num">Brutto</th></tr></thead>
 			<tbody>
@@ -55,7 +55,7 @@
 	{{if .UVAPeriods}}
 	<h2 class="section-title">{{if .ShowUVA}}UVA-Grundlage je Monat{{else}}Summen je Monat{{end}}</h2>
 	{{if .ShowUVA}}<p class="muted small">Bemessungsgrundlage (Netto) und Umsatzsteuer je Ausstellungsmonat — die Basis für das U30-Formular bei Regelbesteuerung.</p>{{end}}
-	<div class="tablewrap">
+	<div class="tablewrap" role="region" aria-label="Summen je Monat" tabindex="0">
 		<table class="dtable">
 			<thead><tr><th>Monat</th><th class="num">Bemessungsgrundlage (Netto)</th><th class="num">USt</th><th class="num">Brutto</th></tr></thead>
 			<tbody>
@@ -67,7 +67,7 @@
 	</div>
 	{{if gt (len .UVARates) 1}}
 	<h2 class="section-title">Summen je USt-Satz</h2>
-	<div class="tablewrap">
+	<div class="tablewrap" role="region" aria-label="Summen je Umsatzsteuersatz" tabindex="0">
 		<table class="dtable">
 			<thead><tr><th>USt-Satz</th><th class="num">Netto</th><th class="num">USt</th></tr></thead>
 			<tbody>

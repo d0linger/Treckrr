@@ -46,7 +46,8 @@ async function seriousViolations(page) {
   return blocking;
 }
 
-// Every page a logged-in operator can reach, plus the light/dark pair
+// Every stable rendered page a logged-in operator can reach with the CI seed,
+// plus the light/dark pair
 // (Ausbaukarte 90). Contrast rules only fire against the colours actually
 // rendered, so a single-theme run checks half the palette — and the app has a
 // full dark theme with its own token set.
@@ -65,9 +66,18 @@ const PAGES: Array<[string, string]> = [
   ["/years", "billing years"],
   ["/years/1/abschluss", "year closing checklist"],
   ["/years/1/issue-all", "batch invoicing"],
+  ["/years/1/recalc", "year recalculation"],
   ["/prices?base=1", "price master"],
+  ["/prices/compare?base=1", "price comparison"],
   ["/gespanne?base=1", "rigs"],
+  ["/bases", "assessment bases"],
   ["/recurring", "recurring bookings"],
+  ["/entries/1/edit", "booking edit"],
+  ["/entries/1/copy", "booking copy"],
+  ["/payments/1/edit", "payment edit"],
+  ["/payments/1/copy", "payment copy"],
+  ["/neighbors/1/recalc?year=1", "neighbor recalculation"],
+  ["/neighbors/1/invoice/confirm?year=1", "invoice confirmation"],
   ["/entries/import?year=1", "CSV import"],
   ["/payments/import", "bank import"],
   ["/admin/users", "user administration"],
@@ -75,6 +85,8 @@ const PAGES: Array<[string, string]> = [
   ["/admin/company", "company data"],
   ["/admin/audit", "audit log"],
   ["/profile", "profile"],
+  ["/account/password", "password change"],
+  ["/account/2fa", "two-factor setup"],
 ];
 
 test("login page has no serious accessibility violations", async ({ page }) => {
@@ -90,9 +102,42 @@ test("login page passes in dark mode too", async ({ page }) => {
   expect(await seriousViolations(page)).toEqual([]);
 });
 
+test("offline and branded error pages have no serious accessibility violations", async ({ page }) => {
+  for (const path of ["/offline", "/missing-page"]) {
+    await page.goto(path);
+    await expect(page.locator("h1")).toHaveCount(1);
+    expect(await seriousViolations(page)).toEqual([]);
+  }
+});
+
+// Run with the initial seed, before the write-based specs close the year.
+test("page semantics remain explicit on mobile and data-heavy views", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page);
+
+  await expect(page.getByRole("link", { name: "Treckrr – zur Übersicht" })).toBeVisible();
+
+  await page.goto("/entries/1/edit");
+  await expect(page.getByLabel("Fotos auswählen")).toHaveCount(1);
+  await expect(page.locator("h1")).toHaveCount(1);
+
+  // The CI seed always includes a payment, but not every stats table.
+  await page.goto("/neighbors/1/overview");
+  const scrollRegions = page.locator('.tablewrap[role="region"]');
+  expect(await scrollRegions.count()).toBeGreaterThan(0);
+  const unfocusable = await scrollRegions.evaluateAll((nodes) =>
+    nodes.filter((node) => node.scrollWidth > node.clientWidth && node.tabIndex < 0).length
+  );
+  expect(unfocusable, "overflowing data regions must be keyboard focusable").toBe(0);
+
+  await page.goto("/prices?base=1");
+  await expect(page.getByRole("navigation", { name: "Bereich der Bemessungsgrundlage" })).toBeVisible();
+  await expect(page.locator('.subtabs [aria-current="page"]')).toHaveText("Kosten");
+});
+
 for (const scheme of ["light", "dark"] as const) {
   test(`all authenticated pages pass in ${scheme} mode`, async ({ page }) => {
-    test.slow(); // 23 pages × axe is well past the default timeout
+    test.slow(); // The full authenticated page matrix is well past the default timeout.
     await page.emulateMedia({ colorScheme: scheme });
     await login(page);
     const failures: string[] = [];
@@ -101,6 +146,7 @@ for (const scheme of ["light", "dark"] as const) {
       // A page that 404s is a broken link in the list, not an a11y pass.
       expect(resp?.status(), `${name} (${path}) did not load`).toBeLessThan(400);
       await page.waitForLoadState("networkidle");
+      await expect(page.locator("h1"), `${name} (${path}) needs one page-level heading`).toHaveCount(1);
       const violations = await seriousViolations(page);
       if (violations.length) {
         failures.push(`${name} (${path}, ${scheme}): ${violations.map((v) => v.id).join(", ")}`);

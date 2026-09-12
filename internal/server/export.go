@@ -41,12 +41,12 @@ func sanitizeFilename(name string) string {
 func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	entries, err := s.store.ListEntriesByYear(r.Context(), year.ID)
@@ -67,12 +67,12 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleExportNeighbor(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	year, ok := s.resolveYear(w, r)

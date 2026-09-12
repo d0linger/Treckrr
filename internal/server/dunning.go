@@ -219,7 +219,7 @@ func (s *Server) buildMahnungDataWith(r *http.Request, neighborID int64, stage i
 func (s *Server) handleNeighborMahnung(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	yearID := formInt64(r, "year")
@@ -235,7 +235,7 @@ func (s *Server) handleNeighborMahnung(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	data := s.newPage(w, r, v.Title, "")
@@ -277,7 +277,7 @@ func (v *mahnungView) toPDF() ([]byte, error) {
 func (s *Server) handleMahnungPDF(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	v, ok, err := s.buildMahnungData(r, neighborID, formInt64(r, "year"), formInt(r, "stufe"))
@@ -286,7 +286,7 @@ func (s *Server) handleMahnungPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	blob, err := v.toPDF()
@@ -304,7 +304,7 @@ func (s *Server) handleMahnungPDF(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	yearID := formInt64(r, "year")
@@ -315,7 +315,7 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if !s.cfg.MailEnabled() {
@@ -414,7 +414,7 @@ func (s *Server) deliverMahnung(ctx context.Context, r *http.Request, v *mahnung
 func (s *Server) handleMahnungEpcQR(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	yearID := formInt64(r, "year")
@@ -424,14 +424,14 @@ func (s *Server) handleMahnungEpcQR(w http.ResponseWriter, r *http.Request) {
 	}
 	company, err := s.store.GetCompany(r.Context())
 	if err != nil || strings.TrimSpace(company.IBAN) == "" {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// Require a formally issued invoice: the QR carries its number as the payment
 	// reference, and there is nothing to dun without one. Mirrors handleNeighborMahnung.
 	iv, err := s.store.GetInvoice(r.Context(), yearID, neighborID)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	open, err := s.store.InvoiceRemaining(r.Context(), yearID, neighborID)
@@ -440,7 +440,7 @@ func (s *Server) handleMahnungEpcQR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !open.IsPositive() {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// Same stage → same fee as buildMahnungData; stage 0 (Erinnerung) never charges.
@@ -467,7 +467,7 @@ func (s *Server) handleMahnungEpcQR(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMahnungMarkSent(w http.ResponseWriter, r *http.Request) {
 	neighborID, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -482,7 +482,7 @@ func (s *Server) handleMahnungMarkSent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err := s.store.RecordDunningNotice(r.Context(), store.DunningNotice{

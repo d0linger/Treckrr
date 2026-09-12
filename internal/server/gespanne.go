@@ -219,7 +219,7 @@ func (s *Server) handleGespannSave(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGespannDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	baseID := s.baseIDFromForm(r)
