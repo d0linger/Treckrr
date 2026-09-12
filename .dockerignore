@@ -33,3 +33,7 @@ node_modules/
 # encrypted today, but an unencrypted dump dropped here would otherwise land in a
 # build-stage layer via `COPY . .` and sit in the build cache.
 /backups/
+
+# Local visual comparisons, test fixtures and screenshots are not application code.
+/tmp/
+/temp/

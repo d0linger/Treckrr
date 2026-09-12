@@ -94,10 +94,13 @@
 			<p class="muted small center">Noch keine Passkeys eingerichtet.</p>
 			{{end}}
 		</div>
+		<details class="disclosure form-details">
+			<summary>Passkey hinzufügen</summary>
 		<label class="field"><span>Passwort zur Bestätigung</span>
 			<input class="input" id="passkey-password" type="password" autocomplete="current-password"
 				placeholder="Aktuelles Passwort"></label>
 		<button id="passkey-register" type="button" class="btn btn--primary btn--block card-cta">{{template "ic-plus"}} Passkey hinzufügen</button>
+		</details>
 	</div>
 
 	<div class="card stack stack--tight">

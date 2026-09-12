@@ -78,7 +78,9 @@
 		try { localStorage.setItem(storeKey(form), JSON.stringify(data)); } catch (e) { /* private mode */ }
 	}
 	function initDefaults() {
-		var form = document.querySelector("[data-entry-form]");
+		// Existing records and copies must retain their server-rendered values.
+		// Only the explicit new-booking form may restore or write remembered defaults.
+		var form = document.querySelector("[data-entry-form][data-entry-defaults]");
 		if (!form) return;
 		var fields = ["unit", "gespann_id", "task_label", "mode"];
 

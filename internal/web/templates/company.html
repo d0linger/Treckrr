@@ -7,6 +7,9 @@
 	<p class="muted small">Absender und Steuerhinweis für den Rechnungs-Modus des Belegs. Empfänger-Adressen pflegst du je Nachbar unter „Nachbarn".</p>
 	{{with .Company}}
 	<form method="post" action="/admin/company" class="card form">
+		<section class="form-section">
+		<h3 class="form-section__title">Absender & Zahlung</h3>
+		<div class="form__grid form__grid--two">
 		<label class="field"><span>Betriebsname</span>
 			<input class="input" name="name" value="{{.Name}}" placeholder="z. B. Hof Bergmann"></label>
 		<label class="field"><span>Adresse</span>
@@ -17,30 +20,11 @@
 			<input class="input" name="iban" value="{{.IBAN}}" placeholder="z. B. AT61 1904 3002 3457 3201 – leer lassen: kein IBAN-Ausweis"></label>
 		<label class="field"><span>Zahlungsziel (Tage) – für das Mahnwesen</span>
 			<input class="input" type="number" min="0" max="365" step="1" name="payment_term_days" value="{{.PaymentTermDays}}" placeholder="14"></label>
-		<label class="field"><span>Nachfrist auf Mahnungen (Tage, „zahlbar bis")</span>
-			<input class="input" type="number" min="0" max="365" step="1" name="dunning_grace_days" value="{{.DunningGraceDays}}" placeholder="14"></label>
-		<label class="field"><span>Mahnspesen 1. Mahnung (€) – 0 = keine</span>
-			<input class="input" name="dunning_fee_1" inputmode="decimal" value="{{num .DunningFee1}}"></label>
-		<label class="field"><span>Mahnspesen 2. Mahnung (€) – 0 = keine</span>
-			<input class="input" name="dunning_fee_2" inputmode="decimal" value="{{num .DunningFee2}}"></label>
-		<label class="field"><span>Skonto-Angebot (%) – 0 = keine Klausel auf der Rechnung</span>
-			<input class="input" name="skonto_pct" inputmode="decimal" value="{{num .SkontoPct}}"></label>
-		<label class="field"><span>Skonto-Frist (Tage ab Rechnungsdatum)</span>
-			<input class="input" type="number" min="0" max="90" step="1" name="skonto_days" value="{{.SkontoDays}}"></label>
-		<label class="field"><span>Rechnungs-Präfix (Nummernkreis, optional – nur Buchstaben/Ziffern)</span>
-			<input class="input" name="invoice_prefix" maxlength="10" value="{{.InvoicePrefix}}" placeholder="z. B. HOF"></label>
-		<label class="field"><span>Start-Rechnungsnummer je Jahr (Fortführung eines bestehenden Kreises)</span>
-			<input class="input" type="number" min="1" max="999999" step="1" name="invoice_start" value="{{.InvoiceStart}}"></label>
-		<label class="field"><span>Kleinunternehmergrenze (€/Kalenderjahr, 0 = keine Überwachung)</span>
-			<input class="input" name="small_business_limit" inputmode="decimal" value="{{num .SmallBusinessLimit}}"></label>
-		<label class="field"><span>Anfahrtspauschale (€ je Einsatz, 0 = kein Zuschlag)</span>
-			<input class="input" name="travel_flat" inputmode="decimal" value="{{num .TravelFlat}}"></label>
-		<label class="field"><span>Kilometergeld (€ je km, 0 = kein Zuschlag)</span>
-			<input class="input" name="travel_per_km" inputmode="decimal" value="{{num .TravelPerKm}}"></label>
-		<label class="field"><span>E-Mail-Signatur (leer = „Mit freundlichen Grüßen“ + Betriebsname)</span>
-			<textarea class="input" name="mail_signature" rows="3" placeholder="Mit freundlichen Grüßen&#10;Hof Bergmann&#10;Tel. 0664 …">{{.MailSignature}}</textarea></label>
-		<label class="field"><span>Kopie an (CC bei Beleg- und Mahnungs-Mails, optional)</span>
-			<input class="input" type="email" name="mail_cc" value="{{.MailCC}}" placeholder="steuerberater@example.at" autocomplete="off"></label>
+		</div>
+		</section>
+		<section class="form-section">
+		<h3 class="form-section__title">Besteuerung</h3>
+		<div class="form__grid form__grid--two">
 		<label class="field"><span>Besteuerung</span>
 			<select class="select" name="tax_mode">
 				<option value="kleinunternehmer" {{if eq .TaxMode "kleinunternehmer"}}selected{{end}}>Kleinunternehmer – kein USt-Ausweis</option>
@@ -49,8 +33,59 @@
 			</select></label>
 		<label class="field"><span>USt-Satz % (bei Pauschaliert/Regelbesteuert)</span>
 			<input class="input" type="number" step="0.01" min="0" name="vat_rate" value="{{.VATRate}}"></label>
+		<label class="field"><span>Kleinunternehmergrenze (€/Kalenderjahr, 0 = keine Überwachung)</span>
+			<input class="input" name="small_business_limit" inputmode="decimal" value="{{num .SmallBusinessLimit}}"></label>
 		<label class="field"><span>Steuerhinweis auf der Rechnung</span>
 			<textarea class="input" name="tax_note" rows="3">{{.TaxNote}}</textarea></label>
+		</div>
+		</section>
+		<details class="disclosure form-details">
+			<summary>Mahnwesen <span class="muted small">{{.DunningGraceDays}} Tage · {{money .DunningFee1}} / {{money .DunningFee2}}</span></summary>
+		<div class="form__grid form__grid--two">
+		<label class="field"><span>Nachfrist auf Mahnungen (Tage, „zahlbar bis")</span>
+			<input class="input" type="number" min="0" max="365" step="1" name="dunning_grace_days" value="{{.DunningGraceDays}}" placeholder="14"></label>
+		<label class="field"><span>Mahnspesen 1. Mahnung (€) – 0 = keine</span>
+			<input class="input" name="dunning_fee_1" inputmode="decimal" value="{{num .DunningFee1}}"></label>
+		<label class="field"><span>Mahnspesen 2. Mahnung (€) – 0 = keine</span>
+			<input class="input" name="dunning_fee_2" inputmode="decimal" value="{{num .DunningFee2}}"></label>
+		</div>
+		</details>
+		<details class="disclosure form-details">
+			<summary>Skonto <span class="muted small">{{num .SkontoPct}} % · {{.SkontoDays}} Tage</span></summary>
+		<div class="form__grid form__grid--two">
+		<label class="field"><span>Skonto-Angebot (%) – 0 = keine Klausel auf der Rechnung</span>
+			<input class="input" name="skonto_pct" inputmode="decimal" value="{{num .SkontoPct}}"></label>
+		<label class="field"><span>Skonto-Frist (Tage ab Rechnungsdatum)</span>
+			<input class="input" type="number" min="0" max="90" step="1" name="skonto_days" value="{{.SkontoDays}}"></label>
+		</div>
+		</details>
+		<details class="disclosure form-details">
+			<summary>Rechnungsnummern <span class="muted small">{{if .InvoicePrefix}}{{.InvoicePrefix}} · {{end}}Start {{.InvoiceStart}}</span></summary>
+		<div class="form__grid form__grid--two">
+		<label class="field"><span>Rechnungs-Präfix (Nummernkreis, optional – nur Buchstaben/Ziffern)</span>
+			<input class="input" name="invoice_prefix" maxlength="10" value="{{.InvoicePrefix}}" placeholder="z. B. HOF"></label>
+		<label class="field"><span>Start-Rechnungsnummer je Jahr (Fortführung eines bestehenden Kreises)</span>
+			<input class="input" type="number" min="1" max="999999" step="1" name="invoice_start" value="{{.InvoiceStart}}"></label>
+		</div>
+		</details>
+		<details class="disclosure form-details">
+			<summary>Anfahrt <span class="muted small">{{money .TravelFlat}} pauschal · {{money .TravelPerKm}}/km</span></summary>
+		<div class="form__grid form__grid--two">
+		<label class="field"><span>Anfahrtspauschale (€ je Einsatz, 0 = kein Zuschlag)</span>
+			<input class="input" name="travel_flat" inputmode="decimal" value="{{num .TravelFlat}}"></label>
+		<label class="field"><span>Kilometergeld (€ je km, 0 = kein Zuschlag)</span>
+			<input class="input" name="travel_per_km" inputmode="decimal" value="{{num .TravelPerKm}}"></label>
+		</div>
+		</details>
+		<details class="disclosure form-details" {{if or .MailSignature .MailCC}}open{{end}}>
+			<summary>E-Mail-Versand <span class="muted small">Signatur & Kopie</span></summary>
+		<div class="form__grid form__grid--two">
+		<label class="field"><span>E-Mail-Signatur (leer = „Mit freundlichen Grüßen“ + Betriebsname)</span>
+			<textarea class="input" name="mail_signature" rows="3" placeholder="Mit freundlichen Grüßen&#10;Hof Bergmann&#10;Tel. 0664 …">{{.MailSignature}}</textarea></label>
+		<label class="field"><span>Kopie an (CC bei Beleg- und Mahnungs-Mails, optional)</span>
+			<input class="input" type="email" name="mail_cc" value="{{.MailCC}}" placeholder="steuerberater@example.at" autocomplete="off"></label>
+		</div>
+		</details>
 		<button class="btn btn--primary btn--block" type="submit">Speichern</button>
 	</form>
 	<p class="muted small">Standard ist AT-Pauschalierung (§ 22 UStG). Prüfe den Wortlaut mit deiner Steuerberatung, bevor du echte Rechnungen ausstellst.</p>

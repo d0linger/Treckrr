@@ -19,7 +19,7 @@ test("login, create a unit booking, and see it on the Beleg", async ({ page }) =
 
   // --- create a Ballen booking for the seeded neighbor (id 1, year 1) ---
   await page.goto("/neighbors/1?year=1");
-  await page.locator('select[name="unit"]').selectOption("Ballen");
+  await page.locator('[data-billing-select]').selectOption("Ballen");
   await page.locator('input[name="quantity"]').fill("10");
   // <input type="number"> only accepts a period decimal; the server's
   // parseGermanDecimal maps both "." and "," so 3.20 stores as 3,20 either way.

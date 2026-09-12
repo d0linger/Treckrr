@@ -5,6 +5,7 @@ const CACHE = "treckrr-__CACHE_VERSION__";
 const SHELL = [
 	"/static/css/app.css",
 	"/static/js/app.js",
+	"/static/js/form-ux.js",
 	"/static/js/entry-form.js",
 	"/static/js/offline.js",
 	"/static/js/capture.js",

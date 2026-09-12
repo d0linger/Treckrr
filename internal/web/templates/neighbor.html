@@ -24,12 +24,12 @@
 	<div class="flash flash--info">Dieses Abrechnungsjahr ist <strong>abgeschlossen</strong> – neue Buchungen und Löschungen sind gesperrt.</div>
 	{{else}}
 	<h2 class="section-title" id="neue-buchung">Neue Buchung</h2>
-	<form method="post" action="/entries" class="card form" data-entry-form
+	<form method="post" action="/entries" class="card form" data-entry-form data-entry-defaults
 		data-pricing-url="/api/base/{{.Base.ID}}/pricing">
 		<input type="hidden" name="year_id" value="{{.Year.ID}}">
 		<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
 
-		<div class="form__grid">
+		<div class="form__grid form__grid--two">
 			<label class="field"><span>Einheit</span>
 				<select class="select" name="unit" data-unit>
 					<option value="h">Stunden (h)</option>
@@ -41,13 +41,15 @@
 					<option value="__custom">Andere Einheit …</option>
 				</select>
 			</label>
-			<label class="field"><span>Datum</span>
-				<input class="input" type="date" name="entry_date" value="{{.Today}}" required>
-				<span class="btnrow btnrow--tight">
+			<div>
+				<label class="field"><span>Datum</span>
+					<input class="input" type="date" name="entry_date" value="{{.Today}}" required></label>
+				<span class="date-shortcuts">
 					<button class="btn btn--ghost btn--xs" type="button" data-days="0" data-target="entry_date">heute</button>
 					<button class="btn btn--ghost btn--xs" type="button" data-days="1" data-target="entry_date">gestern</button>
 					<button class="btn btn--ghost btn--xs" type="button" data-days="7" data-target="entry_date">vor 1 Woche</button>
-				</span></label>
+				</span>
+			</div>
 		</div>
 		<label class="field" data-unit-custom hidden><span>Eigene Einheit</span>
 			<input class="input" type="text" name="unit_custom" placeholder="z. B. Stk, Fuder" maxlength="16" data-unit-custom-input></label>
@@ -75,7 +77,7 @@
 			</label>
 		</div>
 
-		<div data-mode-panel="manual" hidden>
+		<div class="equipment-grid" data-mode-panel="manual" hidden>
 			<label class="field"><span>Traktor</span>
 				<select class="select" name="tractor_id" data-tractor-select>
 					<option value="">— keiner —</option>
@@ -94,31 +96,14 @@
 			</label>
 			<fieldset class="fieldset">
 				<legend>Maschinen</legend>
-				<div class="checkgroup">
-					{{range .Machines}}
-						<label class="check">
-							<input type="checkbox" name="machine_ids" value="{{.ID}}" data-machine>
-							<span>{{.Name}} <em>({{num .HourlyRate}} €/h)</em></span>
-						</label>
-					{{else}}
-						<p class="muted">Keine Maschinen in dieser Grundlage.</p>
-					{{end}}
-				</div>
+				{{template "machine-checks" (dict "Machines" .Machines "Selected" emptyIDs)}}
 			</fieldset>
 		</div>
 
+		<div class="entry-amounts">
 		<label class="field"><span>Stunden</span>
 			<input class="input" type="number" step="0.001" min="0" name="hours"
 				inputmode="decimal" data-hours required></label>
-
-		{{if .Persons}}
-		<label class="field"><span>Person (optional)</span>
-			<select class="select" name="person_id">
-				<option value="">— keine —</option>
-				{{range .Persons}}<option value="{{.ID}}"{{if not .HourlyRate.IsPositive}} disabled{{end}}>{{.Name}} ({{money .HourlyRate}}/h){{if not .HourlyRate.IsPositive}} — kein Satz{{end}}</option>{{end}}
-			</select>
-			<span class="muted small">Bucht zusätzlich Mannstunden über dieselben Stunden — als verknüpfte eigene Position.</span></label>
-		{{end}}
 
 		<div class="rate-preview" data-rate-preview aria-live="polite" aria-atomic="true">
 			<span class="rate-preview__main">
@@ -127,9 +112,21 @@
 			</span>
 			<span class="rate-preview__rate">Satz <strong data-rate>–</strong></span>
 		</div>
+		</div>
 		<p class="rate-preview__note" data-no-tractor-note hidden>
 			Kein Traktor gewählt — verrechnet werden nur die Maschinen.
 		</p>
+		{{if .Persons}}
+		<details class="disclosure form-details" data-person-details>
+			<summary>Person mitbuchen <span class="muted small">optional</span></summary>
+			<label class="field"><span>Person</span>
+				<select class="select" name="person_id">
+					<option value="">— keine —</option>
+					{{range .Persons}}<option value="{{.ID}}"{{if not .HourlyRate.IsPositive}} disabled{{end}}>{{.Name}} ({{money .HourlyRate}}/h){{if not .HourlyRate.IsPositive}} — kein Satz{{end}}</option>{{end}}
+				</select>
+				<span class="muted small">Bucht zusätzlich Mannstunden über dieselben Stunden — als verknüpfte eigene Position.</span></label>
+		</details>
+		{{end}}
 		</div><!-- /data-h-only -->
 
 		<div data-qty-only hidden>
@@ -151,8 +148,11 @@
 
 		<label class="field"><span>Tätigkeit (bei Mengen-Einheiten erforderlich)</span>
 			<input class="input" type="text" name="task_label" placeholder="z. B. Mähen"></label>
-		<label class="field"><span>Notiz (optional)</span>
-			<input class="input" type="text" name="note"></label>
+		<details class="disclosure form-details">
+			<summary>Notiz hinzufügen <span class="muted small">optional</span></summary>
+			<label class="field"><span>Notiz</span>
+				<input class="input" type="text" name="note"></label>
+		</details>
 
 		<button class="btn btn--primary btn--block" type="submit" title="Strg + Enter">Buchung speichern</button>
 		{{/* capture.js remembers unit/rig/task per neighbor (localStorage); this is

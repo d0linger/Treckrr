@@ -7,11 +7,7 @@
 
 	<form method="get" action="/buchungen" class="card form">
 		<input type="hidden" name="year" value="{{.Year.ID}}">
-		<div class="form__grid">
-			<label class="field"><span>Von</span>
-				<input class="input" type="date" name="from" value="{{index .Filter "from"}}"></label>
-			<label class="field"><span>Bis</span>
-				<input class="input" type="date" name="to" value="{{index .Filter "to"}}"></label>
+		<div class="form__grid form__grid--two">
 			<label class="field"><span>Nachbar</span>
 				<select class="select" name="neighbor_id">
 					<option value="">alle</option>
@@ -19,7 +15,15 @@
 					{{range .Neighbors}}<option value="{{.ID}}" {{if eq $sel (printf "%d" .ID)}}selected{{end}}>{{.Name}}</option>{{end}}
 				</select></label>
 			<label class="field"><span>Tätigkeit / Notiz</span>
-				<input class="input" name="task" value="{{index .Filter "task"}}" placeholder="Text"></label>
+				<input class="input" type="search" name="task" value="{{index .Filter "task"}}" placeholder="Buchungen durchsuchen …"></label>
+		</div>
+		<details class="disclosure form-details" {{if or (index .Filter "from") (index .Filter "to") (index .Filter "unit") (index .Filter "voided")}}open{{end}}>
+			<summary>Weitere Filter <span class="muted small">Zeitraum, Einheit & Storno</span></summary>
+		<div class="form__grid">
+			<label class="field"><span>Von</span>
+				<input class="input" type="date" name="from" value="{{index .Filter "from"}}"></label>
+			<label class="field"><span>Bis</span>
+				<input class="input" type="date" name="to" value="{{index .Filter "to"}}"></label>
 			<label class="field"><span>Einheit</span>
 				<select class="select" name="unit">
 					<option value="">alle</option>
@@ -34,6 +38,7 @@
 					<option value="only" {{if eq $v "only"}}selected{{end}}>nur stornierte</option>
 				</select></label>
 		</div>
+		</details>
 		<input type="hidden" name="sort" value="{{index .Filter "sort"}}">
 		<input type="hidden" name="dir" value="{{index .Filter "dir"}}">
 		<div class="btnrow">

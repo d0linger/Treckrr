@@ -20,10 +20,12 @@
 			<p class="muted small">Zugang gesperrt. Die Benutzeridentität bleibt für die unveränderte Historie erhalten.</p>
 			{{else}}
 			<form method="post" action="/admin/users/{{.ID}}/update" class="form">
+				<div class="form__grid form__grid--two">
 				<label class="field"><span>Benutzername</span>
 					<input class="input" name="username" value="{{.Username}}" autocomplete="off" required></label>
 				<label class="field"><span>E‑Mail</span>
 					<input class="input" type="email" name="email" value="{{.Email}}" placeholder="name@example.at" autocomplete="off"></label>
+				</div>
 				<div class="form__row"><button class="btn btn--primary btn--sm" type="submit">Zugangsdaten speichern</button></div>
 			</form>
 
@@ -36,6 +38,8 @@
 				<div class="form__row"><button class="btn btn--primary btn--sm" type="submit">Rolle speichern</button></div>
 			</form>
 
+			<details class="disclosure form-details">
+				<summary>Passwort zurücksetzen</summary>
 			<form method="post" action="/admin/users/{{.ID}}/password" class="form">
 				<label class="field"><span>Neues Passwort</span>
 					<div class="pwwrap">
@@ -45,6 +49,7 @@
 				<label class="check"><input type="checkbox" name="force_change" checked><span>Änderung bei nächster Anmeldung erzwingen</span></label>
 				<div class="form__row"><button class="btn btn--primary btn--sm" type="submit">Passwort setzen</button></div>
 			</form>
+			</details>
 
 			{{if ne .ID $.User.ID}}
 			<div class="dangerzone">

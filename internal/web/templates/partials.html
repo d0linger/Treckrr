@@ -118,10 +118,10 @@
 {{define "ic-search"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>{{end}}
 
 {{define "machine-checks"}}
-	<div class="checkgroup">
+<div class="checkgroup" data-machine-picker>
 		{{$selected := .Selected}}
 		{{range .Machines}}
-			<label class="check">
+	<label class="check" data-category="{{.Category}}">
 				<input type="checkbox" name="machine_ids" value="{{.ID}}" data-machine
 					{{if contains $selected .ID}}checked{{end}}>
 				<span>{{.Name}} <em>({{num .HourlyRate}} €/h)</em></span>

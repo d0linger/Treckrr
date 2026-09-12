@@ -44,7 +44,9 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   // Each neighbor's edit form sits in a collapsed <details><summary>Bearbeiten</summary>;
   // open it before filling. The seeded neighbor (id 1) gets an address so § 11 is met.
   await page.locator("details").filter({ has: page.locator('form[action="/neighbors/1/update"]') })
-    .locator("summary").click();
+    .locator(":scope > summary").click();
+  const billingDetails = page.locator('form[action="/neighbors/1/update"] details');
+  if (await billingDetails.getAttribute("open") === null) await billingDetails.locator(":scope > summary").click();
   const addr = page.locator('form[action="/neighbors/1/update"] textarea[name="address"]');
   await addr.fill("Ackerstraße 8\n4780 Schärding");
   await page
@@ -59,7 +61,7 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   // has no tractors/load levels, so an hours booking (which needs a rig) can't be
   // created, but a unit booking can. ---
   await page.goto("/neighbors/1?year=1");
-  await page.locator('select[name="unit"]').selectOption("Ballen");
+  await page.locator('[data-billing-select]').selectOption("Ballen");
   await page.locator('input[name="quantity"]').fill("10");
   await page.locator('input[name="unit_price"]').fill("3.20");
   await page.locator('input[name="task_label"]').fill("E2E Ballen");
@@ -109,6 +111,14 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   await expect(page.locator(".beleg__invoice")).toContainText("E2E Nachbar");
   await expect(page.getByText("Offener Betrag", { exact: true })).toBeVisible();
   await expect(page.locator(".beleg__hv.beleg__sum-invoice")).toBeVisible();
+
+  // A populated journal adds an export action beside its long heading. The
+  // action must wrap into the viewport without hiding any financial columns.
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto("/rechnungsjournal?year=1");
+  await expect(page.getByRole("link", { name: "Export CSV", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   // --- mark sent (confirm modal) → chip flips → undo via toast ---
   await page.goto("/neighbors/1/beleg?year=1");

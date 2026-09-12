@@ -786,7 +786,8 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .disclosure > summary .list__title { flex: 1 1 auto; min-width: 0; }
 .disclosure > summary .list__value { flex: 0 0 auto; text-align: right; white-space: nowrap; }
 /* Deactivated pricing items are dimmed but still visible for traceability. */
-.is-inactive { opacity: .55; }
+/* Inactive records stay readable; the explicit status badge carries their state. */
+.is-inactive { background: var(--surface-2); }
 .pill-off { font-size: .7rem; font-weight: 700; color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: .05rem .5rem; margin-left: .4rem; }
 .pill-warn { font-size: .7rem; font-weight: 700; color: var(--accent-text); background: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 999px; padding: .05rem .5rem; margin-left: .4rem; white-space: nowrap; }
 
@@ -1924,12 +1925,12 @@ span.paychip { cursor: default; }
 /* ---- Settings overview: page header w/ back button, account rows, passkeys -
    The Einstellungen page unifies account, 2FA and passkey management; sub-pages
    (password, 2FA setup) share the same header so a back button exists app-wide. */
-.pagehead { display: flex; align-items: center; gap: .8rem; }
+.pagehead { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
 .backbtn { width: 2.4rem; height: 2.4rem; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%;
 	background: var(--surface-2); border: 1px solid var(--border); color: var(--text); }
 .backbtn:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); color: var(--primary); }
 .backbtn .ic { width: 1.3em; height: 1.3em; }
-.pagehead__t { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.02em; margin: 0; }
+.pagehead__t { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.02em; margin: 0; flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
 .pagehead__action { margin-left: auto; }
 
 .kv { display: flex; justify-content: space-between; align-items: center; gap: 1rem;
@@ -2221,6 +2222,52 @@ span.paychip { cursor: default; }
 }
 @media print {
 	body.has-nav { padding-left: 0; }
+}
+
+/* Task-first forms: shared by every page, without changing document layouts. */
+.form__grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); align-items: start; }
+.form__grid > *, .equipment-grid > *, .entry-amounts > * { min-width: 0; }
+.form-section { display: flex; flex-direction: column; gap: .75rem; }
+.form-section + .form-section { border-top: 1px solid var(--border); padding-top: 1.1rem; margin-top: .3rem; }
+.form-section__title { margin: 0; color: var(--text); font-size: 1rem; font-weight: 700; }
+.form-details { border-top: 1px solid var(--border); padding-top: .15rem; }
+.form-details > summary { min-height: var(--tap); gap: .6rem; flex-wrap: wrap; }
+.form-details > summary > .small { font-weight: 400; margin-left: auto; text-align: right; overflow-wrap: anywhere; }
+.form-details > summary::after { flex: 0 0 auto; }
+.form-details > :not(summary) { margin-top: .65rem; }
+.equipment-grid, .entry-amounts { display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; }
+.equipment-grid > .fieldset { grid-column: 1 / -1; margin: 0; }
+.entry-amounts { align-items: end; }
+.entry-amounts .rate-preview { min-height: var(--tap); flex-wrap: wrap; }
+.date-shortcuts { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .3rem; }
+.date-shortcuts .btn { flex: 1 1 auto; min-height: var(--tap); padding-inline: .4rem; }
+.machine-picker__tools { display: flex; align-items: end; flex-wrap: wrap; gap: .5rem; margin-bottom: .6rem; }
+.machine-picker__tools .field { flex: 1 1 14rem; }
+.machine-picker__tools .btn { min-height: var(--tap); }
+.machine-picker__tools [aria-pressed="true"] { background: var(--primary); color: var(--on-primary); }
+.machine-picker__options { max-height: 18rem; overflow-y: auto; overscroll-behavior: contain; padding: .15rem; scrollbar-color: var(--border) var(--surface); }
+.machine-picker__options .check { min-height: var(--tap); padding: .35rem .4rem; align-items: center; border-bottom: 1px solid var(--border); }
+.machine-picker__options .check:has(input:checked) { background: var(--surface-2); }
+.machine-picker__options .check > span { overflow-wrap: anywhere; min-width: 0; }
+.machine-picker__options + [role="status"] { margin: .45rem 0 0; }
+/* Forms remain steady while a user targets a control; motion denotes state only. */
+@media (prefers-reduced-motion: no-preference) {
+	.main { animation: none; }
+	.card:hover { transform: none; }
+}
+@media (min-width: 640px) {
+	.form--toolbar { flex-direction: row; align-items: end; }
+	.form--toolbar > .field { flex: 1; }
+	.form__grid--two, .equipment-grid, .entry-amounts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.machine-picker__options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: .75rem; }
+}
+@media (max-width: 639px) {
+	.form-details > summary > .small { text-align: left; margin-left: 0; }
+	.form-details > summary::after { margin-left: auto; }
+}
+/* After the base icon rules so touch widths cannot be overwritten by 36px. */
+@media (max-width: 640px), (pointer: coarse) {
+	.iconact { width: var(--tap); height: var(--tap); }
 }
 
 /* A single safety net for both current and future effects. No essential state is

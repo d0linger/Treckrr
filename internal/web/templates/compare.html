@@ -5,7 +5,7 @@
 		<div class="workspace__title"><strong>Vergleich: {{.Base.Year}} — {{.Base.Name}}</strong></div>
 	</div>
 
-	<form method="get" action="/prices/compare" class="card form">
+	<form method="get" action="/prices/compare" class="card form form--toolbar">
 		<input type="hidden" name="base" value="{{.Base.ID}}">
 		<label class="field"><span>Vergleichen mit</span>
 			<select class="select" name="against" data-autosubmit>

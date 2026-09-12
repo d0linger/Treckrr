@@ -23,7 +23,7 @@
 		<span class="muted small">Andere Ansicht wählen oder unten einen Nachbarn anlegen.</span>
 	</div>
 	{{end}}
-	<div class="list">
+	<div class="list list--onecol">
 		{{range .Stats}}
 		<div class="card stack stack--tight {{if and .Neighbor.Archived (not .Neighbor.Anonymized)}}is-inactive{{end}}" data-nb-item>
 			<div class="list__row list__row--plain">
@@ -51,10 +51,15 @@
 				{{else}}
 				<form method="post" action="/neighbors/{{.Neighbor.ID}}/update" class="form">
 					<input type="hidden" name="origin" value="manage">
+					<div class="form__grid form__grid--two">
 					<label class="field"><span>Name</span>
 						<input class="input" name="name" value="{{.Neighbor.Name}}" required></label>
 					<label class="field"><span>Notiz</span>
 						<input class="input" name="note" value="{{.Neighbor.Note}}"></label>
+					</div>
+					<details class="disclosure form-details" {{if or .Neighbor.Address .Neighbor.TaxID .Neighbor.Email .Neighbor.IBAN .Neighbor.PaymentTermDays}}open{{end}}>
+						<summary>Rechnungs- und Kontaktdaten</summary>
+					<div class="form__grid form__grid--two">
 					<label class="field"><span>Adresse (für Rechnung, optional)</span>
 						<textarea class="input" name="address" rows="2" placeholder="Straße, PLZ Ort">{{.Neighbor.Address}}</textarea></label>
 					<label class="field"><span>UID / Steuernummer (für Rechnung &gt; 10.000 €, optional)</span>
@@ -66,6 +71,8 @@
 					<label class="field"><span>Zahlungsziel (Tage) – leer = Firmenstandard</span>
 						<input class="input" type="number" min="0" max="365" step="1" name="payment_term_days"
 							value="{{with .Neighbor.PaymentTermDays}}{{.}}{{end}}" placeholder="Firmenstandard"></label>
+					</div>
+					</details>
 					<div class="btnrow"><button class="btn btn--primary btn--sm" type="submit">Speichern</button></div>
 				</form>
 				<div class="btnrow">

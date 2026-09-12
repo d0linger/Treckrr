@@ -8,7 +8,7 @@
 		{{if .Copy}}<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
 		<input type="hidden" name="year_id" value="{{.Year.ID}}">{{end}}
 
-		<div class="form__grid">
+		<div class="form__grid form__grid--two">
 			<label class="field"><span>Einheit</span>
 				<select class="select" name="unit" data-unit>
 					<option value="h" {{if and (not .UnitIsCustom) (eq .Entry.Unit "h")}}selected{{end}}>Stunden (h)</option>
@@ -50,7 +50,7 @@
 			</label>
 		</div>
 
-		<div data-mode-panel="manual" {{if $gsel}}hidden{{end}}>
+		<div class="equipment-grid" data-mode-panel="manual" {{if $gsel}}hidden{{end}}>
 			<label class="field"><span>Traktor</span>
 				<select class="select" name="tractor_id" data-tractor-select>
 					<option value="">— wählen —</option>
@@ -70,13 +70,15 @@
 			</fieldset>
 		</div>
 
+		<div class="entry-amounts">
 		<label class="field"><span>Stunden</span>
 			<input class="input" type="number" step="0.001" min="0" name="hours"
 				inputmode="decimal" value="{{numInput .Entry.Hours}}" data-hours required></label>
 
-		<div class="rate-preview" data-rate-preview>
+		<div class="rate-preview" data-rate-preview aria-live="polite" aria-atomic="true">
 			<span>Stundensatz: <strong data-rate>–</strong></span>
 			<span>Kosten: <strong data-cost>–</strong></span>
+		</div>
 		</div>
 		</div><!-- /data-h-only -->
 
@@ -99,8 +101,11 @@
 
 		<label class="field"><span>Tätigkeit{{if not .Copy}} (optional){{end}}</span>
 			<input class="input" type="text" name="task_label" value="{{.Entry.TaskLabel}}"></label>
-		<label class="field"><span>Notiz (optional)</span>
-			<input class="input" type="text" name="note" value="{{.Entry.Note}}"></label>
+		<details class="disclosure form-details" {{if .Entry.Note}}open{{end}}>
+			<summary>Notiz{{if not .Entry.Note}} hinzufügen{{end}} <span class="muted small">optional</span></summary>
+			<label class="field"><span>Notiz</span>
+				<input class="input" type="text" name="note" value="{{.Entry.Note}}"></label>
+		</details>
 
 		{{if and .PairPartnerLabel (not .Copy)}}
 		<label class="check">
@@ -139,8 +144,8 @@
 	</div>
 
 	{{if not .Entry.Voided}}
-	<div class="card stack stack--tight">
-		<div class="section-title">Als Serie wiederholen</div>
+	<details class="card disclosure">
+		<summary>Als Serie wiederholen</summary>
 		<p class="muted small">Legt diese Buchung automatisch wiederkehrend im offenen Jahr des Nachbarn an.</p>
 		<form method="post" action="/entries/{{.Entry.ID}}/recur" class="form">
 			<div class="form__grid">
@@ -162,7 +167,7 @@
 			{{end}}
 			<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit">Serie einrichten</button> <a class="link small" href="/recurring">Serien verwalten ›</a></div>
 		</form>
-	</div>
+	</details>
 	{{end}}
 	{{end}}
 </section>
