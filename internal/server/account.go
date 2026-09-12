@@ -61,8 +61,12 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
-	user := userFromCtx(r)
 	current := r.FormValue("current_password")
+	if s.tooLong(w, r, "Passwort", current, 72) {
+		redirect(w, r, "/account/password")
+		return
+	}
+	user := userFromCtx(r)
 	next := r.FormValue("new_password")
 
 	if next != r.FormValue("new_password_confirm") {
@@ -172,6 +176,11 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
+	if s.tooLong(w, r, "Passwort", r.FormValue("password"), 72) ||
+		s.tooLong(w, r, "Code", r.FormValue("code"), maxNameLen) {
+		redirect(w, r, "/account/2fa")
+		return
+	}
 	user := userFromCtx(r)
 	secret, err := s.store.GetTotpSecret(r.Context(), user.ID)
 	if err != nil || secret == "" {
@@ -204,6 +213,10 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleRecoveryRegenerate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if s.tooLong(w, r, "Passwort", r.FormValue("password"), 72) {
+		redirect(w, r, "/account/2fa")
 		return
 	}
 	user := userFromCtx(r)
@@ -252,6 +265,10 @@ func (s *Server) issueAndShowRecoveryCodes(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if s.tooLong(w, r, "Passwort", r.FormValue("password"), 72) {
+		redirect(w, r, "/account/2fa")
 		return
 	}
 	user := userFromCtx(r)
