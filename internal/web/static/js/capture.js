@@ -83,8 +83,20 @@
 		var form = document.querySelector("[data-entry-form][data-entry-defaults]");
 		if (!form) return;
 		var fields = ["unit", "gespann_id", "task_label", "mode"];
+		var unified = form.hasAttribute("data-unified-booking");
+		/** Counterparty prices/tasks must never become a new own-service default. */
+		function ownStandardSelection() {
+			if (!unified) return true;
+			var direction = form.querySelector('[name="booking_direction"]:checked');
+			var kind = form.querySelector('[name="booking_kind"]');
+			return direction && direction.value === "out" && kind && (kind.value === "equipment" || kind.value === "quantity");
+		}
 
 		var saved = readDefaults(form);
+		// Accept historical own-service defaults but never restore a marked foreign,
+		// labor or fixed draft into the default equipment/quantity entry screen.
+		if (saved && unified && ((saved.booking_direction && saved.booking_direction !== "out") ||
+			(saved.booking_kind && saved.booking_kind !== "equipment" && saved.booking_kind !== "quantity"))) saved = null;
 		if (saved) {
 			fields.forEach(function (name) {
 				if (!(name in saved)) return;
@@ -112,6 +124,25 @@
 		// Remember on change, not on submit: no submit handler goes near this form.
 		form.addEventListener("change", function (e) {
 			var name = e.target && e.target.name;
+			if (unified) {
+				if (fields.indexOf(name) === -1 && name !== "booking_kind" && name !== "booking_direction") return;
+				// This listener loads before the progressive form controller. Read after
+				// its draft switch, not the outgoing values of the previously active path.
+				queueMicrotask(function () {
+					if (!ownStandardSelection()) return;
+					var data = readDefaults(form) || {};
+					var kind = form.querySelector('[name="booking_kind"]').value;
+					data.booking_kind = kind;
+					data.booking_direction = "out";
+					fields.forEach(function (key) {
+						if (kind === "quantity" && (key === "mode" || key === "gespann_id")) return;
+						var control = form.querySelector('[name="' + key + '"]' + (key === "mode" ? ':checked' : ""));
+						if (control) data[key] = control.value;
+					});
+					writeDefaults(form, data);
+				});
+				return;
+			}
 			if (fields.indexOf(name) === -1) return;
 			var data = readDefaults(form) || {};
 			if (e.target.type === "radio") {

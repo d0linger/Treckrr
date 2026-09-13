@@ -88,10 +88,11 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 	if n > 0 {
 		for _, q := range []string{
 			`DELETE FROM entry_photos WHERE entry_id IN (SELECT id FROM entries WHERE neighbor_id = $1)`,
-			`UPDATE entries SET note = '', task_label = '', void_reason = ''
-			 WHERE neighbor_id = $1 AND (note <> '' OR task_label <> '' OR void_reason <> '')`,
-			`UPDATE neighbor_ledger SET description = '', void_reason = ''
-			 WHERE neighbor_id = $1 AND (description <> '' OR void_reason <> '')`,
+			`UPDATE entries SET note = '', task_label = '', void_reason = '', request_fingerprint = NULL
+			 WHERE neighbor_id = $1 AND (note <> '' OR task_label <> '' OR void_reason <> '' OR request_fingerprint IS NOT NULL)`,
+			`UPDATE neighbor_ledger SET description = '', void_reason = '',
+			 booking = booking - ARRAY['task_label', 'note', 'partner_label', 'partner_person', 'unit']
+			 WHERE neighbor_id = $1 AND (description <> '' OR void_reason <> '' OR booking IS NOT NULL)`,
 			`UPDATE payments SET note = '' WHERE neighbor_id = $1 AND note <> ''`,
 			`DELETE FROM mail_outbox WHERE neighbor_id = $1`,
 			`DELETE FROM beleg_shares WHERE neighbor_id = $1`,
@@ -234,14 +235,14 @@ func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 		`INSERT INTO entries
 		   (neighbor_id, billing_year_id, entry_date, task_label, gespann_id, tractor_id, load_level_id,
 		    tractor_label, load_label, machine_labels, hours, hourly_rate, cost, note,
-		    unit, quantity, unit_price, idempotency_key, person_id, linked_entry_id)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+		    unit, quantity, unit_price, idempotency_key, person_id, linked_entry_id, request_fingerprint)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
 		 ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
 		 RETURNING id`,
 		e.NeighborID, e.BillingYearID, e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID),
 		nullInt(e.LoadLevelID), e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours,
 		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey),
-		nullInt(e.PersonID), nullInt(e.LinkedEntryID)).Scan(&id)
+		nullInt(e.PersonID), nullInt(e.LinkedEntryID), nullStr(e.RequestFingerprint)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		var neighborID, yearID int64
 		if err := tx.QueryRowContext(ctx,
@@ -270,18 +271,22 @@ func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 func existingEntryForReplay(
 	ctx context.Context,
 	tx *sql.Tx,
-	key string,
+	key, fingerprint string,
 	yearID, neighborID int64,
 ) (id int64, linkedID *int64, exists bool, err error) {
 	if key == "" {
 		return 0, nil, false, nil
 	}
+	if err := rejectLedgerReplay(ctx, tx, key); err != nil {
+		return 0, nil, false, err
+	}
 	var linked sql.NullInt64
+	var storedFingerprint sql.NullString
 	var storedYearID, storedNeighborID int64
 	err = tx.QueryRowContext(ctx, `
-		SELECT id, billing_year_id, neighbor_id, linked_entry_id
+		SELECT id, billing_year_id, neighbor_id, linked_entry_id, request_fingerprint
 		  FROM entries WHERE idempotency_key=$1`, key).
-		Scan(&id, &storedYearID, &storedNeighborID, &linked)
+		Scan(&id, &storedYearID, &storedNeighborID, &linked, &storedFingerprint)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil, false, nil
 	}
@@ -289,6 +294,9 @@ func existingEntryForReplay(
 		return 0, nil, false, err
 	}
 	if storedYearID != yearID || storedNeighborID != neighborID {
+		return 0, nil, false, ErrIdempotencyConflict
+	}
+	if storedFingerprint.String != fingerprint {
 		return 0, nil, false, ErrIdempotencyConflict
 	}
 	if linked.Valid {
@@ -303,10 +311,14 @@ func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := lockBookingKeys(ctx, tx, e.IdempotencyKey); err != nil {
+		return 0, err
+	}
 	if _, _, exists, err := existingEntryForReplay(
 		ctx,
 		tx,
 		e.IdempotencyKey,
+		e.RequestFingerprint,
 		e.BillingYearID,
 		e.NeighborID,
 	); err != nil {
@@ -345,10 +357,14 @@ func (s *Store) CreateEntryPair(ctx context.Context, e *models.Entry, machineIDs
 		return 0, 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := lockBookingKeys(ctx, tx, e.IdempotencyKey, companion.IdempotencyKey); err != nil {
+		return 0, 0, err
+	}
 	storedMainID, _, mainExists, err := existingEntryForReplay(
 		ctx,
 		tx,
 		e.IdempotencyKey,
+		e.RequestFingerprint,
 		e.BillingYearID,
 		e.NeighborID,
 	)
@@ -359,6 +375,7 @@ func (s *Store) CreateEntryPair(ctx context.Context, e *models.Entry, machineIDs
 		ctx,
 		tx,
 		companion.IdempotencyKey,
+		companion.RequestFingerprint,
 		companion.BillingYearID,
 		companion.NeighborID,
 	)
@@ -466,6 +483,16 @@ func (s *Store) DeleteEntryPair(ctx context.Context, id, partnerID int64) error 
 	return tx.Commit()
 }
 
+// ErrPairHoursPrecision rejects values that the machine-hours column cannot
+// represent exactly, rather than rounding hours independently of cost/quantity.
+var ErrPairHoursPrecision = errors.New("linked machine hours exceed supported precision or range")
+
+// MachineHoursRepresentable reports whether hours fit the numeric(10,3)
+// machine-hours column exactly. Trailing zeros beyond three places are harmless.
+func MachineHoursRepresentable(hours decimal.Decimal) bool {
+	return hours.IsPositive() && hours.LessThan(decimal.NewFromInt(10_000_000)) && hours.Equal(hours.Round(3))
+}
+
 // SyncPairHours mirrors an edited booking's hours onto its linked partner: the
 // machine entry (unit 'h') gets hours/quantity + cost at its frozen hourly
 // rate, the Mannstunden companion gets quantity + cost at its person rate. One
@@ -482,6 +509,16 @@ func (s *Store) SyncPairHours(ctx context.Context, partnerID int64, hours decima
 	defer func() { _ = tx.Rollback() }()
 	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
 		return decimal.Zero, err
+	}
+	var unit string
+	if err := tx.QueryRowContext(ctx, `SELECT unit FROM entries WHERE id=$1 FOR UPDATE`, partnerID).Scan(&unit); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return decimal.Zero, ErrNotFound
+		}
+		return decimal.Zero, err
+	}
+	if unit == "h" && !MachineHoursRepresentable(hours) {
+		return decimal.Zero, ErrPairHoursPrecision
 	}
 	var cost decimal.Decimal
 	err = tx.QueryRowContext(ctx, `
@@ -814,10 +851,10 @@ func (s *Store) UpdateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 		UPDATE entries SET entry_date=$1, task_label=$2, gespann_id=$3, tractor_id=$4,
 			load_level_id=$5, tractor_label=$6, load_label=$7, machine_labels=$8,
 			hours=$9, hourly_rate=$10, cost=$11, note=$12,
-			unit=$13, quantity=$14, unit_price=$15 WHERE id=$16`,
+			unit=$13, quantity=$14, unit_price=$15, person_id=$17 WHERE id=$16`,
 		e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID), nullInt(e.LoadLevelID),
 		e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours, e.HourlyRate, e.Cost, e.Note,
-		e.Unit, e.Quantity, e.UnitPrice, e.ID)
+		e.Unit, e.Quantity, e.UnitPrice, e.ID, nullInt(e.PersonID))
 	if err != nil {
 		return err
 	}
@@ -872,7 +909,7 @@ func (s *Store) SetEntryVoided(ctx context.Context, id int64, voided bool, reaso
 const entryCols = `id, neighbor_id, billing_year_id, entry_date, task_label, gespann_id,
 	tractor_id, load_level_id, tractor_label, load_label, machine_labels,
 	hours, hourly_rate, cost, note, voided, void_reason, created_at,
-	unit, quantity, unit_price, person_id, linked_entry_id`
+	unit, quantity, unit_price, person_id, linked_entry_id, request_fingerprint`
 
 const entrySelect = `SELECT ` + entryCols + ` FROM entries`
 
@@ -913,18 +950,19 @@ func scanEntry(sc scanner) (models.Entry, error) {
 // non-nil name it additionally reads the joined neighbor name.
 func scanEntryInto(sc scanner, name *string) (models.Entry, error) {
 	var (
-		e       models.Entry
-		gespann sql.NullInt64
-		tractor sql.NullInt64
-		load    sql.NullInt64
-		person  sql.NullInt64
-		linked  sql.NullInt64
-		date    time.Time
+		e           models.Entry
+		gespann     sql.NullInt64
+		tractor     sql.NullInt64
+		load        sql.NullInt64
+		person      sql.NullInt64
+		linked      sql.NullInt64
+		fingerprint sql.NullString
+		date        time.Time
 	)
 	dest := []any{&e.ID, &e.NeighborID, &e.BillingYearID, &date, &e.TaskLabel, &gespann,
 		&tractor, &load, &e.TractorLabel, &e.LoadLabel, &e.MachineLabels,
 		&e.Hours, &e.HourlyRate, &e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created,
-		&e.Unit, &e.Quantity, &e.UnitPrice, &person, &linked}
+		&e.Unit, &e.Quantity, &e.UnitPrice, &person, &linked, &fingerprint}
 	if name != nil {
 		dest = append(dest, name)
 	}
@@ -937,6 +975,7 @@ func scanEntryInto(sc scanner, name *string) (models.Entry, error) {
 	if linked.Valid {
 		e.LinkedEntryID = &linked.Int64
 	}
+	e.RequestFingerprint = fingerprint.String
 	e.Date = date
 	if gespann.Valid {
 		e.GespannID = &gespann.Int64

@@ -1,13 +1,36 @@
 {{define "content"}}
+{{$labor := and (eq .Entry.Unit "Mannstunde") .Entry.PersonID}}
 <section class="stack" data-base-id="{{.Base.ID}}">
 	<a class="backlink" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ Zurück zu {{.Neighbor.Name}}</a>
 	<h2 class="section-title">{{if .Copy}}Buchung kopieren{{else}}Buchung bearbeiten · {{date .Entry.Date}}{{end}}</h2>
 
-	<form method="post" action="{{if .Copy}}/entries{{else}}/entries/{{.Entry.ID}}/update{{end}}" class="card form" data-entry-form
-		data-pricing-url="/api/base/{{.Base.ID}}/pricing" data-validate>
+	<form method="post" action="{{if .Copy}}/entries{{else}}/entries/{{.Entry.ID}}/update{{end}}" class="card form"
+		{{if not $labor}}data-entry-form data-pricing-url="/api/base/{{.Base.ID}}/pricing"{{end}} data-validate>
 		{{if .Copy}}<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
 		<input type="hidden" name="year_id" value="{{.Year.ID}}">{{end}}
+		{{if and .Copy (eq .Entry.Unit "h")}}
+		<p class="muted small">Kopiert wird nur diese Position. Verknüpfte Mannstunden werden nicht automatisch mitkopiert.</p>
+		{{end}}
 
+		{{if $labor}}
+		<input type="hidden" name="booking_kind" value="labor">
+		<input type="hidden" name="booking_direction" value="out">
+		<p class="muted small">Mannstunden · Ich verrechne dem Nachbarn. Der vereinbarte Stundensatz bleibt erhalten.</p>
+		<div class="form__grid form__grid--two">
+			<label class="field"><span>Person</span>
+				{{$person := .Entry.PersonID}}
+				<select class="select" name="person_id" required>
+					<option value="">— wählen —</option>
+					{{range .Persons}}<option value="{{.ID}}" {{if and $person (eq .ID (deref $person))}}selected{{end}}>{{.Name}}{{if .Archived}} (archiviert){{end}}</option>{{end}}
+				</select></label>
+			<label class="field"><span>Datum</span>
+				<input class="input" type="date" name="entry_date" value="{{dateInput .Entry.Date}}" required></label>
+			<label class="field"><span>Mannstunden</span>
+				<input class="input" type="number" name="hours" min="0.0001" step="0.0001" max="999999999" inputmode="decimal" value="{{numInput .Entry.Quantity}}" required></label>
+			<label class="field"><span>Vereinbarter Satz (€/h)</span>
+				<input class="input" type="number" name="person_rate" min="0.0001" step="0.0001" max="999999999" inputmode="decimal" value="{{numInput .Entry.UnitPrice}}" required></label>
+		</div>
+		{{else}}
 		<div class="form__grid form__grid--two">
 			<label class="field"><span>Einheit</span>
 				<select class="select" name="unit" data-unit>
@@ -98,6 +121,7 @@
 				</span>
 			</div>
 		</div><!-- /data-qty-only -->
+		{{end}}
 
 		<label class="field"><span>Tätigkeit{{if not .Copy}} (optional){{end}}</span>
 			<input class="input" type="text" name="task_label" value="{{.Entry.TaskLabel}}"></label>
@@ -109,9 +133,10 @@
 
 		{{if and .PairPartnerLabel (not .Copy)}}
 		<label class="check">
-			<input type="checkbox" name="sync_pair" value="1" checked>
-			<span>Stunden der verknüpften Buchung ({{.PairPartnerLabel}}) mit anpassen</span>
+			<input type="checkbox" name="sync_pair" value="1">
+			<span>Auch die Stunden der verknüpften Buchung ({{.PairPartnerLabel}}) auf denselben Wert setzen</span>
 		</label>
+		<p class="muted small">Ohne Auswahl bleiben die Stunden der verknüpften Buchung unverändert.</p>
 		{{end}}
 		<button class="btn btn--primary btn--block" type="submit" title="Strg + Enter">{{if .Copy}}Buchung anlegen{{else}}Änderungen speichern{{end}}</button>
 	</form>

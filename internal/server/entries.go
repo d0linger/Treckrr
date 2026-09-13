@@ -451,6 +451,9 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
+	if s.handleUnifiedLedgerCreate(w, r) {
+		return
+	}
 	neighborID := formInt64(r, "neighbor_id")
 	yearID := formInt64(r, "year_id")
 	// An offline replay (offline.js) sets this header and wants a machine-readable
@@ -502,7 +505,11 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, machineIDs, msg := s.resolveEntryFromForm(r)
+	entry, machineIDs, msg, err := s.resolveUnifiedEntryFromForm(r)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	if msg != "" {
 		reject(http.StatusUnprocessableEntity, msg, neighborURL(neighborID, yearID))
 		return
@@ -515,6 +522,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	entry.NeighborID = neighborID
 	entry.BillingYearID = year.ID
 	entry.IdempotencyKey = idempotencyKey
+	entry.RequestFingerprint = unifiedRequestFingerprint(r)
 
 	// Person alongside the rig (optional): one submit books the machine AND the
 	// helper's Mannstunden as a linked companion entry. Hour bookings only — a
@@ -535,18 +543,40 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !person.HourlyRate.IsPositive() {
-			reject(http.StatusUnprocessableEntity, "Für "+person.Name+" ist kein Stundensatz hinterlegt — bitte im Personenstamm ergänzen.", neighborURL(neighborID, yearID))
+			if trimmed(r, "person_rate") == "" {
+				reject(http.StatusUnprocessableEntity, "Für "+person.Name+" ist kein Stundensatz hinterlegt — bitte im Personenstamm ergänzen.", neighborURL(neighborID, yearID))
+				return
+			}
+		}
+		personHours, personRate := entry.Hours, person.HourlyRate
+		for _, field := range []struct {
+			key    string
+			target *decimal.Decimal
+		}{{"person_hours", &personHours}, {"person_rate", &personRate}} {
+			if trimmed(r, field.key) != "" {
+				value, valid := positiveBookingDecimal(r, field.key)
+				if !valid {
+					reject(http.StatusUnprocessableEntity, "Bitte gültige Mannstunden und einen positiven Stundensatz angeben.", neighborURL(neighborID, yearID))
+					return
+				}
+				*field.target = value
+			}
+		}
+		personCost := personHours.Mul(personRate).Round(2)
+		if !personCost.IsPositive() || personCost.GreaterThanOrEqual(decimal.NewFromInt(10_000_000_000)) {
+			reject(http.StatusUnprocessableEntity, "Der Mannstundenbetrag liegt außerhalb des zulässigen Bereichs.", neighborURL(neighborID, yearID))
 			return
 		}
 		companion = &models.Entry{
 			NeighborID: neighborID, BillingYearID: year.ID,
 			Date: entry.Date, TaskLabel: "Mannstunden " + person.Name,
-			Unit: unitMannstunde, Quantity: entry.Hours, UnitPrice: person.HourlyRate,
-			Cost:     entry.Hours.Mul(person.HourlyRate).Round(2),
+			Unit: unitMannstunde, Quantity: personHours, UnitPrice: personRate,
+			Cost:     personCost,
 			PersonID: &person.ID,
 			// Derived, deterministic key so a replayed pair no-ops on both halves.
 			// Oversized derived keys are hashed to stay within the length limit.
-			IdempotencyKey: models.CompanionKey(idempotencyKey),
+			IdempotencyKey:     models.CompanionKey(idempotencyKey),
+			RequestFingerprint: entry.RequestFingerprint,
 		}
 	}
 
@@ -557,7 +587,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		newID, err = s.store.CreateEntry(r.Context(), entry, machineIDs)
 	}
 	if err != nil {
-		s.serverError(w, r.URL.Path, err)
+		s.unifiedBookingError(w, r, err)
 		return
 	}
 	if companionID != 0 {
@@ -802,13 +832,51 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.entryYearOpen(w, r, existing, "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr geändert werden.") {
 		return
 	}
-	entry, machineIDs, msg := s.resolveEntryFromForm(r)
+	kind, direction, selectionMsg := unifiedBookingSelection(r)
+	if selectionMsg != "" || direction == "in" || kind == "fixed" {
+		s.setFlash(w, r, "error", "Die Verrechnungsrichtung einer bestehenden Leistung bleibt erhalten. Bitte bei Bedarf stornieren und neu erfassen.")
+		redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
+		return
+	}
+	entry, machineIDs, msg, err := s.resolveUnifiedEntryFromForm(r)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	if msg != "" {
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
 		return
 	}
+	// Validate the target column before saving either half. Otherwise a four-
+	// decimal labor quantity would save first, then round only machine hours.
+	if r.FormValue("sync_pair") == "1" {
+		partnerID, err := s.store.LinkedPartnerID(r.Context(), id)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+		if partnerID != 0 {
+			partner, err := s.store.GetEntry(r.Context(), partnerID)
+			if err != nil {
+				s.serverError(w, r.URL.Path, err)
+				return
+			}
+			hours := entry.Hours
+			if entry.Unit != "" && entry.Unit != "h" {
+				hours = entry.Quantity
+			}
+			if partner.Unit == "h" && !store.MachineHoursRepresentable(hours) {
+				s.setFlash(w, r, "error", "Zum Angleichen der verknüpften Maschine sind höchstens drei Nachkommastellen und weniger als 10 Millionen Stunden möglich. Beide Buchungen bleiben unverändert.")
+				redirect(w, r, "/entries/"+itoa64(id)+"/edit")
+				return
+			}
+		}
+	}
 	entry.ID = id
+	if entry.Unit == models.UnitMannstunde && entry.PersonID == nil {
+		entry.PersonID = existing.PersonID
+	}
 	if err := s.store.UpdateEntry(r.Context(), entry, machineIDs); err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -1083,6 +1151,13 @@ func (s *Server) handleLedgerEditForm(w http.ResponseWriter, r *http.Request) {
 	data["Ledger"] = e
 	data["IsCredit"] = e.Amount.IsNegative()
 	data["AbsAmount"] = e.Amount.Abs()
+	if e.Booking != nil {
+		data["BookingKind"] = e.Booking.Kind
+		data["BookingDirection"] = "out"
+		if e.Amount.IsNegative() {
+			data["BookingDirection"] = "in"
+		}
+	}
 	s.render(w, r, "ledger_edit", data)
 }
 
@@ -1097,12 +1172,39 @@ func (s *Server) handleLedgerUpdate(w http.ResponseWriter, r *http.Request) {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
-	yearID, neighborID, _, err := s.store.GetLedgerEntry(r.Context(), id)
+	yearID, neighborID, existing, err := s.store.GetLedgerEntry(r.Context(), id)
 	if err != nil {
 		s.notFound(w, r)
 		return
 	}
 	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
+		return
+	}
+	if existing.Booking != nil {
+		r.Form.Set("neighbor_id", itoa64(neighborID))
+		r.Form.Set("year_id", itoa64(yearID))
+		kind, direction, msg := unifiedBookingSelection(r)
+		if kind != existing.Booking.Kind || (direction == "in") != existing.Amount.IsNegative() {
+			msg = "Buchungsart und Verrechnungsrichtung bleiben beim Bearbeiten erhalten. Bitte bei Bedarf stornieren und neu erfassen."
+		}
+		if msg == "" && direction == "out" && kind != "fixed" {
+			msg = "Eine Gegenleistung kann nicht nachträglich in eine eigene Rechnungsleistung umgewandelt werden. Bitte stornieren und neu erfassen."
+		}
+		if msg != "" {
+			s.rejectUnifiedBooking(w, r, msg)
+			return
+		}
+		in, msg := ledgerBookingFromForm(r, kind, direction)
+		if msg != "" {
+			s.rejectUnifiedBooking(w, r, msg)
+			return
+		}
+		if err := s.store.UpdateLedgerBooking(r.Context(), id, in); err != nil {
+			s.unifiedBookingError(w, r, err)
+			return
+		}
+		s.setFlash(w, r, "success", "Position aktualisiert.")
+		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
 	amount, description, date, msg := ledgerFormValues(r)
@@ -1263,6 +1365,12 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 	data["Photos"] = photos
 	data["UnitIsCustom"] = unitIsCustom(entry.Unit)
 	data["IsQtyEntry"] = entry.Unit != "" && entry.Unit != "h"
+	persons, err := s.store.ListPersons(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data["Persons"] = persons
 	data["NextWeek"] = time.Now().AddDate(0, 0, 7).Format("2006-01-02")
 	// Linked pair: name the partner so the form can offer to mirror edited hours.
 	if pid, err := s.store.LinkedPartnerID(r.Context(), id); err == nil && pid != 0 {
@@ -1337,6 +1445,12 @@ func (s *Server) handleEntryCopy(w http.ResponseWriter, r *http.Request) {
 	data["SelectedMachineIDs"] = selMachines
 	data["UnitIsCustom"] = unitIsCustom(entry.Unit)
 	data["IsQtyEntry"] = entry.Unit != "" && entry.Unit != "h"
+	persons, err := s.store.ListPersons(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data["Persons"] = persons
 	data["Copy"] = true
 	s.render(w, r, "entry_edit", data)
 }

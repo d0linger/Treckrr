@@ -122,6 +122,7 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 					PersonID: *partner.PersonID,
 					Name:     person.Name,
 					Rate:     partner.UnitPrice,
+					Hours:    partner.Quantity,
 				}
 			}
 		}

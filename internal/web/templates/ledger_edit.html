@@ -2,6 +2,63 @@
 <section class="stack">
 	<a class="backlink" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}">‹ Zurück zu {{.Neighbor.Name}}</a>
 	<h2 class="section-title">{{if .Copy}}Position duplizieren{{else}}Position bearbeiten{{end}} · {{.Year.Year}}</h2>
+	{{if .Ledger.Booking}}
+	{{$b := .Ledger.Booking}}
+	<form method="post" action="{{if .Copy}}/entries{{else}}/ledger/{{.Ledger.ID}}/update{{end}}" class="card form" data-ledger-booking>
+		<input type="hidden" name="year_id" value="{{.Year.ID}}">
+		<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
+		<input type="hidden" name="booking_kind" value="{{$b.Kind}}">
+		{{if and .Copy (eq $b.Kind "fixed")}}
+		<fieldset class="booking-direction"><legend>Wer verrechnet wem?</legend><div class="booking-direction__choices">
+			<label><input type="radio" name="booking_direction" value="out" {{if not .IsCredit}}checked{{end}}><span>Ich verrechne<small>{{.Neighbor.Name}} schuldet mir</small></span></label>
+			<label><input type="radio" name="booking_direction" value="in" {{if .IsCredit}}checked{{end}}><span>Nachbar verrechnet<small>Ich schulde {{.Neighbor.Name}}</small></span></label>
+		</div></fieldset>
+		{{else}}
+		<input type="hidden" name="booking_direction" value="{{if .IsCredit}}in{{else}}out{{end}}">
+		<p><strong>{{if .IsCredit}}Nachbar verrechnet{{else}}Ich verrechne{{end}}</strong> · {{if eq $b.Kind "equipment"}}Traktor / Gespann / Gefährt{{else if eq $b.Kind "labor"}}Arbeitszeit / Mannstunden{{else if eq $b.Kind "quantity"}}Mengenleistung{{else}}Freie Position / Kosten{{end}}</p>
+		<p class="muted small">Art und Richtung bleiben erhalten. Für eine andere Leistungsart bitte eine neue Buchung erfassen.</p>
+		{{end}}
+		<div class="form__grid form__grid--two">
+			<label class="field"><span>Datum</span><input class="input" type="date" name="entry_date" value="{{dateInput .Ledger.Date}}" required></label>
+			<label class="field"><span>Tätigkeit / Beschreibung</span><input class="input" name="task_label" value="{{$b.TaskLabel}}" maxlength="100" required></label>
+		</div>
+		{{if eq $b.Kind "fixed"}}
+		<label class="field"><span>Betrag (€)</span><input class="input" type="number" name="amount" min="0.01" step="0.01" value="{{numInput $b.UnitPrice}}" required></label>
+		{{else if eq $b.Kind "quantity"}}
+		<div class="form__grid">
+			<label class="field"><span>Einheit</span><input class="input" name="unit" maxlength="16" value="{{$b.Unit}}" required></label>
+			<label class="field"><span>Menge</span><input class="input" type="number" name="quantity" min="0.0001" step="0.0001" value="{{numInput $b.Quantity}}" required></label>
+			<label class="field"><span>Preis je Einheit (€)</span><input class="input" type="number" name="unit_price" min="0.0001" step="0.0001" value="{{numInput $b.UnitPrice}}" required></label>
+		</div>
+		{{else}}
+		<div class="form__grid form__grid--two">
+			{{if eq $b.Kind "equipment"}}
+			<label class="field"><span>Gespann / Fahrzeug des Nachbarn</span><input class="input" name="partner_label" maxlength="100" value="{{$b.PartnerLabel}}" required></label>
+			<label class="field"><span>Vereinbarter Satz (€/h)</span><input class="input" type="number" name="partner_rate" min="0.0001" step="0.0001" value="{{numInput $b.UnitPrice}}" required></label>
+			{{else}}
+			<label class="field"><span>Name der Person</span><input class="input" name="partner_person" maxlength="100" value="{{$b.PartnerPerson}}" required></label>
+			<label class="field"><span>Vereinbarter Personensatz (€/h)</span><input class="input" type="number" name="partner_person_rate" min="0.0001" step="0.0001" value="{{numInput $b.UnitPrice}}" required></label>
+			{{end}}
+			<label class="field"><span>{{if eq $b.Kind "labor"}}Mannstunden{{else}}Stunden{{end}}</span><input class="input" type="number" name="hours" min="0.0001" step="0.0001" value="{{numInput $b.Quantity}}" required></label>
+		</div>
+		{{if eq $b.Kind "equipment"}}
+		<details class="disclosure form-details" {{if $b.PartnerPerson}}open{{end}}>
+			<summary>Person des Nachbarn mitbuchen <span class="muted small">optional</span></summary>
+			<div class="form__grid">
+				<label class="field"><span>Name der Person</span><input class="input" name="partner_person" maxlength="100" value="{{$b.PartnerPerson}}"></label>
+				<label class="field"><span>Vereinbarter Personensatz (€/h)</span><input class="input" type="number" name="partner_person_rate" min="0.0001" step="0.0001" value="{{if $b.PersonRate.IsPositive}}{{numInput $b.PersonRate}}{{end}}"></label>
+				<label class="field"><span>Abweichende Mannstunden</span><input class="input" type="number" name="partner_person_hours" min="0.0001" step="0.0001" value="{{if $b.PersonHours.IsPositive}}{{numInput $b.PersonHours}}{{end}}" placeholder="Leer = gleiche Stunden"></label>
+			</div>
+			<p class="muted small">Zum Entfernen der zusätzlichen Person Namen, Satz und Mannstunden leeren.</p>
+		</details>
+		{{end}}
+		{{end}}
+		<details class="disclosure form-details" {{if $b.Note}}open{{end}}><summary>Notiz / Belegreferenz <span class="muted small">optional</span></summary><label class="field"><span>Notiz / Referenz</span><input class="input" name="note" maxlength="2000" value="{{$b.Note}}"></label></details>
+		<div class="booking-preview" data-ledger-preview role="status" aria-live="polite" aria-atomic="true">{{if .IsCredit}}Ich schulde dem Nachbarn{{else}}Der Nachbar schuldet mir{{end}}: {{money .AbsAmount}}</div>
+		<p class="muted small">Alle Eingaben sind positiv. Der Gesamtbetrag wird beim Speichern neu berechnet.</p>
+		<button class="btn btn--primary" type="submit">{{if .Copy}}Als neue Position speichern{{else}}Änderungen speichern{{end}}</button>
+	</form>
+	{{else}}
 	<form method="post" action="{{if .Copy}}/neighbors/{{.Neighbor.ID}}/ledger{{else}}/ledger/{{.Ledger.ID}}/update{{end}}" class="card form">
 		{{if .Copy}}<input type="hidden" name="year_id" value="{{.Year.ID}}">{{end}}
 		<div class="form__grid">
@@ -24,5 +81,8 @@
 		</div>
 		<button class="btn btn--primary" type="submit">{{if .Copy}}Als neue Position speichern{{else}}Speichern{{end}}</button>
 	</form>
+	{{end}}
 </section>
 {{end}}
+
+{{define "scripts"}}<script src="/static/js/ledger-booking.js?v={{.AssetVersion}}" defer></script>{{end}}

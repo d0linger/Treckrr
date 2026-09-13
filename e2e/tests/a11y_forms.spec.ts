@@ -16,24 +16,27 @@ test.beforeEach(async ({ page }) => { await login(page); });
 test("combined billing preserves canonical units, modes and quantity calculation", async ({ page }) => {
   await page.goto("/neighbors/1?year=1");
   const form = page.locator("[data-entry-form]");
-  const billing = form.getByRole("combobox", { name: "Abrechnung", exact: true });
+  const kind = form.locator("[data-booking-kind]");
+  await kind.selectOption("quantity");
+  const billing = form.locator("[data-unit]");
   for (const unit of ["ha", "Ballen", "m³", "Fuhre", "t", "__custom"]) {
     await billing.selectOption(unit);
     await expect(form.locator('[name="unit"]')).toHaveValue(unit);
-    await expect(form.locator("[data-qty-only]")).toBeVisible();
-    await expect(form.locator("[data-h-only]")).toBeHidden();
+    await expect(form.locator('[data-booking-panel="quantity:out quantity:in"]')).toBeVisible();
+    await expect(form.locator('[data-booking-panel="equipment:out"]').first()).toBeHidden();
     await expect(form.locator("[data-hours]")).not.toHaveAttribute("required");
     await expect(form.locator("[data-unit-custom]")).toBeVisible({ visible: unit === "__custom" });
     await form.locator("[data-qty]").fill("10");
     await form.locator("[data-unit-price]").fill("3.20");
     await expect(form.locator("[data-qty-cost]")).toHaveText(/32,00/);
   }
-  await billing.selectOption("h:manual");
+  await kind.selectOption("equipment");
+  await form.getByText("Frei zusammenstellen", { exact: true }).click();
   await expect(form.locator('[name="unit"]')).toHaveValue("h");
   await expect(form.locator('[name="mode"][value="manual"]')).toBeChecked();
   await expect(form.locator('[data-mode-panel="manual"]')).toBeVisible();
   await expect(form.locator("[data-hours]")).toHaveAttribute("required");
-  await billing.selectOption("h:gespann");
+  await form.getByText("Fixes Gespann", { exact: true }).click();
   await expect(form.locator('[name="mode"][value="gespann"]')).toBeChecked();
   await expect(form.locator('[data-mode-panel="gespann"]')).toBeVisible();
 });
@@ -42,7 +45,7 @@ test("combined billing preserves canonical units, modes and quantity calculation
 test("machine filtering preserves selected IDs and Enter never saves the form", async ({ page }) => {
   await page.goto("/neighbors/1?year=1");
   const form = page.locator("[data-entry-form]");
-  await form.locator("[data-billing-select]").selectOption("h:manual");
+  await form.getByText("Frei zusammenstellen", { exact: true }).click();
   const machine = form.locator("[data-machine]").first();
   const id = await machine.inputValue();
   await machine.check();
@@ -54,22 +57,22 @@ test("machine filtering preserves selected IDs and Enter never saves the form", 
   let submissions = 0;
   page.on("request", request => { if (request.method() === "POST") submissions++; });
   await search.press("Enter");
-  await expect(form.getByRole("status")).toContainText("Keine Treffer");
+  await expect(form.locator("[data-machine-picker] + [role=status]")).toContainText("Keine Treffer");
   expect(submissions).toBe(0);
   await search.fill("");
   await form.getByRole("button", { name: "Nur ausgewählte (1)", exact: true }).click();
   await expect(machine).toBeVisible();
   await machine.uncheck();
-  await expect(form.getByRole("status")).toContainText("Keine Treffer");
+  await expect(form.locator("[data-machine-picker] + [role=status]")).toContainText("Keine Treffer");
   await form.getByRole("button", { name: "Nur ausgewählte (0)", exact: true }).click();
   await expect(machine).toBeVisible();
 });
 
-/** Pins the fixture's hourly rate and the visibility/clearing of an optional linked person. */
-test("hourly preview and optional person stay explicit and reset on the quantity path", async ({ page }) => {
+/** Pins the rate and proves isolated quantity drafts cannot submit a hidden linked person. */
+test("hourly preview and optional person stay explicit across isolated quantity drafts", async ({ page }) => {
   await page.goto("/neighbors/1?year=1");
   const form = page.locator("[data-entry-form]");
-  await form.locator("[data-billing-select]").selectOption("h:manual");
+  await form.getByText("Frei zusammenstellen", { exact: true }).click();
   await form.locator('[name="tractor_id"]').selectOption("1");
   await form.locator('[name="load_level_id"]').selectOption("1");
   await form.locator("[data-machine]").first().check();
@@ -80,11 +83,13 @@ test("hourly preview and optional person stay explicit and reset on the quantity
   await details.locator("summary").click();
   await form.locator('[name="person_id"]').selectOption("1");
   await details.locator("summary").click();
-  await expect(details.locator("summary")).toContainText("E2E Helfer");
-  await form.locator("[data-billing-select]").selectOption("ha");
+  await expect(details.locator("summary")).toContainText("36,00");
+  await form.locator("[data-booking-kind]").selectOption("quantity");
   await expect(form.locator('[name="person_id"]')).toHaveValue("");
-  await form.locator("[data-billing-select]").selectOption("h:manual");
-  await expect(details.locator("summary")).toContainText("optional");
+  await expect(form.locator('[name="person_id"]')).toBeDisabled();
+  await form.locator("[data-booking-kind]").selectOption("equipment");
+  await expect(form.locator('[name="person_id"]')).toHaveValue("1");
+  await expect(details.locator("summary")).toContainText("36,00");
 });
 
 /** Ensures hidden optional email errors reveal their field instead of silently blocking a save. */
@@ -140,7 +145,7 @@ test("native form controls and optional sections remain usable without JavaScrip
     const native = await context.newPage();
     await native.goto("/neighbors/1?year=1");
     await expect(native.locator('select[name="unit"]')).toBeVisible();
-    await expect(native.getByRole("radiogroup", { name: "Abrechnungsart" })).toBeVisible();
+    await expect(native.getByRole("radiogroup", { name: "Zusammenstellung" })).toBeVisible();
     await native.goto("/admin/company");
     const numbering = native.locator("details").filter({ has: native.locator('[name="invoice_start"]') });
     await numbering.locator("summary").focus();
@@ -164,7 +169,8 @@ test("remembered new-booking defaults never overwrite an edited or copied record
     await expect(page.locator('[name="unit"]')).toHaveValue("h");
   }
   await page.goto("/neighbors/1?year=1");
-  await expect(page.locator("[data-billing-select]")).toHaveValue("Ballen");
+  await expect(page.locator("[data-booking-kind]")).toHaveValue("quantity");
+  await expect(page.locator("[data-unit]")).toHaveValue("Ballen");
   await expect(page.locator('[name="task_label"]')).toHaveValue("Unrelated remembered task");
 });
 

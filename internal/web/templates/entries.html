@@ -16,6 +16,24 @@
 				</select></label>
 			<label class="field"><span>Tätigkeit / Notiz</span>
 				<input class="input" type="search" name="task" value="{{index .Filter "task"}}" placeholder="Buchungen durchsuchen …"></label>
+			<label class="field"><span>Verrechnungsrichtung</span>
+				{{$direction := index .Filter "direction"}}
+				<select class="select" name="direction">
+					<option value="">beide Richtungen</option>
+					<option value="out" {{if eq $direction "out"}}selected{{end}}>Nachbar schuldet mir</option>
+					<option value="in" {{if eq $direction "in"}}selected{{end}}>Ich schulde dem Nachbarn</option>
+				</select></label>
+			<label class="field"><span>Leistungsart</span>
+				{{$kind := index .Filter "kind"}}
+				<select class="select" name="kind">
+					<option value="">alle Arten</option>
+					<option value="equipment" {{if eq $kind "equipment"}}selected{{end}}>Traktor / Geräte</option>
+					<option value="labor" {{if eq $kind "labor"}}selected{{end}}>Mannstunden</option>
+					<option value="quantity" {{if eq $kind "quantity"}}selected{{end}}>Mengenleistung</option>
+					<option value="fixed" {{if eq $kind "fixed"}}selected{{end}}>Freie Kosten</option>
+					<option value="manual" {{if eq $kind "manual"}}selected{{end}}>Manuelle Positionen</option>
+					<option value="transfer" {{if eq $kind "transfer"}}selected{{end}}>Jahresüberträge</option>
+				</select></label>
 		</div>
 		<details class="disclosure form-details" {{if or (index .Filter "from") (index .Filter "to") (index .Filter "unit") (index .Filter "voided")}}open{{end}}>
 			<summary>Weitere Filter <span class="muted small">Zeitraum, Einheit & Storno</span></summary>
@@ -47,12 +65,14 @@
 		</div>
 	</form>
 
-	<p class="muted small">{{.Total}} Buchung(en) · Summe (ohne stornierte) {{money .SumCost}}{{if gt .Pages 1}} · Seite {{.Page}} von {{.Pages}}{{end}}</p>
+	<p class="muted small">{{.Total}} Buchung(en) · Summe beider Richtungen (ohne Storno) {{money .SumCost}}{{if gt .Pages 1}} · Seite {{.Page}} von {{.Pages}}{{end}}</p>
+	<p class="muted small">Positive Beträge schuldet der Nachbar, negative Beträge schulde ich. Zahlungen sind hier nicht enthalten.</p>
 	<div class="btnrow">
 		<span class="muted small">Sortieren:</span>
 		<a class="btn btn--ghost btn--sm" href="{{.SortDateURL}}">Datum</a>
 		<a class="btn btn--ghost btn--sm" href="{{.SortNeighborURL}}">Nachbar</a>
 		<a class="btn btn--ghost btn--sm" href="{{.SortCostURL}}">Betrag</a>
+		<a class="btn btn--ghost btn--sm" href="{{.ExportURL}}">Gefilterte Liste als CSV</a>
 	</div>
 
 	{{if .Rows}}
@@ -61,15 +81,16 @@
 		<input type="hidden" name="return_to" value="{{.ReturnTo}}">
 		<div class="tablewrap" role="region" aria-label="Buchungsliste" tabindex="0">
 			<table class="dtable">
-				<thead><tr><th><span class="sr-only">Auswahl</span></th><th>Datum</th><th>Nachbar</th><th>Tätigkeit</th><th>Menge</th><th class="num">Betrag</th></tr></thead>
+				<thead><tr><th><span class="sr-only">Auswahl</span></th><th>Datum</th><th>Nachbar</th><th>Richtung / Art</th><th>Tätigkeit</th><th>Menge</th><th class="num">Betrag</th></tr></thead>
 				<tbody>
 					{{range .Rows}}
-					<tr class="{{if .Voided}}dtable__row--bad{{end}}">
-						<td>{{if not $.Completed}}<input type="checkbox" name="entry_id" value="{{.ID}}" aria-label="Buchung vom {{date .Date}} auswählen">{{end}}</td>
+					<tr class="{{if .Voided}}dtable__row--bad{{end}}" data-booking-source="{{.Source}}">
+						<td>{{if and (not $.Completed) (not .IsLedger)}}<input type="checkbox" name="entry_id" value="{{.ID}}" aria-label="Buchung vom {{date .Date}} auswählen">{{end}}</td>
 						<td>{{date .Date}}</td>
 						<td><a href="/neighbors/{{.NeighborID}}?year={{$.Year.ID}}">{{.NeighborName}}</a></td>
-						<td>{{if .TaskLabel}}{{.TaskLabel}}{{else}}—{{end}}{{if .Voided}} <span class="tag">storniert</span>{{end}}{{if .LinkedEntryID}} <span class="tag" title="Gemeinsam mit der Maschinenbuchung erfasst">verknüpft</span>{{end}}{{$eid := .ID}}{{with index $.PhotoCounts $eid}} <a class="tag" href="/entries/{{$eid}}/edit" title="Belegfotos">{{.}} Foto{{if gt . 1}}s{{end}}</a>{{end}}{{if .Note}} <span class="muted small">{{.Note}}</span>{{end}}</td>
-						<td>{{if eq .Unit "h"}}{{num .Hours}} h{{else}}{{num .Quantity}} {{.Unit}}{{end}}</td>
+						<td>{{.DirectionLabel}}<br> <span class="muted small">{{.KindLabel}}</span></td>
+						<td><a href="{{if not .IsLedger}}/entries/{{.ID}}/edit{{else if eq .Kind "transfer"}}/neighbors/{{.NeighborID}}?year={{$.Year.ID}}{{else}}/ledger/{{.ID}}/edit{{end}}">{{if .TaskLabel}}{{.TaskLabel}}{{else}}—{{end}}</a>{{if .Voided}} <span class="tag">storniert</span>{{end}}{{if .LinkedEntryID}} <span class="tag" title="Gemeinsam mit der Maschinenbuchung erfasst">verknüpft</span>{{end}}{{if not .IsLedger}}{{$eid := .ID}}{{with index $.PhotoCounts $eid}} <a class="tag" href="/entries/{{$eid}}/edit" title="Belegfotos">{{.}} Foto{{if gt . 1}}s{{end}}</a>{{end}}{{end}}{{with .Booking}}{{if .PartnerLabel}} <span class="muted small">{{.PartnerLabel}}</span>{{end}}{{if .PartnerPerson}} <span class="muted small">{{.PartnerPerson}}</span>{{end}}{{end}}{{if .Note}} <span class="muted small">{{.Note}}</span>{{end}}</td>
+						<td>{{if .Unit}}{{if eq .Unit "h"}}{{num .Hours}} h{{else}}{{num .Quantity}} {{.Unit}}{{end}}{{else}}—{{end}}{{with .Booking}}{{if .PersonHours.IsPositive}}<br><span class="muted small">+ {{num .PersonHours}} Mannstunden</span>{{end}}{{end}}</td>
 						<td class="num">{{money .Cost}}</td>
 					</tr>
 					{{end}}
@@ -77,9 +98,9 @@
 			</table>
 		</div>
 
-		{{if not .Completed}}
+		{{if and (not .Completed) .HasEntryRows}}
 		<div class="card stack stack--tight">
-			<span class="muted small">Für die ausgewählten Buchungen — gesperrte (festgeschriebene Rechnung) werden übersprungen und gemeldet.</span>
+			<span class="muted small">Sammelaktionen gelten nur für ausgewählte eigene Leistungsbuchungen. Verrechnungspositionen und Jahresüberträge bleiben unverändert; gesperrte Buchungen werden übersprungen und gemeldet.</span>
 			<label class="field"><span>Grund (für Storno, optional)</span>
 				<input class="input" name="reason" maxlength="200" placeholder="z. B. Doppelerfassung"></label>
 			<div class="btnrow">

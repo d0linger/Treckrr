@@ -61,7 +61,8 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   // has no tractors/load levels, so an hours booking (which needs a rig) can't be
   // created, but a unit booking can. ---
   await page.goto("/neighbors/1?year=1");
-  await page.locator('[data-billing-select]').selectOption("Ballen");
+  await page.locator('[data-booking-kind]').selectOption("quantity");
+  await page.locator('[data-unit]').selectOption("Ballen");
   await page.locator('input[name="quantity"]').fill("10");
   await page.locator('input[name="unit_price"]').fill("3.20");
   await page.locator('input[name="task_label"]').fill("E2E Ballen");

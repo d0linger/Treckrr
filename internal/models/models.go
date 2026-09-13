@@ -101,6 +101,8 @@ type RecurCompanion struct {
 	PersonID int64           `json:"person_id"`
 	Name     string          `json:"name"`
 	Rate     decimal.Decimal `json:"rate"`
+	// Hours freezes explicitly entered helper hours; zero keeps legacy same-hours behavior.
+	Hours decimal.Decimal `json:"hours,omitempty"`
 }
 
 // RecurTemplate is the booking blueprint a recurring rule stores (JSON). It mirrors
@@ -327,6 +329,9 @@ type Entry struct {
 	// IdempotencyKey is set only for offline-captured bookings replayed from the
 	// client queue; a unique index makes a duplicate replay a no-op.
 	IdempotencyKey string
+	// RequestFingerprint identifies active unified-form inputs without storing
+	// raw request data. Empty keeps historical retry semantics for old callers.
+	RequestFingerprint string
 	// PersonID attributes a Mannstunden booking to a helper (nil for machine
 	// bookings and everything booked before the Personenstamm existed).
 	PersonID *int64
@@ -369,6 +374,9 @@ type LedgerEntry struct {
 	// TransferID links the two sides of a carry-forward; non-empty means this
 	// posting is one half of a cross-year transfer that reverses as a unit.
 	TransferID string
+	// Booking retains the editable pricing snapshot for a unified counterclaim.
+	// Nil identifies historical manual postings and settlement transfers.
+	Booking *LedgerBooking
 }
 
 // Payment is a dated amount a neighbor paid toward a billing year. Payments are
