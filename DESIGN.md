@@ -186,7 +186,7 @@ The chassis uses mono labels and explicit active state. Mobile uses four bottom 
 
 ### Werkblatt Backdrop
 
-Decorative login and application canvases choose from quiet technical-paper compositions. They paint once and repaint only for resize or theme changes; they never run an idle animation loop.
+Application canvases choose from quiet technical-paper compositions. They paint once and repaint only for resize or theme changes. The login worksheet retains its travelling vertical light band and synchronized machine highlights, capped at 25 fps and paused while hidden. Its timer fallback recovers visible Windows/RDP sessions when animation frames stall. The login sweep preserves its established behavior independently of Windows' reduced-motion signal; other UI motion still honors reduced-motion preferences.
 
 ## Do's and Don'ts
 
@@ -199,7 +199,7 @@ Decorative login and application canvases choose from quiet technical-paper comp
 
 ### Don't:
 
-- **Don't** introduce continuous decorative animation or colored glow shadows.
+- **Don't** introduce continuous decorative animation beyond the established login sweep, or colored glow shadows.
 - **Don't** use danger fill colors directly for text or icons.
 - **Don't** add generic dashboard decoration that does not encode data or state.
 - **Don't** replace the bottom-tab/desktop-rail information architecture without product evidence.

@@ -3,8 +3,8 @@
  * Paints a paper "worksheet" onto the pre-auth <canvas id="login-bg">, dusted
  * with Treckrr's full 16-machine icon set — the same glyphs the appbar picks
  * from — each drawn at most once (no repeats), scattered across the whole sheet
- * like a field of favicons. A fixed-phase light band highlights the composition
- * without a continuous animation loop.
+ * like a field of favicons. A travelling light band highlights each column as
+ * it sweeps across the sheet, with drawing capped at 25 frames per second.
  *
  * One of two sheets is selected using the reload/session rule below and reused
  * across ordinary navigation: "graph" (fine engineering grid, green ink, a small
@@ -13,7 +13,7 @@
  *
  * Colours are read from the live CSS design tokens (--bg, --text, --primary,
  * --signal, --muted), so the sheet tracks the active theme (Hell / Nachtschicht)
- * and re-themes on the fly. It repaints on resize or theme changes only.
+ * and re-themes on the fly. The sweep pauses while the page is hidden.
  * Purely decorative: aria-hidden and
  * pointer-inert, so it never touches the form. CSP-safe — no inline code, all
  * drawing happens on the canvas.
@@ -203,19 +203,61 @@
 	}
 	var draw = pickVariant("treckrr-loginbg", ["graph", "hatch"]) === "graph" ? graph : hatch;
 	var seed = pickSeed("treckrr-loginbg-seed");
-	// Pick a stable composition phase once. This decorative surface remains still
-	// after the first paint so the login screen consumes no continuous idle CPU.
+	// The wall-clock phase preserves the sweep across reloads and frame stalls.
+	// Keep the established login behavior: Windows/RDP's reduced-motion signal
+	// must not silently freeze this backdrop. Other app motion remains unchanged.
 	var W = 0, H = 0, items = [], pal = palette(), phase = Date.now() / 1000;
+	var running = false, raf = 0, watchdog = 0, fallback = 0, lastRaf = 0, lastPaint = 0;
 
-	/** Rebuilds the bitmap and deterministic icon layout for a visible canvas; hidden layouts are left untouched. */
+	/** Rebuilds the bitmap and deterministic layout, starting only after a nonzero canvas is available. */
 	function resize() {
 		var r = canvas.getBoundingClientRect();
-		if (!r.width || !r.height) return;
+		if (!r.width || !r.height) { W = H = 0; stop(); return; }
 		W = r.width; H = r.height;
 		canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
 		ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 		items = layoutIcons(W, H, seed);
 		draw(W, H, phase, pal, items);
+		start();
+	}
+	/** Advances both the light band and glyph highlights from the same clock. */
+	function paint() {
+		phase = Date.now() / 1000;
+		draw(W, H, phase, pal, items);
+		lastPaint = Date.now();
+	}
+	/** Caps foreground painting and retires the fallback immediately when real frames resume. */
+	function frame() {
+		if (!running) return;
+		if (document.hidden) { stop(); return; }
+		if (fallback) { clearInterval(fallback); fallback = 0; }
+		lastRaf = Date.now();
+		if (lastRaf - lastPaint >= 40) paint();
+		raf = requestAnimationFrame(frame);
+	}
+	/** Starts one loop, with a bounded timer fallback for visible Windows/RDP sessions whose rAF stalls. */
+	function start() {
+		if (running || document.hidden || !W || !H) return;
+		running = true;
+		lastRaf = Date.now();
+		paint();
+		raf = requestAnimationFrame(frame);
+		watchdog = setInterval(function () {
+			if (document.hidden) { stop(); return; }
+			if (Date.now() - lastRaf > 800 && !fallback) {
+				fallback = setInterval(function () {
+					if (running && !document.hidden) paint();
+				}, 40);
+			}
+		}, 500);
+	}
+	/** Releases every animation timer while hidden, detached from the viewport or leaving the page. */
+	function stop() {
+		running = false;
+		if (raf) cancelAnimationFrame(raf);
+		if (watchdog) clearInterval(watchdog);
+		if (fallback) clearInterval(fallback);
+		raf = watchdog = fallback = 0;
 	}
 	/** Repaints an initialized login canvas with current theme tokens while preserving its layout and phase. */
 	function retheme() { pal = palette(); if (W) draw(W, H, phase, pal, items); }
@@ -223,6 +265,9 @@
 	if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
 	else window.addEventListener("resize", resize);
 	resize();
+	document.addEventListener("visibilitychange", function () { if (document.hidden) stop(); else start(); });
+	window.addEventListener("pagehide", stop);
+	window.addEventListener("pageshow", start);
 	var dark = window.matchMedia ? matchMedia("(prefers-color-scheme: dark)") : null;
 	if (dark && dark.addEventListener) dark.addEventListener("change", retheme);
 	if (window.MutationObserver) new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
