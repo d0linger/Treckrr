@@ -5,7 +5,61 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
+
+// TestUnifiedEntryDate requires explicit dates in unified forms while retaining
+// the current-time fallback used by legacy clients and queued submissions.
+func TestUnifiedEntryDate(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, kind, date  string
+		invalid, fallback bool
+	}{
+		{name: "explicit missing", kind: "quantity", invalid: true},
+		{name: "explicit malformed", kind: "quantity", date: "not-a-date", invalid: true},
+		{name: "explicit impossible", kind: "quantity", date: "2026-02-30", invalid: true},
+		{name: "explicit non-leap day", kind: "quantity", date: "2026-02-29", invalid: true},
+		{name: "explicit leap day", kind: "quantity", date: "2024-02-29"},
+		{name: "explicit trimmed", kind: " quantity ", date: " 2026-09-13 "},
+		{name: "legacy missing", fallback: true},
+		{name: "legacy malformed", date: "not-a-date", fallback: true},
+		{name: "legacy impossible", date: "2026-02-30", fallback: true},
+		{name: "legacy valid", date: "2026-09-13"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			form := url.Values{"unit": {"ha"}, "quantity": {"2"}, "unit_price": {"30"},
+				"task_label": {"Ernte"}, "entry_date": {tc.date}}
+			if tc.kind != "" {
+				form.Set("booking_kind", tc.kind)
+			}
+			r := httptest.NewRequest("POST", "/entries", strings.NewReader(form.Encode()))
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			before := time.Now()
+			entry, ids, msg, err := (&Server{}).resolveUnifiedEntryFromForm(r)
+			after := time.Now()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.invalid {
+				if entry != nil || len(ids) != 0 || msg != "Bitte ein gültiges Datum angeben." {
+					t.Fatalf("invalid date accepted: entry=%+v ids=%v message=%q", entry, ids, msg)
+				}
+				return
+			}
+			if entry == nil || msg != "" {
+				t.Fatalf("valid/legacy form rejected: entry=%+v message=%q", entry, msg)
+			}
+			if tc.fallback {
+				if entry.Date.Before(before) || entry.Date.After(after) {
+					t.Fatalf("legacy fallback date = %v, outside %v .. %v", entry.Date, before, after)
+				}
+			} else if got := entry.Date.Format("2006-01-02"); got != strings.TrimSpace(tc.date) {
+				t.Errorf("date = %s, want %s", got, tc.date)
+			}
+		})
+	}
+}
 
 // TestUnifiedBookingSelection ensures old queues retain their meaning and new
 // direction/type values cannot fall silently into an unrelated pricing branch.

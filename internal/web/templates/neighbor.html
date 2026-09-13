@@ -151,7 +151,7 @@
 			</div>
 			<div class="btnrow">
 				<button class="btn btn--ghost btn--sm" type="button" data-quick-add>+ Zeile</button>
-				<button class="btn btn--primary" type="submit">Zeilen speichern</button>
+				<button class="btn btn--primary" type="submit" {{if .HasInvoice}}disabled{{end}}>Zeilen speichern</button>
 			</div>
 		</form>
 	</details>

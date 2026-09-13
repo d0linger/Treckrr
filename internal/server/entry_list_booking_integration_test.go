@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -126,8 +127,12 @@ func TestUnifiedBookingListIntegration(t *testing.T) {
 		t.Fatalf("export must ignore paging: rows=%d err=%v", len(exported), err)
 	}
 	units, err := e.st.BookingUnitsInYear(e.ctx, e.yearID64)
-	if err != nil || strings.Join(units, ",") != "Pauschale,h" {
-		t.Errorf("unified units = %v, err=%v", units, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(units)
+	if !slices.Equal(units, []string{"Pauschale", "h"}) {
+		t.Errorf("unified units = %v, want Pauschale and h", units)
 	}
 	listURL := "/buchungen?year=" + itoa64(e.yearID64)
 	page := e.get(listURL)

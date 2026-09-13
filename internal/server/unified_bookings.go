@@ -305,6 +305,11 @@ func (s *Server) resolveUnifiedEntryFromForm(r *http.Request) (*models.Entry, []
 		entry, msg, err := s.resolveLaborFromForm(r)
 		return entry, nil, msg, err
 	}
+	if trimmed(r, "booking_kind") != "" {
+		if _, err := time.Parse("2006-01-02", trimmed(r, "entry_date")); err != nil {
+			return nil, nil, "Bitte ein gültiges Datum angeben.", nil
+		}
+	}
 	entry, ids, msg := s.resolveEntryFromForm(r)
 	return entry, ids, msg, nil
 }

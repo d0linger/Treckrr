@@ -1,6 +1,7 @@
 package web
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,46 @@ import (
 
 	"github.com/d0linger/treckrr/internal/models"
 )
+
+// TestNeighborBookingSubmitGuards keeps both creation controls consistent with
+// invoice finalization and hides them entirely once the billing year is closed.
+func TestNeighborBookingSubmitGuards(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		issued, completed bool
+	}{
+		{name: "open"},
+		{name: "invoiced", issued: true},
+		{name: "closed", completed: true},
+		{name: "closed invoiced", issued: true, completed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			page := execPage(t, "neighbor", map[string]any{
+				"Base": models.PriceBase{ID: 1}, "Year": models.BillingYear{ID: 1, Year: 2026},
+				"Neighbor": models.Neighbor{ID: 1, Name: "Testhof"},
+				"Gespanne": []models.Gespann{{ID: 1, Name: "Testgespann"}},
+				"Entries":  []models.Entry{}, "Saldo": decimal.Zero, "TotalHours": decimal.Zero,
+				"PaidSum": decimal.Zero, "Remaining": decimal.Zero,
+				"HasInvoice": tc.issued, "Completed": tc.completed,
+			})
+			for _, label := range []string{"Buchung speichern", "Zeilen speichern"} {
+				button := regexp.MustCompile(`<button\b[^>]*>` + label + `</button>`).FindString(page)
+				if tc.completed {
+					if button != "" {
+						t.Errorf("closed year exposes %q", label)
+					}
+					continue
+				}
+				if button == "" {
+					t.Fatalf("missing button %q", label)
+				}
+				if disabled := strings.Contains(button, " disabled"); disabled != tc.issued {
+					t.Errorf("%q disabled=%t, want %t", label, disabled, tc.issued)
+				}
+			}
+		})
+	}
+}
 
 func TestClosedYearBelegHasNoCorrectionForms(t *testing.T) {
 	for _, issued := range []bool{false, true} {

@@ -61,6 +61,8 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   // has no tractors/load levels, so an hours booking (which needs a rig) can't be
   // created, but a unit booking can. ---
   await page.goto("/neighbors/1?year=1");
+  await page.getByText("Schnellerfassung (mehrere Zeilen)", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Zeilen speichern", exact: true })).toBeEnabled();
   await page.locator('[data-booking-kind]').selectOption("quantity");
   await page.locator('[data-unit]').selectOption("Ballen");
   await page.locator('input[name="quantity"]').fill("10");
@@ -103,6 +105,12 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   await page.goto("/neighbors/1/beleg?year=1&rechnung=1");
   await expect(page.getByText(/RECHNUNG Nr\./)).toBeVisible();
   await expect(page.locator(".beleg__inv-due")).toBeVisible();
+
+  // Both booking paths remain disabled after their scripts initialize.
+  await page.goto("/neighbors/1?year=1");
+  await expect(page.getByRole("button", { name: "Buchung speichern", exact: true })).toBeDisabled();
+  await page.getByText("Schnellerfassung (mehrere Zeilen)", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Zeilen speichern", exact: true })).toBeDisabled();
 
   // A reminder always uses the formal document presentation, including parties
   // and the open amount; it has no invoice-mode toggle to reveal hidden details.
