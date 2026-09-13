@@ -167,6 +167,83 @@ test("own and incoming itemized totals use independent helper hours and literal 
   await expect(form.locator("[data-booking-preview] img")).toHaveCount(0);
 });
 
+/** Uses native radio arrows and disclosure keys while preserving each party's successful draft fields. */
+test("keyboard direction and disclosure controls preserve isolated booking drafts without submitting", async ({ page }) => {
+  const form = await mockPage(page);
+  const submissions: string[] = [];
+  page.on("request", request => { if (request.method() === "POST") submissions.push(request.url()); });
+  await ownEquipment(form);
+  await form.locator('[name="task_label"]').fill("Eigener Tastaturentwurf");
+  const ownDetails = form.locator("[data-person-details]");
+  const ownSummary = ownDetails.locator("summary");
+  await ownSummary.focus();
+  await page.keyboard.press("Enter");
+  await expect(ownDetails).toHaveAttribute("open", "");
+  await expect(ownSummary).toBeFocused();
+  await form.locator('[name="person_id"]').selectOption("1");
+  await form.locator('[name="person_hours"]').fill("1.25");
+  await form.locator('[name="person_rate"]').fill("20");
+  await ownSummary.focus();
+  await page.keyboard.press("Space");
+  await expect(ownDetails).not.toHaveAttribute("open");
+  await expect(ownSummary).toBeFocused();
+  expect((await successful(form)).get("person_hours")).toBe("1.25");
+
+  const outgoing = form.locator('[name="booking_direction"][value="out"]');
+  const incoming = form.locator('[name="booking_direction"][value="in"]');
+  await outgoing.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(incoming).toBeChecked();
+  await expect(incoming).toBeFocused();
+  await expect(form.locator('[name="hours"]')).toHaveValue("");
+  expect((await successful(form)).has("person_id")).toBe(false);
+  await form.locator('[name="partner_label"]').fill("Nachbars Tastaturgespann");
+  await form.locator('[name="partner_rate"]').fill("45");
+  await form.locator('[name="hours"]').fill("3");
+  await form.locator('[name="task_label"]').fill("Fremder Tastaturentwurf");
+  const incomingDetails = form.locator("[data-partner-person-details]");
+  const incomingSummary = incomingDetails.locator("summary");
+  await incomingSummary.focus();
+  await page.keyboard.press("Space");
+  await expect(incomingDetails).toHaveAttribute("open", "");
+  await expect(incomingSummary).toBeFocused();
+  await form.locator('[name="partner_person"]').fill("Franz Tastatur");
+  await form.locator('[name="partner_person_rate"]').fill("21");
+  await form.locator('[name="partner_person_hours"]').fill("1.5");
+  await incomingSummary.focus();
+  await page.keyboard.press("Enter");
+  await expect(incomingDetails).not.toHaveAttribute("open");
+  await expect(incomingSummary).toBeFocused();
+  expect((await successful(form)).get("partner_person_hours")).toBe("1.5");
+
+  await incoming.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(outgoing).toBeChecked();
+  await expect(outgoing).toBeFocused();
+  const ownValues = await successful(form);
+  expect(ownValues.get("hours")).toBe("2");
+  expect(ownValues.get("task_label")).toBe("Eigener Tastaturentwurf");
+  expect(ownValues.getAll("machine_ids")).toEqual(["1"]);
+  expect(ownValues.get("person_id")).toBe("1");
+  expect(ownValues.get("person_hours")).toBe("1.25");
+  expect(ownValues.get("person_rate")).toBe("20");
+  expect(ownValues.has("partner_rate")).toBe(false);
+
+  await page.keyboard.press("ArrowRight");
+  await expect(incoming).toBeChecked();
+  await expect(incoming).toBeFocused();
+  const incomingValues = await successful(form);
+  expect(incomingValues.get("task_label")).toBe("Fremder Tastaturentwurf");
+  expect(incomingValues.get("hours")).toBe("3");
+  expect(incomingValues.get("partner_label")).toBe("Nachbars Tastaturgespann");
+  expect(incomingValues.get("partner_rate")).toBe("45");
+  expect(incomingValues.get("partner_person")).toBe("Franz Tastatur");
+  expect(incomingValues.get("partner_person_rate")).toBe("21");
+  expect(incomingValues.get("partner_person_hours")).toBe("1.5");
+  expect(incomingValues.has("person_id")).toBe(false);
+  expect(submissions).toEqual([]);
+});
+
 /** Keeps a machine pricing failure informative without blocking the canonical save path. */
 test("failed pricing preview still submits exactly once after the precheck", async ({ page }) => {
   const form = await mockPage(page, true);

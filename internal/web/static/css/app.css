@@ -1154,6 +1154,8 @@ span.paychip { cursor: default; }
 .dtable .strong { font-weight: 700; }
 .dtable .entry__task { display: block; font-weight: 600; }
 .dtable .entry__detail { display: block; line-height: 1.35; }
+/* A task link beside notes or counterparty details must not rely on color alone. */
+.booking-task-link { text-decoration: underline; text-underline-offset: .18em; }
 /* Keep the numeric/action columns tight so the task column gets the space. */
 .dtable--entries th.num, .dtable--entries td.num { width: 1%; }
 

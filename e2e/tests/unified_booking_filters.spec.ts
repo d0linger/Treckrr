@@ -1,4 +1,5 @@
 import { expect, Page, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 const USER = process.env.E2E_ADMIN_USER || "admin";
 const PASS = process.env.E2E_ADMIN_PASS || "e2e-admin-password-123";
@@ -26,8 +27,8 @@ async function filterAccount(page: Page) {
   expect(assigned.ok()).toBeTruthy();
   const common = { csrf_token: csrf, year_id: yearID!, neighbor_id: "1", entry_date: `${year}-05-01` };
   const bookings: Array<Record<string, string>> = [
-    { booking_kind: "quantity", booking_direction: "out", task_label: "Eigene Pressarbeit", unit: "Ballen", quantity: "10", unit_price: "10" },
-    { booking_kind: "equipment", booking_direction: "in", task_label: "Fremde Arbeit 50%", hours: "2", partner_label: "Fremdes Gespann", partner_rate: "45", partner_person: "Franz Filter", partner_person_hours: "1.5", partner_person_rate: "20" },
+    { booking_kind: "quantity", booking_direction: "out", task_label: "Eigene Pressarbeit", note: "Eigene Ballen am Nordfeld", unit: "Ballen", quantity: "10", unit_price: "10" },
+    { booking_kind: "equipment", booking_direction: "in", task_label: "Fremde Arbeit 50%", note: "Gegenleistung am Südhang", hours: "2", partner_label: "Fremdes Gespann", partner_rate: "45", partner_person: "Franz Filter", partner_person_hours: "1.5", partner_person_rate: "20" },
     { booking_kind: "labor", booking_direction: "in", task_label: "Mithilfe Filter", hours: "1.5", partner_person: "Hans Filter", partner_person_rate: "20", entry_date: `${year}-05-02` },
   ];
   for (const fields of bookings) {
@@ -36,6 +37,37 @@ async function filterAccount(page: Page) {
     expect(await saved.text()).toContain(fields.task_label);
   }
   return { year, yearID: yearID! };
+}
+
+for (const colorScheme of ["light", "dark"] as const) {
+  /** Checks real populated task cells so adjacent notes cannot hide a color-only link regression. */
+  test(`booking task links remain distinguishable beside notes and partner details in ${colorScheme} mode`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
+    const account = await filterAccount(page);
+    await page.goto(`/buchungen?year=${account.yearID}`);
+    const rows = page.locator(".dtable tbody tr");
+    await expect(rows).toHaveCount(3);
+
+    const own = rows.filter({ hasText: "Eigene Pressarbeit" });
+    const incoming = rows.filter({ hasText: "Fremde Arbeit 50%" });
+    const ownTask = own.getByRole("link", { name: "Eigene Pressarbeit", exact: true });
+    const incomingTask = incoming.getByRole("link", { name: "Fremde Arbeit 50%", exact: true });
+    await expect(ownTask).toBeVisible();
+    await expect(ownTask).toHaveAttribute("href", /\/entries\/\d+\/edit$/);
+    await expect(ownTask.locator("..")).toContainText("Eigene Ballen am Nordfeld");
+    await expect(incomingTask).toBeVisible();
+    await expect(incomingTask).toHaveAttribute("href", /\/ledger\/\d+\/edit$/);
+    for (const detail of ["Fremdes Gespann", "Franz Filter", "Gegenleistung am Südhang"]) {
+      await expect(incomingTask.locator("..")).toContainText(detail);
+    }
+
+    const results = await new AxeBuilder({ page }).include(".dtable")
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    const violations = results.violations.filter(result => result.impact === "serious" || result.impact === "critical");
+    expect(violations, JSON.stringify(violations.map(result => ({
+      id: result.id, impact: result.impact, targets: result.nodes.map(node => node.target),
+    })), null, 2)).toEqual([]);
+  });
 }
 
 /** Finds the overview from the dashboard and exercises combined filters and a real CSV download. */
