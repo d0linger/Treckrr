@@ -82,11 +82,12 @@ type dsgvoPayment struct {
 }
 
 type dsgvoLedger struct {
-	Date        time.Time       `json:"date"`
-	Amount      decimal.Decimal `json:"amount"`
-	Description string          `json:"description,omitempty"`
-	Voided      bool            `json:"voided"`
-	VoidReason  string          `json:"void_reason,omitempty"`
+	Date        time.Time             `json:"date"`
+	Amount      decimal.Decimal       `json:"amount"`
+	Description string                `json:"description,omitempty"`
+	Voided      bool                  `json:"voided"`
+	VoidReason  string                `json:"void_reason,omitempty"`
+	Booking     *models.LedgerBooking `json:"booking,omitempty"`
 }
 
 type dsgvoPhoto struct {
@@ -269,7 +270,7 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 		}
 		for _, l := range ledger {
 			dy.Ledger = append(dy.Ledger, dsgvoLedger{
-				Date: l.Date, Amount: l.Amount, Description: l.Description, Voided: l.Voided, VoidReason: l.VoidReason,
+				Date: l.Date, Amount: l.Amount, Description: l.Description, Voided: l.Voided, VoidReason: l.VoidReason, Booking: l.Booking,
 			})
 		}
 		for _, ph := range photos {

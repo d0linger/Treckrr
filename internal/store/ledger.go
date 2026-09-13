@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -18,7 +19,7 @@ import (
 // count toward the balance.
 func (s *Store) ListNeighborLedger(ctx context.Context, yearID, neighborID int64) ([]models.LedgerEntry, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, amount, description, posting_date, voided, void_reason, created_at, transfer_id
+		`SELECT id, amount, description, posting_date, voided, void_reason, created_at, transfer_id, booking
 		   FROM neighbor_ledger
 		  WHERE billing_year_id=$1 AND neighbor_id=$2
 		  ORDER BY posting_date, id`, yearID, neighborID)
@@ -29,8 +30,14 @@ func (s *Store) ListNeighborLedger(ctx context.Context, yearID, neighborID int64
 	var out []models.LedgerEntry
 	for rows.Next() {
 		var e models.LedgerEntry
-		if err := rows.Scan(&e.ID, &e.Amount, &e.Description, &e.Date, &e.Voided, &e.VoidReason, &e.Created, &e.TransferID); err != nil {
+		var booking []byte
+		if err := rows.Scan(&e.ID, &e.Amount, &e.Description, &e.Date, &e.Voided, &e.VoidReason, &e.Created, &e.TransferID, &booking); err != nil {
 			return nil, err
+		}
+		if len(booking) != 0 {
+			if err := json.Unmarshal(booking, &e.Booking); err != nil {
+				return nil, fmt.Errorf("decode ledger booking: %w", err)
+			}
 		}
 		out = append(out, e)
 	}
@@ -249,14 +256,19 @@ func (s *Store) UpdateNeighborLedger(ctx context.Context, id int64, amount decim
 	if err != nil {
 		return err
 	}
+	if err := protectStructuredLedger(ctx, tx, id, yearID, neighborID); err != nil {
+		return err
+	}
 	res, err := tx.ExecContext(ctx,
-		`UPDATE neighbor_ledger SET amount=$1, description=$2, posting_date=$3 WHERE id=$4`,
+		`UPDATE neighbor_ledger SET amount=$1, description=$2, posting_date=$3 WHERE id=$4 AND booking IS NULL`,
 		amount, description, date, id)
 	if err != nil {
 		return err
 	}
-	if n, err := res.RowsAffected(); err != nil || n == 0 {
+	if n, err := res.RowsAffected(); err != nil {
 		return err
+	} else if n == 0 {
+		return ErrNotFound
 	}
 	detail := "before{" + ledgerAuditState(before.Amount, before.Date, before.Voided) + "} after{" +
 		ledgerAuditState(amount, date, before.Voided) + "}"
@@ -282,6 +294,9 @@ func (s *Store) SetLedgerVoided(ctx context.Context, id int64, voided bool, reas
 	}
 	before, err := ledgerForUpdate(ctx, tx, id)
 	if err != nil {
+		return err
+	}
+	if err := protectStructuredLedger(ctx, tx, id, yearID, neighborID); err != nil {
 		return err
 	}
 	if before.Voided == voided {
@@ -338,12 +353,16 @@ func ledgerAuditState(amount decimal.Decimal, date time.Time, voided bool) strin
 // GetLedgerEntry returns a posting with its owning year/neighbor (used to
 // authorize, lock-check, prefill an edit form, and audit).
 func (s *Store) GetLedgerEntry(ctx context.Context, id int64) (yearID, neighborID int64, e models.LedgerEntry, err error) {
+	var booking []byte
 	err = s.db.QueryRowContext(ctx,
-		`SELECT billing_year_id, neighbor_id, id, amount, description, posting_date, voided, void_reason, created_at, transfer_id
+		`SELECT billing_year_id, neighbor_id, id, amount, description, posting_date, voided, void_reason, created_at, transfer_id, booking
 		   FROM neighbor_ledger WHERE id=$1`, id).
-		Scan(&yearID, &neighborID, &e.ID, &e.Amount, &e.Description, &e.Date, &e.Voided, &e.VoidReason, &e.Created, &e.TransferID)
+		Scan(&yearID, &neighborID, &e.ID, &e.Amount, &e.Description, &e.Date, &e.Voided, &e.VoidReason, &e.Created, &e.TransferID, &booking)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
+	}
+	if err == nil && len(booking) != 0 {
+		err = json.Unmarshal(booking, &e.Booking)
 	}
 	return
 }
@@ -364,6 +383,9 @@ func (s *Store) DeleteNeighborLedger(ctx context.Context, id int64) error {
 	}
 	before, err := ledgerForUpdate(ctx, tx, id)
 	if err != nil {
+		return err
+	}
+	if err := protectStructuredLedger(ctx, tx, id, yearID, neighborID); err != nil {
 		return err
 	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM neighbor_ledger WHERE id=$1`, id)

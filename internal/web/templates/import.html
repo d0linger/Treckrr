@@ -6,7 +6,7 @@
 	</div>
 
 	{{if not .Rows}}
-	<p class="muted small">CSV im Format des <strong>CSV-Exports</strong> (Spalten: Nachbar; Datum; Tätigkeit; …; Einheit; Menge; Satz; …; Notiz). Semikolon-getrennt. Die Kosten werden aus Menge × Satz neu berechnet; Traktor/Belastung/Maschinen-Spalten werden ignoriert. Nachbarn müssen bereits im Jahr sein.</p>
+	<p class="muted small">CSV-Datei auswählen und vor dem Import prüfen. Noch werden keine Buchungen angelegt.</p>
 	<form method="post" action="/entries/import/preview" enctype="multipart/form-data" class="card form">
 		<input type="hidden" name="year_id" value="{{.Year.ID}}">
 		<label class="field"><span>CSV-Datei</span>
@@ -16,6 +16,10 @@
 			<a class="btn btn--ghost btn--sm" href="/entries/import/sample.csv" download>Beispiel-CSV herunterladen</a>
 		</div>
 	</form>
+	<details class="disclosure form-details">
+		<summary>Hinweise zum CSV-Format</summary>
+		<p class="muted small">CSV im Format des <strong>CSV-Exports</strong> (Spalten: Nachbar; Datum; Tätigkeit; …; Einheit; Menge; Satz; …; Notiz). Semikolon-getrennt. Die Kosten werden aus Menge × Satz neu berechnet; Traktor/Belastung/Maschinen-Spalten werden ignoriert. Nachbarn müssen bereits im Jahr sein.</p>
+	</details>
 	{{else}}
 	<p class="muted small">{{.OKCount}} von {{.Total}} Zeilen importierbar. Einzelne Zeilen lassen sich abwählen; fehlerhafte Zeilen können unten direkt korrigiert und erneut geprüft werden.</p>
 	<form method="post" action="/entries/import" data-confirm="{{.OKCount}} importierbare Buchung(en) — die ausgewählten jetzt importieren?">

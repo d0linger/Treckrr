@@ -8,7 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
+
+	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/web"
 )
 
 // ---- Buchungsliste und Sammelaktionen (Ausbaukarte 63/64) ------------------
@@ -56,8 +60,23 @@ func entryFilterFromQuery(r *http.Request, yearID int64) store.EntryFilter {
 		f.Sort = "date"
 	}
 	f.Desc = q.Get("dir") == "desc"
-	if p, err := strconv.Atoi(q.Get("page")); err == nil && p > 1 {
+	if p, err := strconv.Atoi(q.Get("page")); err == nil && p > 1 && p <= int(^uint(0)>>1)/entryPageSize {
 		f.Offset = (p - 1) * entryPageSize
+	}
+	return f
+}
+
+// bookingFilterFromQuery adds allowlisted direction/type filters to the legacy
+// entry filter; ordinary links remain valid and default to both directions.
+func bookingFilterFromQuery(r *http.Request, yearID int64) store.BookingFilter {
+	f := store.BookingFilter{EntryFilter: entryFilterFromQuery(r, yearID)}
+	switch direction := r.URL.Query().Get("direction"); direction {
+	case "in", "out":
+		f.Direction = direction
+	}
+	switch kind := r.URL.Query().Get("kind"); kind {
+	case "equipment", "labor", "quantity", "fixed", "manual", "transfer":
+		f.Kind = kind
 	}
 	return f
 }
@@ -68,8 +87,12 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f := entryFilterFromQuery(r, year.ID)
-	rows, total, sum, err := s.store.FilterEntries(r.Context(), f)
+	f := bookingFilterFromQuery(r, year.ID)
+	if r.URL.Query().Get("export") == "csv" {
+		s.handleBookingListExport(w, r, year, f)
+		return
+	}
+	rows, total, sum, err := s.store.FilterBookings(r.Context(), f)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -79,7 +102,7 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	units, err := s.store.EntryUnitsInYear(r.Context(), year.ID)
+	units, err := s.store.BookingUnitsInYear(r.Context(), year.ID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -88,7 +111,9 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 	// photo-bearing booking per pager click to decorate 50 rows.
 	pageIDs := make([]int64, 0, len(rows))
 	for _, e := range rows {
-		pageIDs = append(pageIDs, e.ID)
+		if !e.IsLedger() {
+			pageIDs = append(pageIDs, e.ID)
+		}
 	}
 	photoCounts, err := s.store.PhotoCountsForEntries(r.Context(), pageIDs)
 	if err != nil {
@@ -110,6 +135,7 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 	data["Neighbors"] = neighbors
 	data["Units"] = units
 	data["PhotoCounts"] = photoCounts
+	data["HasEntryRows"] = len(pageIDs) > 0
 	data["Completed"] = year.Completed()
 	data["Page"] = page
 	data["Pages"] = pages
@@ -122,11 +148,13 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 	data["SortDateURL"] = entryListURL(r, year.ID, 1, "date")
 	data["SortCostURL"] = entryListURL(r, year.ID, 1, "cost")
 	data["SortNeighborURL"] = entryListURL(r, year.ID, 1, "neighbor")
+	data["ExportURL"] = entryListURL(r, year.ID, 1, "") + "&export=csv"
 	data["Filter"] = map[string]string{
 		"from": r.URL.Query().Get("from"), "to": r.URL.Query().Get("to"),
 		"task": f.Task, "unit": f.Unit, "voided": f.Voided,
 		"neighbor_id": r.URL.Query().Get("neighbor_id"),
 		"sort":        f.Sort, "dir": r.URL.Query().Get("dir"),
+		"direction": f.Direction, "kind": f.Kind,
 	}
 	data["ReturnTo"] = r.URL.RequestURI()
 	s.render(w, r, "entries", data)
@@ -136,7 +164,7 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 // key it toggles the direction when that column is already the active one.
 func entryListURL(r *http.Request, yearID int64, page int, sort string) string {
 	q := url.Values{}
-	for _, k := range []string{"from", "to", "task", "unit", "voided", "neighbor_id", "sort", "dir"} {
+	for _, k := range []string{"from", "to", "task", "unit", "voided", "neighbor_id", "sort", "dir", "direction", "kind"} {
 		if v := strings.TrimSpace(r.URL.Query().Get(k)); v != "" {
 			q.Set(k, v)
 		}
@@ -154,6 +182,50 @@ func entryListURL(r *http.Request, yearID int64, page int, sort string) string {
 		q.Set("page", strconv.Itoa(page))
 	}
 	return "/buchungen?" + q.Encode()
+}
+
+// handleBookingListExport exports exactly the current filter across both data
+// sources, with signed amounts, explicit status, and no UI pagination limit.
+func (s *Server) handleBookingListExport(w http.ResponseWriter, r *http.Request, year *models.BillingYear, f store.BookingFilter) {
+	rows, err := s.store.ExportBookings(r.Context(), f)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	cw, finish := csvDownload(w, r, fmt.Sprintf("treckrr_buchungen_%d.csv", year.Year))
+	defer finish()
+	if err := cw.Write([]string{"Quelle", "ID", "Nachbar", "Datum", "Richtung", "Art", "Tätigkeit",
+		"Einheit", "Menge", "Satz/Einheit (€)", "Betrag (€)", "Status", "Details",
+		"Partnergerät", "Person", "Zusätzliche Mannstunden", "Zusätzlicher Personensatz (€/h)"}); err != nil {
+		return
+	}
+	total := decimal.Zero
+	for _, row := range rows {
+		status, detail := "aktiv", row.Note
+		var partner, person, personHours, personRate string
+		if row.Voided {
+			status = "storniert"
+		} else {
+			total = total.Add(row.Cost)
+		}
+		if row.Booking != nil {
+			detail = row.Booking.Summary()
+			partner, person = row.Booking.PartnerLabel, row.Booking.PartnerPerson
+			if row.Booking.PersonHours.IsPositive() {
+				personHours = strings.Replace(row.Booking.PersonHours.String(), ".", ",", 1)
+				personRate = strings.Replace(row.Booking.PersonRate.String(), ".", ",", 1)
+			}
+		}
+		if err := cw.Write([]string{row.Source, itoa64(row.ID), csvSafe(row.NeighborName), web.Date(row.Date),
+			row.DirectionLabel(), row.KindLabel(), csvSafe(row.TaskLabel), csvSafe(row.Unit),
+			strings.Replace(row.Quantity.String(), ".", ",", 1), strings.Replace(row.UnitPrice.String(), ".", ",", 1),
+			deDecimal(row.Cost), status, csvSafe(detail), csvSafe(partner), csvSafe(person), personHours, personRate}); err != nil {
+			return
+		}
+	}
+	if err := cw.Write([]string{"", "", "", "", "", "", "", "", "", "Summe ohne Storno", deDecimal(total), "", "", "", "", "", ""}); err != nil {
+		return
+	}
 }
 
 // formIDs reads the checked ids of a bulk form, capped so one request cannot
@@ -281,6 +353,13 @@ func (s *Server) handleLedgerCopy(w http.ResponseWriter, r *http.Request) {
 	data["Ledger"] = e
 	data["IsCredit"] = e.Amount.IsNegative()
 	data["AbsAmount"] = e.Amount.Abs()
+	if e.Booking != nil {
+		data["BookingKind"] = e.Booking.Kind
+		data["BookingDirection"] = "out"
+		if e.Amount.IsNegative() {
+			data["BookingDirection"] = "in"
+		}
+	}
 	data["Copy"] = true
 	s.render(w, r, "ledger_edit", data)
 }

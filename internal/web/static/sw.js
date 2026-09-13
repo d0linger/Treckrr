@@ -5,7 +5,10 @@ const CACHE = "treckrr-__CACHE_VERSION__";
 const SHELL = [
 	"/static/css/app.css",
 	"/static/js/app.js",
+	"/static/js/form-ux.js",
 	"/static/js/entry-form.js",
+	"/static/js/unified-booking.js",
+	"/static/js/ledger-booking.js",
 	"/static/js/offline.js",
 	"/static/js/capture.js",
 	"/static/icons/favicon.svg",

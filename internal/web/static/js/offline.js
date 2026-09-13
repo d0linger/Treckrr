@@ -232,10 +232,16 @@
 			e.preventDefault();
 			e.stopImmediatePropagation();
 			releaseSubmitLock(form);
-			var data = {};
-			new FormData(form).forEach(function (v, key) { if (key !== "csrf_token") data[String(key)] = v; });
-			var id = data.idempotency_key || uuid();
-			put({ id: id, data: data, user: currentUser() }).then(function () {
+			// A manual rig can contain several machine_ids. Preserve EVERY successful
+			// control, just as the browser's online POST does; an object loses all but
+			// the last machine. Legacy object-shaped items remain replayable above.
+			var pairs = [];
+			new FormData(form).forEach(function (v, key) {
+				if (key !== "csrf_token") pairs.push([String(key), String(v)]);
+			});
+			var data = { __pairs: pairs };
+			var id = queuedField(data, "idempotency_key") || uuid();
+			put({ id: id, data: data, user: currentUser(), path: "/entries" }).then(function () {
 				var kf = form.querySelector('[name="idempotency_key"]');
 				if (kf) kf.value = uuid();
 				refreshBadge();
@@ -288,10 +294,26 @@
 	var list = document.querySelector("[data-offline-list]");
 	var badgeEl = document.querySelector("[data-offline-badge]");
 	var panelLastFocus = null;
+	/** Reads a scalar field without changing either historical queue format. */
+	function queuedField(data, name) {
+		if (!data.__pairs) return data[name] || "";
+		var pair = data.__pairs.find(function (p) { return p[0] === name; });
+		return pair ? pair[1] : "";
+	}
+	/** Identifies a batch by its endpoint, not by the shared lossless data format. */
+	function isQuickBatch(item) { return item.path === "/entries/quick"; }
 	var editableFields = {
 		entry_date: "Datum", task_label: "Tätigkeit", hours: "Stunden", unit: "Einheit",
 		quantity: "Menge", unit_price: "Einzelpreis", note: "Notiz",
 		gespann_id: "Gespann-ID", person_id: "Person-ID (leer = ohne Helfer)",
+		booking_kind: "Leistungsart (equipment, labor, quantity, fixed)",
+		booking_direction: "Richtung (out = eigene Leistung, in = Gegenleistung)",
+		person_hours: "Helferstunden (leer = wie Maschinenstunden)", person_rate: "Helfer-Stundensatz",
+		partner_label: "Fremdgerät / Gespann", partner_rate: "Fremdgerät-Stundensatz",
+		partner_person: "Person der Gegenleistung", partner_person_rate: "Stundensatz der Gegenleistung",
+		partner_person_hours: "Mannstunden der Gegenleistung (leer = wie Maschinenstunden)",
+		amount: "Betrag", unit_custom: "Eigene Einheit",
+		tractor_id: "Traktor-ID", load_level_id: "Belastungs-ID", machine_ids: "Maschinen-ID",
 		q_date: "Datum", q_hours: "Stunden", q_gespann: "Gespann-ID", q_person: "Person-ID (leer = ohne Helfer)"
 	};
 	function correctionEditor(item, pairs) {
@@ -311,7 +333,7 @@
 			counts[key] = (counts[key] || 0) + 1;
 			var label = document.createElement("label"), text = document.createElement("span"), input = document.createElement("input");
 			label.className = "field";
-			text.textContent = (item.data.__pairs ? "Zeile " + counts[key] + " · " : "") + editableFields[key];
+			text.textContent = (isQuickBatch(item) ? "Zeile " + counts[key] + " · " : "") + editableFields[key];
 			input.className = "input";
 			input.type = "text";
 			input.value = pair[1];
@@ -350,7 +372,7 @@
 		var title = document.createElement("strong");
 		var sub = document.createElement("span");
 		sub.className = "muted small";
-		if (d.__pairs) {
+		if (isQuickBatch(item)) {
 			// A quick-entry submit: several rows in one item, so it is described
 			// by how many rows it carries rather than by one booking's fields.
 			var rows = d.__pairs.filter(function (p) {
@@ -360,9 +382,17 @@
 			var firstDate = d.__pairs.find(function (p) { return p[0] === "q_date"; });
 			sub.textContent = firstDate ? firstDate[1] : "ohne Datum";
 		} else {
-			var qty = d.unit && d.unit !== "h" ? (d.quantity || "?") + " " + d.unit : (d.hours || "?") + " h";
-			title.textContent = (d.task_label || "Buchung") + " · " + qty;
-			sub.textContent = (d.entry_date || "ohne Datum") + (d.note ? " · " + d.note : "");
+			var value = function (name) { return queuedField(d, name); };
+			var kind = value("booking_kind"), unit = value("unit");
+			var kindLabels = { equipment: "Maschinen / Gespann", labor: "Mannstunden", quantity: "Mengenleistung", fixed: "Freie Position" };
+			var qty = kind === "fixed" ? (value("amount") || "?") + " €" :
+				unit && unit !== "h" ? (value("quantity") || "?") + " " + (unit === "__custom" ? value("unit_custom") : unit) :
+				(value("hours") || "?") + " h";
+			title.textContent = (value("task_label") || kindLabels[kind] || "Buchung") + " · " + qty;
+			var direction = value("booking_direction");
+			var directionLabel = direction === "in" ? "Gegenleistung · Ich schulde" : direction === "out" ? "Eigene Leistung · Nachbar schuldet" : "";
+			sub.textContent = (value("entry_date") || "ohne Datum") + (directionLabel ? " · " + directionLabel : "") +
+				(value("note") ? " · " + value("note") : "");
 		}
 		meta.appendChild(title);
 		meta.appendChild(sub);

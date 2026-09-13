@@ -48,9 +48,10 @@
 	</div>
 
 	<div class="btnrow">
-		<a class="btn btn--ghost btn--sm" href="/rechnungsjournal/archiv.zip?year={{.Year.ID}}">Belegarchiv (ZIP: alle PDFs + Journal)</a>
-		<a class="btn btn--ghost btn--sm" href="/rechnungsjournal/rechnungen.pdf?year={{.Year.ID}}" target="_blank" rel="noopener">Sammel-PDF (alle Rechnungen)</a>
+		<a class="btn btn--ghost btn--sm" href="/rechnungsjournal/archiv.zip?year={{.Year.ID}}">Belegarchiv (ZIP)</a>
+		<a class="btn btn--ghost btn--sm" href="/rechnungsjournal/rechnungen.pdf?year={{.Year.ID}}" target="_blank" rel="noopener">Alle Rechnungen (PDF)</a>
 	</div>
+	<p class="muted small">Das ZIP enthält alle Beleg-PDFs und das Journal.</p>
 
 	{{if .UVAPeriods}}
 	<h2 class="section-title">{{if .ShowUVA}}UVA-Grundlage je Monat{{else}}Summen je Monat{{end}}</h2>

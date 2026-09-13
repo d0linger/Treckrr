@@ -72,14 +72,17 @@
 			<div class="form__grid">
 				<label class="field"><span>Gültig ab (Jahr)</span>
 					<input class="input" type="number" name="year" value="{{if .NextYear}}{{.NextYear}}{{end}}" required></label>
-				<label class="field"><span>Name (optional)</span>
-					<input class="input" name="name" placeholder="Bemessungsgrundlage"></label>
-			</div>
 			<label class="field"><span>Werte übernehmen von</span>
 				<select class="select" name="source_base_id">
 					<option value="">— leer starten —</option>
 					{{range .Bases}}<option value="{{.ID}}">{{.Year}} — {{.Name}}</option>{{end}}
 				</select></label>
+			</div>
+			<details class="disclosure form-details">
+				<summary>Name hinzufügen <span class="muted small">optional</span></summary>
+				<label class="field"><span>Name</span>
+					<input class="input" name="name" placeholder="Bemessungsgrundlage"></label>
+			</details>
 			<button class="btn btn--primary" type="submit">Anlegen</button>
 		</form>
 	</details>

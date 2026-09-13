@@ -8,7 +8,7 @@
 	<p class="muted">Fixe Gespanne = Traktor + Belastungsstufe + Maschinen. Bei einer Buchung
 		genügt dann die Auswahl des Gespanns.</p>
 
-	<div class="list">
+	<div class="list list--onecol">
 		{{range .Views}}
 		<details class="card disclosure disclosure--row">
 			<summary>
@@ -35,6 +35,7 @@
 				<input type="hidden" name="id" value="{{.Gespann.ID}}">
 				<label class="field"><span>Name</span>
 					<input class="input" name="name" value="{{.Gespann.Name}}" required></label>
+				<div class="form__grid form__grid--two">
 				<label class="field"><span>Traktor</span>
 					<select class="select" name="tractor_id">
 						<option value="">— keiner —</option>
@@ -50,11 +51,15 @@
 							<option value="{{.ID}}" {{if and $g.LoadLevelID (eq .ID (deref $g.LoadLevelID))}}selected{{end}}>{{.Name}}</option>
 						{{end}}
 					</select></label>
+				</div>
 				<fieldset class="fieldset"><legend>Maschinen</legend>
 					{{template "machine-checks" (dict "Machines" $.Machines "Selected" .Gespann.MachineIDs)}}
 				</fieldset>
-				<label class="field"><span>Reihenfolge</span>
-					<input class="input" type="number" name="sort_order" value="{{.Gespann.SortOrder}}"></label>
+				<details class="disclosure form-details">
+					<summary>Sortierung <span class="muted small">Position {{.Gespann.SortOrder}}</span></summary>
+					<label class="field"><span>Reihenfolge</span>
+						<input class="input" type="number" name="sort_order" value="{{.Gespann.SortOrder}}"></label>
+				</details>
 				<div class="form__row"><button class="btn btn--primary btn--sm" type="submit">Speichern</button></div>
 			</form>
 			<form method="post" action="/gespanne/{{.Gespann.ID}}/delete" data-confirm-danger data-confirm="Gespann „{{.Gespann.Name}}“ löschen?">
@@ -79,6 +84,7 @@
 			<input type="hidden" name="base_id" value="{{.Base.ID}}">
 			<label class="field"><span>Name</span>
 				<input class="input" name="name" placeholder="z. B. Mähen" required></label>
+			<div class="form__grid form__grid--two">
 			<label class="field"><span>Traktor</span>
 				<select class="select" name="tractor_id">
 					<option value="">— keiner —</option>
@@ -89,6 +95,7 @@
 					<option value="">— keine —</option>
 					{{range .Loads}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
 				</select></label>
+			</div>
 			<fieldset class="fieldset"><legend>Maschinen</legend>
 				{{template "machine-checks" (dict "Machines" .Machines "Selected" emptyIDs)}}
 			</fieldset>

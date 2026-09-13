@@ -8,7 +8,7 @@
 		(<code>docker compose logs app</code>) protokolliert.</p>
 
 	<form method="get" action="/admin/audit" class="card form">
-		<div class="form__grid">
+		<div class="form__grid form__grid--two">
 			<label class="field"><span>Suche</span>
 				<input class="input" type="search" name="q" value="{{.Q}}" placeholder="Benutzer, Detail, IP …"></label>
 			<label class="field"><span>Aktion</span>
@@ -17,6 +17,10 @@
 					{{$a := .Action}}
 					{{range .Actions}}<option value="{{.}}" {{if eq . $a}}selected{{end}}>{{.}}</option>{{end}}
 				</select></label>
+		</div>
+		<details class="disclosure form-details" {{if or .Username .From .To}}open{{end}}>
+			<summary>Weitere Filter <span class="muted small">Benutzer & Zeitraum</span></summary>
+		<div class="form__grid">
 			<label class="field"><span>Benutzer</span>
 				<select class="select" name="username">
 					<option value="">Alle Benutzer</option>
@@ -28,11 +32,12 @@
 			<label class="field"><span>Bis</span>
 				<input class="input" type="date" name="to" value="{{.To}}"></label>
 		</div>
+		</details>
 		{{/* Werkblatt F3: filtering is a display operation, not the page's action —
 		     secondary green outline; the log itself is the hero. */}}
 		<div class="btnrow">
 			<button class="btn btn--ghost btn--sm" type="submit">Filtern</button>
-			<a class="btn btn--ghost btn--sm" href="/admin/audit/export?export=1{{.FilterQuery}}">CSV Export</a>
+			<a class="btn btn--ghost btn--sm" href="{{printf "/admin/audit/export?export=1%s" .FilterQuery}}">CSV Export</a>
 			<a class="btn btn--ghost btn--sm" href="/admin/audit">Filter zurücksetzen</a>
 		</div>
 	</form>

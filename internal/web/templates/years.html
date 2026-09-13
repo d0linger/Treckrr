@@ -101,14 +101,17 @@
 			<div class="form__grid">
 				<label class="field"><span>Jahr</span>
 					<input class="input" type="number" name="year" value="{{if .NextYear}}{{.NextYear}}{{end}}" required></label>
-				<label class="field"><span>Bezeichnung (optional)</span>
-					<input class="input" type="text" name="label" placeholder="Abrechnung"></label>
-			</div>
 			<label class="field"><span>Bemessungsgrundlage</span>
 				<select class="select" name="base_id" required>
 					<option value="">— wählen —</option>
 					{{range .Bases}}<option value="{{.ID}}">{{.Year}} — {{.Name}}</option>{{end}}
 				</select></label>
+			</div>
+			<details class="disclosure form-details">
+				<summary>Bezeichnung hinzufügen <span class="muted small">optional</span></summary>
+				<label class="field"><span>Bezeichnung</span>
+					<input class="input" type="text" name="label" placeholder="Abrechnung"></label>
+			</details>
 			<button class="btn btn--primary" type="submit">Anlegen</button>
 		</form>
 		{{else}}

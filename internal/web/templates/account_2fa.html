@@ -31,16 +31,17 @@
 				<div class="setup-step__t">Mit einer Authenticator‑App scannen</div>
 				<p class="muted small">z. B. Aegis, FreeOTP oder Google Authenticator.</p>
 				<div class="qrwrap"><img class="qr" src="/account/2fa/qr.png" alt="QR‑Code zum Einrichten" width="220" height="220"></div>
-				<div class="field">
-					<span>Kann nicht scannen? Schlüssel manuell eingeben:</span>
+				<details class="disclosure form-details">
+					<summary>QR-Code nicht scannbar?</summary>
+					<p class="muted small">Diesen Schlüssel in deiner Authenticator-App manuell eingeben:</p>
 					<div class="copyrow">
 						<code class="secretkey" id="totp-secret">{{.Secret}}</code>
 						<button class="btn btn--ghost btn--sm" type="button" data-copy="#totp-secret" aria-label="Schlüssel kopieren">{{template "ic-copy"}} Kopieren</button>
 					</div>
-				</div>
 				<details class="disclosure disclosure--plain">
 					<summary>otpauth‑URL anzeigen</summary>
 					<code class="secretkey small">{{.URI}}</code>
+				</details>
 				</details>
 			</li>
 			<li>

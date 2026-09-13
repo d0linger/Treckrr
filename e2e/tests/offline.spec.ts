@@ -50,6 +50,11 @@ async function queue(page: Page) {
   });
 }
 
+/** Reads a successful control from both historical objects and lossless pairs. */
+function queuedValue(item: any, name: string): string | undefined {
+  return item?.data.__pairs ? item.data.__pairs.find(([key]: string[]) => key === name)?.[1] : item?.data[name];
+}
+
 test.beforeEach(async ({ page }) => {
   page.on("pageerror", error => { throw error; });
   await page.route("**/*", async route => {
@@ -149,12 +154,12 @@ test("a rejected single booking can be corrected without losing its original dat
   await page.getByText("Buchungsdaten korrigieren", { exact: true }).click();
   await page.getByLabel("Person-ID (leer = ohne Helfer)", { exact: true }).fill("55");
   await page.getByRole("button", { name: "Korrektur speichern", exact: true }).click();
-  await expect.poll(async () => (await queue(page))[0]?.data.person_id).toBe("55");
+  await expect.poll(async () => queuedValue((await queue(page))[0], "person_id")).toBe("55");
   const corrected = (await queue(page))[0];
   expect(corrected.originalData).toEqual(original.data);
-  expect(corrected.data.idempotency_key).toBe(original.data.idempotency_key);
-  expect(corrected.data.neighbor_id).toBe(original.data.neighbor_id);
-  expect(corrected.data.year_id).toBe(original.data.year_id);
+  expect(queuedValue(corrected, "idempotency_key")).toBe(queuedValue(original, "idempotency_key"));
+  expect(queuedValue(corrected, "neighbor_id")).toBe(queuedValue(original, "neighbor_id"));
+  expect(queuedValue(corrected, "year_id")).toBe(queuedValue(original, "year_id"));
   await page.reload();
   expect(submissions).toHaveLength(1); // Saving/reloading never silently retries an edit.
   await page.locator("[data-offline-badge]").click();
@@ -211,8 +216,8 @@ test("offline capture coordinates all submit handlers and releases the save butt
   await expect.poll(async () => (await queue(page)).length).toBe(2);
   await expect(save).toBeEnabled();
   const items = await queue(page);
-  expect(new Set(items.map(item => item.data.idempotency_key)).size).toBe(2);
-  expect(items.every(item => item.user === "7" && item.data.person_id === "44")).toBe(true);
+  expect(new Set(items.map(item => queuedValue(item, "idempotency_key"))).size).toBe(2);
+  expect(items.every(item => item.user === "7" && queuedValue(item, "person_id") === "44")).toBe(true);
   expect(prechecks).toBe(0);
 });
 

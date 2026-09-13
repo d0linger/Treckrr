@@ -35,15 +35,18 @@ func (s *Store) CreateRecurring(ctx context.Context, sourceEntryID, neighborID i
 		return err
 	}
 	var companionPersonID int64
+	companionHours, companionRate := "0", "0"
 	if t.Companion != nil {
 		companionPersonID = t.Companion.PersonID
+		companionHours, companionRate = t.Companion.Hours.String(), t.Companion.Rate.String()
 	}
 	// Recheck and lock the source and selected companion through insertion.
 	// Ascending IDs match DeleteEntryPair, avoiding a source/companion deadlock.
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, voided FROM entries
-		 WHERE id=$1 OR (linked_entry_id=$1 AND person_id=$2 AND unit_price > 0)
-		 ORDER BY id FOR SHARE`, sourceEntryID, companionPersonID)
+		 WHERE id=$1 OR (linked_entry_id=$1 AND person_id=$2 AND unit_price=$4::numeric
+		                AND ($3::numeric=0 OR quantity=$3::numeric))
+		 ORDER BY id FOR SHARE`, sourceEntryID, companionPersonID, companionHours, companionRate)
 	if err != nil {
 		return err
 	}
@@ -311,12 +314,16 @@ func companionEntry(c *models.RecurCompanion, e *models.Entry) *models.Entry {
 		return nil
 	}
 	personID := c.PersonID
+	hours := c.Hours
+	if !hours.IsPositive() {
+		hours = e.Hours // Existing JSON templates intentionally retain same-hours behavior.
+	}
 	return &models.Entry{
 		NeighborID: e.NeighborID, BillingYearID: e.BillingYearID, Date: e.Date,
 		TaskLabel: "Mannstunden " + c.Name,
 		Unit:      models.UnitMannstunde,
-		Quantity:  e.Hours, UnitPrice: c.Rate,
-		Cost:     e.Hours.Mul(c.Rate).Round(2),
+		Quantity:  hours, UnitPrice: c.Rate,
+		Cost:     hours.Mul(c.Rate).Round(2),
 		PersonID: &personID,
 		// Derived from the occurrence's own key, so a re-run no-ops on both
 		// halves exactly as it does for a replayed offline pair.

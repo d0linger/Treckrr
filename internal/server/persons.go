@@ -20,10 +20,9 @@ import (
 // comes from the Personenstamm resp. the Betriebsdaten instead of being
 // retyped, correctly, on every booking.
 //
-// They deliberately do NOT extend the main booking form. That form carries
-// three stacked submit handlers and a pricing fetch; each of these gets its own
-// small form on the neighbor page instead, which is also where the operator
-// looks for them.
+// The unified booking form also routes own labor through the ordinary-entry
+// model. These legacy endpoints remain available for existing callers and the
+// dedicated travel surcharge; they do not reinterpret supplier counterclaims.
 
 const (
 	// Shared with the store, which books the same unit for a series' companion.

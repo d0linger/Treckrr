@@ -4,6 +4,7 @@
 
 	var form = document.querySelector("[data-entry-form]");
 	if (!form) return;
+	var unified = form.treckrrBooking || null;
 
 	var round2 = function (n) { return Math.round(n * 100) / 100; };
 	var fmt = function (n) {
@@ -49,6 +50,51 @@
 	function currentMode() {
 		var checked = form.querySelector("[data-mode-toggle]:checked");
 		return checked ? checked.value : "gespann";
+	}
+
+	// One visible choice drives the original successful controls. Keeping their
+	// names and change events intact preserves capture, offline and POST contracts.
+	var billingSelect = null;
+	if (!unified && unitEl && unitEl.tagName === "SELECT" && form.querySelector("[data-mode-toggle]")) {
+		var unitField = unitEl.closest(".field");
+		var modeGroup = form.querySelector("[data-mode-toggle]").closest(".segmented");
+		if (unitField && modeGroup) {
+			var billingField = document.createElement("label");
+			billingField.className = "field";
+			var billingLabel = document.createElement("span");
+			billingLabel.textContent = "Abrechnung";
+			billingSelect = document.createElement("select");
+			billingSelect.className = "select";
+			billingSelect.setAttribute("data-billing-select", "");
+			billingSelect.add(new Option("Stunden · fixes Gespann", "h:gespann"));
+			billingSelect.add(new Option("Stunden · freie Zusammenstellung", "h:manual"));
+			Array.from(unitEl.options).forEach(function (option) {
+				if (option.value !== "h") billingSelect.add(new Option(option.textContent, option.value));
+			});
+			billingField.append(billingLabel, billingSelect);
+			unitField.before(billingField);
+			unitField.hidden = true;
+			modeGroup.hidden = true;
+			billingSelect.addEventListener("change", function () {
+				var parts = billingSelect.value.split(":");
+				unitEl.value = parts[0];
+				if (parts[1]) {
+					var mode = form.querySelector('[data-mode-toggle][value="' + parts[1] + '"]');
+					mode.checked = true;
+					mode.dispatchEvent(new Event("change", { bubbles: true }));
+				}
+				unitEl.dispatchEvent(new Event("change", { bubbles: true }));
+			});
+		}
+	}
+
+	/** Reflects canonical billing controls and makes any additional person charge visible. */
+	function syncBillingChoice() {
+		if (unified) { unified.update(); return; }
+		if (billingSelect) billingSelect.value = isHours() ? "h:" + currentMode() : unitEl.value;
+		var person = form.querySelector('select[name="person_id"]');
+		var summary = form.querySelector("[data-person-details] > summary .small");
+		if (person && summary) summary.textContent = person.value ? person.selectedOptions[0].textContent : "optional";
 	}
 
 	function machineRates(ids) {
@@ -102,15 +148,18 @@
 	}
 
 	function update() {
+		if (unified && !unified.standard()) { unified.update(); return; }
 		if (!isHours()) {
 			var q = decVal(qtyEl), p = decVal(unitPriceEl);
 			if (qtyCostEl) qtyCostEl.textContent = (q > 0 && p > 0) ? fmt(round2(q * p)) : "–";
 			if (noTractorNote) noTractorNote.hidden = true;
+			if (unified) unified.update();
 			return;
 		}
 		var sel = resolveSelection();
 		if (noTractorNote) noTractorNote.hidden = !(sel && sel.hasTractor === false);
 		if (!sel) {
+			if (unified) unified.update(null, null);
 			rateEl.textContent = "–";
 			costEl.textContent = "–";
 			return;
@@ -119,9 +168,11 @@
 		rateEl.textContent = fmt(rate) + " / h";
 		var hours = parseFloat((hoursEl.value || "0").replace(",", "."));
 		costEl.textContent = hours > 0 ? fmt(round2(hours * rate)) : "–";
+		if (unified) unified.update(hours > 0 ? round2(hours * rate) : null, rate);
 	}
 
 	function applyMode() {
+		if (unified) { unified.refreshVisibility(); update(); return; }
 		var mode = currentMode();
 		if (panels.gespann) panels.gespann.hidden = mode !== "gespann";
 		if (panels.manual) panels.manual.hidden = mode !== "manual";
@@ -131,6 +182,7 @@
 	// Toggle the hour path (rig + rate) vs the quantity path (menge × unit price)
 	// based on the chosen unit; hidden fields are barred from HTML validation.
 	function applyUnit() {
+		if (unified) { unified.refreshVisibility(); update(); return; }
 		if (unitCustomWrap) unitCustomWrap.hidden = !(unitEl && unitEl.value === "__custom");
 		var hours = isHours();
 		if (hOnly) hOnly.hidden = !hours;
@@ -159,13 +211,19 @@
 		if (e.target.matches("[data-mode-toggle]")) applyMode();
 		else if (e.target.matches("[data-unit], [data-unit-custom-input]")) applyUnit();
 		else update();
+		syncBillingChoice();
 	});
+	form.addEventListener("reset", function () {
+		setTimeout(function () { applyMode(); applyUnit(); syncBillingChoice(); }, 0);
+	});
+	window.addEventListener("pageshow", syncBillingChoice);
+	syncBillingChoice();
 
 	var previews = form.querySelectorAll("[data-rate-preview]");
 	function setLoading(on) { for (var i = 0; i < previews.length; i++) previews[i].classList.toggle("is-loading", on); }
 	setLoading(true);
 	fetch(form.getAttribute("data-pricing-url"), { credentials: "same-origin" })
-		.then(function (r) { return r.json(); })
+		.then(function (r) { if (!r.ok) throw new Error("pricing"); return r.json(); })
 		.then(function (data) {
 			pricing = {
 				tractors: data.tractors || [],
@@ -175,13 +233,17 @@
 			};
 			applyMode();
 		})
-		.catch(function () { /* preview stays inert; server still calculates */ })
+		.catch(function () {
+			var status = form.querySelector("[data-pricing-status]");
+			if (status) { status.hidden = false; status.textContent = "Maschinenpreis-Vorschau nicht verfügbar. Beim Speichern wird der Preis aus der Grundlage berechnet."; }
+		})
 		.then(function () { setLoading(false); });
 
 	// Pre-save guard: warn (never block) on implausible hours or a same-day
 	// duplicate of the same task. Keeps the form intact — a cancelled confirm just
 	// stays on the page. requestSubmit() re-fires this handler with the flag set.
 	form.addEventListener("submit", function (e) {
+		if (unified && !unified.standard()) return;
 		if (form.dataset.checked === "1") return;              // re-submit after the precheck → let it through
 		if (form.dataset.checking === "1") { e.preventDefault(); return; } // a precheck is already in flight
 		var q = form.querySelector('[name="year_id"]'), n = form.querySelector('[name="neighbor_id"]');

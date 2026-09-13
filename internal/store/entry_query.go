@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shopspring/decimal"
-
 	"github.com/d0linger/treckrr/internal/models"
 )
 
@@ -90,76 +88,6 @@ func entryFilterOrder(sort string, desc bool) string {
 type EntryRow struct {
 	models.Entry
 	NeighborName string
-}
-
-// FilterEntries returns one page of bookings plus the total number of matches
-// (for the pager) and the summed cost of ALL matches — not just the page, so
-// the total under a filter means what it says.
-func (s *Store) FilterEntries(ctx context.Context, f EntryFilter) ([]EntryRow, int, decimal.Decimal, error) {
-	where, args := entryFilterWhere(f)
-
-	var total int
-	var sum decimal.Decimal
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT count(*), COALESCE(SUM(CASE WHEN e.voided THEN 0 ELSE e.cost END), 0)
-		   FROM entries e JOIN neighbors n ON n.id = e.neighbor_id`+where,
-		args...).Scan(&total, &sum); err != nil {
-		return nil, 0, sum, err
-	}
-
-	limit := f.Limit
-	if limit <= 0 || limit > 500 {
-		limit = 50
-	}
-	args = append(args, limit, f.Offset)
-	// Every fragment concatenated here is generated, never user text: `where`
-	// holds only "$n" placeholders (entryFilterWhere passes the values as args),
-	// entryFilterOrder returns one of three constants, and the LIMIT/OFFSET
-	// placeholders are numbers derived from len(args).
-	// entryColsE derives from entryCols (entries.go): a new entry column now
-	// reaches this query automatically instead of being the third hand-edit.
-	// #nosec G202 -- columns and ordering are trusted; filter and pagination values are bound parameters.
-	q := `SELECT ` + entryColsE + `, n.name
-		FROM entries e JOIN neighbors n ON n.id = e.neighbor_id` + where +
-		entryFilterOrder(f.Sort, f.Desc) +
-		" LIMIT $" + strconv.Itoa(len(args)-1) + " OFFSET $" + strconv.Itoa(len(args))
-
-	rows, err := s.db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, 0, sum, err
-	}
-	defer rows.Close()
-	var out []EntryRow
-	for rows.Next() {
-		var r EntryRow
-		e, err := scanEntryWithName(rows, &r.NeighborName)
-		if err != nil {
-			return nil, 0, sum, err
-		}
-		r.Entry = e
-		out = append(out, r)
-	}
-	return out, total, sum, rows.Err()
-}
-
-// EntryUnitsInYear lists the units actually used in a year, for the filter's
-// dropdown — offering units nobody booked would be noise.
-func (s *Store) EntryUnitsInYear(ctx context.Context, yearID int64) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT unit FROM entries WHERE billing_year_id=$1 AND unit <> '' ORDER BY unit`, yearID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var u string
-		if err := rows.Scan(&u); err != nil {
-			return nil, err
-		}
-		out = append(out, u)
-	}
-	return out, rows.Err()
 }
 
 // ---- Sammelaktionen (Ausbaukarte 64) ---------------------------------------
