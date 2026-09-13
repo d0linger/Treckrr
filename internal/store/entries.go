@@ -902,26 +902,13 @@ func (s *Store) SetEntryVoided(ctx context.Context, id int64, voided bool, reaso
 	return tx.Commit()
 }
 
-// entryCols is THE entry column list — scanEntryInto knows its order, and
-// FilterEntries derives its e.-prefixed twin from it (entryColsE), so a new
-// column cannot silently miss one of the query sites again (person_id and
-// linked_entry_id each had to be added in three places).
+// entryCols is the entry column list, in scanEntry's destination order.
 const entryCols = `id, neighbor_id, billing_year_id, entry_date, task_label, gespann_id,
 	tractor_id, load_level_id, tractor_label, load_label, machine_labels,
 	hours, hourly_rate, cost, note, voided, void_reason, created_at,
 	unit, quantity, unit_price, person_id, linked_entry_id, request_fingerprint`
 
 const entrySelect = `SELECT ` + entryCols + ` FROM entries`
-
-// entryColsE is entryCols with every column e.-prefixed, for queries that join
-// (unqualified id/name would be ambiguous there).
-var entryColsE = func() string {
-	parts := strings.Split(entryCols, ",")
-	for i := range parts {
-		parts[i] = "e." + strings.TrimSpace(parts[i])
-	}
-	return strings.Join(parts, ", ")
-}()
 
 func collectEntries(rows *sql.Rows) ([]models.Entry, error) {
 	var out []models.Entry
@@ -935,20 +922,8 @@ func collectEntries(rows *sql.Rows) ([]models.Entry, error) {
 	return out, rows.Err()
 }
 
-// scanEntryWithName reads an entry row that carries the neighbor's name as its
-// last column (the filtered list joins it in). It shares scanEntry's column
-// order so the two can only drift together.
-func scanEntryWithName(sc scanner, name *string) (models.Entry, error) {
-	return scanEntryInto(sc, name)
-}
-
+// scanEntry reads an entry using entrySelect's column order.
 func scanEntry(sc scanner) (models.Entry, error) {
-	return scanEntryInto(sc, nil)
-}
-
-// scanEntryInto is the one place that knows entrySelect's column order. With a
-// non-nil name it additionally reads the joined neighbor name.
-func scanEntryInto(sc scanner, name *string) (models.Entry, error) {
 	var (
 		e           models.Entry
 		gespann     sql.NullInt64
@@ -963,9 +938,6 @@ func scanEntryInto(sc scanner, name *string) (models.Entry, error) {
 		&tractor, &load, &e.TractorLabel, &e.LoadLabel, &e.MachineLabels,
 		&e.Hours, &e.HourlyRate, &e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created,
 		&e.Unit, &e.Quantity, &e.UnitPrice, &person, &linked, &fingerprint}
-	if name != nil {
-		dest = append(dest, name)
-	}
 	if err := sc.Scan(dest...); err != nil {
 		return e, err
 	}
