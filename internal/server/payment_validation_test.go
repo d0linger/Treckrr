@@ -66,6 +66,8 @@ func (r *mockPaymentRows) Columns() []string {
 		return []string{"anonymized"}
 	case strings.Contains(r.query, "SELECT EXISTS"):
 		return []string{"exists"}
+	case strings.Contains(r.query, "FROM payments"):
+		return []string{"id", "billing_year_id", "neighbor_id", "amount", "paid_on", "note", "method", "invoice_id", "number", "created_at"}
 	default:
 		return []string{"id"}
 	}
@@ -85,6 +87,17 @@ func (r *mockPaymentRows) Next(dest []driver.Value) error {
 		dest[0] = false
 	case strings.Contains(r.query, "SELECT EXISTS"):
 		dest[0] = true // NeighborInYear membership exists
+	case strings.Contains(r.query, "FROM payments"):
+		dest[0] = int64(1)
+		dest[1] = int64(1)
+		dest[2] = int64(1)
+		dest[3] = "100.00"
+		dest[4] = time.Now()
+		dest[5] = "note"
+		dest[6] = "bar"
+		dest[7] = nil
+		dest[8] = ""
+		dest[9] = time.Now()
 	default:
 		dest[0] = int64(1)
 	}
@@ -219,6 +232,61 @@ func TestHandlePaymentAddValidation(t *testing.T) {
 		flashCookie := flashText(t, s, rr)
 		if !strings.Contains(flashCookie, "Zahlung erfasst.") {
 			t.Errorf("expected success flash message, got cookie: %q", flashCookie)
+		}
+	})
+}
+
+func TestHandlePaymentUpdateValidation(t *testing.T) {
+	s := testPaymentServer(t)
+
+	t.Run("overly long paid_on in update rejected", func(t *testing.T) {
+		longDate := strings.Repeat("2026-01-01", 5) + "X" // 51 chars
+		form := url.Values{}
+		form.Set("amount", "100.00")
+		form.Set("paid_on", longDate)
+		form.Set("note", "Valid Note")
+
+		req := httptest.NewRequest(http.MethodPost, "/payments/1", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("id", "1")
+		rr := httptest.NewRecorder()
+
+		s.handlePaymentUpdate(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Datum darf höchstens 50 Zeichen lang sein.") {
+			t.Errorf("expected long date flash message, got cookie: %q", flashCookie)
+		}
+	})
+}
+
+func TestHandleInstallmentAddValidation(t *testing.T) {
+	s := testPaymentServer(t)
+
+	t.Run("overly long due_on in installment rejected", func(t *testing.T) {
+		longDate := strings.Repeat("2026-01-01", 5) + "X" // 51 chars
+		form := url.Values{}
+		form.Set("year_id", "1")
+		form.Set("amount", "100.00")
+		form.Set("due_on", longDate)
+		form.Set("note", "Valid Note")
+
+		req := httptest.NewRequest(http.MethodPost, "/neighbors/1/installments", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("id", "1")
+		rr := httptest.NewRecorder()
+
+		s.handleInstallmentAdd(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Datum darf höchstens 50 Zeichen lang sein.") {
+			t.Errorf("expected long date flash message, got cookie: %q", flashCookie)
 		}
 	})
 }

@@ -339,6 +339,10 @@ func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
+	if s.tooLong(w, r, "Datum", r.FormValue("paid_on"), 50) {
+		redirect(w, r, back)
+		return
+	}
 	note := strings.TrimSpace(r.FormValue("note"))
 	if s.tooLong(w, r, "Notiz", note, maxNoteLen) {
 		redirect(w, r, back)
@@ -417,6 +421,10 @@ func (s *Server) handleInstallmentAdd(w http.ResponseWriter, r *http.Request) {
 	amount, okAmount := parseGermanDecimalOK(r.FormValue("amount"))
 	if !okAmount || !amount.IsPositive() {
 		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
+		redirect(w, r, back)
+		return
+	}
+	if s.tooLong(w, r, "Datum", r.FormValue("due_on"), 50) {
 		redirect(w, r, back)
 		return
 	}
