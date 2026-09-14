@@ -851,6 +851,7 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .auth__card { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 1.2rem; }
 .auth__brand { text-align: center; display: flex; flex-direction: column; align-items: center; gap: .3rem; }
 .auth__brand img { margin-bottom: .3rem; }
+.auth__motion { margin-top: .75rem; font-size: .7rem; color: var(--muted); }
 
 /* ---- Bottom tab bar --------------------------------------------------- */
 .tabbar {
