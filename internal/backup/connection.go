@@ -19,25 +19,30 @@ func dbURLEnv(dsn string) (string, []string, error) {
 	password, present := os.LookupEnv("PGPASSWORD")
 	var clean string
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
-		u, err := url.Parse(dsn)
+		u, err := parseDatabaseURI(dsn)
 		if err != nil {
-			return "", nil, errors.New("invalid backup database URL")
+			return "", nil, err
 		}
-		if u.User != nil {
-			if pw, ok := u.User.Password(); ok {
+		if user, rawPassword, ok := strings.Cut(u.userinfo, ":"); ok {
+			pw, err := url.PathUnescape(strings.Trim(rawPassword, " "))
+			if err != nil {
+				return "", nil, errors.New("invalid backup database URL password")
+			}
+			// Empty userinfo passwords are omitted by libpq and pgx.
+			if rawPassword != "" {
 				password, present = pw, true
 			}
-			u.User = url.User(u.User.Username())
+			u.userinfo = user
 		}
-		q, err := url.ParseQuery(u.RawQuery)
-		if err != nil {
-			return "", nil, errors.New("invalid backup database URL query")
+		params := make([]databaseURIParam, 0, len(u.params))
+		for _, param := range u.params {
+			if param.key == "password" {
+				password, present = param.value, true
+				continue
+			}
+			params = append(params, param)
 		}
-		if values, ok := q["password"]; ok {
-			password, present = values[len(values)-1], true
-			q.Del("password")
-		}
-		u.RawQuery = q.Encode()
+		u.params = params
 		clean = u.String()
 	} else {
 		var pw string
@@ -61,6 +66,90 @@ func dbURLEnv(dsn string) (string, []string, error) {
 		env = append(env, "PGPASSWORD="+password)
 	}
 	return clean, env, nil
+}
+
+// databaseURI preserves libpq URI bytes while changing selected fields. Unlike
+// net/url, libpq treats '+' and '#' as ordinary data and accepts multiple hosts.
+type databaseURI struct {
+	scheme   string
+	userinfo string
+	hasUser  bool
+	hosts    string
+	path     string
+	params   []databaseURIParam
+}
+
+type databaseURIParam struct {
+	raw   string
+	key   string
+	value string
+}
+
+// parseDatabaseURI validates with pgx and retains raw components for edits
+// that must not change libpq's credential or connection-option semantics.
+func parseDatabaseURI(dsn string) (databaseURI, error) {
+	u := databaseURI{params: []databaseURIParam{}}
+	if _, err := pgconn.ParseConfig(dsn); err != nil {
+		return u, errors.New("invalid backup database connection configuration")
+	}
+	scheme, rest, ok := strings.Cut(dsn, "://")
+	if !ok || (scheme != "postgres" && scheme != "postgresql") {
+		return u, errors.New("invalid backup database URL")
+	}
+	u.scheme = scheme
+	// libpq finds the first @ before a /, including a ? inside userinfo.
+	if i := strings.IndexAny(rest, "@/"); i >= 0 && rest[i] == '@' {
+		u.userinfo, u.hasUser = rest[:i], true
+		rest = rest[i+1:]
+	}
+	end := 0
+	for end < len(rest) && rest[end] != '/' && rest[end] != '?' {
+		hostStart := end == 0 || rest[end-1] == ','
+		if hostStart && rest[end] == '[' {
+			close := strings.IndexByte(rest[end:], ']')
+			if close < 0 {
+				return u, errors.New("invalid backup database URL host")
+			}
+			end += close
+		}
+		end++
+	}
+	u.hosts = rest[:end]
+	path, query, _ := strings.Cut(rest[end:], "?")
+	u.path = path
+	for query != "" {
+		pair, tail, _ := strings.Cut(query, "&")
+		query = tail
+		rawKey, rawValue, _ := strings.Cut(pair, "=")
+		key, err := url.PathUnescape(strings.Trim(rawKey, " "))
+		if err != nil {
+			return u, errors.New("invalid backup database URL query")
+		}
+		value, err := url.PathUnescape(strings.Trim(rawValue, " "))
+		if err != nil {
+			return u, errors.New("invalid backup database URL query")
+		}
+		u.params = append(u.params, databaseURIParam{raw: pair, key: key, value: value})
+	}
+	return u, nil
+}
+
+// String rejoins the retained URI bytes without form-style query encoding.
+func (u databaseURI) String() string {
+	var out strings.Builder
+	out.WriteString(u.scheme + "://")
+	if u.hasUser {
+		out.WriteString(u.userinfo + "@")
+	}
+	out.WriteString(u.hosts + u.path)
+	for i, param := range u.params {
+		separator := "&"
+		if i == 0 {
+			separator = "?"
+		}
+		out.WriteString(separator + param.raw)
+	}
+	return out.String()
 }
 
 func dsnSpace(c byte) bool {

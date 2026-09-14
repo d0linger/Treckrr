@@ -3,7 +3,9 @@ import { createHash } from "node:crypto";
 
 /** Pins the worksheet, theme and clock so movement cannot be confused with a reload or random layout. */
 async function openWorksheet(page: Page, sheet = "graph", theme = "light", stalled = false) {
-  await page.clock.install({ time: new Date("2026-09-14T00:00:02Z") });
+  // The installed clock runs between protocol calls. Start before the pause
+  // target so a busy runner cannot make pauseAt try to travel backwards.
+  await page.clock.install({ time: new Date("2026-09-13T23:00:02Z") });
   await page.clock.pauseAt(new Date("2026-09-14T00:00:02Z"));
   await page.addInitScript(({ sheet, theme, stalled }) => {
     localStorage.setItem("treckrr-loginbg", sheet);

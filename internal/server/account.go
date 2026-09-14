@@ -47,6 +47,22 @@ func (s *Server) sensitiveReset(r *http.Request, userID int64) {
 	s.logins.reset(r.Context(), acctLimitKey(userID))
 }
 
+// passwordTooLong rejects values that exceed bcrypt's byte limit before
+// consuming an admission attempt. Character-count validation is insufficient
+// for multibyte passwords; existing passwords need no new complexity check.
+func (s *Server) passwordTooLong(w http.ResponseWriter, r *http.Request, password string) bool {
+	if len(password) <= 72 {
+		return false
+	}
+	s.setFlash(
+		w,
+		r,
+		"error",
+		"Passwort darf höchstens 72 Byte lang sein.",
+	)
+	return true
+}
+
 // ---- Forced / voluntary password change ---------------------------------
 
 func (s *Server) handleAccountPasswordForm(w http.ResponseWriter, r *http.Request) {
@@ -61,8 +77,12 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
-	user := userFromCtx(r)
 	current := r.FormValue("current_password")
+	if s.passwordTooLong(w, r, current) {
+		redirect(w, r, "/account/password")
+		return
+	}
+	user := userFromCtx(r)
 	next := r.FormValue("new_password")
 
 	if next != r.FormValue("new_password_confirm") {
@@ -172,6 +192,20 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
+	if s.passwordTooLong(w, r, r.FormValue("password")) {
+		redirect(w, r, "/account/2fa")
+		return
+	}
+	if s.tooLong(
+		w,
+		r,
+		"Code",
+		r.FormValue("code"),
+		maxNameLen,
+	) {
+		redirect(w, r, "/account/2fa")
+		return
+	}
 	user := userFromCtx(r)
 	secret, err := s.store.GetTotpSecret(r.Context(), user.ID)
 	if err != nil || secret == "" {
@@ -204,6 +238,10 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleRecoveryRegenerate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if s.passwordTooLong(w, r, r.FormValue("password")) {
+		redirect(w, r, "/account/2fa")
 		return
 	}
 	user := userFromCtx(r)
@@ -252,6 +290,10 @@ func (s *Server) issueAndShowRecoveryCodes(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if s.passwordTooLong(w, r, r.FormValue("password")) {
+		redirect(w, r, "/account/2fa")
 		return
 	}
 	user := userFromCtx(r)

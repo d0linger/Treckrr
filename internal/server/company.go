@@ -34,6 +34,27 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
+	// The decimal parser is already bounded; reject oversized values explicitly
+	// rather than silently replacing saved settings with its invalid-input zero.
+	for _, field := range []struct{ name, label string }{
+		{name: "dunning_fee_1", label: "Mahnspesen 1. Stufe"},
+		{name: "dunning_fee_2", label: "Mahnspesen 2. Stufe"},
+		{name: "vat_rate", label: "USt-Satz"},
+		{name: "travel_flat", label: "Anfahrt pauschal"},
+		{name: "travel_per_km", label: "Anfahrt je km"},
+		{name: "small_business_limit", label: "Kleinunternehmergrenze"},
+	} {
+		if s.tooLong(
+			w,
+			r,
+			field.label,
+			r.FormValue(field.name),
+			maxDecimalLen,
+		) {
+			redirect(w, r, "/admin/company")
+			return
+		}
+	}
 	c := models.Company{
 		Name:    trimmed(r, "name"),
 		Address: trimmed(r, "address"),

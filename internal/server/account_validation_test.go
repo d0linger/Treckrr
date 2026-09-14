@@ -101,10 +101,12 @@ func init() {
 }
 
 func testAccountServer(t *testing.T) *Server {
+	t.Helper()
 	db, err := sql.Open("mock_account", "")
 	if err != nil {
 		t.Fatalf("failed to open mock db: %v", err)
 	}
+	t.Cleanup(func() { _ = db.Close() })
 	st := store.New(db, "test-encryption-key-at-least-32-bytes!!")
 	cfg := &config.Config{
 		SessionSecret: "test-session-secret-at-least-16-bytes",
