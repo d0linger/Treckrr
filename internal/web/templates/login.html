@@ -59,6 +59,8 @@
 		</div>
 		{{end}}
 	</div>
+	<button id="login-bg-toggle" type="button" class="btn btn--ghost auth__motion" aria-controls="login-bg"
+		data-pause-label="Hintergrund pausieren" data-resume-label="Hintergrund fortsetzen" hidden>Hintergrund pausieren</button>
 </div>
 {{end}}
 {{define "scripts"}}<script src="/static/js/passkey.js?v={{.AssetVersion}}" defer></script>

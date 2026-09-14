@@ -66,6 +66,12 @@ func (r *mockPaymentRows) Columns() []string {
 		return []string{"anonymized"}
 	case strings.Contains(r.query, "SELECT EXISTS"):
 		return []string{"exists"}
+	case strings.Contains(r.query, "SELECT billing_year_id, neighbor_id FROM payments"):
+		return []string{"billing_year_id", "neighbor_id"}
+	case strings.Contains(r.query, "SELECT billing_year_id, neighbor_id, amount"):
+		return []string{"billing_year_id", "neighbor_id", "amount", "paid_on", "method", "deleted_at"}
+	case strings.Contains(r.query, "FROM payments"):
+		return []string{"id", "billing_year_id", "neighbor_id", "amount", "paid_on", "note", "method", "invoice_id", "number", "created_at"}
 	default:
 		return []string{"id"}
 	}
@@ -85,6 +91,32 @@ func (r *mockPaymentRows) Next(dest []driver.Value) error {
 		dest[0] = false
 	case strings.Contains(r.query, "SELECT EXISTS"):
 		dest[0] = true // NeighborInYear membership exists
+	case strings.Contains(r.query, "SELECT billing_year_id, neighbor_id FROM payments"):
+		copy(dest, []driver.Value{int64(1), int64(1)})
+	case strings.Contains(r.query, "SELECT billing_year_id, neighbor_id, amount"):
+		date := time.Date(
+			2026,
+			time.March,
+			30,
+			0,
+			0,
+			0,
+			0,
+			time.UTC,
+		)
+		copy(dest, []driver.Value{int64(1), int64(1), "100.00", date, "bar", nil})
+	case strings.Contains(r.query, "FROM payments"):
+		date := time.Date(
+			2026,
+			time.March,
+			30,
+			0,
+			0,
+			0,
+			0,
+			time.UTC,
+		)
+		copy(dest, []driver.Value{int64(1), int64(1), int64(1), "100.00", date, "note", "bar", nil, "", date})
 	default:
 		dest[0] = int64(1)
 	}
@@ -96,10 +128,12 @@ func init() {
 }
 
 func testPaymentServer(t *testing.T) *Server {
+	t.Helper()
 	db, err := sql.Open("mock_payment", "")
 	if err != nil {
 		t.Fatalf("failed to open mock db: %v", err)
 	}
+	t.Cleanup(func() { _ = db.Close() })
 	st := store.New(db, "test-encryption-key-at-least-32-bytes!!")
 	cfg := &config.Config{
 		SessionSecret: "test-session-secret-at-least-16-bytes",

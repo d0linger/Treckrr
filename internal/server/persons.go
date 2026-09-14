@@ -242,6 +242,25 @@ func (s *Server) handleMannstundenAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := neighborURL(neighborID, yearID)
+	for _, field := range []struct {
+		name, label string
+		limit       int
+	}{
+		{name: "entry_date", label: "Datum", limit: 50},
+		{name: "hours", label: "Stunden", limit: maxDecimalLen},
+		{name: "hourly_rate", label: "Stundensatz", limit: maxDecimalLen},
+	} {
+		if s.tooLong(
+			w,
+			r,
+			field.label,
+			r.FormValue(field.name),
+			field.limit,
+		) {
+			redirect(w, r, back)
+			return
+		}
+	}
 	personID := formInt64(r, "person_id")
 	person, err := s.store.GetPerson(r.Context(), personID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -304,6 +323,24 @@ func (s *Server) handleAnfahrtAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := neighborURL(neighborID, yearID)
+	for _, field := range []struct {
+		name, label string
+		limit       int
+	}{
+		{name: "entry_date", label: "Datum", limit: 50},
+		{name: "km", label: "Kilometer", limit: maxDecimalLen},
+	} {
+		if s.tooLong(
+			w,
+			r,
+			field.label,
+			r.FormValue(field.name),
+			field.limit,
+		) {
+			redirect(w, r, back)
+			return
+		}
+	}
 	company, err := s.store.GetCompany(r.Context())
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)

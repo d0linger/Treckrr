@@ -1,81 +1,122 @@
 package db
 
-import "testing"
+import (
+	"reflect"
+	"testing"
 
-// TestWithTimeouts pins the DSN rewriting: the guards must be added when absent,
-// an operator's own values must win, and anything unparseable must pass through
-// untouched — a hardening default may never stop a working deployment booting.
+	"github.com/jackc/pgx/v5"
+)
+
+// Timeout defaults apply to both DSN forms without overriding an operator.
 func TestWithTimeouts(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want []string // substrings that must be present
-		same bool     // must be returned unchanged
+	tests := []struct {
+		name      string
+		dsn       string
+		statement string
+		idle      string
+		wantErr   bool
 	}{
+		{name: "plain URL", dsn: "postgres://db:5432/treckrr?sslmode=disable", statement: "30s", idle: "60s"},
+		{name: "operator timeout", dsn: "postgres://db/treckrr?statement_timeout=5s", statement: "5s", idle: "60s"},
+		{name: "postgresql scheme", dsn: "postgresql://db/treckrr", statement: "30s", idle: "60s"},
+		{name: "keyword defaults", dsn: "host=db user=treckrr dbname=treckrr", statement: "30s", idle: "60s"},
+		{name: "keyword timeout", dsn: "host=db user=treckrr statement_timeout=5s", statement: "5s", idle: "60s"},
 		{
-			name: "adds both guards to a plain URL DSN",
-			in:   "postgres://db:5432/treckrr?sslmode=disable",
-			want: []string{"statement_timeout=30s", "idle_in_transaction_session_timeout=60s", "sslmode=disable"},
+			name:      "zero disables guards",
+			dsn:       "postgres://db/treckrr?statement_timeout=0&idle_in_transaction_session_timeout=0",
+			statement: "0",
+			idle:      "0",
 		},
-		{
-			name: "keeps an operator's own statement_timeout",
-			in:   "postgres://db:5432/treckrr?statement_timeout=5s",
-			want: []string{"statement_timeout=5s"},
-		},
-		{
-			name: "postgresql:// scheme is handled too",
-			in:   "postgresql://db:5432/treckrr",
-			want: []string{"statement_timeout=30s"},
-		},
-		{
-			name: "keyword/value DSN gets both defaults",
-			in:   "host=db user=treckrr dbname=treckrr sslmode=disable",
-			want: []string{
-				"host=db", "user=treckrr", "sslmode=disable",
-				"statement_timeout=30s", "idle_in_transaction_session_timeout=60s",
-			},
-		},
-		{
-			name: "keyword/value DSN keeps an operator's own value",
-			in:   "host=db user=treckrr statement_timeout=5s",
-			want: []string{"statement_timeout=5s", "idle_in_transaction_session_timeout=60s"},
-		},
-		{
-			// Unparseable by either route: pass it through rather than mangling a
-			// DSN the driver might still accept.
-			name: "garbage passes through untouched",
-			in:   "=not a dsn=",
-			same: true,
-		},
-		{
-			name: "unknown scheme passes through untouched",
-			in:   "mysql://db:3306/treckrr",
-			same: true,
-		},
+		{name: "malformed keyword", dsn: "=not a dsn=", wantErr: true},
+		{name: "unknown scheme", dsn: "mysql://db:3306/treckrr", wantErr: true},
+		{name: "malformed query escape", dsn: "postgres://u@db/treckrr?application_name=%zz", wantErr: true},
+		{name: "NUL query value", dsn: "postgres://u@db/treckrr?application_name=%00", wantErr: true},
 	}
-	for _, c := range cases {
-		got := withTimeouts(c.in)
-		if c.same {
-			if got != c.in {
-				t.Errorf("%s: withTimeouts(%q) = %q, want it unchanged", c.name, c.in, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := withTimeouts(tt.dsn)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("connection error present = %v, want %v", err != nil, tt.wantErr)
 			}
-			continue
-		}
-		for _, w := range c.want {
-			if !contains(got, w) {
-				t.Errorf("%s: withTimeouts(%q) = %q, missing %q", c.name, c.in, got, w)
+			if err != nil {
+				return
 			}
-		}
+			if got.RuntimeParams["statement_timeout"] != tt.statement {
+				t.Errorf("statement timeout = %q, want %q", got.RuntimeParams["statement_timeout"], tt.statement)
+			}
+			if got.RuntimeParams["idle_in_transaction_session_timeout"] != tt.idle {
+				t.Errorf("idle timeout = %q, want %q", got.RuntimeParams["idle_in_transaction_session_timeout"], tt.idle)
+			}
+		})
 	}
 }
 
-func contains(haystack, needle string) bool {
-	return len(haystack) >= len(needle) && (func() bool {
-		for i := 0; i+len(needle) <= len(haystack); i++ {
-			if haystack[i:i+len(needle)] == needle {
-				return true
+// TestWithTimeoutsPreservesConnectionConfig checks timeout injection against
+// pgx's unmodified interpretation of the operator's connection string.
+func TestWithTimeoutsPreservesConnectionConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		dsn  string
+	}{
+		{name: "query spaces", dsn: "postgres://u@db/treckrr?password=a%20b&application_name=one%20two"},
+		{name: "query plus", dsn: "postgres://u@db/treckrr?password=a+b&application_name=one+two"},
+		{name: "encoded plus", dsn: "postgres://u@db/treckrr?password=a%2Bb"},
+		{name: "query punctuation", dsn: "postgres://u@db/treckrr?password=a#b&application_name=x;y"},
+		{
+			name: "last duplicate wins",
+			dsn:  "postgres://u@db/treckrr?password=first&password=last&statement_timeout=5s&statement_timeout=9s",
+		},
+		{
+			name: "empty final timeout gets default",
+			dsn:  "postgres://u@db/treckrr?statement_timeout=5s&statement_timeout=",
+		},
+		{name: "multiple hosts", dsn: "postgres://u:p@db,replica:5433/treckrr?application_name=one%20two"},
+		{
+			name: "driver options",
+			dsn:  "postgres://u@db/treckrr?default_query_exec_mode=simple_protocol&statement_cache_capacity=0",
+		},
+		{
+			name: "quoted keyword options",
+			dsn:  "host=db user=u password='a b+c' options='-c work_mem=32MB' statement_timeout=5s",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original, err := pgx.ParseConfig(tt.dsn)
+			if err != nil {
+				t.Fatal("connection configuration rejected")
 			}
-		}
-		return false
-	})()
+			got, err := withTimeouts(tt.dsn)
+			if err != nil {
+				t.Fatal("connection configuration rejected")
+			}
+			if got.Host != original.Host || got.Port != original.Port || got.Database != original.Database {
+				t.Fatal("connection target changed")
+			}
+			if got.User != original.User || got.Password != original.Password {
+				t.Fatal("connection credentials changed")
+			}
+			if got.DefaultQueryExecMode != original.DefaultQueryExecMode ||
+				got.StatementCacheCapacity != original.StatementCacheCapacity {
+				t.Fatal("driver options changed")
+			}
+			for key, fallback := range map[string]string{
+				"statement_timeout":                   "30s",
+				"idle_in_transaction_session_timeout": "60s",
+			} {
+				want := original.RuntimeParams[key]
+				if want == "" {
+					want = fallback
+				}
+				if got.RuntimeParams[key] != want {
+					t.Errorf("%s = %q, want %q", key, got.RuntimeParams[key], want)
+				}
+				delete(got.RuntimeParams, key)
+				delete(original.RuntimeParams, key)
+			}
+			if !reflect.DeepEqual(got.RuntimeParams, original.RuntimeParams) {
+				t.Fatal("unrelated runtime parameters changed")
+			}
+		})
+	}
 }
