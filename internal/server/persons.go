@@ -242,6 +242,12 @@ func (s *Server) handleMannstundenAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := neighborURL(neighborID, yearID)
+	if s.tooLong(w, r, "Datum", r.FormValue("entry_date"), 50) ||
+		s.tooLong(w, r, "Stunden", r.FormValue("hours"), maxDecimalLen) ||
+		s.tooLong(w, r, "Stundensatz", r.FormValue("hourly_rate"), maxDecimalLen) {
+		redirect(w, r, back)
+		return
+	}
 	personID := formInt64(r, "person_id")
 	person, err := s.store.GetPerson(r.Context(), personID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -304,6 +310,11 @@ func (s *Server) handleAnfahrtAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := neighborURL(neighborID, yearID)
+	if s.tooLong(w, r, "Datum", r.FormValue("entry_date"), 50) ||
+		s.tooLong(w, r, "Kilometer", r.FormValue("km"), maxDecimalLen) {
+		redirect(w, r, back)
+		return
+	}
 	company, err := s.store.GetCompany(r.Context())
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
