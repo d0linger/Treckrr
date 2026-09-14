@@ -4,7 +4,7 @@
  * with Treckrr's full 16-machine icon set — the same glyphs the appbar picks
  * from — each drawn at most once (no repeats), scattered across the whole sheet
  * like a field of favicons. A travelling light band highlights each column as
- * it sweeps across the sheet, with drawing capped at 25 frames per second.
+ * it sweeps across the sheet for five seconds, capped at 25 frames per second.
  *
  * One of two sheets is selected using the reload/session rule below and reused
  * across ordinary navigation: "graph" (fine engineering grid, green ink, a small
@@ -208,6 +208,7 @@
 	// must not silently freeze this backdrop. Other app motion remains unchanged.
 	var W = 0, H = 0, items = [], pal = palette(), phase = Date.now() / 1000;
 	var running = false, raf = 0, watchdog = 0, fallback = 0, lastRaf = 0, lastPaint = 0;
+	var stopTimer = 0, stopAt = 0; // One monotonic five-second window; lifecycle events never reset it.
 
 	/** Rebuilds the bitmap and deterministic layout, starting only after a nonzero canvas is available. */
 	function resize() {
@@ -229,35 +230,41 @@
 	/** Caps foreground painting and retires the fallback immediately when real frames resume. */
 	function frame() {
 		if (!running) return;
-		if (document.hidden) { stop(); return; }
+		if (document.hidden || performance.now() >= stopAt) { stop(); return; }
 		if (fallback) { clearInterval(fallback); fallback = 0; }
 		lastRaf = Date.now();
 		if (lastRaf - lastPaint >= 40) paint();
 		raf = requestAnimationFrame(frame);
 	}
-	/** Starts one loop, with a bounded timer fallback for visible Windows/RDP sessions whose rAF stalls. */
+	/** Starts only within the initial five-second window, recovering visible Windows/RDP rAF stalls. */
 	function start() {
 		if (running || document.hidden || !W || !H) return;
+		var now = performance.now();
+		if (!stopAt) stopAt = now + 5000;
+		if (now >= stopAt) return;
 		running = true;
+		stopTimer = setTimeout(stop, stopAt - now);
 		lastRaf = Date.now();
 		paint();
 		raf = requestAnimationFrame(frame);
 		watchdog = setInterval(function () {
-			if (document.hidden) { stop(); return; }
+			if (document.hidden || performance.now() >= stopAt) { stop(); return; }
 			if (Date.now() - lastRaf > 800 && !fallback) {
 				fallback = setInterval(function () {
-					if (running && !document.hidden) paint();
+					if (document.hidden || performance.now() >= stopAt) { stop(); return; }
+					if (running) paint();
 				}, 40);
 			}
 		}, 500);
 	}
-	/** Releases every animation timer while hidden, detached from the viewport or leaving the page. */
+	/** Releases every animation timer on expiry, while hidden, or when leaving the viewport/page. */
 	function stop() {
 		running = false;
 		if (raf) cancelAnimationFrame(raf);
 		if (watchdog) clearInterval(watchdog);
 		if (fallback) clearInterval(fallback);
-		raf = watchdog = fallback = 0;
+		if (stopTimer) clearTimeout(stopTimer);
+		raf = watchdog = fallback = stopTimer = 0;
 	}
 	/** Repaints an initialized login canvas with current theme tokens while preserving its layout and phase. */
 	function retheme() { pal = palette(); if (W) draw(W, H, phase, pal, items); }
