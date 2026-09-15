@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -67,5 +68,26 @@ func TestVerifyPending2FA_OversizedToken(t *testing.T) {
 	}
 	if _, ok := s.verifyPending2FA(over); ok {
 		t.Fatal("an otherwise-valid oversized pending-2FA token must be rejected by the length cap")
+	}
+}
+
+func TestHandleInvoiceIssue_OversizedIssuedOn(t *testing.T) {
+	s := testNeighborServer(t)
+
+	form := strings.NewReader("year_id=1&issued_on=" + strings.Repeat("2025-01-01-", 10))
+	req := httptest.NewRequest("POST", "/neighbors/1/invoice", form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", "1")
+
+	rr := httptest.NewRecorder()
+	s.handleInvoiceIssue(rr, req)
+
+	if rr.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", rr.Code)
+	}
+
+	flashCookie := flashText(t, s, rr)
+	if !strings.Contains(flashCookie, "Rechnungsdatum darf höchstens 50 Zeichen lang sein.") {
+		t.Fatalf("expected over-limit flash message, got: %s", flashCookie)
 	}
 }

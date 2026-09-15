@@ -75,6 +75,9 @@ func (r *mockNeighborRows) Columns() []string {
 	if strings.Contains(r.query, "SELECT EXISTS") {
 		return []string{"exists"}
 	}
+	if strings.Contains(r.query, "FROM billing_years") {
+		return []string{"y_id", "y_year", "y_base_id", "y_label", "y_status", "y_created_at", "b_id", "b_year", "b_name", "b_locked", "b_created_at"}
+	}
 	// GetNeighbor columns: id, name, note, archived, created_at
 	return []string{"id", "name", "note", "archived", "created_at"}
 }
@@ -90,6 +93,18 @@ func (r *mockNeighborRows) Next(dest []driver.Value) error {
 		dest[0] = int64(123)
 	} else if strings.Contains(r.query, "SELECT EXISTS") {
 		dest[0] = true // a similar entry "exists" → handler builds the warn with the task
+	} else if strings.Contains(r.query, "FROM billing_years") {
+		dest[0] = int64(1)
+		dest[1] = 2025
+		dest[2] = int64(1)
+		dest[3] = "2025"
+		dest[4] = "open"
+		dest[5] = time.Now()
+		dest[6] = int64(1)
+		dest[7] = 2025
+		dest[8] = "Base 2025"
+		dest[9] = false
+		dest[10] = time.Now()
 	} else {
 		// GetNeighbor expectation
 		dest[0] = int64(456)

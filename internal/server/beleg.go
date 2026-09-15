@@ -970,6 +970,10 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 	if !s.requireOpenYear(w, r, yearID, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)) {
 		return
 	}
+	if s.tooLong(w, r, "Rechnungsdatum", r.FormValue("issued_on"), 50) {
+		redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
+		return
+	}
 	// A formal Rechnung needs a sender: don't fix an invoice number against empty
 	// Betriebsdaten — send the user to fill them in first.
 	company, err := s.store.GetCompany(r.Context())
