@@ -1085,7 +1085,7 @@ func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	note := trimmed(r, "note")
-	if s.tooLong(w, r, "Grund", note, maxNoteLen) {
+	if s.tooLong(w, r, "Grund", note, maxNoteLen) || s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) {
 		redirect(w, r, back)
 		return
 	}

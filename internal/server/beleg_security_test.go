@@ -6,6 +6,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -68,4 +71,33 @@ func TestVerifyPending2FA_OversizedToken(t *testing.T) {
 	if _, ok := s.verifyPending2FA(over); ok {
 		t.Fatal("an otherwise-valid oversized pending-2FA token must be rejected by the length cap")
 	}
+}
+
+func TestHandleInvoiceGutschriftValidation(t *testing.T) {
+	s := testPaymentServer(t)
+
+	t.Run("overly long amount rejected", func(t *testing.T) {
+		longAmount := strings.Repeat("1", maxDecimalLen+1)
+		form := url.Values{}
+		form.Set("year_id", "1")
+		form.Set("amount", longAmount)
+		form.Set("note", "Valid Note")
+
+		req := httptest.NewRequest(http.MethodPost, "/neighbors/1/gutschrift", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		_ = req.ParseForm()
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("id", "1")
+		rr := httptest.NewRecorder()
+
+		s.handleInvoiceGutschrift(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Betrag darf höchstens 32 Zeichen lang sein.") {
+			t.Errorf("expected long amount flash message, got cookie: %q", flashCookie)
+		}
+	})
 }
