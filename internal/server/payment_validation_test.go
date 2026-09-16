@@ -66,6 +66,11 @@ func (r *mockPaymentRows) Columns() []string {
 		return []string{"anonymized"}
 	case strings.Contains(r.query, "SELECT EXISTS"):
 		return []string{"exists"}
+	case strings.Contains(r.query, "FROM billing_years"):
+		return []string{
+			"id", "year", "base_id", "label", "status", "created_at",
+			"b_id", "b_year", "b_name", "b_locked", "b_created_at",
+		}
 	default:
 		return []string{"id"}
 	}
@@ -85,6 +90,19 @@ func (r *mockPaymentRows) Next(dest []driver.Value) error {
 		dest[0] = false
 	case strings.Contains(r.query, "SELECT EXISTS"):
 		dest[0] = true // NeighborInYear membership exists
+	case strings.Contains(r.query, "FROM billing_years"):
+		now := time.Now()
+		dest[0] = int64(1) // y.id
+		dest[1] = 2026     // y.year
+		dest[2] = int64(1) // y.base_id
+		dest[3] = "2026"   // y.label
+		dest[4] = "open"   // y.status
+		dest[5] = now      // y.created_at
+		dest[6] = int64(1) // b.id
+		dest[7] = 2026     // b.year
+		dest[8] = "Basis"  // b.name
+		dest[9] = false    // b.locked
+		dest[10] = now     // b.created_at
 	default:
 		dest[0] = int64(1)
 	}
