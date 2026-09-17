@@ -344,6 +344,10 @@ func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
+	if s.tooLong(w, r, "Datum", r.FormValue("paid_on"), 50) {
+		redirect(w, r, back)
+		return
+	}
 	updated, err := s.store.UpdatePayment(r.Context(), id, amount, parsePaidOn(r.FormValue("paid_on")), note, paymentMethod(r))
 	if err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
@@ -422,6 +426,10 @@ func (s *Server) handleInstallmentAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	note := strings.TrimSpace(r.FormValue("note"))
 	if s.tooLong(w, r, "Notiz", note, maxNoteLen) {
+		redirect(w, r, back)
+		return
+	}
+	if s.tooLong(w, r, "Fällig am", r.FormValue("due_on"), 50) {
 		redirect(w, r, back)
 		return
 	}

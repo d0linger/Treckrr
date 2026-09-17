@@ -338,7 +338,7 @@ func (s *Server) handleAnzahlungCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	label := trimmed(r, "label")
-	if s.tooLong(w, r, "Bezeichnung", label, maxNameLen) || s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) {
+	if s.tooLong(w, r, "Bezeichnung", label, maxNameLen) || s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) || s.tooLong(w, r, "Fällig am", r.FormValue("due_on"), 50) {
 		redirect(w, r, back)
 		return
 	}
