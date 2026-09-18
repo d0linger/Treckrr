@@ -95,7 +95,8 @@ func (s *Server) handleLoadLevelSave(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, pricesURL(baseID))
 		return
 	}
-	if s.tooLong(w, r, "Name", name, maxNameLen) {
+	if s.tooLong(w, r, "Name", name, maxNameLen) ||
+		s.tooLong(w, r, "Kosten je PS", r.FormValue("cost_per_ps"), maxDecimalLen) {
 		redirect(w, r, pricesURL(baseID))
 		return
 	}
@@ -153,18 +154,16 @@ func (s *Server) handleTractorSave(w http.ResponseWriter, r *http.Request) {
 	id := formInt64(r, "id")
 	ident := trimmed(r, "ident")
 	name := trimmed(r, "name")
-	ps := formDecimal(r, "ps")
 	sortOrder := formInt(r, "sort_order")
+	if s.tooLong(w, r, "Bezeichnung", ident, maxNameLen) ||
+		s.tooLong(w, r, "Name", name, maxNameLen) ||
+		s.tooLong(w, r, "PS", r.FormValue("ps"), maxDecimalLen) {
+		redirect(w, r, pricesURL(baseID))
+		return
+	}
+	ps := formDecimal(r, "ps")
 	if ident == "" || !ps.IsPositive() {
 		s.setFlash(w, r, "error", "Bezeichnung und PS (> 0) sind erforderlich.")
-		redirect(w, r, pricesURL(baseID))
-		return
-	}
-	if s.tooLong(w, r, "Bezeichnung", ident, maxNameLen) {
-		redirect(w, r, pricesURL(baseID))
-		return
-	}
-	if s.tooLong(w, r, "Name", name, maxNameLen) {
 		redirect(w, r, pricesURL(baseID))
 		return
 	}
@@ -251,20 +250,20 @@ func (s *Server) handleMachineSave(w http.ResponseWriter, r *http.Request) {
 	}
 	id := formInt64(r, "id")
 	name := trimmed(r, "name")
-	width := formDecimal(r, "working_width")
-	cost := formDecimal(r, "cost_per_ab")
 	category := trimmed(r, "category")
 	sortOrder := formInt(r, "sort_order")
+	if s.tooLong(w, r, "Name", name, maxNameLen) ||
+		s.tooLong(w, r, "Kategorie", category, maxNameLen) ||
+		s.tooLong(w, r, "Arbeitsbreite", r.FormValue("working_width"), maxDecimalLen) ||
+		s.tooLong(w, r, "Kosten", r.FormValue("cost_per_ab"), maxDecimalLen) ||
+		s.tooLong(w, r, "Selbstkosten", r.FormValue("self_cost_per_h"), maxDecimalLen) {
+		redirect(w, r, pricesURL(baseID))
+		return
+	}
+	width := formDecimal(r, "working_width")
+	cost := formDecimal(r, "cost_per_ab")
 	if name == "" || !width.IsPositive() {
 		s.setFlash(w, r, "error", "Name und Arbeitsbreite (> 0) sind erforderlich.")
-		redirect(w, r, pricesURL(baseID))
-		return
-	}
-	if s.tooLong(w, r, "Name", name, maxNameLen) {
-		redirect(w, r, pricesURL(baseID))
-		return
-	}
-	if s.tooLong(w, r, "Kategorie", category, maxNameLen) {
 		redirect(w, r, pricesURL(baseID))
 		return
 	}
