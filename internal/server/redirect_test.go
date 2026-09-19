@@ -88,3 +88,32 @@ func TestSafeReturnPath(t *testing.T) {
 		})
 	}
 }
+
+func TestIsSafeBuchungenReturnPath(t *testing.T) {
+	cases := []struct {
+		name string
+		ret  string
+		want bool
+	}{
+		{name: "empty string", ret: "", want: false},
+		{name: "clean buchungen path", ret: "/buchungen", want: true},
+		{name: "buchungen path with query", ret: "/buchungen?year=1&page=2", want: true},
+		{name: "buchungen path with fragment", ret: "/buchungen#top", want: true},
+		{name: "path traversal open redirect", ret: "/buchungen/../..//attacker.com", want: false},
+		{name: "backslash open redirect", ret: "/buchungen\\attacker.com", want: false},
+		{name: "protocol relative url", ret: "//attacker.com/buchungen", want: false},
+		{name: "absolute url with host", ret: "http://attacker.com/buchungen", want: false},
+		{name: "domain suffix spoofing", ret: "/buchungen.attacker.com", want: false},
+		{name: "other endpoint path", ret: "/buchungen/other", want: false},
+		{name: "javascript URI", ret: "javascript:alert(1)", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isSafeBuchungenReturnPath(tc.ret)
+			if got != tc.want {
+				t.Errorf("isSafeBuchungenReturnPath(%q) = %v, want %v", tc.ret, got, tc.want)
+			}
+		})
+	}
+}

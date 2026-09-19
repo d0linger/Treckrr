@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -258,7 +259,7 @@ func (s *Server) handleEntryBulk(w http.ResponseWriter, r *http.Request) {
 	}
 	yearID := s.yearIDFromForm(r)
 	back := "/buchungen?year=" + itoa64(yearID)
-	if ret := r.FormValue("return_to"); strings.HasPrefix(ret, "/buchungen") {
+	if ret := r.FormValue("return_to"); isSafeBuchungenReturnPath(ret) {
 		back = ret
 	}
 	ids, ok := formIDs(r, "entry_id")
@@ -307,6 +308,20 @@ func (s *Server) handleEntryBulk(w http.ResponseWriter, r *http.Request) {
 		s.setFlash(w, r, "success", fmt.Sprintf("%d Buchung(en) %s.", n, verb))
 	}
 	redirect(w, r, back)
+}
+
+// isSafeBuchungenReturnPath validates that a return_to target is a safe local path
+// targeting /buchungen, preventing open redirects via path traversal, backslashes,
+// or cross-origin scheme/host manipulation.
+func isSafeBuchungenReturnPath(ret string) bool {
+	if ret == "" || strings.HasPrefix(ret, "//") || strings.Contains(ret, "\\") {
+		return false
+	}
+	u, err := url.Parse(ret)
+	if err != nil || u.Scheme != "" || u.Host != "" {
+		return false
+	}
+	return path.Clean(u.Path) == "/buchungen"
 }
 
 // auditReason appends a reason to an audit detail, or nothing.
