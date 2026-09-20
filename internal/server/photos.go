@@ -10,6 +10,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
+
 	// Register decoders for the formats a phone camera produces. Decoding into a
 	// plain image.Image and re-encoding as JPEG drops all EXIF metadata (the
 	// stripping is a side effect of not carrying it through image.Image).
@@ -111,12 +114,45 @@ func (e *photoError) Error() string { return e.msg }
 
 // handleEntryPhotoUpload attaches a re-encoded photo to a booking.
 func (s *Server) handleEntryPhotoUpload(w http.ResponseWriter, r *http.Request) {
+	s.handleBookingPhotoUpload(w, r, false)
+}
+
+// handleLedgerPhotoUpload uses the same decoder and limits for incoming evidence.
+func (s *Server) handleLedgerPhotoUpload(w http.ResponseWriter, r *http.Request) {
+	s.handleBookingPhotoUpload(w, r, true)
+}
+
+// photoBooking resolves a source-qualified booking for shared receipt controls.
+func (s *Server) photoBooking(r *http.Request, id int64, ledger bool) (*models.Entry, error) {
+	if !ledger {
+		return s.store.GetEntry(r.Context(), id)
+	}
+	yearID, neighborID, posting, err := s.store.GetLedgerEntry(r.Context(), id)
+	if err != nil {
+		return nil, err
+	}
+	if posting.Booking == nil || posting.TransferID != "" {
+		return nil, store.ErrNotFound
+	}
+	return &models.Entry{ID: id, NeighborID: neighborID, BillingYearID: yearID}, nil
+}
+
+// photoRoute keeps identical IDs from the two source tables unambiguous.
+func photoRoute(ledger bool, id int64) string {
+	if ledger {
+		return "/ledger/" + itoa64(id)
+	}
+	return "/entries/" + itoa64(id)
+}
+
+// handleBookingPhotoUpload shares image validation for both accounting directions.
+func (s *Server) handleBookingPhotoUpload(w http.ResponseWriter, r *http.Request, ledger bool) {
 	entryID, err := pathID(r)
 	if err != nil {
 		s.notFound(w, r)
 		return
 	}
-	entry, err := s.store.GetEntry(r.Context(), entryID)
+	entry, err := s.photoBooking(r, entryID, ledger)
 	if err != nil {
 		s.notFound(w, r)
 		return
@@ -129,10 +165,11 @@ func (s *Server) handleEntryPhotoUpload(w http.ResponseWriter, r *http.Request) 
 	}
 	if err := r.ParseMultipartForm(maxPhotoUpload); err != nil {
 		s.setFlash(w, r, "error", "Upload zu groß oder ungültig.")
-		redirect(w, r, "/entries/"+itoa64(entryID)+"/edit")
+		redirect(w, r, photoRoute(ledger, entryID)+"/edit")
 		return
 	}
-	back := "/entries/" + itoa64(entryID) + "/edit"
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
+	back := photoRoute(ledger, entryID) + "/edit"
 	// Several files per round-trip (Ausbaukarte 75): a Wiegeschein is rarely a
 	// single page. Each is decoded and stored on its own, so one unreadable
 	// image does not discard the ones that were fine — it is reported instead.
@@ -175,14 +212,18 @@ func (s *Server) handleEntryPhotoUpload(w http.ResponseWriter, r *http.Request) 
 			}
 			continue
 		}
-		if _, err := s.store.AddEntryPhoto(r.Context(), entryID, img, "image/jpeg"); err != nil {
+		addPhoto := s.store.AddEntryPhoto
+		if ledger {
+			addPhoto = s.store.AddLedgerPhoto
+		}
+		if _, err := addPhoto(r.Context(), entryID, img, "image/jpeg"); err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		added++
 	}
 	if added > 0 {
-		s.audit(r, "photo_add", "entry", entryID, fmt.Sprintf("%s · %d Foto(s)", s.neighborName(r, entry.NeighborID), added))
+		s.audit(r, "photo_add", photoAuditSource(ledger), entryID, fmt.Sprintf("%s · %d Foto(s)", s.neighborName(r, entry.NeighborID), added))
 	}
 	over := ""
 	if dropped > 0 {
@@ -206,6 +247,16 @@ func (s *Server) handleEntryPhotoUpload(w http.ResponseWriter, r *http.Request) 
 
 // handleEntryPhotoServe streams a stored photo (scoped to its booking).
 func (s *Server) handleEntryPhotoServe(w http.ResponseWriter, r *http.Request) {
+	s.handleBookingPhotoServe(w, r, false)
+}
+
+// handleLedgerPhotoServe serves incoming evidence within its source namespace.
+func (s *Server) handleLedgerPhotoServe(w http.ResponseWriter, r *http.Request) {
+	s.handleBookingPhotoServe(w, r, true)
+}
+
+// handleBookingPhotoServe retains authenticated no-store caching for evidence.
+func (s *Server) handleBookingPhotoServe(w http.ResponseWriter, r *http.Request, ledger bool) {
 	entryID, err := pathID(r)
 	if err != nil {
 		s.notFound(w, r)
@@ -216,7 +267,11 @@ func (s *Server) handleEntryPhotoServe(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
-	img, ct, err := s.store.GetEntryPhoto(r.Context(), entryID, photoID)
+	getPhoto := s.store.GetEntryPhoto
+	if ledger {
+		getPhoto = s.store.GetLedgerPhoto
+	}
+	img, ct, err := getPhoto(r.Context(), entryID, photoID)
 	if err != nil {
 		s.notFound(w, r)
 		return
@@ -230,6 +285,16 @@ func (s *Server) handleEntryPhotoServe(w http.ResponseWriter, r *http.Request) {
 
 // handleEntryPhotoDelete removes a photo from a booking.
 func (s *Server) handleEntryPhotoDelete(w http.ResponseWriter, r *http.Request) {
+	s.handleBookingPhotoDelete(w, r, false)
+}
+
+// handleLedgerPhotoDelete applies the same immutability rules to incoming photos.
+func (s *Server) handleLedgerPhotoDelete(w http.ResponseWriter, r *http.Request) {
+	s.handleBookingPhotoDelete(w, r, true)
+}
+
+// handleBookingPhotoDelete removes only evidence owned by this source and booking.
+func (s *Server) handleBookingPhotoDelete(w http.ResponseWriter, r *http.Request, ledger bool) {
 	entryID, err := pathID(r)
 	if err != nil {
 		s.notFound(w, r)
@@ -240,7 +305,7 @@ func (s *Server) handleEntryPhotoDelete(w http.ResponseWriter, r *http.Request) 
 		s.notFound(w, r)
 		return
 	}
-	entry, err := s.store.GetEntry(r.Context(), entryID)
+	entry, err := s.photoBooking(r, entryID, ledger)
 	if err != nil {
 		s.notFound(w, r)
 		return
@@ -249,13 +314,25 @@ func (s *Server) handleEntryPhotoDelete(w http.ResponseWriter, r *http.Request) 
 	if !s.entryYearOpen(w, r, entry, "Das Abrechnungsjahr ist abgeschlossen – Belege können nicht mehr geändert werden.") {
 		return
 	}
-	if err := s.store.DeleteEntryPhoto(r.Context(), entryID, photoID); err != nil {
+	deletePhoto := s.store.DeleteEntryPhoto
+	if ledger {
+		deletePhoto = s.store.DeleteLedgerPhoto
+	}
+	if err := deletePhoto(r.Context(), entryID, photoID); err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
-		s.audit(r, "photo_delete", "entry", entryID, s.neighborName(r, entry.NeighborID)+" · Foto entfernt")
+		s.audit(r, "photo_delete", photoAuditSource(ledger), entryID, s.neighborName(r, entry.NeighborID)+" · Foto entfernt")
 		s.setFlash(w, r, "success", "Foto entfernt.")
 	}
-	redirect(w, r, "/entries/"+itoa64(entryID)+"/edit")
+	redirect(w, r, photoRoute(ledger, entryID)+"/edit")
+}
+
+// photoAuditSource distinguishes evidence events from different booking tables.
+func photoAuditSource(ledger bool) string {
+	if ledger {
+		return "ledger"
+	}
+	return "entry"
 }
 
 // maxPhotosPerUpload bounds one multi-file upload. Each photo is decoded and

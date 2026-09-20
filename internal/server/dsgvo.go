@@ -21,6 +21,7 @@ type dsgvoExport struct {
 	ExportedAt         time.Time                       `json:"exported_at"`
 	Notice             string                          `json:"notice"`
 	Subject            dsgvoSubject                    `json:"subject"`
+	Equipment          []models.NeighborEquipment      `json:"neighbor_equipment,omitempty"`
 	BillingYears       []dsgvoYear                     `json:"billing_years"`
 	Recurring          []store.NeighborRecurringExport `json:"recurring_rules"`
 	Mail               []store.NeighborMailExport      `json:"mail_outbox"`
@@ -195,6 +196,11 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 		},
 	}
 	out.Recurring, err = s.store.ListNeighborRecurringExport(r.Context(), n.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	out.Equipment, err = s.store.ListNeighborEquipment(r.Context(), n.ID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return

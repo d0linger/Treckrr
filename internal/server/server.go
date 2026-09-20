@@ -148,6 +148,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /neighbors/{id}/archive", s.auth(s.handleNeighborArchive))
 	mux.Handle("POST /neighbors/{id}/delete", s.auth(s.handleNeighborDelete))
 	mux.Handle("POST /neighbors/{id}/anonymize", s.auth(s.handleNeighborAnonymize))
+	mux.Handle("GET /neighbors/{id}/equipment", s.auth(s.handleNeighborEquipment))
+	mux.Handle("POST /neighbors/{id}/equipment", s.auth(s.handleNeighborEquipmentCreate))
+	mux.Handle("POST /neighbors/{id}/equipment/{equipmentID}/update", s.auth(s.handleNeighborEquipmentUpdate))
+	mux.Handle("POST /neighbors/{id}/equipment/{equipmentID}/archive", s.auth(s.handleNeighborEquipmentArchive))
+	mux.Handle("POST /neighbors/{id}/equipment/{equipmentID}/delete", s.auth(s.handleNeighborEquipmentDelete))
 	mux.Handle("POST /years/add-neighbor", s.auth(s.handleYearAddNeighbor))
 	mux.Handle("POST /years/remove-neighbor", s.auth(s.handleYearRemoveNeighbor))
 	mux.Handle("POST /years/carry-over", s.auth(s.handleCarryOverNeighbors))
@@ -160,6 +165,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /entries/{id}/photos", s.auth(s.handleEntryPhotoUpload))
 	mux.Handle("GET /entries/{id}/photos/{pid}", s.auth(s.handleEntryPhotoServe))
 	mux.Handle("POST /entries/{id}/photos/{pid}/delete", s.auth(s.handleEntryPhotoDelete))
+	mux.Handle("POST /ledger/{id}/photos", s.auth(s.handleLedgerPhotoUpload))
+	mux.Handle("GET /ledger/{id}/photos/{pid}", s.auth(s.handleLedgerPhotoServe))
+	mux.Handle("POST /ledger/{id}/photos/{pid}/delete", s.auth(s.handleLedgerPhotoDelete))
 	mux.Handle("POST /entries/{id}/update", s.auth(s.handleEntryUpdate))
 	mux.Handle("POST /entries/{id}/void", s.auth(s.handleEntryVoid))
 	mux.Handle("POST /entries/{id}/delete", s.auth(s.handleEntryDelete))
@@ -255,6 +263,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /payments/import", s.auth(s.handlePaymentImportCommit))
 	mux.Handle("GET /recurring", s.auth(s.handleRecurringList))
 	mux.Handle("POST /entries/{id}/recur", s.auth(s.handleRecurringCreate))
+	mux.Handle("POST /ledger/{id}/recur", s.auth(s.handleLedgerRecurringCreate))
 	mux.Handle("POST /recurring/{id}/toggle", s.auth(s.handleRecurringToggle))
 	mux.Handle("POST /recurring/{id}/delete", s.auth(s.handleRecurringDelete))
 	mux.Handle("GET /entries/import", s.auth(s.handleImportForm))
@@ -464,7 +473,8 @@ func isBackupUploadPath(p string) bool {
 // isPhotoUploadPath reports the booking-photo upload route (POST
 // /entries/{id}/photos), which gets the larger photo body allowance.
 func isPhotoUploadPath(p string) bool {
-	return strings.HasPrefix(p, "/entries/") && strings.HasSuffix(p, "/photos")
+	bookingPath := strings.HasPrefix(p, "/entries/") || strings.HasPrefix(p, "/ledger/")
+	return bookingPath && strings.HasSuffix(p, "/photos")
 }
 
 // auth wraps a handler requiring an authenticated user. It also enforces the

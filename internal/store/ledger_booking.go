@@ -88,6 +88,13 @@ func ledgerBookingValues(in LedgerBookingInput) (decimal.Decimal, []byte, error)
 	if b.PersonHours.IsPositive() && (!b.PersonRate.IsPositive() || b.PartnerPerson == "") {
 		return decimal.Zero, nil, errors.New("incomplete companion booking")
 	}
+	seenPeople := make(map[int64]bool, len(b.People))
+	for _, person := range b.People {
+		if person.ID <= 0 || seenPeople[person.ID] || person.Name == "" || !person.Hours.IsPositive() || !person.Rate.IsPositive() {
+			return decimal.Zero, nil, errors.New("invalid booking person")
+		}
+		seenPeople[person.ID] = true
+	}
 	amount := b.Total()
 	if !amount.IsPositive() || amount.GreaterThanOrEqual(decimal.NewFromInt(10_000_000_000)) {
 		return decimal.Zero, nil, errors.New("ledger booking amount out of range")

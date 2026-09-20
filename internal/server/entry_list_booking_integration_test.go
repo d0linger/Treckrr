@@ -136,12 +136,13 @@ func TestUnifiedBookingListIntegration(t *testing.T) {
 	}
 	listURL := "/buchungen?year=" + itoa64(e.yearID64)
 	page := e.get(listURL)
-	if !strings.Contains(page, "7 Buchung(en)") || strings.Count(page, `name="entry_id"`) != 1 || !strings.Contains(page, "Jahresübertrag") {
+	if !strings.Contains(page, "7 Buchung(en)") || strings.Count(page, `name="booking_id"`) != 6 ||
+		strings.Contains(page, `name="entry_id"`) || !strings.Contains(page, "Jahresübertrag") {
 		t.Fatal("combined UI omitted rows, source labels, or exposed ledger bulk checkboxes")
 	}
 	incomingPage := e.get(listURL + "&direction=in")
-	if strings.Contains(incomingPage, `name="entry_id"`) || strings.Contains(incomingPage, `name="action" value="delete"`) {
-		t.Fatal("incoming-only view exposes outgoing bulk actions")
+	if strings.Count(incomingPage, `name="booking_id"`) != 4 || strings.Contains(incomingPage, `name="action" value="delete"`) {
+		t.Fatal("incoming-only view omits reversible bulk actions or exposes permanent deletion")
 	}
 	// CSV uses the same filters, neutralizes spreadsheet formulas, and exposes
 	// source plus status so a reversed amount is never mistaken for own revenue.

@@ -48,6 +48,8 @@
 	}
 
 	function currentMode() {
+		var select = form.querySelector('select[name="mode"]');
+		if (select) return select.value || "gespann";
 		var checked = form.querySelector("[data-mode-toggle]:checked");
 		return checked ? checked.value : "gespann";
 	}
@@ -208,7 +210,7 @@
 		else update();
 	});
 	form.addEventListener("change", function (e) {
-		if (e.target.matches("[data-mode-toggle]")) applyMode();
+		if (e.target.matches("[data-mode-toggle], [data-mode-select]")) applyMode();
 		else if (e.target.matches("[data-unit], [data-unit-custom-input]")) applyUnit();
 		else update();
 		syncBillingChoice();

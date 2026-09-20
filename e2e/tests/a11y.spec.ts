@@ -123,7 +123,7 @@ test("page semantics remain explicit on mobile and data-heavy views", async ({ p
   await expect(page.getByRole("link", { name: "Treckrr – zur Übersicht" })).toBeVisible();
 
   await page.goto("/entries/1/edit");
-  await expect(page.getByLabel("Fotos auswählen")).toHaveCount(1);
+  await expect(page.getByLabel("Belege auswählen")).toHaveCount(1);
   await expect(page.locator("h1")).toHaveCount(1);
 
   // The CI seed always includes a payment, but not every stats table.

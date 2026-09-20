@@ -98,6 +98,8 @@ func CompanionKey(base string) string {
 // re-checked at run time, since a helper record can be removed once the
 // booking that referenced it is gone.
 type RecurCompanion struct {
+	// EntryID identifies the source component while a new series is captured.
+	EntryID  int64           `json:"entry_id,omitempty"`
 	PersonID int64           `json:"person_id"`
 	Name     string          `json:"name"`
 	Rate     decimal.Decimal `json:"rate"`
@@ -130,10 +132,24 @@ type RecurTemplate struct {
 	// Companion is the helper booked ALONGSIDE this (machine) booking, mirroring
 	// the person selected on the booking form. nil for a series without one.
 	Companion *RecurCompanion `json:"companion,omitempty"`
+	// Companions preserves all explicitly selected helpers; nil reads legacy Companion.
+	Companions []RecurCompanion `json:"companions,omitempty"`
+	// PersonName keeps a free-text or historical primary worker name unchanged.
+	PersonName string `json:"person_name,omitempty"`
+	// LedgerBooking repeats the frozen counterclaim independently of own usage.
+	LedgerBooking *LedgerBooking `json:"ledger_booking,omitempty"`
+	Incoming      bool           `json:"incoming,omitempty"`
 }
 
 // Summary renders a one-line human description of the recurring booking.
 func (t RecurTemplate) Summary() string {
+	if t.LedgerBooking != nil {
+		prefix := "Ich verrechne · "
+		if t.Incoming {
+			prefix = "Nachbar verrechnet · "
+		}
+		return prefix + t.LedgerBooking.Summary()
+	}
 	label := t.TaskLabel
 	if label == "" {
 		label = t.Note
@@ -145,7 +161,13 @@ func (t RecurTemplate) Summary() string {
 		return label + " · " + t.Quantity.String() + " " + t.Unit
 	}
 	out := label + " · " + t.Hours.String() + " h"
-	if t.Companion != nil {
+	if len(t.Companions) > 0 {
+		names := make([]string, 0, len(t.Companions))
+		for _, companion := range t.Companions {
+			names = append(names, companion.Name)
+		}
+		out += " · mit " + strings.Join(names, ", ")
+	} else if t.Companion != nil {
 		out += " · mit " + t.Companion.Name
 	}
 	return out
@@ -300,6 +322,22 @@ type Neighbor struct {
 	Created    time.Time
 }
 
+// NeighborEquipment is reusable equipment supplied and priced by one neighbor.
+// Bookings snapshot its descriptive and price data, so later master-data edits
+// never rewrite financial history.
+type NeighborEquipment struct {
+	ID           int64           `json:"id"`
+	NeighborID   int64           `json:"neighbor_id"`
+	Name         string          `json:"name"`
+	Capacity     decimal.Decimal `json:"capacity"`
+	CapacityUnit string          `json:"capacity_unit"`
+	BillingUnit  string          `json:"billing_unit"`
+	DefaultRate  decimal.Decimal `json:"default_rate"`
+	Note         string          `json:"note,omitempty"`
+	Archived     bool            `json:"archived"`
+	Created      time.Time       `json:"created_at"`
+}
+
 // Entry is a booked unit of work with snapshotted pricing for stable exports.
 type Entry struct {
 	ID            int64
@@ -335,6 +373,8 @@ type Entry struct {
 	// PersonID attributes a Mannstunden booking to a helper (nil for machine
 	// bookings and everything booked before the Personenstamm existed).
 	PersonID *int64
+	// PersonName preserves the booked name even without a master-data link.
+	PersonName string
 	// LinkedEntryID connects a companion booking to the machine booking it was
 	// created with (person booked alongside the Gespann): the Mannstunden entry
 	// points at the machine entry. Nil for everything else. The link is

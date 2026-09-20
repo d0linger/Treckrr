@@ -31,13 +31,13 @@ test("combined billing preserves canonical units, modes and quantity calculation
     await expect(form.locator("[data-qty-cost]")).toHaveText(/32,00/);
   }
   await kind.selectOption("equipment");
-  await form.getByText("Frei zusammenstellen", { exact: true }).click();
+  await form.locator('[name="mode"]').selectOption("manual");
   await expect(form.locator('[name="unit"]')).toHaveValue("h");
-  await expect(form.locator('[name="mode"][value="manual"]')).toBeChecked();
+  await expect(form.locator('[name="mode"]')).toHaveValue("manual");
   await expect(form.locator('[data-mode-panel="manual"]')).toBeVisible();
   await expect(form.locator("[data-hours]")).toHaveAttribute("required");
-  await form.getByText("Fixes Gespann", { exact: true }).click();
-  await expect(form.locator('[name="mode"][value="gespann"]')).toBeChecked();
+  await form.locator('[name="mode"]').selectOption("gespann");
+  await expect(form.locator('[name="mode"]')).toHaveValue("gespann");
   await expect(form.locator('[data-mode-panel="gespann"]')).toBeVisible();
 });
 
@@ -45,7 +45,7 @@ test("combined billing preserves canonical units, modes and quantity calculation
 test("machine filtering preserves selected IDs and Enter never saves the form", async ({ page }) => {
   await page.goto("/neighbors/1?year=1");
   const form = page.locator("[data-entry-form]");
-  await form.getByText("Frei zusammenstellen", { exact: true }).click();
+  await form.locator('[name="mode"]').selectOption("manual");
   const machine = form.locator("[data-machine]").first();
   const id = await machine.inputValue();
   await machine.check();
@@ -72,7 +72,7 @@ test("machine filtering preserves selected IDs and Enter never saves the form", 
 test("hourly preview and optional person stay explicit across isolated quantity drafts", async ({ page }) => {
   await page.goto("/neighbors/1?year=1");
   const form = page.locator("[data-entry-form]");
-  await form.getByText("Frei zusammenstellen", { exact: true }).click();
+  await form.locator('[name="mode"]').selectOption("manual");
   await form.locator('[name="tractor_id"]').selectOption("1");
   await form.locator('[name="load_level_id"]').selectOption("1");
   await form.locator("[data-machine]").first().check();
@@ -81,15 +81,19 @@ test("hourly preview and optional person stay explicit across isolated quantity 
   await expect(form.locator("[data-cost]")).toHaveText(/92,00/);
   const details = form.locator("[data-person-details]");
   await details.locator("summary").click();
-  await form.locator('[name="person_id"]').selectOption("1");
+  const equipmentPerson = form.locator('[data-person-row]:visible').first();
+  await equipmentPerson.locator('[name="person_id"]').selectOption("1");
   await details.locator("summary").click();
-  await expect(details.locator("summary")).toContainText("36,00");
+  await expect(details.locator("summary")).toContainText("1 Person");
+  await expect(form.locator("[data-booking-preview]")).toContainText("36,00");
   await form.locator("[data-booking-kind]").selectOption("quantity");
-  await expect(form.locator('[name="person_id"]')).toHaveValue("");
-  await expect(form.locator('[name="person_id"]')).toBeDisabled();
+  const quantityPerson = form.locator('[data-person-row]:not([hidden])').first();
+  await expect(quantityPerson.locator('[name="person_id"]')).toHaveValue("");
+  await expect(quantityPerson.locator('[name="person_id"]')).toBeEnabled();
   await form.locator("[data-booking-kind]").selectOption("equipment");
-  await expect(form.locator('[name="person_id"]')).toHaveValue("1");
-  await expect(details.locator("summary")).toContainText("36,00");
+  await expect(form.locator('[data-person-row]:not([hidden])').first().locator('[name="person_id"]')).toHaveValue("1");
+  await expect(details.locator("summary")).toContainText("1 Person");
+  await expect(form.locator("[data-booking-preview]")).toContainText("36,00");
 });
 
 /** Ensures hidden optional email errors reveal their field instead of silently blocking a save. */
@@ -145,7 +149,12 @@ test("native form controls and optional sections remain usable without JavaScrip
     const native = await context.newPage();
     await native.goto("/neighbors/1?year=1");
     await expect(native.locator('select[name="unit"]')).toBeVisible();
-    await expect(native.getByRole("radiogroup", { name: "Zusammenstellung" })).toBeVisible();
+    await expect(native.locator('select[name="mode"]')).toBeVisible();
+    await expect(native.locator('select[name="mode"] option')).toHaveText([
+      "Fixes Gespann",
+      "Frei zusammenstellen",
+      "Anderes Gefährt / Freitext",
+    ]);
     await native.goto("/admin/company");
     const numbering = native.locator("details").filter({ has: native.locator('[name="invoice_start"]') });
     await numbering.locator("summary").focus();
@@ -160,8 +169,8 @@ test("native form controls and optional sections remain usable without JavaScrip
 /** Reproduces poisoned remembered defaults while protecting both edit and copy source values. */
 test("remembered new-booking defaults never overwrite an edited or copied record", async ({ page }) => {
   await page.evaluate(() => {
-    for (const key of ["global", "1"]) localStorage.setItem("treckrr:entry-defaults:" + key,
-      JSON.stringify({ unit: "Ballen", task_label: "Unrelated remembered task", mode: "gespann" }));
+    localStorage.setItem("treckrr:booking-defaults:v2:1:quantity:out",
+      JSON.stringify({ unit: "Ballen", task_label: "Unrelated remembered task" }));
   });
   for (const action of ["edit", "copy"]) {
     await page.goto("/entries/1/" + action);
@@ -169,7 +178,7 @@ test("remembered new-booking defaults never overwrite an edited or copied record
     await expect(page.locator('[name="unit"]')).toHaveValue("h");
   }
   await page.goto("/neighbors/1?year=1");
-  await expect(page.locator("[data-booking-kind]")).toHaveValue("quantity");
+  await page.locator("[data-booking-kind]").selectOption("quantity");
   await expect(page.locator("[data-unit]")).toHaveValue("Ballen");
   await expect(page.locator('[name="task_label"]')).toHaveValue("Unrelated remembered task");
 });

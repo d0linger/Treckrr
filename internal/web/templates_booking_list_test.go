@@ -33,11 +33,11 @@ func TestBookingListSourceIsolation(t *testing.T) {
 				"Rows": rows, "SumCost": decimal.Zero, "Total": 3, "Pages": 1, "Page": 1,
 				"PhotoCounts": map[int64]int{7: 2}, "HasEntryRows": true, "Completed": tc.completed,
 			})
-			wantCheckboxes := 1
+			wantCheckboxes := 2
 			if tc.completed {
 				wantCheckboxes = 0
 			}
-			if got := strings.Count(page, `name="entry_id"`); got != wantCheckboxes {
+			if got := strings.Count(page, `name="booking_id"`); got != wantCheckboxes {
 				t.Errorf("selectable rows = %d, want %d", got, wantCheckboxes)
 			}
 			if got := strings.Count(page, `title="Belegfotos"`); got != 1 {

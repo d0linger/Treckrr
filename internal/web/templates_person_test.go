@@ -64,9 +64,21 @@ func TestEntryEditRecurringPersonOption(t *testing.T) {
 		{name: "voided", label: "Mannstunden Hans", voided: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			people := []models.BookingPerson(nil)
+			if tc.label != "" {
+				people = []models.BookingPerson{{ID: 2, Name: strings.TrimPrefix(tc.label, "Mannstunden "), Hours: decimal.NewFromInt(1), Rate: decimal.NewFromInt(20)}}
+			}
 			page := execPage(t, "entry_edit", map[string]any{
-				"Entry":           models.Entry{ID: 1, Unit: "h", Date: time.Now(), Voided: tc.voided},
-				"PairPersonLabel": tc.label, "Copy": tc.copy,
+				"Entry":         models.Entry{ID: 1, Unit: "h", Date: time.Now(), Voided: tc.voided},
+				"BookingValues": map[string]string{"booking_kind": "equipment", "booking_direction": "out"},
+				"BookingPeople": people, "BookingCopy": tc.copy, "BookingVoided": tc.voided,
+				"BookingHasOptionalPeople": tc.want,
+				"RecurringAction": func() string {
+					if tc.want {
+						return "/entries/1/recur"
+					}
+					return ""
+				}(),
 			})
 			if got := strings.Contains(page, `name="with_person" value="1" checked`); got != tc.want {
 				t.Errorf("recurring helper option present = %v, want %v", got, tc.want)

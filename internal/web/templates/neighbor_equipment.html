@@ -1,0 +1,47 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/neighbors" aria-label="Zurück zu den Nachbarn">{{template "ic-back"}}</a>
+		<div><h2 class="pagehead__t">Fremdgeräte</h2><p class="muted small">Geräte von {{.Neighbor.Name}}</p></div>
+	</div>
+	<p class="muted">Geräte, die {{.Neighbor.Name}} bereitstellt. Fassungsvermögen, übliche Abrechnungseinheit und Vorschlagssatz werden in neue Gegenleistungen übernommen; jede Buchung speichert weiterhin ihren tatsächlich vereinbarten Satz.</p>
+
+	<details class="card disclosure" {{if not .Equipment}}open{{end}}>
+		<summary>+ Fremdgerät anlegen</summary>
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/equipment" class="form">
+			<div class="form__grid form__grid--two">
+				<label class="field"><span>Bezeichnung</span><input class="input" name="name" maxlength="100" required placeholder="z. B. Zwangsmischer"></label>
+				<label class="field"><span>Abrechnungseinheit</span><input class="input" name="billing_unit" maxlength="16" required value="h" placeholder="h, Füllung, Fuhre …"></label>
+				<label class="field"><span>Fassungsvermögen <small>(optional)</small></span><input class="input" type="number" name="capacity" min="0.0001" max="999999999" step="0.0001" inputmode="decimal" placeholder="z. B. 1000"></label>
+				<label class="field"><span>Fassungs-Einheit <small>(bei Fassungsvermögen)</small></span><input class="input" name="capacity_unit" maxlength="16" placeholder="z. B. l, m³, kg"></label>
+				<label class="field"><span>Vorschlagssatz (€ / Abrechnungseinheit)</span><input class="input" type="number" name="default_rate" min="0" max="999999999" step="0.0001" inputmode="decimal" placeholder="z. B. 12,00"></label>
+			</div>
+			<label class="field"><span>Notiz</span><input class="input" name="note" maxlength="500" placeholder="z. B. nur Mischer, ohne Traktor"></label>
+			<button class="btn btn--primary btn--sm" type="submit">Anlegen</button>
+		</form>
+	</details>
+
+	{{if .Equipment}}<div class="list list--onecol">
+	{{range .Equipment}}<article class="card stack stack--tight {{if .Archived}}is-inactive{{end}}">
+		<div class="list__row list__row--plain"><div class="list__main"><span class="list__title">{{.Name}}{{if .Archived}} <span class="pill-off">inaktiv</span>{{end}}</span><span class="list__sub">{{if .Capacity.IsPositive}}{{num .Capacity}} {{.CapacityUnit}} · {{end}}{{money .DefaultRate}} / {{.BillingUnit}}{{if .Note}} · {{.Note}}{{end}}</span></div></div>
+		<details class="disclosure disclosure--plain"><summary>Bearbeiten</summary>
+			<form method="post" action="/neighbors/{{$.Neighbor.ID}}/equipment/{{.ID}}/update" class="form">
+				<div class="form__grid form__grid--two">
+					<label class="field"><span>Bezeichnung</span><input class="input" name="name" maxlength="100" required value="{{.Name}}"></label>
+					<label class="field"><span>Abrechnungseinheit</span><input class="input" name="billing_unit" maxlength="16" required value="{{.BillingUnit}}"></label>
+					<label class="field"><span>Fassungsvermögen</span><input class="input" type="number" name="capacity" min="0.0001" max="999999999" step="0.0001" value="{{if .Capacity.IsPositive}}{{.Capacity.String}}{{end}}"></label>
+					<label class="field"><span>Fassungs-Einheit</span><input class="input" name="capacity_unit" maxlength="16" value="{{.CapacityUnit}}"></label>
+					<label class="field"><span>Vorschlagssatz (€ / {{.BillingUnit}})</span><input class="input" type="number" name="default_rate" min="0" max="999999999" step="0.0001" value="{{.DefaultRate.String}}"></label>
+				</div>
+				<label class="field"><span>Notiz</span><input class="input" name="note" maxlength="500" value="{{.Note}}"></label>
+				<button class="btn btn--primary btn--sm" type="submit">Speichern</button>
+			</form>
+			<div class="btnrow">
+				<form method="post" action="/neighbors/{{$.Neighbor.ID}}/equipment/{{.ID}}/archive"><input type="hidden" name="archived" value="{{if .Archived}}false{{else}}true{{end}}"><button class="btn btn--ghost btn--sm" type="submit">{{if .Archived}}Reaktivieren{{else}}Archivieren{{end}}</button></form>
+				<form method="post" action="/neighbors/{{$.Neighbor.ID}}/equipment/{{.ID}}/delete" data-confirm-danger data-confirm="{{.Name}} löschen?"><button class="btn btn--danger btn--sm" type="submit">Löschen</button></form>
+			</div>
+		</details>
+	</article>{{end}}
+	</div>{{else}}<div class="empty"><span class="empty__title">Noch keine Fremdgeräte</span><span class="muted small">Lege etwa einen Mischer, Anhänger oder ein Leihgerät an.</span></div>{{end}}
+</section>
+{{end}}

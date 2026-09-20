@@ -85,6 +85,20 @@ func TestPersonsAndSurchargesIntegration(t *testing.T) {
 		t.Errorf("aggregation = %s h / %s €, want 3.50 / 70.00", hours[0].Hours, hours[0].Cost)
 	}
 
+	// The same maintained person can be selected when the neighbor charges us;
+	// that work remains separate from our outgoing hours in the report.
+	e.post("/entries", url.Values{
+		"booking_form_version": {"2"}, "booking_kind": {"labor"}, "booking_direction": {"in"},
+		"year_id": {itoa64(yid)}, "neighbor_id": {itoa64(nid)}, "entry_date": {"2026-08-02"},
+		"hours": {"2"}, "task_label": {"Mithilfe des Nachbarn"},
+		"person_row_id": {""}, "person_id": {itoa64(pid)}, "person_name": {pname},
+		"person_hours": {"2"}, "person_rate": {"18"}, "person_state": {"active"},
+	})
+	hours, err = e.st.PersonHoursForYear(e.ctx, yid)
+	if err != nil || len(hours) != 1 || hours[0].IncomingHours.StringFixed(2) != "2.00" || hours[0].IncomingCost.StringFixed(2) != "36.00" {
+		t.Fatalf("incoming person hours: %+v, err=%v", hours, err)
+	}
+
 	// Anfahrt is hidden until rates exist, then books flat and per-km.
 	pageURL := fmt.Sprintf("/neighbors/%d?year=%d", nid, yid)
 	if page := e.get(pageURL); strings.Contains(page, "Anfahrt verrechnen") {
@@ -125,7 +139,8 @@ func TestPersonsAndSurchargesIntegration(t *testing.T) {
 		t.Errorf("Anfahrt bookings wrong: flat=%v perKm=%v", flat, perKm)
 	}
 
-	// They are ordinary bookings, so they are in the neighbor's total:
+	// Own services are ordinary entries and remain in the outgoing total. The
+	// neighbor's -36 counterclaim is deliberately held in the separate ledger.
 	// 45 + 25 + 15 + 6 = 91,00.
 	cost, _, err := e.st.NeighborTotal(e.ctx, nid, yid)
 	if err != nil {

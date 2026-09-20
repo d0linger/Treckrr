@@ -12,7 +12,72 @@ import (
 	"testing"
 
 	"github.com/shopspring/decimal"
+
+	"github.com/d0linger/treckrr/internal/models"
 )
+
+// TestNeighborEquipmentBookingIntegration exercises reusable foreign equipment
+// through the real authenticated handler, including snapshots and unit routing.
+func TestNeighborEquipmentBookingIntegration(t *testing.T) {
+	e := newItEnv(t)
+	hourly := models.NeighborEquipment{NeighborID: e.neighborID, Name: "Zwangsmischer", Capacity: decimal.NewFromInt(1000), CapacityUnit: "l", BillingUnit: "h", DefaultRate: decimal.NewFromInt(12)}
+	hourlyID, err := e.st.CreateNeighborEquipment(e.ctx, hourly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := url.Values{
+		"booking_form_version": {"2"}, "year_id": {itoa64(e.yearID64)}, "neighbor_id": {itoa64(e.neighborID)},
+		"entry_date": {"2026-09-19"}, "booking_direction": {"in"}, "task_label": {"Beton mischen"},
+	}
+	hours := cloneValues(base)
+	hours.Set("booking_kind", "equipment")
+	hours.Set("mode", "free")
+	hours.Set("neighbor_equipment_id", itoa64(hourlyID))
+	hours.Set("hours", "2.5")
+	hours.Set("partner_rate", "12")
+	e.post("/entries", hours)
+	ledger, err := e.st.ListNeighborLedger(e.ctx, e.yearID64, e.neighborID)
+	if err != nil || len(ledger) != 1 || ledger[0].Amount.StringFixed(2) != "-30.00" || ledger[0].Booking == nil {
+		t.Fatalf("hourly foreign equipment = %+v, %v", ledger, err)
+	}
+	snapshot := ledger[0].Booking
+	if snapshot.NeighborEquipmentID == nil || *snapshot.NeighborEquipmentID != hourlyID || snapshot.PartnerLabel != "Zwangsmischer · 1000 l" || snapshot.EquipmentBillingUnit != "h" {
+		t.Fatalf("missing equipment snapshot: %+v", snapshot)
+	}
+	hourly.ID, hourly.Name, hourly.DefaultRate = hourlyID, "Zwangsmischer neu", decimal.NewFromInt(99)
+	if err := e.st.UpdateNeighborEquipment(e.ctx, hourly); err != nil {
+		t.Fatal(err)
+	}
+	_, _, unchanged, err := e.st.GetLedgerEntry(e.ctx, ledger[0].ID)
+	if err != nil || unchanged.Booking.PartnerLabel != "Zwangsmischer · 1000 l" || unchanged.Booking.UnitPrice.String() != "12" {
+		t.Fatalf("master edit changed booking snapshot: %+v, %v", unchanged, err)
+	}
+
+	quantity := models.NeighborEquipment{NeighborID: e.neighborID, Name: "Mischerfüllung", Capacity: decimal.NewFromInt(1000), CapacityUnit: "l", BillingUnit: "Füllung", DefaultRate: decimal.NewFromInt(7)}
+	quantityID, err := e.st.CreateNeighborEquipment(e.ctx, quantity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	amount := cloneValues(base)
+	amount.Set("booking_kind", "quantity")
+	amount.Set("neighbor_equipment_id", itoa64(quantityID))
+	amount.Set("unit", "Füllung")
+	amount.Set("quantity", "4")
+	amount.Set("unit_price", "7")
+	e.post("/entries", amount)
+	ledger, err = e.st.ListNeighborLedger(e.ctx, e.yearID64, e.neighborID)
+	if err != nil || len(ledger) != 2 || ledger[1].Amount.StringFixed(2) != "-28.00" || ledger[1].Booking.Unit != "Füllung" {
+		t.Fatalf("quantity foreign equipment = %+v, %v", ledger, err)
+	}
+}
+
+func cloneValues(values url.Values) url.Values {
+	cloned := make(url.Values, len(values))
+	for key, list := range values {
+		cloned[key] = append([]string(nil), list...)
+	}
+	return cloned
+}
 
 // TestUnifiedBookingDatesIntegration rejects invalid unified dates on create,
 // offline replay and edit without writing rows or changing existing bookings.

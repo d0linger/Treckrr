@@ -19,9 +19,9 @@ const fixture = `<!doctype html><html lang="de"><head><meta charset="utf-8">
     <input type="checkbox" name="machine_ids" value="31" checked>
     <input type="checkbox" name="machine_ids" value="32" checked>
     <input type="checkbox" name="machine_ids" value="33">
-    <input name="person_id" value="44"><input name="person_hours" value="1,25"><input name="person_rate" value="18">
+    <input name="person_row_id" value=""><input name="person_id" value="44"><input name="person_name" value="E2E Helfer"><input name="person_hours" value="1,25"><input name="person_rate" value="18"><input name="person_state" value="active">
+    <input name="person_row_id" value=""><input name="person_id" value=""><input name="person_name" value="Franz"><input name="person_hours" value="0,75"><input name="person_rate" value="20"><input name="person_state" value="active">
     <input name="partner_label" value="Nachbartraktor"><input name="partner_rate" value="45">
-    <input name="partner_person" value="Franz"><input name="partner_person_rate" value="20"><input name="partner_person_hours" value="0,75">
     <input name="quantity" value="3"><input name="unit_price" value="12,50"><input name="amount" value="37,50">
     <input name="note" value="Gemeinsame Ernte">
     <button type="submit" class="btn btn--primary">Buchung speichern</button>
@@ -79,8 +79,11 @@ for (const kind of ["equipment", "labor", "quantity", "fixed"]) {
       const original = new URLSearchParams(saved.data.__pairs);
       expect(original.getAll("machine_ids")).toEqual(["31", "32"]);
       expect(original.has("csrf_token")).toBe(false);
-      expect(original.get("person_hours")).toBe("1,25");
-      expect(original.get("partner_person_hours")).toBe("0,75");
+      expect(original.getAll("person_id")).toEqual(["44", ""]);
+      expect(original.getAll("person_name")).toEqual(["E2E Helfer", "Franz"]);
+      expect(original.getAll("person_hours")).toEqual(["1,25", "0,75"]);
+      expect(original.getAll("person_rate")).toEqual(["18", "20"]);
+      expect(original.getAll("person_state")).toEqual(["active", "active"]);
       expect(original.get("partner_label")).toBe("Nachbartraktor");
       expect(original.get("booking_kind")).toBe(kind);
       expect(original.get("booking_direction")).toBe(direction);
@@ -103,7 +106,7 @@ test("a rejected incoming service can correct independent hours without changing
   await page.route("**/entries", route => {
     const data = new URLSearchParams(route.request().postData()!);
     submissions.push(data);
-    return route.fulfill({ status: data.get("partner_person_hours") === "1,5" ? 204 : 422, body: "Helferstunden prüfen." });
+    return route.fulfill({ status: data.getAll("person_hours")[1] === "1,5" ? 204 : 422, body: "Helferstunden prüfen." });
   });
   await page.locator('[name="booking_direction"]').fill("in");
   await context.setOffline(true);
@@ -114,7 +117,7 @@ test("a rejected incoming service can correct independent hours without changing
   await expect.poll(async () => (await queue(page))[0]?.rejection?.status).toBe(422);
   await page.locator("[data-offline-badge]").click();
   await page.getByText("Buchungsdaten korrigieren", { exact: true }).click();
-  await page.getByLabel("Mannstunden der Gegenleistung (leer = wie Maschinenstunden)", { exact: true }).fill("1,5");
+  await page.getByLabel("Helferstunden (leer = wie Maschinenstunden)", { exact: true }).nth(1).fill("1,5");
   await page.getByRole("button", { name: "Korrektur speichern", exact: true }).click();
   await expect.poll(async () => (await queue(page))[0]?.originalData).toEqual(original.data);
   const corrected = new URLSearchParams((await queue(page))[0].data.__pairs);
@@ -126,8 +129,9 @@ test("a rejected incoming service can correct independent hours without changing
   await page.locator("[data-offline-flush]").click();
   await expect.poll(async () => (await queue(page)).length).toBe(0);
   expect(submissions).toHaveLength(2);
-  expect(submissions[1].get("partner_person_hours")).toBe("1,5");
-  expect(submissions[1].get("person_hours")).toBe("1,25");
+  expect(submissions[1].getAll("person_hours")).toEqual(["1,25", "1,5"]);
+  expect(submissions[1].getAll("person_id")).toEqual(["44", ""]);
+  expect(submissions[1].getAll("person_name")).toEqual(["E2E Helfer", "Franz"]);
   expect(submissions[1].getAll("machine_ids")).toEqual(["31", "32"]);
 });
 

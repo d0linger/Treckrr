@@ -214,6 +214,8 @@
 
 	// Hook the booking form so an offline submit is queued instead of failing.
 	var form = document.querySelector("[data-entry-form]");
+	// Editing an existing group is never replayed as a new offline booking.
+	if (form && form.hasAttribute("data-entry-edit")) form = null;
 	if (form && form.querySelector('[name="neighbor_id"]')) {
 		if (!form.querySelector('[name="idempotency_key"]')) {
 			var k = document.createElement("input");

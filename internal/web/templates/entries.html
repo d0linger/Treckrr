@@ -83,14 +83,14 @@
 			<table class="dtable">
 				<thead><tr><th><span class="sr-only">Auswahl</span></th><th>Datum</th><th>Nachbar</th><th>Richtung / Art</th><th>Tätigkeit</th><th>Menge</th><th class="num">Betrag</th></tr></thead>
 				<tbody>
-					{{range .Rows}}
+					{{range .Rows}}{{$rowKind := .Kind}}
 					<tr class="{{if .Voided}}dtable__row--bad{{end}}" data-booking-source="{{.Source}}">
-						<td>{{if and (not $.Completed) (not .IsLedger)}}<input type="checkbox" name="entry_id" value="{{.ID}}" aria-label="Buchung vom {{date .Date}} auswählen">{{end}}</td>
+						<td>{{if and (not $.Completed) (ne .Kind "transfer")}}<input type="checkbox" name="booking_id" value="{{.Source}}:{{.ID}}" aria-label="{{.DirectionLabel}}: Buchung vom {{date .Date}} auswählen">{{end}}</td>
 						<td>{{date .Date}}</td>
 						<td><a href="/neighbors/{{.NeighborID}}?year={{$.Year.ID}}">{{.NeighborName}}</a></td>
 						<td>{{.DirectionLabel}}<br> <span class="muted small">{{.KindLabel}}</span></td>
-						<td><a class="booking-task-link" href="{{if not .IsLedger}}/entries/{{.ID}}/edit{{else if eq .Kind "transfer"}}/neighbors/{{.NeighborID}}?year={{$.Year.ID}}{{else}}/ledger/{{.ID}}/edit{{end}}">{{if .TaskLabel}}{{.TaskLabel}}{{else}}—{{end}}</a>{{if .Voided}} <span class="tag">storniert</span>{{end}}{{if .LinkedEntryID}} <span class="tag" title="Gemeinsam mit der Maschinenbuchung erfasst">verknüpft</span>{{end}}{{if not .IsLedger}}{{$eid := .ID}}{{with index $.PhotoCounts $eid}} <a class="tag" href="/entries/{{$eid}}/edit" title="Belegfotos">{{.}} Foto{{if gt . 1}}s{{end}}</a>{{end}}{{end}}{{with .Booking}}{{if .PartnerLabel}} <span class="muted small">{{.PartnerLabel}}</span>{{end}}{{if .PartnerPerson}} <span class="muted small">{{.PartnerPerson}}</span>{{end}}{{end}}{{if .Note}} <span class="muted small">{{.Note}}</span>{{end}}</td>
-						<td>{{if .Unit}}{{if eq .Unit "h"}}{{num .Hours}} h{{else}}{{num .Quantity}} {{.Unit}}{{end}}{{else}}—{{end}}{{with .Booking}}{{if .PersonHours.IsPositive}}<br><span class="muted small">+ {{num .PersonHours}} Mannstunden</span>{{end}}{{end}}</td>
+						<td><a class="booking-task-link" href="{{if not .IsLedger}}/entries/{{.ID}}/edit{{else if eq .Kind "transfer"}}/neighbors/{{.NeighborID}}?year={{$.Year.ID}}{{else}}/ledger/{{.ID}}/edit{{end}}">{{if .TaskLabel}}{{.TaskLabel}}{{else}}—{{end}}</a>{{if .Voided}} <span class="tag">storniert</span>{{end}}{{if .LinkedEntryID}} <span class="tag" title="Gemeinsam mit der Maschinenbuchung erfasst">verknüpft</span>{{end}}{{if not .IsLedger}}{{$eid := .ID}}{{with index $.PhotoCounts $eid}} <a class="tag" href="/entries/{{$eid}}/edit" title="Belegfotos">{{.}} Foto{{if gt . 1}}s{{end}}</a>{{end}}{{end}}{{with .Booking}}{{if .PartnerLabel}} <span class="muted small">{{.PartnerLabel}}</span>{{end}}{{range .BookingPeople}} <span class="muted small">{{.Name}}{{if .Voided}} (storniert){{end}}</span>{{end}}{{end}}{{if .Note}} <span class="muted small">{{.Note}}</span>{{end}}</td>
+						<td>{{if .Unit}}{{if eq .Unit "h"}}{{num .Hours}} h{{else}}{{num .Quantity}} {{.Unit}}{{end}}{{else}}—{{end}}{{with .Booking}}{{range .BookingPeople}}<br><span class="muted small">{{if ne $rowKind "labor"}}+ {{end}}{{num .Hours}} Mannstunden · {{.Name}}</span>{{end}}{{end}}</td>
 						<td class="num">{{money .Cost}}</td>
 					</tr>
 					{{end}}
@@ -98,9 +98,9 @@
 			</table>
 		</div>
 
-		{{if and (not .Completed) .HasEntryRows}}
+		{{if not .Completed}}
 		<div class="card stack stack--tight">
-			<span class="muted small">Sammelaktionen gelten nur für ausgewählte eigene Leistungsbuchungen. Verrechnungspositionen und Jahresüberträge bleiben unverändert; gesperrte Buchungen werden übersprungen und gemeldet.</span>
+			<span class="muted small">Storno und Wiederherstellung gelten für beide Richtungen. Jahresüberträge und gesperrte Buchungen werden übersprungen und gemeldet. Endgültiges Sammellöschen bleibt auf eigene Leistungsbuchungen beschränkt.</span>
 			<label class="field"><span>Grund (für Storno, optional)</span>
 				<input class="input" name="reason" maxlength="200" placeholder="z. B. Doppelerfassung"></label>
 			<div class="btnrow">
@@ -108,8 +108,8 @@
 					data-confirm="Ausgewählte Buchungen stornieren?">Stornieren</button>
 				<button class="btn btn--ghost btn--sm" type="submit" name="action" value="unvoid"
 					data-confirm="Stornierung der ausgewählten Buchungen aufheben?">Storno aufheben</button>
-				<button class="btn btn--danger btn--sm" type="submit" name="action" value="delete"
-					data-confirm-danger data-confirm="Ausgewählte Buchungen endgültig löschen? Das lässt sich nicht rückgängig machen.">Löschen</button>
+				{{if .HasEntryRows}}<button class="btn btn--danger btn--sm" type="submit" name="action" value="delete"
+					data-confirm-danger data-confirm="Ausgewählte eigene Buchungen endgültig löschen? Das lässt sich nicht rückgängig machen.">Löschen</button>{{end}}
 			</div>
 		</div>
 		{{end}}

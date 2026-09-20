@@ -29,7 +29,7 @@ func TestRecurringPersonSelectionIntegration(t *testing.T) {
 		{name: "selected", unit: "h", selected: true, wantOption: true, wantCompanion: true},
 		{name: "unchecked", unit: "h", wantOption: true},
 		{name: "voided_helper", unit: "h", selected: true, voided: true},
-		{name: "quantity_booking", unit: "ha", selected: true},
+		{name: "quantity_booking", unit: "ha", selected: true, wantOption: true, wantCompanion: true},
 		{name: "helper_only_series", unit: models.UnitMannstunde, attributed: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -75,7 +75,12 @@ func TestRecurringPersonSelectionIntegration(t *testing.T) {
 				if rule.NeighborID != e.neighborID || rule.Template.TaskLabel != tc.name {
 					continue
 				}
-				comp := rule.Template.Companion
+				var comp *models.RecurCompanion
+				if len(rule.Template.Companions) > 0 {
+					comp = &rule.Template.Companions[0]
+				} else {
+					comp = rule.Template.Companion
+				}
 				if (comp != nil) != tc.wantCompanion {
 					t.Fatalf("stored companion = %+v, wanted present %v", comp, tc.wantCompanion)
 				}

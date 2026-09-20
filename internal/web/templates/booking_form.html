@@ -1,0 +1,121 @@
+{{define "booking-form"}}
+{{$v := or .BookingValues (dict)}}{{$kind := or (index $v "booking_kind") "equipment"}}{{$direction := or (index $v "booking_direction") "out"}}{{$mode := or (index $v "mode") "gespann"}}{{$unit := index $v "unit"}}
+<form method="post" action="{{or .BookingAction "/entries"}}" class="card form" data-entry-form data-unified-booking
+	{{if .BookingEdit}}data-entry-edit{{else}}data-entry-create{{if not .BookingCopy}} data-entry-defaults{{end}}{{end}}
+ data-pricing-url="/api/base/{{.Base.ID}}/pricing" data-neighbor-name="{{.Neighbor.Name}}" {{if or .BookingLocked .HasInvoice}}data-booking-locked{{end}}>
+	<input type="hidden" name="booking_form_version" value="2">
+	<input type="hidden" name="year_id" value="{{.Year.ID}}">
+	<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
+	{{if .BookingCopy}}<input type="hidden" name="copy_mode" value="1">{{end}}
+	{{if .BookingEdit}}
+	<input type="hidden" name="booking_kind" value="{{$kind}}"><input type="hidden" name="booking_direction" value="{{$direction}}">
+	<p><strong>{{if eq $direction "in"}}Nachbar verrechnet{{else}}Ich verrechne{{end}}</strong> · {{if eq $kind "equipment"}}Traktor / Gespann / Gefährt{{else if eq $kind "labor"}}Arbeitszeit / Mannstunden{{else if eq $kind "quantity"}}Mengenleistung{{else}}Freie Position / Kosten{{end}}</p>
+	<p class="muted small">Art und Richtung bleiben beim Bearbeiten erhalten. Über „Kopieren“ lässt sich eine andere Leistung erfassen.</p>
+	{{else}}
+	<fieldset class="booking-direction"><legend>Wer verrechnet wem?</legend><div class="booking-direction__choices">
+		<label><input type="radio" name="booking_direction" value="out" {{if eq $direction "out"}}checked{{end}}><span>Ich verrechne<small>{{.Neighbor.Name}} schuldet mir</small></span></label>
+		<label><input type="radio" name="booking_direction" value="in" {{if eq $direction "in"}}checked{{end}}><span>Nachbar verrechnet<small>Ich schulde {{.Neighbor.Name}}</small></span></label>
+	</div></fieldset>
+	{{end}}
+	<div class="form__grid form__grid--two">
+		{{if not .BookingEdit}}<label class="field"><span>Was wird verrechnet?</span><select class="select" name="booking_kind" data-booking-kind>
+			<option value="equipment" {{if eq $kind "equipment"}}selected{{end}}>Traktor / Gespann / Gefährt</option>
+			<option value="labor" {{if eq $kind "labor"}}selected{{end}}>Arbeitszeit / Mannstunden</option>
+			<option value="quantity" {{if eq $kind "quantity"}}selected{{end}}>Mengenleistung</option>
+			<option value="fixed" {{if eq $kind "fixed"}}selected{{end}}>Freie Position / Kosten</option>
+		</select></label>{{end}}
+		<div><label class="field"><span>Datum</span><input class="input" type="date" name="entry_date" value="{{or (index $v "entry_date") .Today}}" required></label>
+			<span class="date-shortcuts"><button class="btn btn--ghost btn--xs" type="button" data-days="0" data-target="entry_date">Heute</button><button class="btn btn--ghost btn--xs" type="button" data-days="1" data-target="entry_date">Gestern</button></span>
+		</div>
+	</div>
+	<p class="muted small" data-booking-direction-note>Eigene Forderungen und Gegenleistungen bleiben getrennt nachvollziehbar.</p>
+	<div class="stack stack--tight" data-booking-panel="equipment:in quantity:in">
+		<label class="field"><span>Gepflegtes Fremdgerät <small>(optional)</small></span>
+			<select class="select" name="neighbor_equipment_id" data-neighbor-equipment>
+				<option value="">Freie Angaben verwenden</option>
+				{{range .NeighborEquipment}}<option value="{{.ID}}" data-equipment-name="{{.Name}}" data-equipment-rate="{{.DefaultRate.String}}" data-equipment-unit="{{.BillingUnit}}" {{if .Archived}}data-equipment-archived{{end}} {{if eq (printf "%d" .ID) (index $v "neighbor_equipment_id")}}selected{{end}}>{{.Name}}{{if .Capacity.IsPositive}} · {{num .Capacity}} {{.CapacityUnit}}{{end}} · {{money .DefaultRate}} / {{.BillingUnit}}{{if .Archived}} (inaktiv){{end}}</option>{{end}}
+			</select>
+		</label>
+		<p class="muted small">Die Auswahl übernimmt Bezeichnung, Einheit und Vorschlagssatz. Der tatsächlich vereinbarte Satz bleibt änderbar und wird in der Buchung festgehalten. <a class="link" href="/neighbors/{{.Neighbor.ID}}/equipment">Fremdgeräte pflegen</a></p>
+	</div>
+	<noscript><p class="flash flash--info">Bitte nur die Felder der gewählten Leistungsart ausfüllen. Drei zusätzliche Personenzeilen stehen ohne JavaScript bereit. Leere Zeilen werden ignoriert; die Berechnung erfolgt beim Speichern.</p></noscript>
+	<div class="stack stack--tight" data-booking-panel="equipment:out equipment:in">
+		<label class="field"><span>Gespann / Gefährt auswählen</span><select class="select" name="mode" data-mode-select>
+			<option value="gespann" {{if eq $mode "gespann"}}selected{{end}}>Fixes Gespann</option>
+			<option value="manual" {{if eq $mode "manual"}}selected{{end}}>Frei zusammenstellen</option>
+			<option value="free" {{if eq $mode "free"}}selected{{end}}>Anderes Gefährt / Freitext</option>
+		</select></label>
+		<div data-mode-panel="gespann"><label class="field"><span>Gepflegtes Gespann</span><select class="select" name="gespann_id" data-gespann-select><option value="">— wählen —</option>{{range .Gespanne}}<option value="{{.ID}}" {{if eq (printf "%d" .ID) (index $v "gespann_id")}}selected{{end}}>{{.Name}}</option>{{end}}</select></label></div>
+		<div class="equipment-grid" data-mode-panel="manual">
+			<label class="field"><span>Traktor / Gefährt</span><select class="select" name="tractor_id" data-tractor-select><option value="">— keiner —</option>{{range .Tractors}}<option value="{{.ID}}" {{if eq (printf "%d" .ID) (index $v "tractor_id")}}selected{{end}}>{{.Label}}{{if not .Active}} (inaktiv){{end}}</option>{{end}}</select></label>
+			<label class="field"><span>Belastungsstufe</span><select class="select" name="load_level_id" data-load-select><option value="">— keine —</option>{{range .Loads}}<option value="{{.ID}}" {{if eq (printf "%d" .ID) (index $v "load_level_id")}}selected{{end}}>{{.Name}}</option>{{end}}</select></label>
+			<fieldset class="fieldset"><legend>Maschinen</legend>{{template "machine-checks" (dict "Machines" .Machines "Selected" .SelectedMachineIDs)}}</fieldset>
+		</div>
+		<label class="field" data-mode-panel="free"><span>Gespann / Fahrzeug beschreiben</span><input class="input" name="partner_label" maxlength="100" value="{{index $v "partner_label"}}" placeholder="z. B. Traktor mit Schwader" data-booking-required></label>
+		<label class="field" data-agreed-equipment-rate><span>Vereinbarter Maschinensatz (€/h)</span><input class="input" type="number" name="partner_rate" min="0.0001" max="999999999" step="0.0001" value="{{index $v "partner_rate"}}" inputmode="decimal" data-booking-required></label>
+		<p class="muted small" data-neighbor-price-note>Die Auswahl übernimmt nur das Gespann, nicht deinen Preis. Den Satz des Nachbarn bitte ausdrücklich vereinbaren.</p>
+		<p class="muted small" data-no-tractor-note hidden>Kein Traktor gewählt — verrechnet werden nur die Maschinen.</p>
+	</div>
+	<div class="form__grid form__grid--two" data-booking-panel="equipment:out equipment:in labor:out labor:in">
+		<label class="field"><span data-booking-hours-label>Stunden</span><input class="input" type="number" name="hours" min="0.0001" max="999999999" step="0.0001" value="{{index $v "hours"}}" inputmode="decimal" data-hours data-booking-required></label>
+		<div class="rate-preview" data-rate-preview data-booking-own-rate><span class="rate-preview__main"><span class="rate-preview__lbl">Maschinenkosten</span><strong class="rate-preview__cost" data-cost>–</strong></span><span class="rate-preview__rate">Satz <strong data-rate>–</strong></span></div>
+	</div>
+	<div class="stack stack--tight" data-booking-panel="quantity:out quantity:in">
+		<label class="field"><span>Einheit</span><select class="select" name="unit" data-unit>
+			<option value="h" hidden {{if eq $unit "h"}}selected{{end}}>Stunden (h)</option>
+			<option value="ha" {{if eq $unit "ha"}}selected{{end}}>Hektar (ha)</option><option value="Ballen" {{if eq $unit "Ballen"}}selected{{end}}>Ballen</option><option value="m³" {{if eq $unit "m³"}}selected{{end}}>Kubikmeter (m³)</option><option value="Fuhre" {{if eq $unit "Fuhre"}}selected{{end}}>Fuhre</option><option value="t" {{if eq $unit "t"}}selected{{end}}>Tonnen (t)</option>
+			<option value="__custom" {{if index $v "unit_custom"}}selected{{end}}>Andere Einheit …</option>
+		</select></label>
+		<label class="field" data-unit-custom><span>Eigene Einheit</span><input class="input" name="unit_custom" maxlength="16" value="{{index $v "unit_custom"}}" placeholder="z. B. Stk, Fuder" data-unit-custom-input></label>
+		<div class="form__grid form__grid--two"><label class="field"><span>Menge</span><input class="input" type="number" name="quantity" min="0.0001" max="999999999" step="0.0001" value="{{index $v "quantity"}}" inputmode="decimal" data-qty data-booking-required></label><label class="field"><span>€ / <span data-unit-label>Einheit</span></span><input class="input" type="number" name="unit_price" min="0.0001" max="999999999" step="0.0001" value="{{index $v "unit_price"}}" inputmode="decimal" data-unit-price data-booking-required></label></div>
+		<strong data-qty-cost hidden>–</strong>
+	</div>
+	<label class="field" data-booking-panel="fixed:out fixed:in"><span>Betrag (€)</span><input class="input" type="number" name="amount" min="0.01" max="999999999" step="0.01" value="{{index $v "amount"}}" inputmode="decimal" data-booking-required></label>
+	<details class="disclosure form-details" data-person-details {{if or .BookingPeople (eq $kind "labor")}}open{{end}}>
+		<summary><span data-person-heading>Personen mitbuchen</span> <span class="muted small" data-person-summary>optional</span></summary>
+		{{if .BookingCopy}}<label class="check"><input type="checkbox" name="copy_people" value="1" checked><span>Personen mitkopieren</span></label>{{end}}
+		<p class="muted small" data-person-help>Jede Person erhält eigene Stunden und einen eigenen Satz. Namen und vereinbarte Preise bleiben in der Buchung erhalten.</p>
+		<div data-person-rows>
+			{{range $i, $person := .BookingPeople}}{{template "booking-person-row" (dict "Form" $ "Person" $person "Existing" true "Primary" (and (eq $kind "labor") (eq $i 0)))}}{{end}}
+			{{range seq 3}}{{template "booking-person-row" (dict "Form" $ "Existing" false "Primary" false)}}{{end}}
+		</div>
+		<button class="btn btn--ghost btn--sm" type="button" data-person-add hidden>Person hinzufügen</button>
+		<p class="muted small" data-person-status role="status"></p>
+		{{if not .Persons}}<p class="muted small">Noch keine gepflegte Person vorhanden. Freie Namen sind möglich. <a class="link" href="/personen">Personen verwalten</a></p>{{end}}
+	</details>
+	<label class="field"><span>Tätigkeit / Beschreibung</span><input class="input" name="task_label" maxlength="100" value="{{index $v "task_label"}}" placeholder="z. B. Mähen, Heuarbeit oder Materialkosten" required></label>
+	<details class="disclosure form-details" {{if index $v "note"}}open{{end}}><summary>Notiz / Belegreferenz hinzufügen <span class="muted small">optional</span></summary><label class="field"><span>Notiz / Referenz</span><input class="input" name="note" maxlength="2000" value="{{index $v "note"}}"></label></details>
+	<div class="booking-preview" data-booking-preview role="status" aria-live="polite" aria-atomic="true"><p class="muted small">Leistung auswählen und positive Stunden oder Beträge eingeben.</p></div>
+	<p class="muted small" data-pricing-status role="status"></p>
+	<button class="btn btn--primary btn--block" type="submit" title="Strg + Enter" {{if or .BookingLocked .HasInvoice}}disabled{{end}}>{{if .BookingEdit}}Änderungen speichern{{else if .BookingCopy}}Kopie speichern{{else}}Buchung speichern{{end}}</button>
+	{{if and (not .BookingEdit) (not .BookingCopy)}}<button class="btn btn--ghost btn--xs" type="button" data-defaults-reset>Gemerkte Vorgaben löschen</button>{{end}}
+	<p class="muted small">Zahlungen bleiben separat. Hier werden Leistungen und Gegenpositionen erfasst, kein Geldeingang.</p>
+	<template data-person-template>{{template "booking-person-row" (dict "Form" . "Existing" false "Primary" false)}}</template>
+</form>
+{{end}}
+
+{{define "booking-person-row"}}
+{{$f := .Form}}{{$p := .Person}}{{$selected := ""}}{{if and .Existing $p.PersonID}}{{$selected = printf "%d" (deref $p.PersonID)}}{{end}}
+<fieldset class="booking-person" data-person-row {{if .Existing}}data-person-existing{{end}} {{if .Primary}}data-person-primary{{end}}>
+	<legend>Person</legend>
+	<input type="hidden" name="person_row_id" value="{{if .Existing}}{{$p.ID}}{{end}}">
+	<div class="form__grid form__grid--two">
+		<label class="field"><span>Gepflegte Person</span><select class="select" name="person_id"><option value="">Freien Namen eingeben</option>{{range $f.Persons}}<option value="{{.ID}}" data-person-rate="{{.HourlyRate.String}}" {{if eq (printf "%d" .ID) $selected}}selected{{end}}>{{.Name}}{{if .Archived}} (archiviert){{end}}</option>{{end}}</select></label>
+		<label class="field" data-person-name-field><span>Name der Person</span><input class="input" name="person_name" maxlength="100" value="{{if .Existing}}{{$p.Name}}{{end}}" placeholder="Vor- und Nachname"></label>
+		<label class="field"><span>Mannstunden</span><input class="input" type="number" name="person_hours" min="0.0001" max="999999999" step="0.0001" inputmode="decimal" value="{{if .Existing}}{{$p.Hours.String}}{{end}}"></label>
+		<div><label class="field"><span>Vereinbarter Personensatz (€/h)</span><input class="input" type="number" name="person_rate" min="0.0001" max="999999999" step="0.0001" inputmode="decimal" value="{{if .Existing}}{{$p.Rate.String}}{{end}}"></label><button class="btn btn--ghost btn--xs" type="button" data-person-use-rate hidden>Stammsatz übernehmen</button></div>
+	</div>
+	{{if and $f.BookingEdit .Existing (not .Primary)}}<label class="field"><span>Status der Person</span><select class="select" name="person_state"><option value="active" {{if not $p.Voided}}selected{{end}}>Aktiv mitbuchen</option><option value="void" {{if $p.Voided}}selected{{end}}>Storniert (bleibt nachvollziehbar)</option><option value="remove">Aus dieser Buchung entfernen</option></select></label>{{else}}<input type="hidden" name="person_state" value="active">{{end}}
+	<button class="btn btn--ghost btn--xs" type="button" data-person-remove hidden>Person entfernen</button>
+</fieldset>
+{{end}}
+
+{{define "booking-extras"}}
+{{if .PhotoAction}}{{template "booking_attachments" .}}{{end}}
+{{if .RecurringAction}}
+<details class="card disclosure"><summary>Als Serie wiederholen</summary><p class="muted small">Wiederholt diese Leistung im offenen Jahr. Gespann, vereinbarte Preise und alle ausgewählten Personen werden aus der Buchung übernommen.</p>
+	<form method="post" action="{{.RecurringAction}}" class="form"><div class="form__grid form__grid--two"><label class="field"><span>Rhythmus</span><select class="select" name="interval_kind"><option value="weekly">wöchentlich</option><option value="monthly">monatlich</option></select></label><label class="field"><span>Erster Lauf</span><input class="input" type="date" name="next_run" value="{{.NextWeek}}" required></label></div>
+	{{if .BookingHasOptionalPeople}}<label class="check"><input type="checkbox" name="with_person" value="1" checked><span>Alle zusätzlichen Personen bei jedem Lauf mitbuchen</span></label>{{end}}
+	<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit" {{if .BookingLocked}}disabled{{end}}>Serie einrichten</button><a class="link small" href="/recurring">Serien verwalten ›</a></div></form>
+</details>{{end}}
+{{end}}

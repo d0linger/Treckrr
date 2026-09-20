@@ -87,11 +87,23 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 	}
 	if n > 0 {
 		for _, q := range []string{
+			`DELETE FROM neighbor_equipment WHERE neighbor_id = $1`,
 			`DELETE FROM entry_photos WHERE entry_id IN (SELECT id FROM entries WHERE neighbor_id = $1)`,
-			`UPDATE entries SET note = '', task_label = '', void_reason = '', request_fingerprint = NULL
-			 WHERE neighbor_id = $1 AND (note <> '' OR task_label <> '' OR void_reason <> '' OR request_fingerprint IS NOT NULL)`,
+			`DELETE FROM ledger_photos WHERE ledger_id IN (SELECT id FROM neighbor_ledger WHERE neighbor_id = $1)`,
+			`UPDATE entries SET note = '', task_label = '', person_name = '', void_reason = '', request_fingerprint = NULL
+			 WHERE neighbor_id = $1 AND (note <> '' OR task_label <> '' OR person_name <> '' OR void_reason <> '' OR request_fingerprint IS NOT NULL)`,
 			`UPDATE neighbor_ledger SET description = '', void_reason = '',
-			 booking = booking - ARRAY['task_label', 'note', 'partner_label', 'partner_person', 'unit']
+			 booking = (booking - ARRAY[
+				'task_label', 'note', 'partner_label', 'partner_person', 'unit',
+				'equipment_capacity_unit', 'equipment_billing_unit'
+			 ]) || CASE
+				WHEN jsonb_typeof(booking->'people') = 'array' THEN
+					jsonb_build_object('people', COALESCE((
+						SELECT jsonb_agg(person - ARRAY['name', 'person_id'])
+						FROM jsonb_array_elements(booking->'people') AS person
+					), '[]'::jsonb))
+				ELSE '{}'::jsonb
+			 END
 			 WHERE neighbor_id = $1 AND (description <> '' OR void_reason <> '' OR booking IS NOT NULL)`,
 			`UPDATE payments SET note = '' WHERE neighbor_id = $1 AND note <> ''`,
 			`DELETE FROM mail_outbox WHERE neighbor_id = $1`,
@@ -235,14 +247,15 @@ func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 		`INSERT INTO entries
 		   (neighbor_id, billing_year_id, entry_date, task_label, gespann_id, tractor_id, load_level_id,
 		    tractor_label, load_label, machine_labels, hours, hourly_rate, cost, note,
-		    unit, quantity, unit_price, idempotency_key, person_id, linked_entry_id, request_fingerprint)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+		    unit, quantity, unit_price, idempotency_key, person_id, linked_entry_id, request_fingerprint, person_name)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
+		         COALESCE(NULLIF($22,''),(SELECT name FROM persons WHERE id=$19),''))
 		 ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
 		 RETURNING id`,
 		e.NeighborID, e.BillingYearID, e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID),
 		nullInt(e.LoadLevelID), e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours,
 		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey),
-		nullInt(e.PersonID), nullInt(e.LinkedEntryID), nullStr(e.RequestFingerprint)).Scan(&id)
+		nullInt(e.PersonID), nullInt(e.LinkedEntryID), nullStr(e.RequestFingerprint), e.PersonName).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		var neighborID, yearID int64
 		if err := tx.QueryRowContext(ctx,
@@ -846,15 +859,25 @@ func (s *Store) UpdateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
 		return err
 	}
+	if err := updateEntryTx(ctx, tx, e, machineIDs); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
+// updateEntryTx replaces the editable snapshot without changing account,
+// linkage, void state or original request identity. The caller holds its locks.
+func updateEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs []int64) error {
+	ensureUnit(e)
 	res, err := tx.ExecContext(ctx, `
 		UPDATE entries SET entry_date=$1, task_label=$2, gespann_id=$3, tractor_id=$4,
 			load_level_id=$5, tractor_label=$6, load_label=$7, machine_labels=$8,
 			hours=$9, hourly_rate=$10, cost=$11, note=$12,
-			unit=$13, quantity=$14, unit_price=$15, person_id=$17 WHERE id=$16`,
+			unit=$13, quantity=$14, unit_price=$15, person_id=$17,
+			person_name=COALESCE(NULLIF($18,''),(SELECT name FROM persons WHERE id=$17),'') WHERE id=$16`,
 		e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID), nullInt(e.LoadLevelID),
 		e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours, e.HourlyRate, e.Cost, e.Note,
-		e.Unit, e.Quantity, e.UnitPrice, e.ID, nullInt(e.PersonID))
+		e.Unit, e.Quantity, e.UnitPrice, e.ID, nullInt(e.PersonID), e.PersonName)
 	if err != nil {
 		return err
 	}
@@ -872,7 +895,7 @@ func (s *Store) UpdateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // SetEntryVoided cancels or restores an entry (kept for traceability).
@@ -906,7 +929,7 @@ func (s *Store) SetEntryVoided(ctx context.Context, id int64, voided bool, reaso
 const entryCols = `id, neighbor_id, billing_year_id, entry_date, task_label, gespann_id,
 	tractor_id, load_level_id, tractor_label, load_label, machine_labels,
 	hours, hourly_rate, cost, note, voided, void_reason, created_at,
-	unit, quantity, unit_price, person_id, linked_entry_id, request_fingerprint`
+	unit, quantity, unit_price, person_id, linked_entry_id, request_fingerprint, person_name`
 
 const entrySelect = `SELECT ` + entryCols + ` FROM entries`
 
@@ -937,7 +960,7 @@ func scanEntry(sc scanner) (models.Entry, error) {
 	dest := []any{&e.ID, &e.NeighborID, &e.BillingYearID, &date, &e.TaskLabel, &gespann,
 		&tractor, &load, &e.TractorLabel, &e.LoadLabel, &e.MachineLabels,
 		&e.Hours, &e.HourlyRate, &e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created,
-		&e.Unit, &e.Quantity, &e.UnitPrice, &person, &linked, &fingerprint}
+		&e.Unit, &e.Quantity, &e.UnitPrice, &person, &linked, &fingerprint, &e.PersonName}
 	if err := sc.Scan(dest...); err != nil {
 		return e, err
 	}
