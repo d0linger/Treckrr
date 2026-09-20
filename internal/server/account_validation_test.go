@@ -238,22 +238,126 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 
 func TestHandleTwoFactorConfirmValidation(t *testing.T) {
 	s := testAccountServer(t)
-	testAccountAdmissionQueries.Store(0)
-	password := "SecurePassword123"
-	form := url.Values{"password": {password}, "code": {"123456"}}
-	req := httptest.NewRequest(http.MethodPost, "/account/2fa", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req = req.WithContext(context.WithValue(req.Context(), userCtxKey, &models.User{ID: 123, Username: "testuser", Role: "editor"}))
-	rr := httptest.NewRecorder()
 
-	s.handleTwoFactorConfirm(rr, req)
+	t.Run("missing pending secret is rejected without admission", func(t *testing.T) {
+		testAccountAdmissionQueries.Store(0)
+		password := "SecurePassword123"
+		form := url.Values{"password": {password}, "code": {"123456"}}
+		req := httptest.NewRequest(http.MethodPost, "/account/2fa", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req = req.WithContext(context.WithValue(req.Context(), userCtxKey, &models.User{ID: 123, Username: "testuser", Role: "editor"}))
+		rr := httptest.NewRecorder()
 
-	if rr.Code != http.StatusSeeOther {
-		t.Fatalf("expected status SeeOther, got %v", rr.Code)
-	}
-	if got := testAccountAdmissionQueries.Load(); got != 0 {
-		t.Errorf("missing pending secret consumed %d admission attempts", got)
-	}
+		s.handleTwoFactorConfirm(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected status SeeOther, got %v", rr.Code)
+		}
+		if got := testAccountAdmissionQueries.Load(); got != 0 {
+			t.Errorf("missing pending secret consumed %d admission attempts", got)
+		}
+	})
+
+	t.Run("oversized password or code is rejected before admission", func(t *testing.T) {
+		testAccountAdmissionQueries.Store(0)
+		form := url.Values{"password": {strings.Repeat("a", 73)}, "code": {"123456"}}
+		req := httptest.NewRequest(http.MethodPost, "/account/2fa", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req = req.WithContext(context.WithValue(req.Context(), userCtxKey, &models.User{ID: 123, Username: "testuser", Role: "editor"}))
+		rr := httptest.NewRecorder()
+
+		s.handleTwoFactorConfirm(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Passwort darf höchstens 72 Zeichen lang sein.") {
+			t.Errorf("expected over-limit password warning, got: %q", flashCookie)
+		}
+		if got := testAccountAdmissionQueries.Load(); got != 0 {
+			t.Errorf("oversized password consumed %d admission attempts", got)
+		}
+	})
+}
+
+func TestHandleRecoveryRegenerateValidation(t *testing.T) {
+	s := testAccountServer(t)
+
+	t.Run("oversized password is rejected before admission", func(t *testing.T) {
+		testAccountAdmissionQueries.Store(0)
+		form := url.Values{"password": {strings.Repeat("p", 73)}}
+		req := httptest.NewRequest(http.MethodPost, "/account/2fa/recovery", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req = req.WithContext(context.WithValue(req.Context(), userCtxKey, &models.User{ID: 123, Username: "testuser", Role: "editor", TotpEnabled: true}))
+		rr := httptest.NewRecorder()
+
+		s.handleRecoveryRegenerate(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Passwort darf höchstens 72 Zeichen lang sein.") {
+			t.Errorf("expected over-limit password warning, got: %q", flashCookie)
+		}
+		if got := testAccountAdmissionQueries.Load(); got != 0 {
+			t.Errorf("oversized password consumed %d admission attempts", got)
+		}
+	})
+}
+
+func TestHandleTwoFactorDisableValidation(t *testing.T) {
+	s := testAccountServer(t)
+
+	t.Run("oversized password is rejected before admission", func(t *testing.T) {
+		testAccountAdmissionQueries.Store(0)
+		form := url.Values{"password": {strings.Repeat("x", 73)}}
+		req := httptest.NewRequest(http.MethodPost, "/account/2fa/disable", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req = req.WithContext(context.WithValue(req.Context(), userCtxKey, &models.User{ID: 123, Username: "testuser", Role: "editor", TotpEnabled: true}))
+		rr := httptest.NewRecorder()
+
+		s.handleTwoFactorDisable(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Passwort darf höchstens 72 Zeichen lang sein.") {
+			t.Errorf("expected over-limit password warning, got: %q", flashCookie)
+		}
+		if got := testAccountAdmissionQueries.Load(); got != 0 {
+			t.Errorf("oversized password consumed %d admission attempts", got)
+		}
+	})
+}
+
+func TestHandleLogin2FAValidation(t *testing.T) {
+	s := testAccountServer(t)
+
+	t.Run("oversized TOTP code is rejected", func(t *testing.T) {
+		testAccountAdmissionQueries.Store(0)
+		form := url.Values{"totp": {strings.Repeat("1", maxNameLen+1)}}
+		req := httptest.NewRequest(http.MethodPost, "/login/2fa", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		// Add valid pending 2FA cookie
+		pendingCookie := s.signPending2FA(123)
+		req.AddCookie(&http.Cookie{Name: pending2FACookie, Value: pendingCookie})
+
+		rr := httptest.NewRecorder()
+
+		s.handleLogin2FA(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Code darf höchstens 100 Zeichen lang sein.") {
+			t.Errorf("expected over-limit TOTP warning, got: %q", flashCookie)
+		}
+	})
 }
 
 func TestHandleSessionRevokeValidation(t *testing.T) {

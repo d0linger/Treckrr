@@ -173,6 +173,11 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	user := userFromCtx(r)
+	if s.tooLong(w, r, "Passwort", r.FormValue("password"), 72) ||
+		s.tooLong(w, r, "Code", r.FormValue("code"), maxNameLen) {
+		redirect(w, r, "/account/2fa")
+		return
+	}
 	secret, err := s.store.GetTotpSecret(r.Context(), user.ID)
 	if err != nil || secret == "" {
 		s.setFlash(w, r, "error", "Kein ausstehendes 2FA‑Geheimnis. Bitte erneut starten.")
@@ -208,6 +213,10 @@ func (s *Server) handleRecoveryRegenerate(w http.ResponseWriter, r *http.Request
 	}
 	user := userFromCtx(r)
 	if !user.TotpEnabled {
+		redirect(w, r, "/account/2fa")
+		return
+	}
+	if s.tooLong(w, r, "Passwort", r.FormValue("password"), 72) {
 		redirect(w, r, "/account/2fa")
 		return
 	}
@@ -255,6 +264,10 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	user := userFromCtx(r)
+	if s.tooLong(w, r, "Passwort", r.FormValue("password"), 72) {
+		redirect(w, r, "/profile")
+		return
+	}
 	if !s.sensitiveAdmit(w, r, user.ID, "/account/2fa") {
 		return
 	}
