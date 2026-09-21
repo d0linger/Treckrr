@@ -161,6 +161,44 @@ func TestBelegPageRenders(t *testing.T) {
 	}
 }
 
+// TestBelegPageEndsLedgerWithActualSaldo keeps the printable statement from
+// stopping at the ledger subtotal when the actual amount is services plus ledger.
+func TestBelegPageEndsLedgerWithActualSaldo(t *testing.T) {
+	d := decimal.RequireFromString
+	page := execPage(t, "beleg", map[string]any{
+		"Title":      "Beleg",
+		"Neighbor":   models.Neighbor{ID: 2, Name: "Bio-Hof Steiner"},
+		"Year":       models.BillingYear{ID: 1, Year: 2026},
+		"TotalCost":  d("2210.35"),
+		"TotalHours": d("13.5"),
+		"Ledger": []models.LedgerEntry{{
+			Date:        time.Date(2026, time.September, 21, 0, 0, 0, 0, time.Local),
+			Description: "Betonmischen", Amount: d("-80.80"),
+		}},
+		"LedgerSum": d("-80.80"),
+		"Saldo":     d("2129.55"),
+		"Bookings":  6,
+		"Today":     "21.09.2026",
+	})
+
+	marker := `data-beleg-final-total`
+	if strings.Count(page, marker) != 1 {
+		t.Fatalf("final total rendered %d times, want once", strings.Count(page, marker))
+	}
+	markerIndex := strings.Index(page, marker)
+	start := strings.LastIndex(page[:markerIndex], "<div")
+	if start < 0 {
+		t.Fatal("final total marker is not inside a div")
+	}
+	end := min(start+400, len(page))
+	finalTotal := page[start:end]
+	for _, want := range []string{"beleg__lsub--total", "Saldo", "2.129,55 €"} {
+		if !strings.Contains(finalTotal, want) {
+			t.Errorf("final statement total missing %q", want)
+		}
+	}
+}
+
 func TestIncomingBookingBreakdownRendersInBothOverviews(t *testing.T) {
 	t.Parallel()
 	booking := &models.LedgerBooking{
