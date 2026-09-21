@@ -73,7 +73,7 @@
 		<p class="muted small" data-person-status role="status"></p>
 		{{if not .Persons}}<p class="muted small">Noch keine gepflegte Person vorhanden. Freie Namen sind möglich. <a class="link" href="/personen">Personen verwalten</a></p>{{end}}
 	</details>
-	<label class="field"><span>Tätigkeit / Beschreibung</span><input class="input" name="task_label" maxlength="100" value="{{index $v "task_label"}}" placeholder="z. B. Mähen, Heuarbeit oder Materialkosten" required></label>
+	<label class="field"><span>Tätigkeit / Beschreibung</span><input class="input" name="task_label" maxlength="100" value="{{index $v "task_label"}}" placeholder="z. B. Mähen, Heuarbeit oder Materialkosten" data-booking-task {{if or (eq $kind "quantity") (eq $kind "fixed")}}required{{end}}><span class="muted small" data-booking-task-help>{{if eq $kind "labor"}}Optional – ohne Eingabe wird die gewählte Person übernommen.{{else if eq $kind "equipment"}}Optional – ohne Eingabe wird das gewählte Gespann oder Gefährt übernommen.{{else}}Bitte die Leistung oder Kostenposition beschreiben.{{end}}</span></label>
 	<details class="disclosure form-details" {{if index $v "note"}}open{{end}}><summary>Notiz / Belegreferenz hinzufügen <span class="muted small">optional</span></summary><label class="field"><span>Notiz / Referenz</span><input class="input" name="note" maxlength="2000" value="{{index $v "note"}}"></label></details>
 	<div class="booking-preview" data-booking-preview role="status" aria-live="polite" aria-atomic="true"><p class="muted small">Leistung auswählen und positive Stunden oder Beträge eingeben.</p></div>
 	<p class="muted small" data-pricing-status role="status"></p>

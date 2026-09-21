@@ -40,7 +40,7 @@ function fixture(): string {
     <div data-booking-panel="quantity:out quantity:in"><select name="unit" data-unit><option value="h" hidden>Stunden</option><option value="ha">Hektar</option><option value="Ballen">Ballen</option><option value="__custom">Andere Einheit</option></select><label data-unit-custom>Eigene Einheit<input name="unit_custom" data-unit-custom-input></label><input name="quantity" type="number" data-qty data-booking-required><input name="unit_price" type="number" data-unit-price data-booking-required><span data-unit-label></span><strong data-qty-cost></strong></div>
     <label data-booking-panel="fixed:out fixed:in">Betrag<input name="amount" type="number" data-booking-required></label>
     <details data-person-details><summary><span data-person-heading>Personen mitbuchen</span> <span data-person-summary>optional</span></summary><p data-person-help></p><div data-person-rows>${personRow}${personRow}${personRow}</div><button type="button" data-person-add hidden>Person hinzufügen</button><p data-person-status></p></details>
-    <label>Tätigkeit / Beschreibung<input name="task_label" required></label><input name="note">
+    <label>Tätigkeit / Beschreibung<input name="task_label" data-booking-task><span data-booking-task-help></span></label><input name="note">
     <div data-booking-preview></div><p data-pricing-status></p>
     <button class="btn btn--primary" type="submit">Buchung speichern</button><button type="button" data-defaults-reset>Gemerkte Vorgaben löschen</button>
     <template data-person-template>${personRow}</template>
@@ -113,6 +113,8 @@ test("all eight variants expose only their successful controls", async ({ page }
         expect(values.get("unit")).not.toBe("h");
         await expect(form.locator('[name="unit"] option[value="h"]')).toHaveAttribute("hidden", "");
       }
+      await expect(form.locator('[name="task_label"]')).toHaveJSProperty("required", kind === "quantity" || kind === "fixed");
+      await expect(form.locator("[data-booking-task-help]")).toContainText(kind === "equipment" ? "Gespann oder Gefährt" : kind === "labor" ? "gewählte Person" : "Leistung oder Kostenposition");
       expect(await form.evaluate(element => [...element.querySelectorAll<HTMLInputElement>("input[required], select[required]")].filter(control => !control.disabled && !!control.closest("[hidden]")).length)).toBe(0);
     }
   }

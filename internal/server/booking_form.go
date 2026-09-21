@@ -159,8 +159,11 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 		return nil, nil, nil, nil, "Bitte ein gültiges Datum angeben.", nil
 	}
 	task, note := trimmed(r, "task_label"), trimmed(r, "note")
-	if task == "" || lenError("Tätigkeit", task, maxNameLen) != "" || lenError("Notiz", note, maxNoteLen) != "" {
-		return nil, nil, nil, nil, "Bitte eine Beschreibung mit höchstens 100 Zeichen und eine Notiz mit höchstens 2000 Zeichen eingeben.", nil
+	if msg := lenError("Tätigkeit", task, maxNameLen); msg != "" {
+		return nil, nil, nil, nil, msg, nil
+	}
+	if msg := lenError("Notiz", note, maxNoteLen); msg != "" {
+		return nil, nil, nil, nil, msg, nil
 	}
 	people, msg, err := s.bookingPeopleFromForm(r, kind, direction, previous)
 	if msg != "" || err != nil {
@@ -180,6 +183,10 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 	switch kind {
 	case "labor":
 		p := people[0]
+		if main.TaskLabel == "" {
+			main.TaskLabel = "Mannstunden " + p.Name
+			b.TaskLabel = main.TaskLabel
+		}
 		main.Unit, main.Quantity, main.UnitPrice = models.UnitMannstunde, p.Hours, p.Rate
 		main.PersonID, main.PersonName, main.Cost = p.PersonID, p.Name, p.Cost()
 		b.Unit, b.Quantity, b.UnitPrice, b.PartnerPerson, b.PersonID = main.Unit, p.Hours, p.Rate, p.Name, p.PersonID
@@ -227,6 +234,10 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			}
 			main.MachineLabels = b.PartnerLabel
 		}
+		if main.TaskLabel == "" {
+			main.TaskLabel = b.PartnerLabel
+		}
+		b.TaskLabel = main.TaskLabel
 		rate := main.HourlyRate
 		if mode == "free" {
 			var valid bool

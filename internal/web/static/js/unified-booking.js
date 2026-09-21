@@ -102,6 +102,8 @@
 		field("hours").required = kind.value === "equipment" && !locked;
 		field("hours").step = catalogEquipment() ? "0.001" : "0.0001";
 		field("hours").min = catalogEquipment() ? "0.001" : "0.0001";
+		field("task_label").required = (kind.value === "quantity" || kind.value === "fixed") && !locked;
+		form.querySelector("[data-booking-task-help]").textContent = kind.value === "equipment" ? "Optional – ohne Eingabe wird das gewählte Gespann oder Gefährt übernommen." : kind.value === "labor" ? "Optional – ohne Eingabe wird die gewählte Person übernommen." : "Bitte die Leistung oder Kostenposition beschreiben.";
 		form.querySelector("[data-booking-hours-label]").textContent = kind.value === "labor" ? "Standard-Mannstunden (optional)" : "Stunden";
 		form.querySelector("[data-booking-catalog-rate]").hidden = !catalogEquipment();
 		form.querySelector("[data-person-heading]").textContent = kind.value === "labor" ? "Personen und Mannstunden" : "Personen mitbuchen";

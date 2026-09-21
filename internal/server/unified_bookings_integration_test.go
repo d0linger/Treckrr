@@ -123,6 +123,7 @@ func TestUnifiedBookingsIntegration(t *testing.T) {
 		return url.Values{"year_id": {itoa64(e.yearID64)}, "neighbor_id": {itoa64(e.neighborID)}, "entry_date": {"2026-09-13"}, "task_label": {"Ernte"}, "booking_kind": {kind}, "booking_direction": {direction}}
 	}
 	incoming := base("equipment", "in")
+	incoming.Set("task_label", "")
 	incoming.Set("booking_form_version", "2")
 	incoming.Set("mode", "gespann")
 	incoming.Set("gespann_id", itoa64(e.gespannID))
@@ -141,7 +142,7 @@ func TestUnifiedBookingsIntegration(t *testing.T) {
 		t.Fatalf("incoming=%+v %v", ledger, err)
 	}
 	snapshot := ledger[0].Booking
-	if snapshot == nil || snapshot.Mode != "gespann" || snapshot.GespannID == nil || *snapshot.GespannID != e.gespannID ||
+	if snapshot == nil || snapshot.TaskLabel != "IT-Gespann" || snapshot.Mode != "gespann" || snapshot.GespannID == nil || *snapshot.GespannID != e.gespannID ||
 		len(snapshot.MachineIDs) != 1 || snapshot.MachineIDs[0] != e.machineID || snapshot.PartnerLabel != "IT-Gespann" ||
 		snapshot.UnitPrice.String() != "46" || len(snapshot.People) != 1 || snapshot.People[0].Name != "Unified helper "+e.uname ||
 		snapshot.People[0].PersonID == nil || *snapshot.People[0].PersonID != pid || snapshot.People[0].Rate.String() != "20" {
@@ -158,14 +159,20 @@ func TestUnifiedBookingsIntegration(t *testing.T) {
 		t.Fatalf("structured edit=%+v %v", updated, err)
 	}
 	labor := base("labor", "out")
+	labor.Set("task_label", "")
+	labor.Set("booking_form_version", "2")
+	labor.Set("person_row_id", "0")
 	labor.Set("person_id", itoa64(pid))
+	labor.Set("person_name", "")
 	labor.Set("hours", "1.5")
+	labor.Set("person_hours", "")
 	labor.Set("person_rate", "25")
+	labor.Set("person_state", "active")
 	labor.Set("idempotency_key", "unified-own-"+e.uname)
 	e.post("/entries", labor)
 	e.post("/entries", labor)
 	entries, err := e.st.ListEntries(e.ctx, e.neighborID, e.yearID64)
-	if err != nil || len(entries) != 1 || entries[0].Cost.StringFixed(2) != "37.50" || entries[0].PersonID == nil || *entries[0].PersonID != pid {
+	if err != nil || len(entries) != 1 || entries[0].TaskLabel != "Mannstunden Unified helper "+e.uname || entries[0].Cost.StringFixed(2) != "37.50" || entries[0].PersonID == nil || *entries[0].PersonID != pid {
 		t.Fatalf("own labor=%+v %v", entries, err)
 	}
 	labor.Set("hours", "2")
@@ -173,31 +180,40 @@ func TestUnifiedBookingsIntegration(t *testing.T) {
 	if retry, err := e.st.ListEntries(e.ctx, e.neighborID, e.yearID64); err != nil || len(retry) != 1 || retry[0].Cost.StringFixed(2) != "37.50" {
 		t.Fatalf("changed retry created/repriced labor: %+v %v", retry, err)
 	}
+	labor.Del("booking_form_version")
 	e.post(fmt.Sprintf("/entries/%d/update", entries[0].ID), labor)
 	changed, err := e.st.GetEntry(e.ctx, entries[0].ID)
 	if err != nil || changed.Cost.StringFixed(2) != "50.00" || changed.PersonID == nil || *changed.PersonID != pid {
 		t.Fatalf("labor edit=%+v %v", changed, err)
 	}
 	machine := base("equipment", "out")
+	machine.Set("task_label", "")
+	machine.Set("booking_form_version", "2")
+	machine.Set("mode", "gespann")
 	machine.Set("unit", "h")
 	machine.Set("gespann_id", itoa64(e.gespannID))
 	machine.Set("hours", "2")
+	machine.Set("person_row_id", "0")
 	machine.Set("person_id", itoa64(pid))
+	machine.Set("person_name", "")
 	machine.Set("person_hours", "3.5")
 	machine.Set("person_rate", "22")
+	machine.Set("person_state", "active")
 	e.post("/entries", machine)
 	entries, err = e.st.ListEntries(e.ctx, e.neighborID, e.yearID64)
 	if err != nil || len(entries) != 3 {
 		t.Fatalf("machine pair rows=%d %v", len(entries), err)
 	}
-	found := false
+	found, foundMachine := false, false
 	for _, entry := range entries {
 		if entry.LinkedEntryID != nil {
 			found = entry.Quantity.String() == "3.5" && entry.Cost.StringFixed(2) == "77.00"
+		} else if entry.GespannID != nil {
+			foundMachine = entry.TaskLabel == "IT-Gespann"
 		}
 	}
-	if !found {
-		t.Fatal("independent helper hours/rate not preserved")
+	if !found || !foundMachine {
+		t.Fatal("derived equipment label or independent helper hours/rate not preserved")
 	}
 	for _, helper := range entries {
 		if helper.LinkedEntryID == nil {
