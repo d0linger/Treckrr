@@ -1,12 +1,26 @@
 package store
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
 )
+
+func TestLedgerBookingPersonIDs(t *testing.T) {
+	t.Parallel()
+	first, second := int64(9), int64(4)
+	booking := models.LedgerBooking{PersonID: &first, People: []models.BookingPerson{
+		{PersonID: &second},
+		{PersonID: &first},
+		{},
+	}}
+	if got, want := ledgerBookingPersonIDs(booking), []int64{second, first}; !slices.Equal(got, want) {
+		t.Fatalf("person IDs = %v, want %v", got, want)
+	}
+}
 
 // TestLedgerBookingValues rejects invalid domain combinations and signed inputs.
 func TestLedgerBookingValues(t *testing.T) {

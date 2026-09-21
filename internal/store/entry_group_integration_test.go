@@ -181,7 +181,8 @@ func TestUpdateEntryGroupIntegration(t *testing.T) {
 	}
 	// A failed helper update rolls back the preceding primary/first-helper writes.
 	bad := saved[1]
-	bad.PersonID = new(int64(999999))
+	missingUpdatePersonID := int64(999999)
+	bad.PersonID = &missingUpdatePersonID
 	edited.TaskLabel = "Must roll back"
 	if err := st.UpdateEntryGroup(ctx, edited, nil, []*models.Entry{&saved[0], &bad}); err == nil {
 		t.Fatal("missing person must roll back update")
