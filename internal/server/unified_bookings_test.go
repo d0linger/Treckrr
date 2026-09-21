@@ -159,7 +159,7 @@ func TestLedgerBookingFromForm(t *testing.T) {
 // billing direction, kind and independent helper inputs to a single retry key.
 func TestUnifiedRequestFingerprint(t *testing.T) {
 	t.Parallel()
-	base := url.Values{"booking_kind": {"equipment"}, "booking_direction": {"out"}, "mode": {"manual"},
+	base := url.Values{"booking_form_version": {"2"}, "booking_kind": {"equipment"}, "booking_direction": {"out"}, "mode": {"manual"},
 		"machine_ids": {"2", "1"}, "hours": {"2"}, "person_id": {"1"}, "person_hours": {"3.5"}, "person_rate": {"20"}}
 	fingerprint := func(values url.Values) string {
 		r := httptest.NewRequest("POST", "/entries", strings.NewReader(values.Encode()))
@@ -177,6 +177,8 @@ func TestUnifiedRequestFingerprint(t *testing.T) {
 		{"csrf refresh", "csrf_token", "different", true},
 		{"replay key", "idempotency_key", "different", true},
 		{"inactive quantity", "quantity", "99", true},
+		{"inactive catalog partner label", "partner_label", "ignored", true},
+		{"inactive catalog partner rate", "partner_rate", "999", true},
 		{"helper hours", "person_hours", "4", false},
 		{"helper rate", "person_rate", "25", false},
 		{"kind", "booking_kind", "labor", false},
@@ -196,6 +198,18 @@ func TestUnifiedRequestFingerprint(t *testing.T) {
 	base["machine_ids"] = []string{"1", "2"}
 	if fingerprint(base) != original {
 		t.Fatal("machine selection order changed retry identity")
+	}
+	free := url.Values{}
+	for key, value := range base {
+		free[key] = append([]string{}, value...)
+	}
+	free.Set("mode", "free")
+	free.Set("partner_label", "Freies Gespann")
+	free.Set("partner_rate", "45")
+	freeFingerprint := fingerprint(free)
+	free.Set("partner_rate", "46")
+	if fingerprint(free) == freeFingerprint {
+		t.Fatal("free-text machine rate missing from retry identity")
 	}
 	base.Del("booking_kind")
 	if fingerprint(base) != "" {

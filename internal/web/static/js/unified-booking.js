@@ -18,8 +18,8 @@
 	var controls = Array.from(form.querySelectorAll("input[name], select[name]")).filter(function (el) { return !el.closest("[data-person-row]") && immutable.indexOf(el.name) === -1; });
 	var direction = function () { var radio = form.querySelector("[name=booking_direction]:checked"); return radio ? radio.value : value("booking_direction"); };
 	var key = function () { return kind.value + ":" + direction(); };
-	var ownEquipment = function () { return key() === "equipment:out" && mode.value !== "free"; };
-	var standard = function () { return ownEquipment() || key() === "quantity:out"; };
+	var catalogEquipment = function () { return kind.value === "equipment" && mode.value !== "free"; };
+	var standard = function () { return catalogEquipment() || key() === "quantity:out"; };
 	var positive = function (n) { return Number.isFinite(n) && n > 0; };
 	var round = function (n) { return Math.round((n + Number.EPSILON) * 100) / 100; };
 	var fmt = function (n) { return n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €"; };
@@ -92,8 +92,7 @@
 		form.querySelectorAll("[data-booking-panel]").forEach(function (panel) { panel.hidden = panel.dataset.bookingPanel.split(" ").indexOf(key()) === -1; });
 		form.querySelectorAll("[data-mode-panel]").forEach(function (panel) { panel.hidden = kind.value !== "equipment" || panel.dataset.modePanel !== mode.value; });
 		form.querySelector("[data-unit-custom]").hidden = kind.value !== "quantity" || unit.value !== "__custom";
-		form.querySelector("[data-agreed-equipment-rate]").hidden = kind.value !== "equipment" || (direction() === "out" && mode.value !== "free");
-		form.querySelector("[data-neighbor-price-note]").hidden = direction() !== "in";
+		form.querySelector("[data-agreed-equipment-rate]").hidden = kind.value !== "equipment" || mode.value !== "free";
 		controls.forEach(function (el) {
 			el.disabled = locked || !!el.closest("[data-booking-panel][hidden], [data-mode-panel][hidden], [data-unit-custom][hidden], [data-agreed-equipment-rate][hidden]");
 			if (el.hasAttribute("data-booking-required")) el.required = !el.disabled;
@@ -101,10 +100,10 @@
 		field("unit_custom").required = !field("unit_custom").disabled && unit.value === "__custom";
 		field("gespann_id").required = kind.value === "equipment" && mode.value === "gespann" && !locked;
 		field("hours").required = kind.value === "equipment" && !locked;
-		field("hours").step = ownEquipment() ? "0.001" : "0.0001";
-		field("hours").min = ownEquipment() ? "0.001" : "0.0001";
+		field("hours").step = catalogEquipment() ? "0.001" : "0.0001";
+		field("hours").min = catalogEquipment() ? "0.001" : "0.0001";
 		form.querySelector("[data-booking-hours-label]").textContent = kind.value === "labor" ? "Standard-Mannstunden (optional)" : "Stunden";
-		form.querySelector("[data-booking-own-rate]").hidden = !ownEquipment();
+		form.querySelector("[data-booking-catalog-rate]").hidden = !catalogEquipment();
 		form.querySelector("[data-person-heading]").textContent = kind.value === "labor" ? "Personen und Mannstunden" : "Personen mitbuchen";
 		form.querySelector("[data-person-help]").textContent = (kind.value === "equipment" || kind.value === "labor" ? "Leere Mannstunden übernehmen die Stunden oben. " : "Mannstunden bitte je Person eingeben. ") + (direction() === "in" ? "Den Nachbarpreis ausdrücklich eingeben oder den Stammsatz bewusst übernehmen." : "Der Stammsatz ist eine Vorgabe und kann je Person geändert werden.");
 		form.querySelector("[data-booking-direction-note]").textContent = direction() === "out" ? "Meine Leistung erhöht die Forderung an den Nachbarn." : "Gegenleistung: Ich schulde dem Nachbarn diesen Betrag. Eigene Leistungen bleiben unverändert.";
@@ -135,7 +134,7 @@
 		var add = function (label, qty, price) { if (!positive(qty) || !positive(price)) { valid = false; return; } var amount = round(qty * price); total = round(total + amount); lines.push({ label: label, qty: qty, price: price, amount: amount }); };
 		if (kind.value === "fixed") add("Freie Position", 1, number("amount"));
 		else if (kind.value === "quantity") add("Mengenleistung · " + (unit.value === "__custom" ? value("unit_custom") : unit.value), number("quantity"), number("unit_price"));
-		else if (kind.value === "equipment") { if (ownEquipment()) { if (positive(machineCost) && positive(machineRate)) add("Maschinenleistung", number("hours"), machineRate); else valid = false; } else add(value("partner_label") || "Maschinenleistung", number("hours"), number("partner_rate")); }
+		else if (kind.value === "equipment") { if (catalogEquipment()) { if (positive(machineCost) && positive(machineRate)) add("Maschinenleistung", number("hours"), machineRate); else valid = false; } else add(value("partner_label") || "Maschinenleistung", number("hours"), number("partner_rate")); }
 		var count = 0;
 		activeRows().forEach(function (row) {
 			var selected = rowField(row, "person_id"); if (selected.disabled || rowField(row, "person_state").value !== "active" || !populated(row)) return;
@@ -173,6 +172,6 @@
 	personRows().filter(function (row) { return !row.hasAttribute("data-person-existing"); }).forEach(function (row, i) { row.hidden = existing.length > 0 || i > 0; });
 	form.querySelector("[data-person-add]").hidden = false;
 	restoreDefaults();
-	form.treckrrBooking = { refreshVisibility: refreshVisibility, update: updatePreview, standard: standard, ownEquipment: ownEquipment };
+	form.treckrrBooking = { refreshVisibility: refreshVisibility, update: updatePreview, standard: standard, catalogEquipment: catalogEquipment };
 	selectDraft();
 })();

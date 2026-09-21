@@ -19,7 +19,7 @@ and an itemized settlement preview. No third-party UI runtime was added.
 
 | Service | I charge the neighbor | Neighbor charges me |
 | --- | --- | --- |
-| Tractor / rig / vehicle | Shared price-basis catalog and calculated rate | Same catalog with an explicitly agreed rate |
+| Tractor / rig / vehicle | Shared price-basis catalog and calculated rate | Same catalog and calculated rate |
 | Labor | Person master data with optional agreed-rate override | Named external person and agreed rate |
 | Quantity | Quantity × unit price | Quantity × agreed unit price |
 | Free position / costs | Positive account posting | Negative account posting |
@@ -30,7 +30,7 @@ and an itemized settlement preview. No third-party UI runtime was added.
   hours. Blank helper hours means the equipment hours.
 - Tractors, machines and Gespanne form one price-basis pool for both directions.
   The booking direction controls the account sign, not equipment ownership.
-  Incoming bookings snapshot the selected catalog IDs, label and agreed rate but
+  Incoming bookings snapshot the selected catalog IDs, label and calculated rate but
   do not contribute to own utilization, turnover or invoice lines.
 - Own equipment/labor/quantity services stay in `entries`. Incoming services and
   free positions stay in `neighbor_ledger`, with structured service metadata.
@@ -49,8 +49,9 @@ and an itemized settlement preview. No third-party UI runtime was added.
   different booking. Historical callers without the new fields remain supported.
 - Per-type/direction drafts cannot submit hidden fields or leak incoming prices
   into own bookings. Only own equipment/quantity preferences persist between visits.
-- Structured counterclaim edit/copy retains equipment, quantity, agreed rates,
-  independent helper hours and reference text. Own labor retains person attribution.
+- Structured counterclaim edit/copy retains catalog equipment and rates, quantity,
+  free-text rates, independent helper hours and reference text. Own labor retains
+  person attribution.
 - Editing linked hours is explicit opt-in. Copying an own machine row still copies
   that row only, not its separate helper; the copy form now explains this behavior.
 - Recurring own machine/helper snapshots retain independent helper hours. Old

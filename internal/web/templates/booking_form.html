@@ -44,12 +44,11 @@
 		</div>
 		<label class="field" data-mode-panel="free"><span>Gespann / Fahrzeug beschreiben</span><input class="input" name="partner_label" maxlength="100" value="{{index $v "partner_label"}}" placeholder="z. B. Traktor mit Schwader" data-booking-required></label>
 		<label class="field" data-agreed-equipment-rate><span>Vereinbarter Maschinensatz (€/h)</span><input class="input" type="number" name="partner_rate" min="0.0001" max="999999999" step="0.0001" value="{{index $v "partner_rate"}}" inputmode="decimal" data-booking-required></label>
-		<p class="muted small" data-neighbor-price-note>Traktoren, Maschinen und Gespanne stammen aus demselben Pool für beide Seiten. Den tatsächlich vereinbarten Satz bitte ausdrücklich eingeben.</p>
 		<p class="muted small" data-no-tractor-note hidden>Kein Traktor gewählt — verrechnet werden nur die Maschinen.</p>
 	</div>
 	<div class="form__grid form__grid--two" data-booking-panel="equipment:out equipment:in labor:out labor:in">
 		<label class="field"><span data-booking-hours-label>Stunden</span><input class="input" type="number" name="hours" min="0.0001" max="999999999" step="0.0001" value="{{index $v "hours"}}" inputmode="decimal" data-hours data-booking-required></label>
-		<div class="rate-preview" data-rate-preview data-booking-own-rate><span class="rate-preview__main"><span class="rate-preview__lbl">Maschinenkosten</span><strong class="rate-preview__cost" data-cost>–</strong></span><span class="rate-preview__rate">Satz <strong data-rate>–</strong></span></div>
+		<div class="rate-preview" data-rate-preview data-booking-catalog-rate><span class="rate-preview__main"><span class="rate-preview__lbl">Maschinenkosten</span><strong class="rate-preview__cost" data-cost>–</strong></span><span class="rate-preview__rate">Satz <strong data-rate>–</strong></span></div>
 	</div>
 	<div class="stack stack--tight" data-booking-panel="quantity:out quantity:in">
 		<label class="field"><span>Einheit</span><select class="select" name="unit" data-unit>

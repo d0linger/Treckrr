@@ -34,9 +34,9 @@ function fixture(): string {
       </div>
       <label data-mode-panel="free">Gespann / Fahrzeug beschreiben<input name="partner_label" data-booking-required></label>
       <label data-agreed-equipment-rate>Vereinbarter Maschinensatz<input name="partner_rate" type="number" data-booking-required></label>
-      <p data-neighbor-price-note></p><p data-no-tractor-note hidden></p>
+      <p data-no-tractor-note hidden></p>
     </div>
-    <div data-booking-panel="equipment:out equipment:in labor:out labor:in"><label><span data-booking-hours-label>Stunden</span><input name="hours" type="number" data-hours data-booking-required></label><div data-rate-preview data-booking-own-rate><span data-cost>–</span><span data-rate>–</span></div></div>
+    <div data-booking-panel="equipment:out equipment:in labor:out labor:in"><label><span data-booking-hours-label>Stunden</span><input name="hours" type="number" data-hours data-booking-required></label><div data-rate-preview data-booking-catalog-rate><span data-cost>–</span><span data-rate>–</span></div></div>
     <div data-booking-panel="quantity:out quantity:in"><select name="unit" data-unit><option value="h" hidden>Stunden</option><option value="ha">Hektar</option><option value="Ballen">Ballen</option><option value="__custom">Andere Einheit</option></select><label data-unit-custom>Eigene Einheit<input name="unit_custom" data-unit-custom-input></label><input name="quantity" type="number" data-qty data-booking-required><input name="unit_price" type="number" data-unit-price data-booking-required><span data-unit-label></span><strong data-qty-cost></strong></div>
     <label data-booking-panel="fixed:out fixed:in">Betrag<input name="amount" type="number" data-booking-required></label>
     <details data-person-details><summary><span data-person-heading>Personen mitbuchen</span> <span data-person-summary>optional</span></summary><p data-person-help></p><div data-person-rows>${personRow}${personRow}${personRow}</div><button type="button" data-person-add hidden>Person hinzufügen</button><p data-person-status></p></details>
@@ -103,7 +103,7 @@ test("all eight variants expose only their successful controls", async ({ page }
       expect(values.has("hours")).toBe(kind === "equipment" || kind === "labor");
       expect(values.has("quantity")).toBe(kind === "quantity");
       expect(values.has("amount")).toBe(kind === "fixed");
-      expect(values.has("partner_rate")).toBe(kind === "equipment" && direction === "in");
+      expect(values.has("partner_rate")).toBe(false);
       expect(values.getAll("person_id")).toHaveLength(1);
       expect(values.getAll("person_name")).toHaveLength(1);
       expect(values.getAll("person_hours")).toHaveLength(1);
@@ -128,15 +128,26 @@ test("both directions use the shared machine pool", async ({ page }) => {
     await form.locator('[name="tractor_id"]').selectOption("1");
     await form.locator('[name="load_level_id"]').selectOption("1");
     await form.locator('[name="machine_ids"][value="1"]').check();
-    if (direction === "in") await form.locator('[name="partner_rate"]').fill("45");
+    await form.locator('[name="hours"]').fill("2");
 
     const values = await successful(form);
     expect(values.get("tractor_id")).toBe("1");
     expect(values.get("load_level_id")).toBe("1");
     expect(values.getAll("machine_ids")).toEqual(["1"]);
+    expect(values.has("partner_rate")).toBe(false);
     expect(values.has("neighbor_equipment_id")).toBe(false);
+    await expect(form.locator("[data-booking-catalog-rate]")).toBeVisible();
+    await expect(form.locator("[data-rate]")).toHaveText(/46,00/);
+    await expect(form.locator("[data-cost]")).toHaveText(/92,00/);
   }
   await expect(form).not.toContainText("Fremdgerät");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileTile = form.locator("[data-booking-catalog-rate]");
+  await expect(mobileTile).toBeVisible();
+  const box = await mobileTile.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390);
 });
 
 /** Keeps checked search-hidden machines successful through subsequent field edits and POST. */

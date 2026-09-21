@@ -127,7 +127,6 @@ func TestUnifiedBookingsIntegration(t *testing.T) {
 	incoming.Set("mode", "gespann")
 	incoming.Set("gespann_id", itoa64(e.gespannID))
 	incoming.Set("hours", "2")
-	incoming.Set("partner_rate", "50")
 	incoming.Set("person_row_id", "0")
 	incoming.Set("person_id", "")
 	incoming.Set("person_name", "Franz")
@@ -138,13 +137,13 @@ func TestUnifiedBookingsIntegration(t *testing.T) {
 	e.post("/entries", incoming)
 	e.post("/entries", incoming)
 	ledger, err := e.st.ListNeighborLedger(e.ctx, e.yearID64, e.neighborID)
-	if err != nil || len(ledger) != 1 || ledger[0].Amount.StringFixed(2) != "-170.00" {
+	if err != nil || len(ledger) != 1 || ledger[0].Amount.StringFixed(2) != "-162.00" {
 		t.Fatalf("incoming=%+v %v", ledger, err)
 	}
 	snapshot := ledger[0].Booking
 	if snapshot == nil || snapshot.Mode != "gespann" || snapshot.GespannID == nil || *snapshot.GespannID != e.gespannID ||
 		len(snapshot.MachineIDs) != 1 || snapshot.MachineIDs[0] != e.machineID || snapshot.PartnerLabel != "IT-Gespann" ||
-		snapshot.UnitPrice.String() != "50" || len(snapshot.People) != 1 || snapshot.People[0].Name != "Franz" {
+		snapshot.UnitPrice.String() != "46" || len(snapshot.People) != 1 || snapshot.People[0].Name != "Franz" {
 		t.Fatalf("incoming shared-pool snapshot=%+v", snapshot)
 	}
 	if entries, err := e.st.ListEntries(e.ctx, e.neighborID, e.yearID64); err != nil || len(entries) != 0 {
@@ -154,7 +153,7 @@ func TestUnifiedBookingsIntegration(t *testing.T) {
 	incoming.Set("person_row_id", itoa64(snapshot.People[0].ID))
 	e.post(fmt.Sprintf("/ledger/%d/update", ledger[0].ID), incoming)
 	_, _, updated, err := e.st.GetLedgerEntry(e.ctx, ledger[0].ID)
-	if err != nil || updated.Booking == nil || updated.Amount.StringFixed(2) != "-220.00" {
+	if err != nil || updated.Booking == nil || updated.Amount.StringFixed(2) != "-208.00" {
 		t.Fatalf("structured edit=%+v %v", updated, err)
 	}
 	labor := base("labor", "out")

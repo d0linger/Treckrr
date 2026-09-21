@@ -118,14 +118,14 @@ func TestBookingFormUsesSharedMachinePool(t *testing.T) {
 	for _, want := range []string{
 		`data-booking-panel="equipment:out equipment:in"`,
 		`name="machine_ids" value="4"`,
+		`data-booking-catalog-rate`,
 		`data-agreed-equipment-rate`,
-		"demselben Pool für beide Seiten",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("shared machine-pool contract missing %s", want)
 		}
 	}
-	for _, forbidden := range []string{`name="neighbor_equipment_id"`, `/neighbors/3/equipment`, "Fremdgerät"} {
+	for _, forbidden := range []string{`name="neighbor_equipment_id"`, `/neighbors/3/equipment`, "Fremdgerät", `data-neighbor-price-note`} {
 		if strings.Contains(page, forbidden) {
 			t.Errorf("obsolete foreign-equipment contract remains: %s", forbidden)
 		}

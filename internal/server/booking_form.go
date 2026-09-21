@@ -148,7 +148,7 @@ func entryBookingPerson(e models.Entry) models.BookingPerson {
 }
 
 // parseBookingV2 resolves shared controls for all types without conflating own
-// invoice-bearing entries with independently priced account counterclaims.
+// invoice-bearing entries with signed account counterclaims.
 func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson) (*models.Entry, []int64, *store.LedgerBookingInput, []models.BookingPerson, string, error) {
 	kind, direction, msg := unifiedBookingSelection(r)
 	if msg != "" {
@@ -192,13 +192,13 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 		main.Unit, main.Quantity, main.UnitPrice = b.Unit, b.Quantity, b.UnitPrice
 		main.Cost = b.Quantity.Mul(b.UnitPrice).Round(2)
 	case "equipment":
-		hours, valid := positiveBookingDecimal(r, "hours")
-		if !valid || (direction == "out" && !store.MachineHoursRepresentable(hours)) {
-			return nil, nil, nil, nil, "Bitte gültige Stunden angeben. Eigene Maschinenstunden erlauben höchstens drei Nachkommastellen.", nil
-		}
 		mode := trimmed(r, "mode")
 		if mode != "gespann" && mode != "manual" && mode != "free" {
 			return nil, nil, nil, nil, "Bitte eine gültige Zusammenstellung wählen.", nil
+		}
+		hours, valid := positiveBookingDecimal(r, "hours")
+		if !valid || (mode != "free" && !store.MachineHoursRepresentable(hours)) {
+			return nil, nil, nil, nil, "Bitte gültige Stunden angeben. Maschinenstunden aus dem gepflegten Pool erlauben höchstens drei Nachkommastellen.", nil
 		}
 		if mode != "free" {
 			resolved, ids, message := s.resolveEntryFromForm(r)
@@ -228,7 +228,7 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			main.MachineLabels = b.PartnerLabel
 		}
 		rate := main.HourlyRate
-		if direction == "in" || mode == "free" {
+		if mode == "free" {
 			var valid bool
 			rate, valid = positiveBookingDecimal(r, "partner_rate")
 			if !valid {

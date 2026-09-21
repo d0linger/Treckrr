@@ -161,7 +161,7 @@ func unifiedRequestFingerprint(r *http.Request) string {
 		if kind == "fixed" {
 			fields = append(fields, "amount")
 		}
-		if kind == "equipment" {
+		if kind == "equipment" && trimmed(r, "mode") == "free" {
 			fields = append(fields, "partner_label", "partner_rate")
 		}
 	}

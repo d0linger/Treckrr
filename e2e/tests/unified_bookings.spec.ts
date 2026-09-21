@@ -60,8 +60,7 @@ async function fillBooking(page: Page, account: Account, kind: Kind, direction: 
     await form.locator('[name="tractor_id"]').selectOption("1");
     await form.locator('[name="load_level_id"]').selectOption("1");
     await form.locator('[name="machine_ids"][value="1"]').check();
-    if (direction === "out") await expect(form.locator("[data-cost]")).toHaveText(/92,00/);
-    else await form.locator('[name="partner_rate"]').fill("45");
+    await expect(form.locator("[data-cost]")).toHaveText(/92,00/);
   } else if (kind === "labor" && direction === "out") {
     await reveal(form.locator("[data-person-details]"));
     const person = firstPersonRow(form);
@@ -112,7 +111,7 @@ for (const kind of ["equipment", "labor", "quantity", "fixed"] as Kind[]) {
       const form = await fillBooking(page, account, kind, direction, task);
       await saveBooking(page, form, task);
       const card = page.locator(".bcard").filter({ hasText: task });
-      const amount = kind === "equipment" ? (direction === "out" ? "92,00" : "90,00") : kind === "labor" ? "40,00" : "37,50";
+      const amount = kind === "equipment" ? "92,00" : kind === "labor" ? "40,00" : "37,50";
       await expect(card.locator(".bcard__cost")).toHaveText(new RegExp(`^${direction === "in" ? "[−-]" : ""}${amount}\\s*€$`));
       const ledger = direction === "in" || kind === "fixed";
       await expect(card.locator(`a[href^="/${ledger ? "ledger" : "entries"}/"][href$="/edit"]`)).toHaveCount(1);
@@ -146,7 +145,7 @@ test("own equipment can book independent helper hours as a linked position", asy
   await expect(page.locator(".summary-card__value")).toContainText("122,00");
 });
 
-/** Exercises structured ledger editing/copying without flattening partner pricing or helper time. */
+/** Exercises structured ledger editing/copying with shared catalog pricing and independent helper time. */
 test("incoming equipment keeps its independent helper through edit and copy", async ({ page }) => {
   const account = await freshAccount(page), task = `E2E partner copy ${account.year}`;
   const form = await fillBooking(page, account, "equipment", "in", task);
@@ -157,7 +156,7 @@ test("incoming equipment keeps its independent helper through edit and copy", as
   await person.locator('[name="person_hours"]').fill("1.5");
   await saveBooking(page, form, task);
   let card = page.locator(".bcard").filter({ hasText: task });
-  await expect(card.locator(".bcard__cost")).toContainText("-120,00");
+  await expect(card.locator(".bcard__cost")).toContainText("-122,00");
   const editURL = await card.locator('a[href^="/ledger/"][href$="/edit"]').getAttribute("href");
   const copyURL = await card.locator('a[href^="/ledger/"][href$="/copy"]').getAttribute("href");
   await page.goto(editURL!);
@@ -166,13 +165,14 @@ test("incoming equipment keeps its independent helper through edit and copy", as
   await expect(edit.locator('[name="tractor_id"]')).toHaveValue("1");
   await expect(edit.locator('[name="load_level_id"]')).toHaveValue("1");
   await expect(edit.locator('[name="machine_ids"][value="1"]')).toBeChecked();
-  await expect(edit.locator('[name="partner_rate"]')).toHaveValue("45");
+  await expect(edit.locator('[data-agreed-equipment-rate]')).toBeHidden();
+  await expect(edit.locator('[data-rate]')).toHaveText(/46,00/);
   await expect(firstPersonRow(edit).locator('[name="person_hours"]')).toHaveValue("1.5");
   await edit.locator('[name="hours"]').fill("3");
   const updated = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/update"));
   await edit.getByRole("button", { name: /speichern/i }).click();
   expect((await updated).status()).toBe(303);
-  await expect(page.locator(".bcard").filter({ hasText: task }).locator(".bcard__cost")).toContainText("-165,00");
+  await expect(page.locator(".bcard").filter({ hasText: task }).locator(".bcard__cost")).toContainText("-168,00");
   await page.goto(copyURL!);
   const copy = page.locator('form[action="/entries"]');
   await expect(copy.locator('[name="booking_direction"]:checked')).toHaveValue("in");
@@ -181,7 +181,8 @@ test("incoming equipment keeps its independent helper through edit and copy", as
   await expect(copy.locator('[name="tractor_id"]')).toHaveValue("1");
   await expect(copy.locator('[name="load_level_id"]')).toHaveValue("1");
   await expect(copy.locator('[name="machine_ids"][value="1"]')).toBeChecked();
-  await expect(copy.locator('[name="partner_rate"]')).toHaveValue("45");
+  await expect(copy.locator('[data-agreed-equipment-rate]')).toBeHidden();
+  await expect(copy.locator('[data-rate]')).toHaveText(/46,00/);
   await expect(firstPersonRow(copy).locator('[name="person_hours"]')).toHaveValue("1.5");
   await copy.locator('[name="task_label"]').fill(task + " Kopie");
   const copied = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === "/entries");
@@ -189,8 +190,8 @@ test("incoming equipment keeps its independent helper through edit and copy", as
   expect((await copied).status()).toBe(303);
   await expect(page.locator(".bcard").filter({ hasText: task })).toHaveCount(2);
   card = page.locator(".bcard").filter({ hasText: task + " Kopie" });
-  await expect(card.locator(".bcard__cost")).toContainText("-165,00");
-  await expect(page.locator(".summary-card__value")).toContainText("-330,00");
+  await expect(card.locator(".bcard__cost")).toContainText("-168,00");
+  await expect(page.locator(".summary-card__value")).toContainText("-336,00");
 });
 
 /** Confirms counterclaims reduce settlement but never the outgoing invoice or revenue base. */
