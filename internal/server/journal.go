@@ -334,6 +334,12 @@ func (s *Server) handleAnzahlungCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID)
+	if s.tooLong(
+		w, r, "Fällig am", r.FormValue("due_on"), 50,
+	) {
+		redirect(w, r, back)
+		return
+	}
 	if !s.requireOpenYear(w, r, yearID, back) {
 		return
 	}

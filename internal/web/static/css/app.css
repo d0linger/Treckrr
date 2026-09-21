@@ -52,6 +52,7 @@
 	--data-track: #e8ece8;
 	--pay: #2f8457;
 	--owe: #c05635;
+	--on-status: #fff;
 	/* Text variants: the fills above sit at ~4.0:1 on the page ground, which is
 	   fine for a bar but under AA's 4.5:1 for text. Measured 4.84 / 4.77 on the
 	   page and better on cards. */
@@ -151,6 +152,7 @@
 		--data-track: #26302a;
 		--pay: #52b184;
 		--owe: #e0805f;
+		--on-status: #04170e;
 		--pay-text: #5ab48a;
 		--owe-text: #e18667;
 		--chassis: #16201b;
@@ -248,6 +250,7 @@
 	--data-track: #26302a;
 	--pay: #52b184;
 	--owe: #e0805f;
+	--on-status: #04170e;
 	--pay-text: #5ab48a;
 	--owe-text: #e18667;
 }
@@ -432,6 +435,8 @@ em { font-style: normal; color: var(--muted); }
 .drawer__user { font-weight: 700; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .drawer__role { font-size: .85rem; }
 .drawer__nav { display: flex; flex-direction: column; padding: .5rem; gap: .1rem; }
+.drawer__label { margin: .85rem .7rem .25rem; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+.drawer__label:first-child { margin-top: .25rem; }
 .drawer__sep { height: 1px; background: var(--border); margin: .3rem .4rem; }
 .drawer__logout { margin: 0; }
 .drawer__item {
@@ -518,6 +523,13 @@ em { font-style: normal; color: var(--muted); }
 /* Sub line ellipsizes as a whole ("10 Buchungen · 20,91 h") instead of
    word-wrapping character-by-character in a squeezed column. */
 .list__sub { font-size: .82rem; color: var(--muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.year-closing .list__sub { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+[data-nb-item] { scroll-margin-top: 6rem; }
+[data-quick-form] [name="q_date"] { min-width: 9rem; }
+[data-quick-form] [name="q_hours"] { min-width: 6rem; max-width: 8rem; }
+[data-quick-form] select { min-width: 12rem; }
+.quick-scroll-hint { display: none; }
+@media (max-width: 48rem) { .quick-scroll-hint { display: block; } }
 /* Money never shrinks and never breaks before its € — the amount is the one
    thing a row must always show intact. */
 .list__value { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; flex: 0 0 auto; }
@@ -724,6 +736,7 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 	font-weight: 600; font-size: .9rem; color: var(--muted); transition: background .15s, color .15s;
 }
 .segmented__item input:checked + span { background: var(--surface); color: var(--primary); box-shadow: var(--shadow); }
+.segmented__item input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* ---- Rate preview ----------------------------------------------------- */
 /* Live cost result of the booking form — the hero feedback: big cost, small
@@ -1644,14 +1657,14 @@ span.paychip { cursor: default; }
 .step__t { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--text); text-decoration: none; }
 .step__t small { display: block; font-weight: 400; color: var(--muted); font-size: var(--fs-xs); }
 .step__go { color: var(--muted); font-size: 1.1rem; line-height: 1; flex: 0 0 auto; }
-.step--done .step__n { background: var(--pay); color: #fff; border-color: var(--pay); }
+.step--done .step__n { background: var(--pay); color: var(--on-status); border-color: var(--pay); }
 .step--now { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
 .step--now .step__n { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 
 /* ---- Skip link (WCAG 2.4.1) ------------------------------------------- */
 /* First focusable element; off-screen until focused, then jumps to #main. */
 .skip { position: absolute; left: 8px; top: -60px; z-index: 100;
-	background: var(--primary); color: #fff; font-weight: 700; text-decoration: none;
+	background: var(--primary); color: var(--on-primary); font-weight: 700; text-decoration: none;
 	padding: .55rem .9rem; border-radius: 8px; transition: top .15s ease; }
 .skip:focus { top: 8px; }
 /* The skip link moves focus to <main> (a programmatic, non-:focus-visible
@@ -2175,7 +2188,7 @@ span.paychip { cursor: default; }
 }
 
 .appbar__offline { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px;
-	background: var(--owe, #c05635); color: #fff; white-space: nowrap; }
+	background: var(--owe); color: var(--on-status); white-space: nowrap; }
 
 /* Photo receipts attached to a booking (edit page). */
 .photogrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: .5rem; }

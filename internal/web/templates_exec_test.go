@@ -289,7 +289,7 @@ func TestInvoiceConfirmRenders(t *testing.T) {
 	ok := execPage(t, "invoice_confirm", base(true, []map[string]any{
 		{"Label": "Absender-Name", "Detail": "Hof Bergmann", "OK": true},
 	}))
-	for _, want := range []string{"Snapshot-Vorschau", "Jetzt festschreiben", "246,34"} {
+	for _, want := range []string{"Rechnungsvorschau", "Jetzt festschreiben", "246,34"} {
 		if !strings.Contains(ok, want) {
 			t.Errorf("confirm(complete) missing %q", want)
 		}

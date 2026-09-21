@@ -32,20 +32,21 @@
 			<input type="hidden" name="year_id" value="{{.Year.ID}}">
 			<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
 			<p class="muted small">Je Zeile ein festes Gespann und die Stunden{{if .Persons}}, auf Wunsch mit Person — dann werden deren Mannstunden über dieselben Stunden als verknüpfte Position mitgebucht{{end}}. Leere Zeilen werden ignoriert.</p>
-			<div class="tablewrap" role="region" aria-label="Schnellerfassung" tabindex="0">
+			<p class="muted small quick-scroll-hint" id="quick-scroll-hint">Die Tabelle lässt sich seitlich scrollen — Gespann und Person bleiben so gut lesbar.</p>
+			<div class="tablewrap" role="region" aria-label="Schnellerfassung" aria-describedby="quick-scroll-hint" tabindex="0">
 				<table class="dtable">
 					<thead><tr><th>Datum</th><th>Gespann</th><th class="num">Stunden</th>{{if .Persons}}<th>Person</th>{{end}}</tr></thead>
 					<tbody data-quick-rows>
 						{{range $i := seq 6}}
 						<tr>
-							<td><input class="input" type="date" name="q_date" value="{{$.Today}}"></td>
+							<td><input class="input" type="date" name="q_date" value="{{$.Today}}" aria-label="Datum"></td>
 							<td>
 								<select class="select" name="q_gespann" aria-label="Gespann">
 									<option value="">—</option>
 									{{range $.Gespanne}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
 								</select>
 							</td>
-							<td><input class="input" name="q_hours" inputmode="decimal" placeholder="0">
+							<td><input class="input" name="q_hours" inputmode="decimal" placeholder="0" aria-label="Stunden">
 							<input type="hidden" name="q_key" value="" data-quick-key></td>
 							{{if $.Persons}}
 							<td>

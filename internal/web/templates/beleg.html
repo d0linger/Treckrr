@@ -203,7 +203,7 @@
 		</div>
 		{{end}}
 		<div class="beleg__actgroup">
-			<span class="beleg__actlabel">Ausgeben &amp; weitergeben</span>
+			<span class="beleg__actlabel">Drucken &amp; speichern</span>
 		<div class="beleg__actrow">
 			<button type="button" class="btn btn--ghost" data-beleg-print>
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.6"/><path d="M7 17h10v4H7z"/></svg>
@@ -213,13 +213,20 @@
 			<button type="button" class="btn btn--ghost" data-beleg-image>
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m4 17 5-5 4 4 3-3 4 4"/></svg>Bild
 			</button>
-			<button type="button" class="btn btn--ghost" data-beleg-share>
-				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>Teilen
-			</button>
 			{{if .HasInvoice}}
 			{{if not .Shared}}
 			<a class="btn btn--ghost" href="/neighbors/{{.Neighbor.ID}}/beleg.pdf?year={{.Year.ID}}" target="_blank" rel="noopener">{{template "ic-copy"}} Rechnung als PDF</a>
 			{{end}}
+			{{end}}
+		</div>
+		</div>
+		<div class="beleg__actgroup">
+			<span class="beleg__actlabel">Weitergeben &amp; Versand</span>
+		<div class="beleg__actrow">
+			<button type="button" class="btn btn--ghost" data-beleg-share>
+				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>Teilen
+			</button>
+			{{if .HasInvoice}}
 			{{if and (not .Shared) .MailEnabled .NeighborEmail}}
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/beleg/email?year={{.Year.ID}}" class="beleg__markform"
 				data-confirm="Rechnung als PDF an {{.NeighborEmail}} senden?">

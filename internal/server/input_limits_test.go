@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,6 +10,77 @@ import (
 
 	"github.com/d0linger/treckrr/internal/config"
 )
+
+// TestInvoiceInputLimits rejects oversized values before any database work.
+func TestInvoiceInputLimits(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	for _, tc := range []struct {
+		name, field, label, back string
+		limit                    int
+		handler                  http.HandlerFunc
+	}{
+		{name: "invoice date", field: "issued_on", label: "Rechnungsdatum", back: "/neighbors/1/beleg?year=1", limit: 50, handler: s.handleInvoiceIssue},
+		{name: "credit amount", field: "amount", label: "Betrag", back: "/neighbors/1/beleg?year=1&rechnung=1", limit: maxDecimalLen, handler: s.handleInvoiceGutschrift},
+		{name: "advance due date", field: "due_on", label: "Fällig am", back: "/neighbors/1/beleg?year=1", limit: 50, handler: s.handleAnzahlungCreate},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			form := url.Values{"year_id": {"1"}, tc.field: {strings.Repeat("1", tc.limit+1)}}
+			assertFormRedirect(
+				t,
+				s,
+				tc.handler,
+				form,
+				tc.back,
+				fmt.Sprintf("%s darf höchstens %d Zeichen lang sein.", tc.label, tc.limit),
+			)
+		})
+	}
+}
+
+// TestPriceDecimalLimits prevents oversized rates from silently becoming zero.
+func TestPriceDecimalLimits(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	for _, tc := range []struct {
+		field, label string
+		handler      http.HandlerFunc
+	}{
+		{field: "cost_per_ps", label: "Kosten je PS", handler: s.handleLoadLevelSave},
+		{field: "ps", label: "PS", handler: s.handleTractorSave},
+		{field: "working_width", label: "Arbeitsbreite", handler: s.handleMachineSave},
+		{field: "cost_per_ab", label: "Kosten", handler: s.handleMachineSave},
+		{field: "self_cost_per_h", label: "Selbstkosten", handler: s.handleMachineSave},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			form := url.Values{"base_id": {"1"}, tc.field: {strings.Repeat("1", maxDecimalLen+1)}}
+			assertFormRedirect(
+				t,
+				s,
+				tc.handler,
+				form,
+				pricesURL(1),
+				tc.label+" darf höchstens 32 Zeichen lang sein.",
+			)
+		})
+	}
+}
+
+// TestLogin2FACodeLimit uses a valid pending token so the code guard, not an
+// expired cookie or rate limiter, must reject before accessing the absent store.
+func TestLogin2FACodeLimit(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	form := url.Values{"totp": {strings.Repeat("1", maxNameLen+1)}}
+	req := httptest.NewRequest(http.MethodPost, "/login/2fa", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: pending2FACookie, Value: s.signPending2FA(123)})
+	rr := httptest.NewRecorder()
+	s.handleLogin2FA(rr, req)
+	if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/login" {
+		t.Fatalf("response = %d %q, want redirect to login", rr.Code, rr.Header().Get("Location"))
+	}
+	if got := flashText(t, s, rr); got != "Code darf höchstens 100 Zeichen lang sein." {
+		t.Fatalf("flash = %q", got)
+	}
+}
 
 // TestStepUpInputLimits checks that oversized credentials never reach the
 // database or consume an admission attempt, including multibyte passwords.

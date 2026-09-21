@@ -3,8 +3,50 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 )
+
+func TestEntryBulkReturnPath(t *testing.T) {
+	s := testServer()
+	for _, tc := range []struct {
+		name, target string
+		allowed      bool
+	}{
+		{name: "list", target: "/buchungen", allowed: true},
+		{name: "filters", target: "/buchungen?year=1&page=2", allowed: true},
+		{name: "anchor", target: "/buchungen#top", allowed: true},
+		{name: "empty"},
+		{name: "traversal", target: "/buchungen/../..//attacker.example"},
+		{name: "backslash", target: `/buchungen\attacker.example`},
+		{name: "protocol relative", target: "//attacker.example/buchungen"},
+		{name: "absolute", target: "https://attacker.example/buchungen"},
+		{name: "suffix", target: "/buchungen.attacker.example"},
+		{name: "child", target: "/buchungen/other"},
+		{name: "encoded traversal", target: "/buchungen/%2e%2e//attacker.example"},
+		{name: "encoded backslash", target: "/buchungen%5cattacker.example"},
+		{name: "encoded slash", target: "/%2fbuchungen"},
+		{name: "canonicalized path", target: "/other/../buchungen"},
+		{name: "invalid escape", target: "/buchungen%zz"},
+		{name: "control character", target: "/buchungen\r\nLocation: https://attacker.example"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			form := url.Values{"year_id": {"1"}, "return_to": {tc.target}}
+			req := httptest.NewRequest(http.MethodPost, "/entries/bulk", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rr := httptest.NewRecorder()
+			s.handleEntryBulk(rr, req)
+			want := "/buchungen?year=1"
+			if tc.allowed {
+				want = tc.target
+			}
+			if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != want {
+				t.Fatalf("response = %d %q, want redirect to %q", rr.Code, rr.Header().Get("Location"), want)
+			}
+		})
+	}
+}
 
 func TestSafeReturnPath(t *testing.T) {
 	cases := []struct {
