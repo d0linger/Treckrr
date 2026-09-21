@@ -40,14 +40,21 @@ type LedgerBooking struct {
 
 // Total rounds each independently billed service before adding it, like entries.
 func (b LedgerBooking) Total() decimal.Decimal {
-	total := b.Quantity.Mul(b.UnitPrice).Round(2)
-	if b.Kind == "labor" {
-		total = decimal.Zero
-	}
+	total := b.ServiceCost()
 	for _, person := range b.BookingPeople() {
 		total = total.Add(person.Cost())
 	}
 	return total
+}
+
+// ServiceCost returns the independently rounded non-person component. Labor
+// stores its primary person in People, so counting Quantity × UnitPrice again
+// would duplicate that line in totals and itemized views.
+func (b LedgerBooking) ServiceCost() decimal.Decimal {
+	if b.Kind == "labor" {
+		return decimal.Zero
+	}
+	return b.Quantity.Mul(b.UnitPrice).Round(2)
 }
 
 // BookingPeople reads both current component lists and historical single-person

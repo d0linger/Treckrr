@@ -105,7 +105,7 @@
 		form.querySelector("[data-booking-hours-label]").textContent = kind.value === "labor" ? "Standard-Mannstunden (optional)" : "Stunden";
 		form.querySelector("[data-booking-catalog-rate]").hidden = !catalogEquipment();
 		form.querySelector("[data-person-heading]").textContent = kind.value === "labor" ? "Personen und Mannstunden" : "Personen mitbuchen";
-		form.querySelector("[data-person-help]").textContent = (kind.value === "equipment" || kind.value === "labor" ? "Leere Mannstunden übernehmen die Stunden oben. " : "Mannstunden bitte je Person eingeben. ") + (direction() === "in" ? "Den Nachbarpreis ausdrücklich eingeben oder den Stammsatz bewusst übernehmen." : "Der Stammsatz ist eine Vorgabe und kann je Person geändert werden.");
+		form.querySelector("[data-person-help]").textContent = (kind.value === "equipment" || kind.value === "labor" ? "Leere Mannstunden übernehmen die Stunden oben. " : "Mannstunden bitte je Person eingeben. ") + "Der Stammsatz wird übernommen und kann je Person geändert werden.";
 		form.querySelector("[data-booking-direction-note]").textContent = direction() === "out" ? "Meine Leistung erhöht die Forderung an den Nachbarn." : "Gegenleistung: Ich schulde dem Nachbarn diesen Betrag. Eigene Leistungen bleiben unverändert.";
 		var copy = field("copy_people"), enabled = !locked && (!copy || copy.checked), visible = activeRows();
 		personRows().forEach(function (row) {
@@ -116,7 +116,7 @@
 			row.querySelectorAll("input, select").forEach(function (el) { el.disabled = disabled; el.required = false; });
 			name.required = participating && !selected.value;
 			row.querySelector("[data-person-name-field]").hidden = !!selected.value;
-			rate.required = participating && !(direction() === "out" && selected.value);
+			rate.required = participating && !selected.value;
 			hours.placeholder = kind.value === "equipment" || kind.value === "labor" ? "Leer = Stunden oben" : "Eigene Mannstunden";
 			hours.required = participating && (kind.value === "quantity" || kind.value === "fixed" || (kind.value === "labor" && !positive(number("hours"))));
 			var useRate = row.querySelector("[data-person-use-rate]"); useRate.hidden = !selected.value; useRate.disabled = disabled || !positive(Number(selected.selectedOptions[0] && selected.selectedOptions[0].dataset.personRate));
@@ -140,7 +140,7 @@
 			var selected = rowField(row, "person_id"); if (selected.disabled || rowField(row, "person_state").value !== "active" || !populated(row)) return;
 			count++;
 			var option = selected.selectedOptions[0], name = selected.value ? option.textContent : rowField(row, "person_name").value.trim();
-			var rate = rowField(row, "person_rate").value ? numeric(rowField(row, "person_rate")) : direction() === "out" && selected.value ? Number(option.dataset.personRate) : 0;
+			var rate = rowField(row, "person_rate").value ? numeric(rowField(row, "person_rate")) : selected.value ? Number(option.dataset.personRate) : 0;
 			var hours = rowField(row, "person_hours").value ? numeric(rowField(row, "person_hours")) : kind.value === "equipment" || kind.value === "labor" ? number("hours") : 0;
 			if (!name) valid = false; add("Mannstunden · " + name, hours, rate);
 		});
@@ -162,7 +162,7 @@
 	});
 	form.addEventListener("change", function (event) {
 		if (event.target === kind || event.target.name === "booking_direction") selectDraft();
-		else { var row = event.target.closest("[data-person-row]"); if (row && event.target.name === "person_id") { var option = event.target.selectedOptions[0]; rowField(row, "person_name").value = event.target.value ? option.textContent.replace(/ \(archiviert\)$/, "") : ""; rowField(row, "person_rate").value = direction() === "out" && event.target.value && positive(Number(option.dataset.personRate)) ? option.dataset.personRate : ""; }
+		else { var row = event.target.closest("[data-person-row]"); if (row && event.target.name === "person_id") { var option = event.target.selectedOptions[0]; rowField(row, "person_name").value = event.target.value ? option.textContent.replace(/ \(archiviert\)$/, "") : ""; rowField(row, "person_rate").value = event.target.value && positive(Number(option.dataset.personRate)) ? option.dataset.personRate : ""; }
 			refreshVisibility(); updatePreview(); }
 		rememberDefaults();
 	});

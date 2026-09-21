@@ -18,6 +18,9 @@ func TestLedgerBookingSnapshot(t *testing.T) {
 	if got := b.Total().StringFixed(2); got != "3.02" {
 		t.Fatalf("independent line rounding: %s", got)
 	}
+	if got := b.ServiceCost().StringFixed(2); got != "1.01" {
+		t.Fatalf("service line rounding: %s", got)
+	}
 	for _, want := range []string{"Heuernte", "Nachbars Gespann", "1,005 h", "Franz", "2,005 Mannstunden", "Wiese"} {
 		if !strings.Contains(b.Summary(), want) {
 			t.Errorf("summary omitted %q: %s", want, b.Summary())

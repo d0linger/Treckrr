@@ -161,6 +161,64 @@ func TestBelegPageRenders(t *testing.T) {
 	}
 }
 
+func TestIncomingBookingBreakdownRendersInBothOverviews(t *testing.T) {
+	t.Parallel()
+	booking := &models.LedgerBooking{
+		Version: 1, Kind: "equipment", TaskLabel: "Beton mischen", Note: "Nordfeld",
+		Unit: "h", Quantity: decimal.NewFromInt(4), UnitPrice: decimal.RequireFromString("55.80"),
+		PartnerLabel: "Fixes Gespann", People: []models.BookingPerson{{
+			ID: 1, Name: "Daniel", Hours: decimal.NewFromInt(4), Rate: decimal.NewFromInt(25),
+		}},
+	}
+	ledger := models.LedgerEntry{
+		ID: 9, Amount: booking.Total().Neg(), Description: "flattened legacy description",
+		Date: time.Date(2026, time.September, 21, 0, 0, 0, 0, time.UTC), Booking: booking,
+	}
+	year := models.BillingYear{ID: 7, Year: 2026, Status: models.YearCompleted}
+	neighbor := models.Neighbor{ID: 3, Name: "Bio-Hof Steiner"}
+
+	page := execPage(t, "neighbor", map[string]any{
+		"Title": "Bio-Hof Steiner", "Year": year, "Base": models.PriceBase{ID: 1}, "Neighbor": neighbor,
+		"Completed": true, "Ledger": []models.LedgerEntry{ledger}, "LedgerSum": ledger.Amount,
+		"Saldo": ledger.Amount, "Remaining": ledger.Amount, "CreditAmount": ledger.Amount.Neg(),
+		"TotalCost": decimal.Zero, "TotalHours": decimal.Zero, "BookingCount": 1, "PaidSum": decimal.Zero,
+		"Stale": map[int64]bool{}, "PhotoCounts": map[int64]int{}, "LedgerPhotoCounts": map[int64]int{9: 1},
+		"PairLabel": map[int64]string{}, "LinkedFrom": map[int64]int64{},
+	})
+	for _, want := range []string{
+		"Meine Leistungen", "Nachbarleistungen &amp; Verrechnung", "Alle Buchungen · beide Richtungen",
+		"Beton mischen", "Maschinenleistung · Fixes Gespann · 4 h × 55,80 €/h", "223,20 €",
+		"Mannstunden · Daniel · 4 h × 25,00 €/h", "100,00 €", "1 Foto",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("neighbor overview missing %q", want)
+		}
+	}
+	if strings.Contains(page, ledger.Description) {
+		t.Error("structured booking fell back to its flattened ledger description")
+	}
+
+	row := store.BookingRow{
+		EntryRow: store.EntryRow{Entry: models.Entry{
+			ID: ledger.ID, NeighborID: neighbor.ID, BillingYearID: year.ID, Date: ledger.Date,
+			TaskLabel: booking.TaskLabel, Note: booking.Note, Unit: booking.Unit, Hours: booking.Quantity,
+			Quantity: booking.Quantity, UnitPrice: booking.UnitPrice, Cost: ledger.Amount,
+		}, NeighborName: neighbor.Name},
+		Source: "ledger", Direction: "in", Kind: "equipment", Booking: booking,
+	}
+	list := execPage(t, "entries", map[string]any{
+		"Title": "Buchungen", "Year": year, "Rows": []store.BookingRow{row}, "Total": 1,
+		"SumCost": ledger.Amount, "Filter": map[string]string{}, "Units": []string{"h"},
+		"PhotoCounts": map[int64]int{}, "LedgerPhotoCounts": map[int64]int{9: 1},
+		"Page": 1, "Pages": 1,
+	})
+	for _, want := range []string{"Maschinenleistung · 4 h", "Mannstunden · Daniel · 4 h", "Maschine 223,20 €", "Daniel 100,00 €", "1 Foto"} {
+		if !strings.Contains(list, want) {
+			t.Errorf("combined booking overview missing %q", want)
+		}
+	}
+}
+
 func TestInvoiceConfirmRenders(t *testing.T) {
 	d := decimal.NewFromFloat
 	base := func(canIssue bool, checks []map[string]any) map[string]any {

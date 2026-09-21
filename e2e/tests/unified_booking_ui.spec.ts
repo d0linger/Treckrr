@@ -150,6 +150,42 @@ test("both directions use the shared machine pool", async ({ page }) => {
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
 });
 
+/** Uses the maintained person rate automatically in both account directions. */
+test("both directions use the maintained person rate", async ({ page }) => {
+  const form = await mockPage(page);
+  for (const direction of ["out", "in"]) {
+    await form.locator(`[name="booking_direction"][value="${direction}"]`).check();
+    await form.locator('[name="booking_kind"]').selectOption("labor");
+    await form.locator('[name="hours"]').fill("2");
+    await person(form).locator('[name="person_id"]').selectOption("1");
+    await expect(person(form).locator('[name="person_rate"]')).toHaveValue("18");
+    await expect(form.locator("[data-booking-preview]")).toContainText("Mannstunden · E2E Helfer");
+    await expect(form.locator(".booking-preview__total")).toContainText("36,00");
+    expect((await successful(form)).get("person_rate")).toBe("18");
+  }
+});
+
+/** Keeps the incoming machine summary visible when a maintained helper is added. */
+test("incoming equipment keeps its cost summary after adding a person", async ({ page }) => {
+  const form = await mockPage(page);
+  await form.locator('[name="booking_direction"][value="in"]').check();
+  await form.locator('[name="mode"]').selectOption("manual");
+  await form.locator('[name="tractor_id"]').selectOption("1");
+  await form.locator('[name="load_level_id"]').selectOption("1");
+  await form.locator('[name="machine_ids"][value="1"]').check();
+  await form.locator('[name="hours"]').fill("5");
+  await expect(form.locator("[data-cost]")).toHaveText(/230,00/);
+
+  await form.locator("[data-person-details] > summary").click();
+  await person(form).locator('[name="person_id"]').selectOption("1");
+  await expect(person(form).locator('[name="person_rate"]')).toHaveValue("18");
+  await expect(form.locator("[data-booking-catalog-rate]")).toBeVisible();
+  await expect(form.locator("[data-cost]")).toHaveText(/230,00/);
+  await expect(form.locator("[data-booking-preview]")).toContainText("Maschinenleistung · 5 × 46,00 €");
+  await expect(form.locator("[data-booking-preview]")).toContainText("Mannstunden · E2E Helfer · 5 × 18,00 €");
+  await expect(form.locator(".booking-preview__total")).toContainText("320,00 €");
+});
+
 /** Keeps checked search-hidden machines successful through subsequent field edits and POST. */
 test("filtering selected machines cannot remove them from a submitted booking", async ({ page }) => {
   const form = await mockPage(page);

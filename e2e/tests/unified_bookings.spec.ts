@@ -61,16 +61,11 @@ async function fillBooking(page: Page, account: Account, kind: Kind, direction: 
     await form.locator('[name="load_level_id"]').selectOption("1");
     await form.locator('[name="machine_ids"][value="1"]').check();
     await expect(form.locator("[data-cost]")).toHaveText(/92,00/);
-  } else if (kind === "labor" && direction === "out") {
-    await reveal(form.locator("[data-person-details]"));
-    const person = firstPersonRow(form);
-    await person.locator('[name="person_id"]').selectOption("1");
-    await person.locator('[name="person_rate"]').fill("20");
   } else if (kind === "labor") {
     await reveal(form.locator("[data-person-details]"));
     const person = firstPersonRow(form);
-    await person.locator('[name="person_name"]').fill("Franz Nachbar");
-    await person.locator('[name="person_rate"]').fill("20");
+    await person.locator('[name="person_id"]').selectOption("1");
+    await expect(person.locator('[name="person_rate"]')).toHaveValue("20");
   } else if (kind === "quantity") {
     await form.locator('[name="unit"]').selectOption("Ballen");
     await form.locator('[name="quantity"]').fill("3");
@@ -115,6 +110,14 @@ for (const kind of ["equipment", "labor", "quantity", "fixed"] as Kind[]) {
       await expect(card.locator(".bcard__cost")).toHaveText(new RegExp(`^${direction === "in" ? "[−-]" : ""}${amount}\\s*€$`));
       const ledger = direction === "in" || kind === "fixed";
       await expect(card.locator(`a[href^="/${ledger ? "ledger" : "entries"}/"][href$="/edit"]`)).toHaveCount(1);
+      if (direction === "in" && kind === "equipment") {
+        await expect(card.locator(".bcard__line")).toContainText("Maschinenleistung");
+        await expect(card.locator(".bcard__line")).toContainText("92,00");
+      }
+      if (direction === "in" && kind === "labor") {
+        await expect(card.locator(".bcard__line")).toContainText("Mannstunden · E2E Helfer");
+        await expect(card.locator(".bcard__line")).toContainText("40,00");
+      }
       await page.goto(`/neighbors/1/beleg?year=${account.yearID}`);
       const line = page.locator(".beleg__lrow").filter({ hasText: task });
       await expect(line).toHaveCount(1);
@@ -151,12 +154,13 @@ test("incoming equipment keeps its independent helper through edit and copy", as
   const form = await fillBooking(page, account, "equipment", "in", task);
   await reveal(form.locator("[data-person-details]"));
   const person = firstPersonRow(form);
-  await person.locator('[name="person_name"]').fill("Franz Nachbar");
-  await person.locator('[name="person_rate"]').fill("20");
+  await person.locator('[name="person_id"]').selectOption("1");
+  await expect(person.locator('[name="person_rate"]')).toHaveValue("20");
   await person.locator('[name="person_hours"]').fill("1.5");
   await saveBooking(page, form, task);
   let card = page.locator(".bcard").filter({ hasText: task });
   await expect(card.locator(".bcard__cost")).toContainText("-122,00");
+  await expect(card.locator(".bcard__line")).toContainText(["Maschinenleistung", "Mannstunden · E2E Helfer"]);
   const editURL = await card.locator('a[href^="/ledger/"][href$="/edit"]').getAttribute("href");
   const copyURL = await card.locator('a[href^="/ledger/"][href$="/copy"]').getAttribute("href");
   await page.goto(editURL!);

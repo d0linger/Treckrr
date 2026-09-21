@@ -83,15 +83,15 @@
 			<table class="dtable">
 				<thead><tr><th><span class="sr-only">Auswahl</span></th><th>Datum</th><th>Nachbar</th><th>Richtung / Art</th><th>Tätigkeit</th><th>Menge</th><th class="num">Betrag</th></tr></thead>
 				<tbody>
-					{{range .Rows}}{{$rowKind := .Kind}}
+					{{range .Rows}}{{$rowKind := .Kind}}{{$rowID := .ID}}
 					<tr class="{{if .Voided}}dtable__row--bad{{end}}" data-booking-source="{{.Source}}">
 						<td>{{if and (not $.Completed) (ne .Kind "transfer")}}<input type="checkbox" name="booking_id" value="{{.Source}}:{{.ID}}" aria-label="{{.DirectionLabel}}: Buchung vom {{date .Date}} auswählen">{{end}}</td>
 						<td>{{date .Date}}</td>
 						<td><a href="/neighbors/{{.NeighborID}}?year={{$.Year.ID}}">{{.NeighborName}}</a></td>
 						<td>{{.DirectionLabel}}<br> <span class="muted small">{{.KindLabel}}</span></td>
-						<td><a class="booking-task-link" href="{{if not .IsLedger}}/entries/{{.ID}}/edit{{else if eq .Kind "transfer"}}/neighbors/{{.NeighborID}}?year={{$.Year.ID}}{{else}}/ledger/{{.ID}}/edit{{end}}">{{if .TaskLabel}}{{.TaskLabel}}{{else}}—{{end}}</a>{{if .Voided}} <span class="tag">storniert</span>{{end}}{{if .LinkedEntryID}} <span class="tag" title="Gemeinsam mit der Maschinenbuchung erfasst">verknüpft</span>{{end}}{{if not .IsLedger}}{{$eid := .ID}}{{with index $.PhotoCounts $eid}} <a class="tag" href="/entries/{{$eid}}/edit" title="Belegfotos">{{.}} Foto{{if gt . 1}}s{{end}}</a>{{end}}{{end}}{{with .Booking}}{{if .PartnerLabel}} <span class="muted small">{{.PartnerLabel}}</span>{{end}}{{range .BookingPeople}} <span class="muted small">{{.Name}}{{if .Voided}} (storniert){{end}}</span>{{end}}{{end}}{{if .Note}} <span class="muted small">{{.Note}}</span>{{end}}</td>
-						<td>{{if .Unit}}{{if eq .Unit "h"}}{{num .Hours}} h{{else}}{{num .Quantity}} {{.Unit}}{{end}}{{else}}—{{end}}{{with .Booking}}{{range .BookingPeople}}<br><span class="muted small">{{if ne $rowKind "labor"}}+ {{end}}{{num .Hours}} Mannstunden · {{.Name}}</span>{{end}}{{end}}</td>
-						<td class="num">{{money .Cost}}</td>
+						<td><a class="booking-task-link" href="{{if not .IsLedger}}/entries/{{.ID}}/edit{{else if eq .Kind "transfer"}}/neighbors/{{.NeighborID}}?year={{$.Year.ID}}{{else}}/ledger/{{.ID}}/edit{{end}}">{{if .TaskLabel}}{{.TaskLabel}}{{else}}—{{end}}</a>{{if .Voided}} <span class="tag">storniert</span>{{end}}{{if .LinkedEntryID}} <span class="tag" title="Gemeinsam mit der Maschinenbuchung erfasst">verknüpft</span>{{end}}{{if not .IsLedger}}{{with index $.PhotoCounts $rowID}} <a class="tag" href="/entries/{{$rowID}}/edit" title="Belegfotos">{{.}} Foto{{if gt . 1}}s{{end}}</a>{{end}}{{else}}{{with $.LedgerPhotoCounts}}{{with index . $rowID}} <a class="tag" href="/ledger/{{$rowID}}/edit" title="Belegfotos">{{.}} Foto{{if gt . 1}}s{{end}}</a>{{end}}{{end}}{{end}}{{with .Booking}}{{if .PartnerLabel}} <span class="muted small">{{.PartnerLabel}}</span>{{end}}{{range .BookingPeople}} <span class="muted small">{{.Name}}{{if .Voided}} (storniert){{end}}</span>{{end}}{{end}}{{if .Note}} <span class="muted small">{{.Note}}</span>{{end}}</td>
+						<td>{{if .Unit}}{{if eq .Unit "h"}}{{num .Hours}} h{{else}}{{num .Quantity}} {{.Unit}}{{end}}{{else}}—{{end}}{{with .Booking}}{{if eq .Kind "equipment"}}<br><span class="muted small">Maschinenleistung · {{num .Quantity}} h</span>{{end}}{{range .BookingPeople}}<br><span class="muted small">{{if ne $rowKind "labor"}}+ {{end}}Mannstunden · {{.Name}} · {{num .Hours}} h</span>{{end}}{{end}}</td>
+						<td class="num">{{money .Cost}}{{with .Booking}}<span class="booking-cost-lines">{{if .ServiceCost.IsPositive}}<span>Maschine {{money .ServiceCost}}</span>{{end}}{{range .BookingPeople}}{{if not .Voided}}<span>{{.Name}} {{money .Cost}}</span>{{end}}{{end}}</span>{{end}}</td>
 					</tr>
 					{{end}}
 				</tbody>

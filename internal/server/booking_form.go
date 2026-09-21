@@ -18,7 +18,7 @@ const maxBookingPeople = 20
 
 // bookingPeopleFromForm validates aligned component rows. Empty rows are optional;
 // disabled controls must never shift one person's hours onto another person's ID.
-func (s *Server) bookingPeopleFromForm(r *http.Request, kind, direction string, previous []models.BookingPerson) ([]models.BookingPerson, string, error) {
+func (s *Server) bookingPeopleFromForm(r *http.Request, kind, _ string, previous []models.BookingPerson) ([]models.BookingPerson, string, error) {
 	fields := []string{"person_row_id", "person_id", "person_name", "person_hours", "person_rate", "person_state"}
 	n := len(r.Form[fields[0]])
 	if n > maxBookingPeople+3 {
@@ -95,7 +95,7 @@ func (s *Server) bookingPeopleFromForm(r *http.Request, kind, direction string, 
 			return nil, "Bitte für jede Person positive Mannstunden angeben (höchstens vier Nachkommastellen).", nil
 		}
 		rate := value("person_rate")
-		if rate == "" && direction == "out" {
+		if rate == "" {
 			rate = defaultRate.String()
 		}
 		p.Rate, err = bookingDecimal(rate)

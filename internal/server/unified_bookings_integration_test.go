@@ -128,10 +128,10 @@ func TestUnifiedBookingsIntegration(t *testing.T) {
 	incoming.Set("gespann_id", itoa64(e.gespannID))
 	incoming.Set("hours", "2")
 	incoming.Set("person_row_id", "0")
-	incoming.Set("person_id", "")
-	incoming.Set("person_name", "Franz")
+	incoming.Set("person_id", itoa64(pid))
+	incoming.Set("person_name", "")
 	incoming.Set("person_hours", "3.5")
-	incoming.Set("person_rate", "20")
+	incoming.Set("person_rate", "")
 	incoming.Set("person_state", "active")
 	incoming.Set("idempotency_key", "unified-http-"+e.uname)
 	e.post("/entries", incoming)
@@ -143,7 +143,8 @@ func TestUnifiedBookingsIntegration(t *testing.T) {
 	snapshot := ledger[0].Booking
 	if snapshot == nil || snapshot.Mode != "gespann" || snapshot.GespannID == nil || *snapshot.GespannID != e.gespannID ||
 		len(snapshot.MachineIDs) != 1 || snapshot.MachineIDs[0] != e.machineID || snapshot.PartnerLabel != "IT-Gespann" ||
-		snapshot.UnitPrice.String() != "46" || len(snapshot.People) != 1 || snapshot.People[0].Name != "Franz" {
+		snapshot.UnitPrice.String() != "46" || len(snapshot.People) != 1 || snapshot.People[0].Name != "Unified helper "+e.uname ||
+		snapshot.People[0].PersonID == nil || *snapshot.People[0].PersonID != pid || snapshot.People[0].Rate.String() != "20" {
 		t.Fatalf("incoming shared-pool snapshot=%+v", snapshot)
 	}
 	if entries, err := e.st.ListEntries(e.ctx, e.neighborID, e.yearID64); err != nil || len(entries) != 0 {

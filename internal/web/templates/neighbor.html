@@ -9,10 +9,10 @@
 		<div>
 			<span class="summary-card__label">{{.Neighbor.Name}} · {{.Year.Year}}{{if or .Ledger .Payments}} · {{if .Payments}}Offener Rest{{else}}Saldo{{end}}{{end}}</span>
 			<span class="summary-card__value">{{if .Payments}}{{money .Remaining}}{{else}}{{money .Saldo}}{{end}}</span>
-			{{if or .Ledger .Payments}}<span class="summary-card__label">Leistungen {{money .TotalCost}}{{if .Ledger}} · Verrechnung {{money .LedgerSum}}{{end}}{{if .Payments}} · Bezahlt {{money .PaidSum}}{{end}}</span>{{end}}
+			{{if or .Ledger .Payments}}<span class="summary-card__label">Eigene Leistungen {{money .TotalCost}}{{if .Ledger}} · Konto {{money .LedgerSum}}{{end}}{{if .Payments}} · Bezahlt {{money .PaidSum}}{{end}}</span>{{end}}
 		</div>
 		<div class="summary-card__meta">
-			<span>{{num .TotalHours}} h · {{len .Entries}} Buchungen</span>
+			<span>Eigene Maschinenstunden {{num .TotalHours}} h · {{.BookingCount}} Positionen gesamt</span>
 			<span class="btnrow">
 				<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}/beleg?year={{.Year.ID}}">Beleg</a>
 				<a class="btn btn--ghost btn--sm" href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}">CSV Export</a>
@@ -84,7 +84,7 @@
 	{{end}}
 
 	{{if .TaskSummary}}
-	<h2 class="section-title">Zusammenfassung nach Tätigkeit</h2>
+	<h2 class="section-title">Meine Leistungen nach Tätigkeit</h2>
 	<div class="card tablewrap">
 		<table class="dtable">
 			<thead><tr><th>Tätigkeit</th><th class="num">Stunden</th><th class="num">Kosten</th></tr></thead>
@@ -110,7 +110,11 @@
 	</div>
 	{{end}}
 
-	<h2 class="section-title">Gesamtübersicht Buchungen</h2>
+	<div class="btnrow btnrow--split">
+		<h2 class="section-title">Meine Leistungen</h2>
+		<a class="link small" href="/buchungen?year={{.Year.ID}}&amp;neighbor_id={{.Neighbor.ID}}">Alle Buchungen · beide Richtungen ›</a>
+	</div>
+	<p class="muted small">Diese Positionen zählen zu meiner Leistung, Rechnung und eigenen Nutzung.</p>
 	<div class="bookcards">
 		{{range .Entries}}
 		<div class="bcard {{if .Voided}}bcard--void{{end}}" id="entry-{{.ID}}">
@@ -178,25 +182,41 @@
 		{{end}}
 	</div>
 	{{if .Entries}}
-	<div class="bcard__summary"><span class="muted">Gesamt · {{num .TotalHours}} h</span><span>{{money .TotalCost}}</span></div>
+	<div class="bcard__summary"><span class="muted">Meine Leistungen · {{num .TotalHours}} Maschinen-h</span><span>{{money .TotalCost}}</span></div>
 	{{end}}
 
-	<h2 class="section-title">Konto / Verrechnung</h2>
-	<p class="muted small">Gegenleistungen und freie Positionen werden hier getrennt ausgewiesen und mit deinen Leistungen verrechnet.
-		„Nachbar verrechnet“ reduziert den Saldo, „Ich verrechne“ erhöht ihn.</p>
+	<h2 class="section-title">Nachbarleistungen &amp; Verrechnung</h2>
+	<p class="muted small">Leistungen des Nachbarn werden mit Maschinenleistung und Mannstunden vollständig aufgeschlüsselt. Sie reduzieren den Saldo, bleiben aber von meiner Rechnung und eigenen Maschinennutzung getrennt.</p>
 	<div class="bookcards">
 		{{range .Ledger}}
-		<div class="bcard {{if .Voided}}bcard--void{{end}}">
+		{{$item := .}}
+		{{$lid := .ID}}
+		<div class="bcard {{if .Voided}}bcard--void{{end}}" id="ledger-{{.ID}}">
 			<div class="bcard__head">
 				<span class="bcard__date">{{date .Date}}</span>
-				<span class="bcard__task">{{if .TransferID}}Übertrag{{else if .Amount.IsNegative}}Nachbar verrechnet{{else}}Ich verrechne{{end}}</span>
-				{{if .Voided}}
-				<span class="bcard__badges"><span class="chip2 chip2--void"><span class="chip2__g">{{template "ic-void"}}</span>Storniert</span></span>
+				<span class="bcard__task">{{with .Booking}}{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}{{else}}{{if $item.TransferID}}Übertrag{{else if $item.Amount.IsNegative}}Nachbar verrechnet{{else}}Ich verrechne{{end}}{{end}}</span>
+				{{if or .Voided .Booking (index $.LedgerPhotoCounts .ID)}}
+				<span class="bcard__badges">
+					{{with .Booking}}<span class="chip2">{{if $item.Amount.IsNegative}}Nachbar verrechnet{{else}}Ich verrechne{{end}}</span>{{end}}
+					{{if .Voided}}<span class="chip2 chip2--void"><span class="chip2__g">{{template "ic-void"}}</span>Storniert</span>{{end}}
+					{{with index $.LedgerPhotoCounts $lid}}<a class="chip2" href="/ledger/{{$lid}}/edit" title="Belegfotos"><span class="chip2__g">{{template "ic-photo"}}</span>{{.}} Foto{{if gt . 1}}s{{end}}</a>{{end}}
+				</span>
 				{{end}}
 				<span class="bcard__cost">{{money .Amount}}</span>
 			</div>
 			<div class="bcard__foot">
+				{{with .Booking}}
+				<div class="bcard__breakdown">
+					{{if eq .Kind "equipment"}}<div class="bcard__line"><span>Maschinenleistung{{if .PartnerLabel}} · {{.PartnerLabel}}{{end}} · {{num .Quantity}} h × {{money .UnitPrice}}/h</span><strong>{{money .ServiceCost}}</strong></div>{{end}}
+					{{if eq .Kind "quantity"}}<div class="bcard__line"><span>Mengenleistung · {{num .Quantity}} {{.Unit}} × {{money .UnitPrice}}/{{.Unit}}</span><strong>{{money .ServiceCost}}</strong></div>{{end}}
+					{{if eq .Kind "fixed"}}<div class="bcard__line"><span>Freie Position</span><strong>{{money .ServiceCost}}</strong></div>{{end}}
+					{{range .BookingPeople}}<div class="bcard__line{{if .Voided}} bcard__line--void{{end}}"><span>Mannstunden · {{.Name}} · {{num .Hours}} h × {{money .Rate}}/h{{if .Voided}} · storniert{{end}}</span><strong>{{money .Cost}}</strong></div>{{end}}
+					{{if .Note}}<span class="bcard__note">{{.Note}}</span>{{end}}
+					{{if $item.VoidReason}}<span class="bcard__note">Storno: {{$item.VoidReason}}</span>{{end}}
+				</div>
+				{{else}}
 				<span class="bcard__detail">{{if .Description}}{{.Description}}{{else}}—{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
+				{{end}}
 				{{if not $.Completed}}
 				<span class="bcard__acts">
 					{{if .Voided}}

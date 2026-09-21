@@ -105,6 +105,7 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Base"] = base
 	data["Neighbor"] = neighbor
 	data["Entries"] = entries
+	data["BookingCount"] = len(entries) + len(ledger)
 	// Pair links: LinkedFrom gives each machine booking its companion's id (the
 	// reverse of the stored direction), PairLabel names the OTHER half for each
 	// side — task and hours, so with several pairs on one day the operator sees
@@ -182,7 +183,17 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	ledgerIDs := make([]int64, 0, len(ledger))
+	for _, item := range ledger {
+		ledgerIDs = append(ledgerIDs, item.ID)
+	}
+	ledgerPhotoCounts, err := s.store.LedgerPhotoCounts(r.Context(), ledgerIDs)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	data["PhotoCounts"] = photoCounts
+	data["LedgerPhotoCounts"] = ledgerPhotoCounts
 	data["Photos"] = photos
 	data["Persons"] = persons
 	data["TravelFlat"] = company.TravelFlat
