@@ -83,10 +83,6 @@ func (s *Server) setEntryBookingForm(r *http.Request, data pageData, entry *mode
 	}
 	data["BookingValues"], data["BookingPeople"], data["SelectedMachineIDs"] = v, people, ids
 	data["BookingHasOptionalPeople"] = optionalBookingPeople(v["booking_kind"], people)
-	data["NeighborEquipment"], err = s.store.ListNeighborEquipment(r.Context(), entry.NeighborID)
-	if err != nil {
-		return err
-	}
 	data["BookingEdit"], data["BookingCopy"] = !copyMode, copyMode
 	data["PhotoAction"], data["RecurringAction"] = "/entries/"+strconv.FormatInt(entry.ID, 10)+"/photos", "/entries/"+strconv.FormatInt(entry.ID, 10)+"/recur"
 	data["BookingVoided"] = entry.Voided
@@ -161,9 +157,6 @@ func (s *Server) setLedgerBookingForm(r *http.Request, data pageData, entry *mod
 	if b.LoadLevelID != nil {
 		v["load_level_id"] = strconv.FormatInt(*b.LoadLevelID, 10)
 	}
-	if b.NeighborEquipmentID != nil {
-		v["neighbor_equipment_id"] = strconv.FormatInt(*b.NeighborEquipmentID, 10)
-	}
 	people := b.BookingPeople()
 	data["BookingAction"] = "/ledger/" + strconv.FormatInt(entry.ID, 10) + "/update"
 	if copyMode {
@@ -172,15 +165,10 @@ func (s *Server) setLedgerBookingForm(r *http.Request, data pageData, entry *mod
 	}
 	data["BookingValues"], data["BookingPeople"], data["SelectedMachineIDs"] = v, people, b.MachineIDs
 	data["BookingHasOptionalPeople"] = optionalBookingPeople(b.Kind, people)
-	equipment, err := s.store.ListNeighborEquipment(r.Context(), neighborID)
-	if err != nil {
-		return err
-	}
-	data["NeighborEquipment"] = equipment
 	data["BookingEdit"], data["BookingCopy"], data["BookingVoided"] = !copyMode, copyMode, entry.Voided
 	data["PhotoAction"], data["RecurringAction"] = "/ledger/"+strconv.FormatInt(entry.ID, 10)+"/photos", "/ledger/"+strconv.FormatInt(entry.ID, 10)+"/recur"
 	data["NextWeek"] = time.Now().AddDate(0, 0, 7).Format("2006-01-02")
-	_, err = s.store.GetInvoice(r.Context(), year.ID, neighborID)
+	_, err := s.store.GetInvoice(r.Context(), year.ID, neighborID)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
@@ -217,7 +205,7 @@ func (s *Server) updateBookingEntryV2(w http.ResponseWriter, r *http.Request, ex
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	entry, ids, ledger, people, msg, err := s.parseBookingV2(r, previous, nil)
+	entry, ids, ledger, people, msg, err := s.parseBookingV2(r, previous)
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return
@@ -257,7 +245,7 @@ func (s *Server) updateBookingLedgerV2(w http.ResponseWriter, r *http.Request, e
 		s.rejectUnifiedBooking(w, r, "Art und Richtung bleiben beim Bearbeiten erhalten.")
 		return
 	}
-	_, _, ledger, _, msg, err := s.parseBookingV2(r, existing.Booking.BookingPeople(), existing.Booking.NeighborEquipmentID)
+	_, _, ledger, _, msg, err := s.parseBookingV2(r, existing.Booking.BookingPeople())
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return
@@ -270,10 +258,20 @@ func (s *Server) updateBookingLedgerV2(w http.ResponseWriter, r *http.Request, e
 		s.rejectUnifiedBooking(w, r, "Diese Buchung ist eine Verrechnungsposition.")
 		return
 	}
+	preserveLegacyEquipmentSnapshot(&ledger.Booking, existing.Booking)
 	if err := s.store.UpdateLedgerBooking(r.Context(), existing.ID, *ledger); err != nil {
 		s.unifiedBookingError(w, r, err)
 		return
 	}
 	s.setFlash(w, r, "success", "Buchung und Personen aktualisiert.")
 	redirect(w, r, neighborURL(neighborID, yearID))
+}
+
+// preserveLegacyEquipmentSnapshot keeps retired foreign-equipment metadata
+// readable when a historical booking is edited through the shared catalog UI.
+func preserveLegacyEquipmentSnapshot(target, source *models.LedgerBooking) {
+	target.NeighborEquipmentID = source.NeighborEquipmentID
+	target.EquipmentCapacity = source.EquipmentCapacity
+	target.EquipmentCapacityUnit = source.EquipmentCapacityUnit
+	target.EquipmentBillingUnit = source.EquipmentBillingUnit
 }

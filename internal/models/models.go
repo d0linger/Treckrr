@@ -322,9 +322,9 @@ type Neighbor struct {
 	Created    time.Time
 }
 
-// NeighborEquipment is reusable equipment supplied and priced by one neighbor.
-// Bookings snapshot its descriptive and price data, so later master-data edits
-// never rewrite financial history.
+// NeighborEquipment is retained only to export and erase records created by
+// the short-lived neighbor-specific equipment implementation. New bookings use
+// the shared price-basis machine catalog and never create these records.
 type NeighborEquipment struct {
 	ID           int64           `json:"id"`
 	NeighborID   int64           `json:"neighbor_id"`

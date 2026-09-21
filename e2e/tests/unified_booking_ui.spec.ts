@@ -26,7 +26,6 @@ function fixture(): string {
     <label>Was wird verrechnet?<select name="booking_kind" data-booking-kind><option value="equipment">Traktor / Gespann / Gefährt</option><option value="labor">Arbeitszeit / Mannstunden</option><option value="quantity">Mengenleistung</option><option value="fixed">Freie Position / Kosten</option></select></label>
     <label>Datum<input type="date" name="entry_date" value="2026-09-13" required></label>
     <p data-booking-direction-note></p>
-    <div data-booking-panel="equipment:in quantity:in"><select name="neighbor_equipment_id" data-neighbor-equipment><option value="">Freie Angaben verwenden</option><option value="70" data-equipment-name="Zwangsmischer" data-equipment-rate="12" data-equipment-unit="h">Zwangsmischer</option><option value="71" data-equipment-name="Fremde Ballenpresse" data-equipment-rate="7" data-equipment-unit="Ballen">Fremde Ballenpresse</option></select></div>
     <div data-booking-panel="equipment:out equipment:in">
       <select name="mode" data-mode-select><option value="gespann">Fixes Gespann</option><option value="manual">Frei zusammenstellen</option><option value="free">Anderes Gefährt / Freitext</option></select>
       <div data-mode-panel="gespann"><select name="gespann_id" data-gespann-select><option value="">— wählen —</option><option value="1">E2E Gespann</option></select></div>
@@ -119,6 +118,27 @@ test("all eight variants expose only their successful controls", async ({ page }
   }
 });
 
+/** Uses the same maintained tractor and machine controls for both account directions. */
+test("both directions use the shared machine pool", async ({ page }) => {
+  const form = await mockPage(page);
+  for (const direction of ["out", "in"]) {
+    await form.locator(`[name="booking_direction"][value="${direction}"]`).check();
+    await form.locator('[name="booking_kind"]').selectOption("equipment");
+    await form.locator('[name="mode"]').selectOption("manual");
+    await form.locator('[name="tractor_id"]').selectOption("1");
+    await form.locator('[name="load_level_id"]').selectOption("1");
+    await form.locator('[name="machine_ids"][value="1"]').check();
+    if (direction === "in") await form.locator('[name="partner_rate"]').fill("45");
+
+    const values = await successful(form);
+    expect(values.get("tractor_id")).toBe("1");
+    expect(values.get("load_level_id")).toBe("1");
+    expect(values.getAll("machine_ids")).toEqual(["1"]);
+    expect(values.has("neighbor_equipment_id")).toBe(false);
+  }
+  await expect(form).not.toContainText("Fremdgerät");
+});
+
 /** Keeps checked search-hidden machines successful through subsequent field edits and POST. */
 test("filtering selected machines cannot remove them from a submitted booking", async ({ page }) => {
   const form = await mockPage(page);
@@ -161,7 +181,7 @@ test("changing direction and kind preserves isolated drafts without leaking hidd
   await expect(form.locator('[name="partner_rate"]')).toHaveValue("");
   await form.locator('[name="mode"]').selectOption("free");
   await form.locator('[name="partner_rate"]').fill("45");
-  await form.locator('[name="partner_label"]').fill("Fremder Schwader");
+  await form.locator('[name="partner_label"]').fill("Nachbars Schwader");
   await form.locator('[name="hours"]').fill("3");
   await form.locator('[name="task_label"]').fill("Nachbars Arbeit");
   expect((await successful(form)).getAll("person_id")).toEqual([""]);
@@ -245,7 +265,7 @@ test("keyboard direction and disclosure controls preserve isolated booking draft
   await form.locator('[name="partner_label"]').fill("Nachbars Tastaturgespann");
   await form.locator('[name="partner_rate"]').fill("45");
   await form.locator('[name="hours"]').fill("3");
-  await form.locator('[name="task_label"]').fill("Fremder Tastaturentwurf");
+  await form.locator('[name="task_label"]').fill("Nachbars Tastaturentwurf");
   const incomingDetails = form.locator("[data-person-details]");
   const incomingSummary = incomingDetails.locator("summary");
   await incomingSummary.focus();
@@ -278,7 +298,7 @@ test("keyboard direction and disclosure controls preserve isolated booking draft
   await expect(incoming).toBeChecked();
   await expect(incoming).toBeFocused();
   const incomingValues = await successful(form);
-  expect(incomingValues.get("task_label")).toBe("Fremder Tastaturentwurf");
+  expect(incomingValues.get("task_label")).toBe("Nachbars Tastaturentwurf");
   expect(incomingValues.get("hours")).toBe("3");
   expect(incomingValues.get("partner_label")).toBe("Nachbars Tastaturgespann");
   expect(incomingValues.get("partner_rate")).toBe("45");

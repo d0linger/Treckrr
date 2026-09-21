@@ -149,7 +149,7 @@ func entryBookingPerson(e models.Entry) models.BookingPerson {
 
 // parseBookingV2 resolves shared controls for all types without conflating own
 // invoice-bearing entries with independently priced account counterclaims.
-func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson, previousEquipmentID *int64) (*models.Entry, []int64, *store.LedgerBookingInput, []models.BookingPerson, string, error) {
+func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson) (*models.Entry, []int64, *store.LedgerBookingInput, []models.BookingPerson, string, error) {
 	kind, direction, msg := unifiedBookingSelection(r)
 	if msg != "" {
 		return nil, nil, nil, nil, msg, nil
@@ -176,31 +176,6 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 		return nil, nil, nil, nil, "Die Buchungskennung ist zu lang.", nil
 	}
 	b := models.LedgerBooking{Version: 1, Kind: kind, TaskLabel: task, Note: note, People: people}
-	var foreignEquipment *models.NeighborEquipment
-	if equipmentID := formInt64(r, "neighbor_equipment_id"); equipmentID != 0 {
-		if direction != "in" || (kind != "equipment" && kind != "quantity") {
-			return nil, nil, nil, nil, "Fremdgeräte können nur für Gegenleistungen des Nachbarn gewählt werden.", nil
-		}
-		foreignEquipment, err = s.store.GetNeighborEquipment(r.Context(), equipmentID)
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, nil, nil, nil, "Das gewählte Fremdgerät ist nicht mehr vorhanden.", nil
-		}
-		if err != nil {
-			return nil, nil, nil, nil, "", err
-		}
-		if foreignEquipment.NeighborID != main.NeighborID {
-			return nil, nil, nil, nil, "Das gewählte Fremdgerät gehört nicht zu diesem Nachbarn.", nil
-		}
-		retainingArchived := previousEquipmentID != nil && *previousEquipmentID == foreignEquipment.ID
-		if foreignEquipment.Archived && !retainingArchived {
-			return nil, nil, nil, nil, "Das gewählte Fremdgerät ist archiviert. Bitte reaktivieren oder ein anderes wählen.", nil
-		}
-		b.NeighborEquipmentID = &foreignEquipment.ID
-		b.PartnerLabel = equipmentSnapshotLabel(foreignEquipment)
-		b.EquipmentCapacity = foreignEquipment.Capacity
-		b.EquipmentCapacityUnit = foreignEquipment.CapacityUnit
-		b.EquipmentBillingUnit = foreignEquipment.BillingUnit
-	}
 	var machines []int64
 	switch kind {
 	case "labor":
@@ -214,12 +189,6 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			return nil, nil, nil, nil, message, nil
 		}
 		b.Unit, b.Quantity, b.UnitPrice = ledger.Booking.Unit, ledger.Booking.Quantity, ledger.Booking.UnitPrice
-		if foreignEquipment != nil {
-			if equipmentIsHourly(foreignEquipment.BillingUnit) {
-				return nil, nil, nil, nil, "Stundenbasierte Fremdgeräte bitte als Traktor / Gespann / Gefährt erfassen.", nil
-			}
-			b.Unit = foreignEquipment.BillingUnit
-		}
 		main.Unit, main.Quantity, main.UnitPrice = b.Unit, b.Quantity, b.UnitPrice
 		main.Cost = b.Quantity.Mul(b.UnitPrice).Round(2)
 	case "equipment":
@@ -228,12 +197,6 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			return nil, nil, nil, nil, "Bitte gültige Stunden angeben. Eigene Maschinenstunden erlauben höchstens drei Nachkommastellen.", nil
 		}
 		mode := trimmed(r, "mode")
-		if foreignEquipment != nil {
-			mode = "free"
-			if !equipmentIsHourly(foreignEquipment.BillingUnit) {
-				return nil, nil, nil, nil, "Dieses Fremdgerät wird nicht nach Stunden abgerechnet. Bitte Mengenleistung wählen.", nil
-			}
-		}
 		if mode != "gespann" && mode != "manual" && mode != "free" {
 			return nil, nil, nil, nil, "Bitte eine gültige Zusammenstellung wählen.", nil
 		}
@@ -258,9 +221,7 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 				b.PartnerLabel = g.Name
 			}
 		} else {
-			if foreignEquipment == nil {
-				b.PartnerLabel = trimmed(r, "partner_label")
-			}
+			b.PartnerLabel = trimmed(r, "partner_label")
 			if b.PartnerLabel == "" || lenError("Fahrzeug", b.PartnerLabel, maxNameLen) != "" {
 				return nil, nil, nil, nil, "Bitte das Fahrzeug oder Gespann mit höchstens 100 Zeichen beschreiben.", nil
 			}
@@ -345,7 +306,7 @@ func (s *Server) checkBookingCatalog(r *http.Request, entry *models.Entry, ids [
 
 // handleBookingCreateV2 stores the shared editor's complete group atomically.
 func (s *Server) handleBookingCreateV2(w http.ResponseWriter, r *http.Request) {
-	entry, ids, ledger, people, msg, err := s.parseBookingV2(r, nil, nil)
+	entry, ids, ledger, people, msg, err := s.parseBookingV2(r, nil)
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return
@@ -393,13 +354,4 @@ func bookingHelpers(entry *models.Entry, people []models.BookingPerson) []*model
 		helpers = append(helpers, bookingEntryPerson(p, entry))
 	}
 	return helpers
-}
-
-func equipmentIsHourly(unit string) bool {
-	switch strings.ToLower(strings.TrimSpace(unit)) {
-	case "h", "std", "std.", "stunde", "stunden":
-		return true
-	default:
-		return false
-	}
 }

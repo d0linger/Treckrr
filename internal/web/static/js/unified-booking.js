@@ -13,7 +13,7 @@
 	var locked = form.hasAttribute("data-booking-locked");
 	var drafts = Object.create(null), lastKey = "", machineCost = null, machineRate = null, serial = 0;
 	var storagePrefix = "treckrr:booking-defaults:v2:" + value("neighbor_id") + ":";
-	var remembered = ["mode", "gespann_id", "tractor_id", "load_level_id", "machine_ids", "neighbor_equipment_id", "unit", "unit_custom", "task_label"];
+	var remembered = ["mode", "gespann_id", "tractor_id", "load_level_id", "machine_ids", "unit", "unit_custom", "task_label"];
 	var immutable = ["booking_kind", "booking_direction", "entry_date", "year_id", "neighbor_id", "csrf_token", "idempotency_key", "booking_form_version", "copy_mode"];
 	var controls = Array.from(form.querySelectorAll("input[name], select[name]")).filter(function (el) { return !el.closest("[data-person-row]") && immutable.indexOf(el.name) === -1; });
 	var direction = function () { var radio = form.querySelector("[name=booking_direction]:checked"); return radio ? radio.value : value("booking_direction"); };
@@ -103,15 +103,6 @@
 		field("hours").required = kind.value === "equipment" && !locked;
 		field("hours").step = ownEquipment() ? "0.001" : "0.0001";
 		field("hours").min = ownEquipment() ? "0.001" : "0.0001";
-		var foreign = field("neighbor_equipment_id");
-		if (foreign) Array.from(foreign.options).forEach(function (option) {
-			if (!option.value) return;
-			var equipmentUnit = (option.dataset.equipmentUnit || "").trim().toLowerCase();
-			var hourly = ["h", "std", "std.", "stunde", "stunden"].indexOf(equipmentUnit) !== -1;
-			var compatible = kind.value === "equipment" ? hourly : !hourly;
-			option.disabled = foreign.disabled || !compatible || (option.hasAttribute("data-equipment-archived") && !option.selected);
-		});
-		if (foreign && !foreign.disabled && foreign.selectedOptions[0] && foreign.selectedOptions[0].disabled && !locked) foreign.value = "";
 		form.querySelector("[data-booking-hours-label]").textContent = kind.value === "labor" ? "Standard-Mannstunden (optional)" : "Stunden";
 		form.querySelector("[data-booking-own-rate]").hidden = !ownEquipment();
 		form.querySelector("[data-person-heading]").textContent = kind.value === "labor" ? "Personen und Mannstunden" : "Personen mitbuchen";
@@ -173,12 +164,6 @@
 	form.addEventListener("change", function (event) {
 		if (event.target === kind || event.target.name === "booking_direction") selectDraft();
 		else { var row = event.target.closest("[data-person-row]"); if (row && event.target.name === "person_id") { var option = event.target.selectedOptions[0]; rowField(row, "person_name").value = event.target.value ? option.textContent.replace(/ \(archiviert\)$/, "") : ""; rowField(row, "person_rate").value = direction() === "out" && event.target.value && positive(Number(option.dataset.personRate)) ? option.dataset.personRate : ""; }
-			if (event.target.hasAttribute("data-neighbor-equipment") && event.target.value) {
-				var selected = event.target.selectedOptions[0], rate = selected.dataset.equipmentRate || "";
-				if (kind.value === "equipment") { field("mode").value = "free"; field("partner_label").value = selected.dataset.equipmentName || ""; if (positive(Number(rate))) field("partner_rate").value = rate; }
-				if (kind.value === "quantity") { var equipmentUnit = selected.dataset.equipmentUnit || ""; var known = Array.from(field("unit").options).some(function (option) { return option.value === equipmentUnit; }); field("unit").value = known ? equipmentUnit : "__custom"; field("unit_custom").value = known ? "" : equipmentUnit; if (positive(Number(rate))) field("unit_price").value = rate; }
-				if (!field("task_label").value.trim()) field("task_label").value = selected.dataset.equipmentName || "";
-			}
 			refreshVisibility(); updatePreview(); }
 		rememberDefaults();
 	});

@@ -49,6 +49,15 @@ func TestAnonymizeNeighborIntegration(t *testing.T) {
 	if err := st.UpdateNeighbor(ctx, id, name, "eine Notiz", "Dorfstraße 1", "ATU99999999", "kunde@example.at", "AT611904300234573201", nil); err != nil {
 		t.Fatalf("update neighbor: %v", err)
 	}
+	if _, err := pool.ExecContext(ctx, `INSERT INTO neighbor_equipment
+		(neighbor_id, name, capacity, capacity_unit, billing_unit, default_rate, note)
+		VALUES ($1, 'Historischer Mischer', 1000, 'l', 'h', 12, 'Altbestand')`, id); err != nil {
+		t.Fatalf("seed legacy neighbor equipment: %v", err)
+	}
+	legacyEquipment, err := st.ListNeighborEquipment(ctx, id)
+	if err != nil || len(legacyEquipment) != 1 || legacyEquipment[0].Name != "Historischer Mischer" {
+		t.Fatalf("list legacy neighbor equipment: %+v, %v", legacyEquipment, err)
+	}
 
 	// Seed the free-text surfaces the scrub list once missed: a Ratenplan note
 	// and a recurring rule (whose frozen template names the person AND would
@@ -76,7 +85,7 @@ func TestAnonymizeNeighborIntegration(t *testing.T) {
 	if err := st.AnonymizeNeighbor(ctx, id); err != nil {
 		t.Fatalf("anonymize: %v", err)
 	}
-	var planNotes, rules int
+	var planNotes, rules, legacyEquipmentRows int
 	if err := pool.QueryRowContext(ctx,
 		`SELECT count(*) FROM payment_plans WHERE neighbor_id=$1 AND note <> ''`, id).Scan(&planNotes); err != nil {
 		t.Fatalf("count plan notes: %v", err)
@@ -90,6 +99,13 @@ func TestAnonymizeNeighborIntegration(t *testing.T) {
 	}
 	if rules != 0 {
 		t.Errorf("recurring rules survived anonymization (%d rows) — they would keep booking for an erased person", rules)
+	}
+	if err := pool.QueryRowContext(ctx,
+		`SELECT count(*) FROM neighbor_equipment WHERE neighbor_id=$1`, id).Scan(&legacyEquipmentRows); err != nil {
+		t.Fatalf("count legacy neighbor equipment: %v", err)
+	}
+	if legacyEquipmentRows != 0 {
+		t.Errorf("legacy neighbor equipment survived anonymization (%d rows)", legacyEquipmentRows)
 	}
 	n, err := st.GetNeighbor(ctx, id)
 	if err != nil {

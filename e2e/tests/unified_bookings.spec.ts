@@ -54,18 +54,14 @@ async function fillBooking(page: Page, account: Account, kind: Kind, direction: 
   await form.locator('[name="entry_date"]').fill(`${account.year}-05-01`);
   await form.locator('[name="task_label"]').fill(task);
   if (kind === "equipment" || kind === "labor") await form.locator('[name="hours"]').fill("2");
-  if (kind === "equipment" && direction === "out") {
+  if (kind === "equipment") {
     await form.locator('[name="mode"]').selectOption("manual");
     await expect(form.locator('[name="mode"]')).toHaveValue("manual");
     await form.locator('[name="tractor_id"]').selectOption("1");
     await form.locator('[name="load_level_id"]').selectOption("1");
     await form.locator('[name="machine_ids"][value="1"]').check();
-    await expect(form.locator("[data-cost]")).toHaveText(/92,00/);
-  } else if (kind === "equipment") {
-    await form.locator('[name="mode"]').selectOption("free");
-    await expect(form.locator('[name="mode"]')).toHaveValue("free");
-    await form.locator('[name="partner_label"]').fill("Nachbartraktor mit Schwader");
-    await form.locator('[name="partner_rate"]').fill("45");
+    if (direction === "out") await expect(form.locator("[data-cost]")).toHaveText(/92,00/);
+    else await form.locator('[name="partner_rate"]').fill("45");
   } else if (kind === "labor" && direction === "out") {
     await reveal(form.locator("[data-person-details]"));
     const person = firstPersonRow(form);
@@ -166,6 +162,11 @@ test("incoming equipment keeps its independent helper through edit and copy", as
   const copyURL = await card.locator('a[href^="/ledger/"][href$="/copy"]').getAttribute("href");
   await page.goto(editURL!);
   const edit = page.locator('form[action^="/ledger/"][action$="/update"]');
+  await expect(edit.locator('[name="mode"]')).toHaveValue("manual");
+  await expect(edit.locator('[name="tractor_id"]')).toHaveValue("1");
+  await expect(edit.locator('[name="load_level_id"]')).toHaveValue("1");
+  await expect(edit.locator('[name="machine_ids"][value="1"]')).toBeChecked();
+  await expect(edit.locator('[name="partner_rate"]')).toHaveValue("45");
   await expect(firstPersonRow(edit).locator('[name="person_hours"]')).toHaveValue("1.5");
   await edit.locator('[name="hours"]').fill("3");
   const updated = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/update"));
@@ -176,6 +177,11 @@ test("incoming equipment keeps its independent helper through edit and copy", as
   const copy = page.locator('form[action="/entries"]');
   await expect(copy.locator('[name="booking_direction"]:checked')).toHaveValue("in");
   await expect(copy.locator('[name="hours"]')).toHaveValue("3");
+  await expect(copy.locator('[name="mode"]')).toHaveValue("manual");
+  await expect(copy.locator('[name="tractor_id"]')).toHaveValue("1");
+  await expect(copy.locator('[name="load_level_id"]')).toHaveValue("1");
+  await expect(copy.locator('[name="machine_ids"][value="1"]')).toBeChecked();
+  await expect(copy.locator('[name="partner_rate"]')).toHaveValue("45");
   await expect(firstPersonRow(copy).locator('[name="person_hours"]')).toHaveValue("1.5");
   await copy.locator('[name="task_label"]').fill(task + " Kopie");
   const copied = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === "/entries");

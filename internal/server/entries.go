@@ -92,11 +92,6 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	loads, _ := s.store.ListLoadLevels(r.Context(), base.ID)
 	machines, _ := s.store.ListActiveMachines(r.Context(), base.ID)
 	gespanne, _ := s.store.ListGespanne(r.Context(), base.ID)
-	neighborEquipment, err := s.store.ActiveNeighborEquipment(r.Context(), neighbor.ID)
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
-	}
 
 	data := s.newPage(w, r, neighbor.Name, "dashboard")
 	data["Stale"] = stale
@@ -197,7 +192,6 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Loads"] = loads
 	data["Machines"] = machines
 	data["Gespanne"] = gespanne
-	data["NeighborEquipment"] = neighborEquipment
 	data["Today"] = time.Now().Format("2006-01-02")
 	data["BookingValues"] = newBookingValues()
 	data["BookingLocked"] = data["HasInvoice"]

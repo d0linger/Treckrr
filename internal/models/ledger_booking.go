@@ -29,8 +29,9 @@ type LedgerBooking struct {
 	MachineIDs  []int64         `json:"machine_ids,omitempty"`
 	PersonID    *int64          `json:"person_id,omitempty"`
 	People      []BookingPerson `json:"people,omitempty"`
-	// NeighborEquipmentID links to reusable foreign equipment. The adjacent
-	// fields are immutable booking snapshots used when the master data changes.
+	// Deprecated compatibility fields preserve snapshots created by the brief
+	// neighbor-specific equipment implementation. New bookings use the shared
+	// price-basis catalog fields above and never populate these values.
 	NeighborEquipmentID   *int64          `json:"neighbor_equipment_id,omitempty"`
 	EquipmentCapacity     decimal.Decimal `json:"equipment_capacity,omitempty"`
 	EquipmentCapacityUnit string          `json:"equipment_capacity_unit,omitempty"`

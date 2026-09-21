@@ -29,15 +29,6 @@
 		</div>
 	</div>
 	<p class="muted small" data-booking-direction-note>Eigene Forderungen und Gegenleistungen bleiben getrennt nachvollziehbar.</p>
-	<div class="stack stack--tight" data-booking-panel="equipment:in quantity:in">
-		<label class="field"><span>Gepflegtes Fremdgerät <small>(optional)</small></span>
-			<select class="select" name="neighbor_equipment_id" data-neighbor-equipment>
-				<option value="">Freie Angaben verwenden</option>
-				{{range .NeighborEquipment}}<option value="{{.ID}}" data-equipment-name="{{.Name}}" data-equipment-rate="{{.DefaultRate.String}}" data-equipment-unit="{{.BillingUnit}}" {{if .Archived}}data-equipment-archived{{end}} {{if eq (printf "%d" .ID) (index $v "neighbor_equipment_id")}}selected{{end}}>{{.Name}}{{if .Capacity.IsPositive}} · {{num .Capacity}} {{.CapacityUnit}}{{end}} · {{money .DefaultRate}} / {{.BillingUnit}}{{if .Archived}} (inaktiv){{end}}</option>{{end}}
-			</select>
-		</label>
-		<p class="muted small">Die Auswahl übernimmt Bezeichnung, Einheit und Vorschlagssatz. Der tatsächlich vereinbarte Satz bleibt änderbar und wird in der Buchung festgehalten. <a class="link" href="/neighbors/{{.Neighbor.ID}}/equipment">Fremdgeräte pflegen</a></p>
-	</div>
 	<noscript><p class="flash flash--info">Bitte nur die Felder der gewählten Leistungsart ausfüllen. Drei zusätzliche Personenzeilen stehen ohne JavaScript bereit. Leere Zeilen werden ignoriert; die Berechnung erfolgt beim Speichern.</p></noscript>
 	<div class="stack stack--tight" data-booking-panel="equipment:out equipment:in">
 		<label class="field"><span>Gespann / Gefährt auswählen</span><select class="select" name="mode" data-mode-select>
@@ -53,7 +44,7 @@
 		</div>
 		<label class="field" data-mode-panel="free"><span>Gespann / Fahrzeug beschreiben</span><input class="input" name="partner_label" maxlength="100" value="{{index $v "partner_label"}}" placeholder="z. B. Traktor mit Schwader" data-booking-required></label>
 		<label class="field" data-agreed-equipment-rate><span>Vereinbarter Maschinensatz (€/h)</span><input class="input" type="number" name="partner_rate" min="0.0001" max="999999999" step="0.0001" value="{{index $v "partner_rate"}}" inputmode="decimal" data-booking-required></label>
-		<p class="muted small" data-neighbor-price-note>Die Auswahl übernimmt nur das Gespann, nicht deinen Preis. Den Satz des Nachbarn bitte ausdrücklich vereinbaren.</p>
+		<p class="muted small" data-neighbor-price-note>Traktoren, Maschinen und Gespanne stammen aus demselben Pool für beide Seiten. Den tatsächlich vereinbarten Satz bitte ausdrücklich eingeben.</p>
 		<p class="muted small" data-no-tractor-note hidden>Kein Traktor gewählt — verrechnet werden nur die Maschinen.</p>
 	</div>
 	<div class="form__grid form__grid--two" data-booking-panel="equipment:out equipment:in labor:out labor:in">

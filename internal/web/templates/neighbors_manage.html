@@ -37,7 +37,6 @@
 				<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}">Jahr {{$.Year.Year}}</a>
 				{{end}}
 				<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}/overview">Verlauf</a>
-				{{if not .Neighbor.Anonymized}}<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}/equipment">Fremdgeräte</a>{{end}}
 			</div>
 			<details class="disclosure disclosure--plain">
 				<summary>Bearbeiten</summary>

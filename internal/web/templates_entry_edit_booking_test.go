@@ -99,3 +99,35 @@ func TestMachineCopyExplainsSinglePosition(t *testing.T) {
 		t.Fatal("complete booking copy does not expose its person-copy choice")
 	}
 }
+
+// TestBookingFormUsesSharedMachinePool keeps the same maintained catalog
+// available for incoming and outgoing equipment without a second master-data path.
+func TestBookingFormUsesSharedMachinePool(t *testing.T) {
+	page := execPage(t, "entry_edit", map[string]any{
+		"Entry":    models.Entry{ID: 7, Unit: "h"},
+		"Neighbor": models.Neighbor{ID: 3, Name: "Bio-Hof"},
+		"Year":     models.BillingYear{ID: 42},
+		"Base":     models.PriceBase{ID: 1},
+		"Machines": []models.Machine{{ID: 4, BaseID: 1, Name: "Schwader", Active: true}},
+		"BookingValues": map[string]string{
+			"booking_kind": "equipment", "booking_direction": "in", "mode": "manual",
+		},
+		"BookingEdit": true,
+	})
+
+	for _, want := range []string{
+		`data-booking-panel="equipment:out equipment:in"`,
+		`name="machine_ids" value="4"`,
+		`data-agreed-equipment-rate`,
+		"demselben Pool für beide Seiten",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("shared machine-pool contract missing %s", want)
+		}
+	}
+	for _, forbidden := range []string{`name="neighbor_equipment_id"`, `/neighbors/3/equipment`, "Fremdgerät"} {
+		if strings.Contains(page, forbidden) {
+			t.Errorf("obsolete foreign-equipment contract remains: %s", forbidden)
+		}
+	}
+}

@@ -19,7 +19,7 @@ and an itemized settlement preview. No third-party UI runtime was added.
 
 | Service | I charge the neighbor | Neighbor charges me |
 | --- | --- | --- |
-| Tractor / rig / vehicle | Existing price-basis calculation | Named external equipment and agreed rate |
+| Tractor / rig / vehicle | Shared price-basis catalog and calculated rate | Same catalog with an explicitly agreed rate |
 | Labor | Person master data with optional agreed-rate override | Named external person and agreed rate |
 | Quantity | Quantity × unit price | Quantity × agreed unit price |
 | Free position / costs | Positive account posting | Negative account posting |
@@ -28,6 +28,10 @@ and an itemized settlement preview. No third-party UI runtime was added.
   account sign and rounds each service line independently before summing.
 - Optional equipment helpers have their own rate and, if specified, independent
   hours. Blank helper hours means the equipment hours.
+- Tractors, machines and Gespanne form one price-basis pool for both directions.
+  The booking direction controls the account sign, not equipment ownership.
+  Incoming bookings snapshot the selected catalog IDs, label and agreed rate but
+  do not contribute to own utilization, turnover or invoice lines.
 - Own equipment/labor/quantity services stay in `entries`. Incoming services and
   free positions stay in `neighbor_ledger`, with structured service metadata.
   They do not become negative own turnover, invoice lines, or machine utilization.
