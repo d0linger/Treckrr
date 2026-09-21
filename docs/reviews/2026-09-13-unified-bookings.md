@@ -19,15 +19,20 @@ and an itemized settlement preview. No third-party UI runtime was added.
 
 | Service | I charge the neighbor | Neighbor charges me |
 | --- | --- | --- |
-| Tractor / rig / vehicle | Existing price-basis calculation | Named external equipment and agreed rate |
-| Labor | Person master data with optional agreed-rate override | Named external person and agreed rate |
+| Tractor / rig / vehicle | Shared price-basis catalog and calculated rate | Same catalog and calculated rate |
+| Labor | Person master data with optional agreed-rate override | Same person master data and optional override |
 | Quantity | Quantity × unit price | Quantity × agreed unit price |
 | Free position / costs | Positive account posting | Negative account posting |
 
 - All quantities and prices are entered positively. The server determines the
   account sign and rounds each service line independently before summing.
 - Optional equipment helpers have their own rate and, if specified, independent
-  hours. Blank helper hours means the equipment hours.
+  hours. Blank helper hours means the equipment hours. A selected person's
+  maintained rate is used in both directions and remains editable per booking.
+- Tractors, machines and Gespanne form one price-basis pool for both directions.
+  The booking direction controls the account sign, not equipment ownership.
+  Incoming bookings snapshot the selected catalog IDs, label and calculated rate but
+  do not contribute to own utilization, turnover or invoice lines.
 - Own equipment/labor/quantity services stay in `entries`. Incoming services and
   free positions stay in `neighbor_ledger`, with structured service metadata.
   They do not become negative own turnover, invoice lines, or machine utilization.
@@ -44,14 +49,18 @@ and an itemized settlement preview. No third-party UI runtime was added.
   and cross-table locking prevent changed retries from silently becoming a
   different booking. Historical callers without the new fields remain supported.
 - Per-type/direction drafts cannot submit hidden fields or leak incoming prices
-  into own bookings. Only own equipment/quantity preferences persist between visits.
-- Structured counterclaim edit/copy retains equipment, quantity, agreed rates,
-  independent helper hours and reference text. Own labor retains person attribution.
+  into own bookings. Remembered catalog choices are isolated by direction and
+  type; exact rates are not persisted as preferences.
+- Structured counterclaim edit/copy retains catalog equipment and rates, quantity,
+  free-text rates, independent helper hours and reference text. Own labor retains
+  person attribution.
 - Editing linked hours is explicit opt-in. Copying an own machine row still copies
   that row only, not its separate helper; the copy form now explains this behavior.
 - Recurring own machine/helper snapshots retain independent helper hours. Old
   snapshots without that field retain their existing same-hours behavior.
-- Unified list/filter/export uses both record families with explicit source IDs.
+- The neighbor page labels own services separately from the account and expands
+  structured incoming bookings into machine and person lines. Its link to the
+  unified list/filter/export shows both record families with explicit source IDs.
   Ledger rows cannot reach entry bulk actions or collide with entry photo links.
   CSV exports all filtered matches, including exact helper quantities/rates, not
   just the current page. Legacy yearly/neighbor exports keep their existing format.

@@ -58,7 +58,10 @@ func computeAssetVersion() string {
 }
 
 // sharedTemplates are layout/partials parsed into every page set.
-var sharedTemplates = []string{"templates/layout.html", "templates/partials.html"}
+var sharedTemplates = []string{
+	"templates/layout.html", "templates/partials.html",
+	"templates/booking_form.html", "templates/booking_attachments.html",
+}
 
 // Templates parses each page against the shared layout and partials, returning
 // a set keyed by page name (the file's base name without extension, e.g.

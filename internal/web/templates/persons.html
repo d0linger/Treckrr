@@ -25,10 +25,10 @@
 	<h2 class="section-title">Mannstunden {{.Year.Year}}</h2>
 	<div class="tablewrap" role="region" aria-label="Mannstunden" tabindex="0">
 		<table class="dtable">
-			<thead><tr><th>Person</th><th class="num">Stunden</th><th class="num">Kosten</th></tr></thead>
+			<thead><tr><th>Person</th><th class="num">Ich verrechne · Stunden</th><th class="num">Ich verrechne · Betrag</th><th class="num">Nachbar verrechnet · Stunden</th><th class="num">Nachbar verrechnet · Betrag</th></tr></thead>
 			<tbody>
 				{{range .PersonHours}}
-				<tr><td>{{.Name}}</td><td class="num">{{num .Hours}}</td><td class="num">{{money .Cost}}</td></tr>
+				<tr><td>{{.Name}}</td><td class="num">{{num .Hours}}</td><td class="num">{{money .Cost}}</td><td class="num">{{num .IncomingHours}}</td><td class="num">{{money .IncomingCost}}</td></tr>
 				{{end}}
 			</tbody>
 		</table>

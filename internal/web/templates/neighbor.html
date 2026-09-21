@@ -9,10 +9,10 @@
 		<div>
 			<span class="summary-card__label">{{.Neighbor.Name}} · {{.Year.Year}}{{if or .Ledger .Payments}} · {{if .Payments}}Offener Rest{{else}}Saldo{{end}}{{end}}</span>
 			<span class="summary-card__value">{{if .Payments}}{{money .Remaining}}{{else}}{{money .Saldo}}{{end}}</span>
-			{{if or .Ledger .Payments}}<span class="summary-card__label">Leistungen {{money .TotalCost}}{{if .Ledger}} · Verrechnung {{money .LedgerSum}}{{end}}{{if .Payments}} · Bezahlt {{money .PaidSum}}{{end}}</span>{{end}}
+			{{if or .Ledger .Payments}}<span class="summary-card__label">Eigene Leistungen {{money .TotalCost}}{{if .Ledger}} · Konto {{money .LedgerSum}}{{end}}{{if .Payments}} · Bezahlt {{money .PaidSum}}{{end}}</span>{{end}}
 		</div>
 		<div class="summary-card__meta">
-			<span>{{num .TotalHours}} h · {{len .Entries}} Buchungen</span>
+			<span>Eigene Maschinenstunden {{num .TotalHours}} h · {{.BookingCount}} Positionen gesamt</span>
 			<span class="btnrow">
 				<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}/beleg?year={{.Year.ID}}">Beleg</a>
 				<a class="btn btn--ghost btn--sm" href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}">CSV Export</a>
@@ -25,96 +25,7 @@
 	{{else}}
 	<h2 class="section-title" id="neue-buchung">Neue Buchung erfassen</h2>
 	{{if .HasInvoice}}<p class="flash flash--info">Für dieses Jahr ist bereits eine Rechnung festgeschrieben. Neue Leistungen und Gegenpositionen sind gesperrt.</p>{{end}}
-	<form method="post" action="/entries" class="card form" data-entry-form data-entry-defaults data-unified-booking
-		data-pricing-url="/api/base/{{.Base.ID}}/pricing" data-balance="{{.Remaining}}" data-neighbor-name="{{.Neighbor.Name}}">
-		<input type="hidden" name="year_id" value="{{.Year.ID}}">
-		<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
-		<fieldset class="booking-direction">
-			<legend>Wer verrechnet wem?</legend>
-			<div class="booking-direction__choices">
-				<label><input type="radio" name="booking_direction" value="out" checked><span>Ich verrechne<small>{{.Neighbor.Name}} schuldet mir</small></span></label>
-				<label><input type="radio" name="booking_direction" value="in"><span>Nachbar verrechnet<small>Ich schulde {{.Neighbor.Name}}</small></span></label>
-			</div>
-		</fieldset>
-		<div class="form__grid form__grid--two">
-			<label class="field"><span>Was wird verrechnet?</span>
-				<select class="select" name="booking_kind" data-booking-kind>
-					<option value="equipment">Traktor / Gespann / Gefährt</option>
-					<option value="labor">Arbeitszeit / Mannstunden</option>
-					<option value="quantity">Mengenleistung</option>
-					<option value="fixed">Freie Position / Kosten</option>
-				</select></label>
-			<div><label class="field"><span>Datum</span><input class="input" type="date" name="entry_date" value="{{.Today}}" required></label>
-				<span class="date-shortcuts"><button class="btn btn--ghost btn--xs" type="button" data-days="0" data-target="entry_date">Heute</button><button class="btn btn--ghost btn--xs" type="button" data-days="1" data-target="entry_date">Gestern</button></span>
-			</div>
-		</div>
-		<p class="muted small" data-booking-direction-note>Eigene Forderungen und Gegenleistungen bleiben getrennt nachvollziehbar.</p>
-		<noscript><p class="flash flash--info">Bitte nur die Felder der gewählten Leistungsart ausfüllen. Ohne JavaScript erfolgt die Berechnung beim Speichern.</p></noscript>
-		<div class="stack" data-booking-panel="equipment:out">
-			<div class="segmented" role="radiogroup" aria-label="Zusammenstellung">
-				<label class="segmented__item"><input type="radio" name="mode" value="gespann" checked data-mode-toggle><span>Fixes Gespann</span></label>
-				<label class="segmented__item"><input type="radio" name="mode" value="manual" data-mode-toggle><span>Frei zusammenstellen</span></label>
-			</div>
-			<div data-mode-panel="gespann"><label class="field"><span>Mein Gespann</span><select class="select" name="gespann_id" data-gespann-select><option value="">— wählen —</option>{{range .Gespanne}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label></div>
-			<div class="equipment-grid" data-mode-panel="manual">
-				<label class="field"><span>Traktor / Gefährt</span><select class="select" name="tractor_id" data-tractor-select><option value="">— keiner —</option>{{range .Tractors}}<option value="{{.ID}}">{{.Label}}</option>{{end}}</select></label>
-				<label class="field"><span>Belastungsstufe</span><select class="select" name="load_level_id" data-load-select><option value="">— keine —</option>{{range .Loads}}<option value="{{.ID}}">{{.Name}} ({{num .CostPerPS}} €/PS·h)</option>{{end}}</select></label>
-				<fieldset class="fieldset"><legend>Maschinen</legend>{{template "machine-checks" (dict "Machines" .Machines "Selected" emptyIDs)}}</fieldset>
-			</div>
-			<p class="muted small" data-no-tractor-note hidden>Kein Traktor gewählt — verrechnet werden nur die Maschinen.</p>
-		</div>
-		<div class="form__grid form__grid--two" data-booking-panel="equipment:in">
-			<label class="field"><span>Gespann / Fahrzeug des Nachbarn</span><input class="input" name="partner_label" maxlength="100" placeholder="z. B. Traktor mit Schwader" data-booking-required></label>
-			<label class="field"><span>Vereinbarter Satz (€/h)</span><input class="input" type="number" name="partner_rate" min="0.01" step="0.01" inputmode="decimal" data-booking-required></label>
-			<p class="muted small">Eigener Preis des Nachbarn. Deine Maschinensätze werden nicht automatisch übernommen.</p>
-		</div>
-		<div class="form__grid form__grid--two" data-booking-panel="equipment:out equipment:in labor:out labor:in">
-			<label class="field"><span data-booking-hours-label>Stunden</span><input class="input" type="number" name="hours" min="0.001" step="0.001" inputmode="decimal" data-hours data-booking-required></label>
-			<div class="rate-preview" data-rate-preview data-booking-own-rate>
-				<span class="rate-preview__main"><span class="rate-preview__lbl">Maschinenkosten</span><strong class="rate-preview__cost" data-cost>–</strong></span>
-				<span class="rate-preview__rate">Satz <strong data-rate>–</strong></span>
-			</div>
-		</div>
-		<div data-booking-panel="equipment:out labor:out">
-			<details class="disclosure form-details" data-person-details>
-				<summary><span data-person-heading>Person mitbuchen</span> <span class="muted small" data-person-summary>optional</span></summary>
-				<div class="form__grid form__grid--two">
-					<label class="field"><span>Person</span><select class="select" name="person_id"><option value="">— keine —</option>{{range .Persons}}<option value="{{.ID}}" data-person-rate="{{.HourlyRate}}">{{.Name}} ({{money .HourlyRate}}/h)</option>{{end}}</select></label>
-					<label class="field"><span>Satz abweichend (€/h)</span><input class="input" type="number" name="person_rate" min="0.01" step="0.01" inputmode="decimal" placeholder="Satz aus Personenstamm"></label>
-					<label class="field" data-booking-panel="equipment:out"><span>Abweichende Mannstunden</span><input class="input" type="number" name="person_hours" min="0.001" step="0.001" inputmode="decimal" placeholder="Leer = gleiche Stunden"></label>
-				</div>
-				<p class="muted small" data-person-help>Zusätzliche Arbeitszeit wird als verknüpfte eigene Position ausgewiesen.</p>
-				{{if not .Persons}}<p class="muted small">Noch keine aktive Person vorhanden. <a class="link" href="/personen">Personen verwalten</a></p>{{end}}
-			</details>
-		</div>
-		<div data-booking-panel="equipment:in labor:in">
-			<details class="disclosure form-details" data-partner-person-details>
-				<summary><span data-partner-person-heading>Person des Nachbarn mitbuchen</span> <span class="muted small" data-partner-person-summary>optional</span></summary>
-				<div class="form__grid form__grid--two">
-					<label class="field"><span>Name der Person</span><input class="input" name="partner_person" maxlength="100" placeholder="{{.Neighbor.Name}}"></label>
-					<label class="field"><span>Vereinbarter Personensatz (€/h)</span><input class="input" type="number" name="partner_person_rate" min="0.01" step="0.01" inputmode="decimal"></label>
-					<label class="field" data-booking-panel="equipment:in"><span>Abweichende Mannstunden</span><input class="input" type="number" name="partner_person_hours" min="0.001" step="0.001" inputmode="decimal" placeholder="Leer = gleiche Stunden"></label>
-				</div>
-				<p class="muted small">Getrennt von den Maschinenkosten, mit eigenem vereinbartem Preis.</p>
-			</details>
-		</div>
-		<div class="stack" data-booking-panel="quantity:out quantity:in">
-			<label class="field"><span>Einheit</span><select class="select" name="unit" data-unit>
-				<option value="h" hidden>Stunden (h)</option><option value="ha">Hektar (ha)</option><option value="Ballen">Ballen</option><option value="m³">Kubikmeter (m³)</option><option value="Fuhre">Fuhre</option><option value="t">Tonnen (t)</option><option value="__custom">Andere Einheit …</option>
-			</select></label>
-			<label class="field" data-unit-custom><span>Eigene Einheit</span><input class="input" name="unit_custom" maxlength="16" data-unit-custom-input></label>
-			<div class="form__grid form__grid--two"><label class="field"><span>Menge</span><input class="input" type="number" name="quantity" min="0.001" step="0.001" inputmode="decimal" data-qty data-booking-required></label><label class="field"><span>€ / <span data-unit-label>Einheit</span></span><input class="input" type="number" name="unit_price" min="0.01" step="0.01" inputmode="decimal" data-unit-price data-booking-required></label></div>
-			<strong data-qty-cost hidden>–</strong>
-		</div>
-		<label class="field" data-booking-panel="fixed:out fixed:in"><span>Betrag (€)</span><input class="input" type="number" name="amount" min="0.01" step="0.01" inputmode="decimal" data-booking-required></label>
-		<label class="field"><span>Tätigkeit / Beschreibung</span><input class="input" name="task_label" maxlength="100" placeholder="z. B. Mähen, Heuarbeit oder Materialkosten" required></label>
-		<details class="disclosure form-details"><summary>Notiz / Belegreferenz hinzufügen <span class="muted small">optional</span></summary><label class="field"><span>Notiz / Referenz</span><input class="input" name="note" maxlength="2000"></label></details>
-		<div class="booking-preview" data-booking-preview role="status" aria-live="polite" aria-atomic="true"><p class="muted small">Leistung auswählen und positive Stunden oder Beträge eingeben.</p></div>
-		<p class="muted small" data-pricing-status role="status"></p>
-		<button class="btn btn--primary btn--block" type="submit" title="Strg + Enter" {{if .HasInvoice}}disabled{{end}}>Buchung speichern</button>
-		<button class="btn btn--ghost btn--xs" type="button" data-defaults-reset>Gemerkte Vorgaben löschen</button>
-		<p class="muted small">Zahlungen bleiben separat. Hier werden Leistungen und Gegenpositionen erfasst, kein Geldeingang.</p>
-	</form>
+	{{template "booking-form" .}}
 	<details class="card disclosure">
 		<summary>Schnellerfassung (mehrere Zeilen)</summary>
 		<form method="post" action="/entries/quick" class="form" data-quick-form>
@@ -173,7 +84,7 @@
 	{{end}}
 
 	{{if .TaskSummary}}
-	<h2 class="section-title">Zusammenfassung nach Tätigkeit</h2>
+	<h2 class="section-title">Meine Leistungen nach Tätigkeit</h2>
 	<div class="card tablewrap">
 		<table class="dtable">
 			<thead><tr><th>Tätigkeit</th><th class="num">Stunden</th><th class="num">Kosten</th></tr></thead>
@@ -199,7 +110,11 @@
 	</div>
 	{{end}}
 
-	<h2 class="section-title">Gesamtübersicht Buchungen</h2>
+	<div class="btnrow btnrow--split">
+		<h2 class="section-title">Meine Leistungen</h2>
+		<a class="link small" href="/buchungen?year={{.Year.ID}}&amp;neighbor_id={{.Neighbor.ID}}">Alle Buchungen · beide Richtungen ›</a>
+	</div>
+	<p class="muted small">Diese Positionen zählen zu meiner Leistung, Rechnung und eigenen Nutzung.</p>
 	<div class="bookcards">
 		{{range .Entries}}
 		<div class="bcard {{if .Voided}}bcard--void{{end}}" id="entry-{{.ID}}">
@@ -267,25 +182,41 @@
 		{{end}}
 	</div>
 	{{if .Entries}}
-	<div class="bcard__summary"><span class="muted">Gesamt · {{num .TotalHours}} h</span><span>{{money .TotalCost}}</span></div>
+	<div class="bcard__summary"><span class="muted">Meine Leistungen · {{num .TotalHours}} Maschinen-h</span><span>{{money .TotalCost}}</span></div>
 	{{end}}
 
-	<h2 class="section-title">Konto / Verrechnung</h2>
-	<p class="muted small">Gegenleistungen und freie Positionen werden hier getrennt ausgewiesen und mit deinen Leistungen verrechnet.
-		„Nachbar verrechnet“ reduziert den Saldo, „Ich verrechne“ erhöht ihn.</p>
+	<h2 class="section-title">Nachbarleistungen &amp; Verrechnung</h2>
+	<p class="muted small">Leistungen des Nachbarn werden mit Maschinenleistung und Mannstunden vollständig aufgeschlüsselt. Sie reduzieren den Saldo, bleiben aber von meiner Rechnung und eigenen Maschinennutzung getrennt.</p>
 	<div class="bookcards">
 		{{range .Ledger}}
-		<div class="bcard {{if .Voided}}bcard--void{{end}}">
+		{{$item := .}}
+		{{$lid := .ID}}
+		<div class="bcard {{if .Voided}}bcard--void{{end}}" id="ledger-{{.ID}}">
 			<div class="bcard__head">
 				<span class="bcard__date">{{date .Date}}</span>
-				<span class="bcard__task">{{if .TransferID}}Übertrag{{else if .Amount.IsNegative}}Nachbar verrechnet{{else}}Ich verrechne{{end}}</span>
-				{{if .Voided}}
-				<span class="bcard__badges"><span class="chip2 chip2--void"><span class="chip2__g">{{template "ic-void"}}</span>Storniert</span></span>
+				<span class="bcard__task">{{with .Booking}}{{if .TaskLabel}}{{.TaskLabel}}{{else}}Sonstige{{end}}{{else}}{{if $item.TransferID}}Übertrag{{else if $item.Amount.IsNegative}}Nachbar verrechnet{{else}}Ich verrechne{{end}}{{end}}</span>
+				{{if or .Voided .Booking (index $.LedgerPhotoCounts .ID)}}
+				<span class="bcard__badges">
+					{{with .Booking}}<span class="chip2">{{if $item.Amount.IsNegative}}Nachbar verrechnet{{else}}Ich verrechne{{end}}</span>{{end}}
+					{{if .Voided}}<span class="chip2 chip2--void"><span class="chip2__g">{{template "ic-void"}}</span>Storniert</span>{{end}}
+					{{with index $.LedgerPhotoCounts $lid}}<a class="chip2" href="/ledger/{{$lid}}/edit" title="Belegfotos"><span class="chip2__g">{{template "ic-photo"}}</span>{{.}} Foto{{if gt . 1}}s{{end}}</a>{{end}}
+				</span>
 				{{end}}
 				<span class="bcard__cost">{{money .Amount}}</span>
 			</div>
 			<div class="bcard__foot">
+				{{with .Booking}}
+				<div class="bcard__breakdown">
+					{{if eq .Kind "equipment"}}<div class="bcard__line"><span>Maschinenleistung{{if .PartnerLabel}} · {{.PartnerLabel}}{{end}} · {{num .Quantity}} h × {{money .UnitPrice}}/h</span><strong>{{money .ServiceCost}}</strong></div>{{end}}
+					{{if eq .Kind "quantity"}}<div class="bcard__line"><span>Mengenleistung · {{num .Quantity}} {{.Unit}} × {{money .UnitPrice}}/{{.Unit}}</span><strong>{{money .ServiceCost}}</strong></div>{{end}}
+					{{if eq .Kind "fixed"}}<div class="bcard__line"><span>Freie Position</span><strong>{{money .ServiceCost}}</strong></div>{{end}}
+					{{range .BookingPeople}}<div class="bcard__line{{if .Voided}} bcard__line--void{{end}}"><span>Mannstunden · {{.Name}} · {{num .Hours}} h × {{money .Rate}}/h{{if .Voided}} · storniert{{end}}</span><strong>{{money .Cost}}</strong></div>{{end}}
+					{{if .Note}}<span class="bcard__note">{{.Note}}</span>{{end}}
+					{{if $item.VoidReason}}<span class="bcard__note">Storno: {{$item.VoidReason}}</span>{{end}}
+				</div>
+				{{else}}
 				<span class="bcard__detail">{{if .Description}}{{.Description}}{{else}}—{{end}}{{if .VoidReason}} · Storno: {{.VoidReason}}{{end}}</span>
+				{{end}}
 				{{if not $.Completed}}
 				<span class="bcard__acts">
 					{{if .Voided}}

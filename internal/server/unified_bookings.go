@@ -53,8 +53,9 @@ func positiveBookingDecimal(r *http.Request, field string) (decimal.Decimal, boo
 	return v, true
 }
 
-// ledgerBookingFromForm builds an independently priced counterclaim snapshot.
-// Equipment supplied by a neighbor uses its agreed rate, never our price basis.
+// ledgerBookingFromForm preserves the legacy flat counterclaim contract and is
+// also reused by V2 quantity/fixed branches. V2 catalog equipment is resolved by
+// parseBookingV2 so both directions use the maintained price basis.
 func ledgerBookingFromForm(r *http.Request, kind, direction string) (store.LedgerBookingInput, string) {
 	b := models.LedgerBooking{Version: 1, Kind: kind, TaskLabel: trimmed(r, "task_label"), Note: trimmed(r, "note")}
 	in := store.LedgerBookingInput{YearID: formInt64(r, "year_id"), NeighborID: formInt64(r, "neighbor_id"), Incoming: direction == "in", IdempotencyKey: trimmed(r, "idempotency_key")}
@@ -156,6 +157,15 @@ func unifiedRequestFingerprint(r *http.Request) string {
 	}
 	kind, direction, _ := unifiedBookingSelection(r)
 	fields := []string{"booking_kind", "booking_direction", "neighbor_id", "year_id", "entry_date", "task_label", "note"}
+	if trimmed(r, "booking_form_version") == "2" {
+		fields = append(fields, "booking_form_version", "person_row_id", "person_id", "person_name", "person_hours", "person_rate", "person_state", "copy_mode", "copy_people")
+		if kind == "fixed" {
+			fields = append(fields, "amount")
+		}
+		if kind == "equipment" && trimmed(r, "mode") == "free" {
+			fields = append(fields, "partner_label", "partner_rate")
+		}
+	}
 	switch kind {
 	case "equipment":
 		fields = append(fields, "hours", "mode", "person_id")

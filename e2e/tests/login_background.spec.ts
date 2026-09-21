@@ -3,7 +3,9 @@ import { createHash } from "node:crypto";
 
 /** Pins the worksheet, theme and clock so movement cannot be confused with a reload or random layout. */
 async function openWorksheet(page: Page, sheet = "graph", theme = "light", stalled = false) {
-  await page.clock.install({ time: new Date("2026-09-14T00:00:02Z") });
+  // The installed clock runs between protocol calls. Start before the pause
+  // target so a busy runner cannot make pauseAt try to travel backwards.
+  await page.clock.install({ time: new Date("2026-09-13T23:00:02Z") });
   await page.clock.pauseAt(new Date("2026-09-14T00:00:02Z"));
   await page.addInitScript(({ sheet, theme, stalled }) => {
     localStorage.setItem("treckrr-loginbg", sheet);
@@ -149,15 +151,26 @@ test("login sweep is not frozen by the Windows reduced-motion signal", async ({ 
 });
 
 for (const stalled of [false, true]) {
-  /** Checks the five-second boundary and cancellation of both rAF and watchdog/fallback resources. */
-  test(`login sweep stops after five seconds: ${stalled ? "stalled frames" : "normal frames"}`, async ({ page }) => {
+  /** Guards against timed shutdowns while retaining keyboard pause/resume and full timer cleanup. */
+  test(`login sweep keeps running until paused: ${stalled ? "stalled frames" : "normal frames"}`, async ({ page }) => {
     await openWorksheet(page, "graph", "dark", stalled);
-    await page.clock.runFor(4000);
-    const moving = await bitmap(page);
+    await page.clock.runFor(6100);
+    for (const elapsed of [0, 60000]) {
+      await page.clock.fastForward(elapsed);
+      const moving = await bitmap(page);
+      await page.evaluate(() => { (window as any).loginSweeps = []; });
+      // Cover the short off-canvas gap while the band wraps around the sheet.
+      await page.clock.runFor(3100);
+      expect(await bitmap(page)).not.toBe(moving);
+      const count = await page.evaluate(() => (window as any).loginSweeps.length);
+      expect(count).toBeGreaterThan(50);
+      expect(count).toBeLessThanOrEqual(80);
+    }
     expect(await page.evaluate(() => (window as any).loginAnimationResources().intervals)).toBe(stalled ? 2 : 1);
-    await page.clock.runFor(800);
-    expect(await bitmap(page)).not.toBe(moving);
-    await page.clock.runFor(100);
+    const control = page.getByRole("button", { name: "Hintergrund pausieren", exact: true });
+    await control.focus();
+    await control.press("Space");
+    await expect(page.getByRole("button", { name: "Hintergrund fortsetzen", exact: true })).toBeFocused();
     expect(await page.evaluate(() => (window as any).loginAnimationResources())).toEqual({ frames: 0, intervals: 0 });
     const stopped = await bitmap(page);
     await page.evaluate(() => { (window as any).loginSweeps = []; });
@@ -166,37 +179,46 @@ for (const stalled of [false, true]) {
     expect(await page.evaluate(() => (window as any).loginSweeps)).toEqual([]);
     await page.locator('input[name="username"]').fill("still-usable");
     await expect(page.locator('input[name="username"]')).toHaveValue("still-usable");
+    await page.getByRole("button", { name: "Hintergrund fortsetzen", exact: true }).press("Enter");
+    await page.clock.runFor(2200);
+    expect(await bitmap(page)).not.toBe(stopped);
+    await expect(page.getByRole("button", { name: "Hintergrund pausieren", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => (window as any).loginAnimationResources().intervals)).toBe(stalled ? 2 : 1);
   });
 }
 
-/** Ensures resumed animation uses the original deadline, including time spent hidden or off-page. */
-test("login sweep lifecycle events do not extend the five-second window", async ({ page }) => {
+/** Ensures long absences release resources without expiring the animation when the page returns. */
+test("login sweep resumes after long hidden periods and page restoration", async ({ page }) => {
   await openWorksheet(page);
   await page.evaluate(() => {
     Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
     document.dispatchEvent(new Event("visibilitychange"));
   });
-  await page.clock.runFor(2000);
+  expect(await page.evaluate(() => (window as any).loginAnimationResources())).toEqual({ frames: 0, intervals: 0 });
+  await page.clock.fastForward(60000);
+  const hidden = await bitmap(page);
   await page.evaluate(() => {
     delete (document as any).hidden;
     document.dispatchEvent(new Event("visibilitychange"));
   });
   await page.clock.runFor(1000);
+  expect(await bitmap(page)).not.toBe(hidden);
   await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
-  await page.clock.runFor(1000);
+  expect(await page.evaluate(() => (window as any).loginAnimationResources())).toEqual({ frames: 0, intervals: 0 });
+  await page.clock.fastForward(60000);
   await page.evaluate(() => window.dispatchEvent(new Event("pageshow")));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.clock.runFor(1000);
-  expect(await page.evaluate(() => (window as any).loginAnimationResources())).toEqual({ frames: 0, intervals: 0 });
-  const stopped = await bitmap(page);
+  expect(await page.evaluate(() => (window as any).loginAnimationResources())).toEqual({ frames: 1, intervals: 1 });
+  const moving = await bitmap(page);
   await page.clock.runFor(1000);
-  expect(await bitmap(page)).toBe(stopped);
+  expect(await bitmap(page)).not.toBe(moving);
 });
 
-/** Allows static layout/theme updates after expiry without silently restarting decorative motion. */
-test("expired login sweep stays stopped after resize, theme and page restoration", async ({ page }) => {
+/** Allows static layout/theme updates without overriding the user's explicit pause choice. */
+test("paused login sweep stays stopped after resize, theme and page restoration", async ({ page }) => {
   await openWorksheet(page);
-  await page.clock.runFor(5000);
+  await page.getByRole("button", { name: "Hintergrund pausieren", exact: true }).click();
   const stopped = await bitmap(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => {
@@ -210,4 +232,19 @@ test("expired login sweep stays stopped after resize, theme and page restoration
   expect(await page.evaluate(() => (window as any).loginAnimationResources())).toEqual({ frames: 0, intervals: 0 });
   await page.clock.runFor(2000);
   expect(await bitmap(page)).toBe(redrawn);
+  await expect(page.getByRole("button", { name: "Hintergrund fortsetzen", exact: true })).toBeVisible();
+});
+
+/** Does not expose a nonfunctional motion control when JavaScript is unavailable. */
+test("login motion control stays hidden without JavaScript", async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ baseURL, javaScriptEnabled: false });
+  try {
+    const page = await context.newPage();
+    await page.goto("/login");
+    await expect(page.locator("#login-bg-toggle")).toBeHidden();
+    await expect(page.locator('input[name="username"]')).toBeVisible();
+    await expect(page.getByRole("button", { name: "Anmelden", exact: true })).toBeVisible();
+  } finally {
+    await context.close();
+  }
 });

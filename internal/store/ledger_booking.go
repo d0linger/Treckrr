@@ -32,6 +32,44 @@ func lockBookingKeys(ctx context.Context, tx *sql.Tx, keys ...string) error {
 	return nil
 }
 
+func ledgerBookingPersonIDs(booking models.LedgerBooking) []int64 {
+	ids := make([]int64, 0, len(booking.People)+1)
+	if booking.PersonID != nil {
+		ids = append(ids, *booking.PersonID)
+	}
+	for _, person := range booking.People {
+		if person.PersonID != nil {
+			ids = append(ids, *person.PersonID)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	unique := ids[:0]
+	for _, id := range ids {
+		if len(unique) > 0 && id == unique[len(unique)-1] {
+			continue
+		}
+		unique = append(unique, id)
+	}
+	return unique
+}
+
+// lockLedgerBookingPeople keeps JSON-only person references synchronized with
+// DeletePerson. Sorting and deduplicating IDs gives concurrent multi-person
+// bookings one stable row-lock order.
+func lockLedgerBookingPeople(ctx context.Context, tx *sql.Tx, booking models.LedgerBooking) error {
+	for _, id := range ledgerBookingPersonIDs(booking) {
+		var lockedID int64
+		err := tx.QueryRowContext(ctx, `SELECT id FROM persons WHERE id=$1 FOR KEY SHARE`, id).Scan(&lockedID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // rejectLedgerReplay prevents an entry retry key from resolving to a counterclaim.
 func rejectLedgerReplay(ctx context.Context, tx *sql.Tx, key string) error {
 	if key == "" {
@@ -88,6 +126,13 @@ func ledgerBookingValues(in LedgerBookingInput) (decimal.Decimal, []byte, error)
 	if b.PersonHours.IsPositive() && (!b.PersonRate.IsPositive() || b.PartnerPerson == "") {
 		return decimal.Zero, nil, errors.New("incomplete companion booking")
 	}
+	seenPeople := make(map[int64]bool, len(b.People))
+	for _, person := range b.People {
+		if person.ID <= 0 || seenPeople[person.ID] || person.Name == "" || !person.Hours.IsPositive() || !person.Rate.IsPositive() {
+			return decimal.Zero, nil, errors.New("invalid booking person")
+		}
+		seenPeople[person.ID] = true
+	}
 	amount := b.Total()
 	if !amount.IsPositive() || amount.GreaterThanOrEqual(decimal.NewFromInt(10_000_000_000)) {
 		return decimal.Zero, nil, errors.New("ledger booking amount out of range")
@@ -136,6 +181,9 @@ func (s *Store) CreateLedgerBooking(ctx context.Context, in LedgerBookingInput) 
 		}
 	}
 	if err := lockMutableBookingAccount(ctx, tx, in.YearID, in.NeighborID); err != nil {
+		return 0, err
+	}
+	if err := lockLedgerBookingPeople(ctx, tx, in.Booking); err != nil {
 		return 0, err
 	}
 	var id int64

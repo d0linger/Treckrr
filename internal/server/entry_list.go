@@ -110,12 +110,20 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 	// Only the rows on THIS page — aggregating the whole year hashed every
 	// photo-bearing booking per pager click to decorate 50 rows.
 	pageIDs := make([]int64, 0, len(rows))
+	ledgerIDs := make([]int64, 0, len(rows))
 	for _, e := range rows {
 		if !e.IsLedger() {
 			pageIDs = append(pageIDs, e.ID)
+		} else {
+			ledgerIDs = append(ledgerIDs, e.ID)
 		}
 	}
 	photoCounts, err := s.store.PhotoCountsForEntries(r.Context(), pageIDs)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	ledgerPhotoCounts, err := s.store.LedgerPhotoCounts(r.Context(), ledgerIDs)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -135,6 +143,7 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 	data["Neighbors"] = neighbors
 	data["Units"] = units
 	data["PhotoCounts"] = photoCounts
+	data["LedgerPhotoCounts"] = ledgerPhotoCounts
 	data["HasEntryRows"] = len(pageIDs) > 0
 	data["Completed"] = year.Completed()
 	data["Page"] = page
@@ -196,7 +205,7 @@ func (s *Server) handleBookingListExport(w http.ResponseWriter, r *http.Request,
 	defer finish()
 	if err := cw.Write([]string{"Quelle", "ID", "Nachbar", "Datum", "Richtung", "Art", "Tätigkeit",
 		"Einheit", "Menge", "Satz/Einheit (€)", "Betrag (€)", "Status", "Details",
-		"Partnergerät", "Person", "Zusätzliche Mannstunden", "Zusätzlicher Personensatz (€/h)"}); err != nil {
+		"Partnergerät", "Personen", "Mannstunden je Person", "Personensätze (€/h)"}); err != nil {
 		return
 	}
 	total := decimal.Zero
@@ -210,11 +219,18 @@ func (s *Server) handleBookingListExport(w http.ResponseWriter, r *http.Request,
 		}
 		if row.Booking != nil {
 			detail = row.Booking.Summary()
-			partner, person = row.Booking.PartnerLabel, row.Booking.PartnerPerson
-			if row.Booking.PersonHours.IsPositive() {
-				personHours = strings.Replace(row.Booking.PersonHours.String(), ".", ",", 1)
-				personRate = strings.Replace(row.Booking.PersonRate.String(), ".", ",", 1)
+			partner = row.Booking.PartnerLabel
+			var names, hours, rates []string
+			for _, bookingPerson := range row.Booking.BookingPeople() {
+				state := ""
+				if bookingPerson.Voided {
+					state = " (storniert)"
+				}
+				names = append(names, bookingPerson.Name+state)
+				hours = append(hours, strings.Replace(bookingPerson.Hours.String(), ".", ",", 1))
+				rates = append(rates, strings.Replace(bookingPerson.Rate.String(), ".", ",", 1))
 			}
+			person, personHours, personRate = strings.Join(names, " | "), strings.Join(hours, " | "), strings.Join(rates, " | ")
 		}
 		if err := cw.Write([]string{row.Source, itoa64(row.ID), csvSafe(row.NeighborName), web.Date(row.Date),
 			row.DirectionLabel(), row.KindLabel(), csvSafe(row.TaskLabel), csvSafe(row.Unit),
@@ -261,7 +277,7 @@ func (s *Server) handleEntryBulk(w http.ResponseWriter, r *http.Request) {
 	if ret := r.FormValue("return_to"); strings.HasPrefix(ret, "/buchungen") {
 		back = ret
 	}
-	ids, ok := formIDs(r, "entry_id")
+	ids, ok := formBookingRefs(r)
 	if !ok {
 		s.setFlash(w, r, "error", fmt.Sprintf("Zu viele Buchungen auf einmal ausgewählt (höchstens %d).", maxFormListLen))
 		redirect(w, r, "/buchungen")
@@ -283,13 +299,19 @@ func (s *Server) handleEntryBulk(w http.ResponseWriter, r *http.Request) {
 	var verb string
 	switch r.FormValue("action") {
 	case "void":
-		n, err = s.store.VoidEntries(r.Context(), ids, true, reason)
+		n, err = s.store.VoidBookings(r.Context(), ids, true, reason)
 		verb = "storniert"
 	case "unvoid":
-		n, err = s.store.VoidEntries(r.Context(), ids, false, "")
+		n, err = s.store.VoidBookings(r.Context(), ids, false, "")
 		verb = "wieder aktiviert"
 	case "delete":
-		n, err = s.store.DeleteEntries(r.Context(), ids)
+		entryIDs := []int64{}
+		for _, ref := range ids {
+			if ref.Source == "entry" {
+				entryIDs = append(entryIDs, ref.ID)
+			}
+		}
+		n, err = s.store.DeleteEntries(r.Context(), entryIDs)
 		verb = "gelöscht"
 	default:
 		s.badRequest(w, "Unbekannte Aktion.")
@@ -302,7 +324,7 @@ func (s *Server) handleEntryBulk(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, "bulk_"+r.FormValue("action"), "year", yearID,
 		fmt.Sprintf("%d von %d Buchung(en) %s%s", n, len(ids), verb, auditReason(reason)))
 	if n < len(ids) {
-		s.setFlash(w, r, "info", fmt.Sprintf("%d von %d Buchung(en) %s — der Rest ist durch eine festgeschriebene Rechnung oder ein abgeschlossenes Jahr gesperrt.", n, len(ids), verb))
+		s.setFlash(w, r, "info", fmt.Sprintf("%d von %d Buchung(en) %s — unveränderte oder gesperrte Buchungen und Jahresüberträge wurden übersprungen. Gegenleistungen werden in Sammelaktionen nur storniert, nicht endgültig gelöscht.", n, len(ids), verb))
 	} else {
 		s.setFlash(w, r, "success", fmt.Sprintf("%d Buchung(en) %s.", n, verb))
 	}
@@ -361,6 +383,10 @@ func (s *Server) handleLedgerCopy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["Copy"] = true
+	if err := s.setLedgerBookingForm(r, data, &e, year, neighborID, true); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	s.render(w, r, "ledger_edit", data)
 }
 

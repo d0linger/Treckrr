@@ -25,11 +25,11 @@ async function filterAccount(page: Page) {
     csrf_token: csrf, year_id: yearID!, neighbor_id: "1",
   } });
   expect(assigned.ok()).toBeTruthy();
-  const common = { csrf_token: csrf, year_id: yearID!, neighbor_id: "1", entry_date: `${year}-05-01` };
+  const common = { csrf_token: csrf, booking_form_version: "2", year_id: yearID!, neighbor_id: "1", entry_date: `${year}-05-01` };
   const bookings: Array<Record<string, string>> = [
     { booking_kind: "quantity", booking_direction: "out", task_label: "Eigene Pressarbeit", note: "Eigene Ballen am Nordfeld", unit: "Ballen", quantity: "10", unit_price: "10" },
-    { booking_kind: "equipment", booking_direction: "in", task_label: "Fremde Arbeit 50%", note: "Gegenleistung am Südhang", hours: "2", partner_label: "Fremdes Gespann", partner_rate: "45", partner_person: "Franz Filter", partner_person_hours: "1.5", partner_person_rate: "20" },
-    { booking_kind: "labor", booking_direction: "in", task_label: "Mithilfe Filter", hours: "1.5", partner_person: "Hans Filter", partner_person_rate: "20", entry_date: `${year}-05-02` },
+    { booking_kind: "equipment", booking_direction: "in", mode: "free", task_label: "Fremde Arbeit 50%", note: "Gegenleistung am Südhang", hours: "2", partner_label: "Fremdes Gespann", partner_rate: "45", person_row_id: "", person_id: "", person_name: "Franz Filter", person_hours: "1.5", person_rate: "20", person_state: "active" },
+    { booking_kind: "labor", booking_direction: "in", task_label: "Mithilfe Filter", hours: "1.5", person_row_id: "", person_id: "", person_name: "Hans Filter", person_hours: "", person_rate: "20", person_state: "active", entry_date: `${year}-05-02` },
   ];
   for (const fields of bookings) {
     const saved = await page.request.post("/entries", { form: { ...common, ...fields } });
@@ -85,6 +85,7 @@ test("dashboard booking shortcut opens both directions with working filters and 
   await filter.getByRole("combobox", { name: "Verrechnungsrichtung", exact: true }).selectOption("in");
   await filter.getByRole("button", { name: "Filtern", exact: true }).click();
   await expect(rows).toHaveCount(2);
+  await expect(page.locator('input[name="booking_id"]')).toHaveCount(2);
   await expect(page.locator('input[name="entry_id"]')).toHaveCount(0);
   await filter.getByRole("combobox", { name: "Leistungsart", exact: true }).selectOption("equipment");
   await filter.locator("details > summary").click();

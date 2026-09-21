@@ -6,12 +6,11 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
-	"net/url"
 	"sort"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
-	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 //go:embed migrations/*.sql
@@ -40,55 +39,30 @@ const (
 	idleInTransactionTimeout = "60s"
 )
 
-// withTimeouts adds the server-side timeouts unless the operator already set
-// them, for BOTH DSN forms libpq accepts: the URL form used everywhere in this
-// repository, and the keyword/value form ("host=… user=…") an operator may
-// legitimately supply. Handling only the first left the hardening silently
-// inactive for the second, which is the worst kind of default — one that looks
-// applied and is not.
-//
-// Anything it cannot parse is passed through untouched rather than rejected: a
-// hardening default must never stop a working deployment from booting.
-func withTimeouts(dsn string) string {
-	if u, err := url.Parse(dsn); err == nil && u.Scheme != "" {
-		if u.Scheme != "postgres" && u.Scheme != "postgresql" {
-			return dsn // not a Postgres URL; leave it alone
-		}
-		q := u.Query()
-		if q.Get("statement_timeout") == "" {
-			q.Set("statement_timeout", statementTimeout)
-		}
-		if q.Get("idle_in_transaction_session_timeout") == "" {
-			q.Set("idle_in_transaction_session_timeout", idleInTransactionTimeout)
-		}
-		u.RawQuery = q.Encode()
-		return u.String()
-	}
-
-	// Keyword/value form. pgconn's own parser decides what is already set —
-	// scanning the string by hand would mis-read quoted values. Unknown keys land
-	// in RuntimeParams, which is exactly where these two belong, so appending them
-	// produces a DSN the driver accepts unchanged.
-	cfg, err := pgconn.ParseConfig(dsn)
+// withTimeouts lets pgx parse either supported DSN form before adding defaults.
+// Re-encoding a libpq URI with net/url would turn encoded spaces into literal
+// plus signs and could change credentials or connection options.
+func withTimeouts(dsn string) (*pgx.ConnConfig, error) {
+	cfg, err := pgx.ParseConfig(dsn)
 	if err != nil {
-		return dsn
+		return nil, err
 	}
-	out := dsn
 	if cfg.RuntimeParams["statement_timeout"] == "" {
-		out += " statement_timeout=" + statementTimeout
+		cfg.RuntimeParams["statement_timeout"] = statementTimeout
 	}
 	if cfg.RuntimeParams["idle_in_transaction_session_timeout"] == "" {
-		out += " idle_in_transaction_session_timeout=" + idleInTransactionTimeout
+		cfg.RuntimeParams["idle_in_transaction_session_timeout"] = idleInTransactionTimeout
 	}
-	return out
+	return cfg, nil
 }
 
 // Connect opens a connection pool and waits until the database is reachable.
 func Connect(ctx context.Context, dsn string) (*sql.DB, error) {
-	pool, err := sql.Open("pgx", withTimeouts(dsn))
+	cfg, err := withTimeouts(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
+	pool := stdlib.OpenDB(*cfg)
 	pool.SetMaxOpenConns(maxOpenConns)
 	pool.SetMaxIdleConns(maxIdleConns)
 	pool.SetConnMaxLifetime(connMaxLifetime)

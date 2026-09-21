@@ -214,6 +214,8 @@
 
 	// Hook the booking form so an offline submit is queued instead of failing.
 	var form = document.querySelector("[data-entry-form]");
+	// Editing an existing group is never replayed as a new offline booking.
+	if (form && form.hasAttribute("data-entry-edit")) form = null;
 	if (form && form.querySelector('[name="neighbor_id"]')) {
 		if (!form.querySelector('[name="idempotency_key"]')) {
 			var k = document.createElement("input");
@@ -309,7 +311,7 @@
 		booking_kind: "Leistungsart (equipment, labor, quantity, fixed)",
 		booking_direction: "Richtung (out = eigene Leistung, in = Gegenleistung)",
 		person_hours: "Helferstunden (leer = wie Maschinenstunden)", person_rate: "Helfer-Stundensatz",
-		partner_label: "Fremdgerät / Gespann", partner_rate: "Fremdgerät-Stundensatz",
+		partner_label: "Gespann / Fahrzeug", partner_rate: "Vereinbarter Maschinensatz",
 		partner_person: "Person der Gegenleistung", partner_person_rate: "Stundensatz der Gegenleistung",
 		partner_person_hours: "Mannstunden der Gegenleistung (leer = wie Maschinenstunden)",
 		amount: "Betrag", unit_custom: "Eigene Einheit",

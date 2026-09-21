@@ -202,14 +202,22 @@ func scratchTarget(rehearseURL, liveURL string) (adminURL, scratch string, err e
 	return withDatabase(rehearseURL, "postgres"), scratch, nil
 }
 
+// withDatabase replaces the path and database aliases without re-encoding
+// credentials or unrelated options used by the restore rehearsal.
 func withDatabase(rawURL, dbName string) string {
-	u, err := url.Parse(rawURL)
+	u, err := parseDatabaseURI(rawURL)
 	if err != nil {
 		return rawURL
 	}
-	u.Path = "/" + dbName
-	q := u.Query()
-	q.Set("dbname", dbName)
-	u.RawQuery = q.Encode()
+	u.path = "/" + url.PathEscape(dbName)
+	params := make([]databaseURIParam, 0, len(u.params)+1)
+	for _, param := range u.params {
+		if param.key != "dbname" && param.key != "database" {
+			params = append(params, param)
+		}
+	}
+	// pgx accepts both aliases; neither may override the scratch target.
+	params = append(params, databaseURIParam{raw: "dbname=" + url.PathEscape(dbName)})
+	u.params = params
 	return u.String()
 }

@@ -41,6 +41,11 @@ async function reveal(details: Locator) {
   if (await details.getAttribute("open") === null) await details.locator(":scope > summary").click();
 }
 
+/** Returns the first active row from the shared repeated-person editor. */
+function firstPersonRow(form: Locator) {
+  return form.locator("[data-person-details] [data-person-row]:visible").first();
+}
+
 /** Selects an actual compact-dialog variant and fills only that visible path. */
 async function fillBooking(page: Page, account: Account, kind: Kind, direction: Direction, task: string) {
   const form = page.locator("[data-unified-booking]");
@@ -49,24 +54,18 @@ async function fillBooking(page: Page, account: Account, kind: Kind, direction: 
   await form.locator('[name="entry_date"]').fill(`${account.year}-05-01`);
   await form.locator('[name="task_label"]').fill(task);
   if (kind === "equipment" || kind === "labor") await form.locator('[name="hours"]').fill("2");
-  if (kind === "equipment" && direction === "out") {
-    await form.getByText("Frei zusammenstellen", { exact: true }).click();
-    await expect(form.locator('[name="mode"][value="manual"]')).toBeChecked();
+  if (kind === "equipment") {
+    await form.locator('[name="mode"]').selectOption("manual");
+    await expect(form.locator('[name="mode"]')).toHaveValue("manual");
     await form.locator('[name="tractor_id"]').selectOption("1");
     await form.locator('[name="load_level_id"]').selectOption("1");
     await form.locator('[name="machine_ids"][value="1"]').check();
     await expect(form.locator("[data-cost]")).toHaveText(/92,00/);
-  } else if (kind === "equipment") {
-    await form.locator('[name="partner_label"]').fill("Nachbartraktor mit Schwader");
-    await form.locator('[name="partner_rate"]').fill("45");
-  } else if (kind === "labor" && direction === "out") {
-    await reveal(form.locator("[data-person-details]"));
-    await form.locator('[name="person_id"]').selectOption("1");
-    await form.locator('[name="person_rate"]').fill("20");
   } else if (kind === "labor") {
-    await reveal(form.locator("[data-partner-person-details]"));
-    await form.locator('[name="partner_person"]').fill("Franz Nachbar");
-    await form.locator('[name="partner_person_rate"]').fill("20");
+    await reveal(form.locator("[data-person-details]"));
+    const person = firstPersonRow(form);
+    await person.locator('[name="person_id"]').selectOption("1");
+    await expect(person.locator('[name="person_rate"]')).toHaveValue("18");
   } else if (kind === "quantity") {
     await form.locator('[name="unit"]').selectOption("Ballen");
     await form.locator('[name="quantity"]').fill("3");
@@ -81,6 +80,12 @@ async function fillBooking(page: Page, account: Account, kind: Kind, direction: 
 async function saveBooking(page: Page, form: Locator, task: string) {
   const ledger = await form.locator('[name="booking_direction"]:checked').inputValue() === "in" ||
     await form.locator('[name="booking_kind"]').inputValue() === "fixed";
+  const invalid = await form.locator(":invalid").evaluateAll(controls => controls.map(control => ({
+    name: (control as HTMLInputElement).name,
+    value: (control as HTMLInputElement).value,
+    message: (control as HTMLInputElement).validationMessage,
+  })));
+  expect(invalid, JSON.stringify(invalid)).toEqual([]);
   const posted = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === "/entries");
   await form.getByRole("button", { name: "Buchung speichern", exact: true }).click();
   expect((await posted).status()).toBe(303);
@@ -101,10 +106,18 @@ for (const kind of ["equipment", "labor", "quantity", "fixed"] as Kind[]) {
       const form = await fillBooking(page, account, kind, direction, task);
       await saveBooking(page, form, task);
       const card = page.locator(".bcard").filter({ hasText: task });
-      const amount = kind === "equipment" ? (direction === "out" ? "92,00" : "90,00") : kind === "labor" ? "40,00" : "37,50";
+      const amount = kind === "equipment" ? "92,00" : kind === "labor" ? "36,00" : "37,50";
       await expect(card.locator(".bcard__cost")).toHaveText(new RegExp(`^${direction === "in" ? "[−-]" : ""}${amount}\\s*€$`));
       const ledger = direction === "in" || kind === "fixed";
       await expect(card.locator(`a[href^="/${ledger ? "ledger" : "entries"}/"][href$="/edit"]`)).toHaveCount(1);
+      if (direction === "in" && kind === "equipment") {
+        await expect(card.locator(".bcard__line")).toContainText("Maschinenleistung");
+        await expect(card.locator(".bcard__line")).toContainText("92,00");
+      }
+      if (direction === "in" && kind === "labor") {
+        await expect(card.locator(".bcard__line")).toContainText("Mannstunden · E2E Helfer");
+        await expect(card.locator(".bcard__line")).toContainText("36,00");
+      }
       await page.goto(`/neighbors/1/beleg?year=${account.yearID}`);
       const line = page.locator(".beleg__lrow").filter({ hasText: task });
       await expect(line).toHaveCount(1);
@@ -120,9 +133,10 @@ test("own equipment can book independent helper hours as a linked position", asy
   const account = await freshAccount(page), task = `E2E independent helper ${account.year}`;
   const form = await fillBooking(page, account, "equipment", "out", task);
   await reveal(form.locator("[data-person-details]"));
-  await form.locator('[name="person_id"]').selectOption("1");
-  await form.locator('[name="person_hours"]').fill("1.5");
-  await form.locator('[name="person_rate"]').fill("20");
+  const person = firstPersonRow(form);
+  await person.locator('[name="person_id"]').selectOption("1");
+  await person.locator('[name="person_hours"]').fill("1.5");
+  await person.locator('[name="person_rate"]').fill("20");
   await saveBooking(page, form, task);
   const main = page.locator(".bcard").filter({ has: page.locator(".bcard__task", { hasText: task }) });
   await expect(main.locator(".bcard__cost")).toContainText("92,00");
@@ -134,22 +148,30 @@ test("own equipment can book independent helper hours as a linked position", asy
   await expect(page.locator(".summary-card__value")).toContainText("122,00");
 });
 
-/** Exercises structured ledger editing/copying without flattening partner pricing or helper time. */
+/** Exercises structured ledger editing/copying with shared catalog pricing and independent helper time. */
 test("incoming equipment keeps its independent helper through edit and copy", async ({ page }) => {
   const account = await freshAccount(page), task = `E2E partner copy ${account.year}`;
   const form = await fillBooking(page, account, "equipment", "in", task);
-  await reveal(form.locator("[data-partner-person-details]"));
-  await form.locator('[name="partner_person"]').fill("Franz Nachbar");
-  await form.locator('[name="partner_person_rate"]').fill("20");
-  await form.locator('[name="partner_person_hours"]').fill("1.5");
+  await reveal(form.locator("[data-person-details]"));
+  const person = firstPersonRow(form);
+  await person.locator('[name="person_id"]').selectOption("1");
+  await expect(person.locator('[name="person_rate"]')).toHaveValue("18");
+  await person.locator('[name="person_hours"]').fill("1.5");
   await saveBooking(page, form, task);
   let card = page.locator(".bcard").filter({ hasText: task });
-  await expect(card.locator(".bcard__cost")).toContainText("-120,00");
+  await expect(card.locator(".bcard__cost")).toContainText("-119,00");
+  await expect(card.locator(".bcard__line")).toContainText(["Maschinenleistung", "Mannstunden · E2E Helfer"]);
   const editURL = await card.locator('a[href^="/ledger/"][href$="/edit"]').getAttribute("href");
   const copyURL = await card.locator('a[href^="/ledger/"][href$="/copy"]').getAttribute("href");
   await page.goto(editURL!);
   const edit = page.locator('form[action^="/ledger/"][action$="/update"]');
-  await expect(edit.locator('[name="partner_person_hours"]')).toHaveValue("1.5");
+  await expect(edit.locator('[name="mode"]')).toHaveValue("manual");
+  await expect(edit.locator('[name="tractor_id"]')).toHaveValue("1");
+  await expect(edit.locator('[name="load_level_id"]')).toHaveValue("1");
+  await expect(edit.locator('[name="machine_ids"][value="1"]')).toBeChecked();
+  await expect(edit.locator('[data-agreed-equipment-rate]')).toBeHidden();
+  await expect(edit.locator('[data-rate]')).toHaveText(/46,00/);
+  await expect(firstPersonRow(edit).locator('[name="person_hours"]')).toHaveValue("1.5");
   await edit.locator('[name="hours"]').fill("3");
   const updated = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/update"));
   await edit.getByRole("button", { name: /speichern/i }).click();
@@ -157,9 +179,15 @@ test("incoming equipment keeps its independent helper through edit and copy", as
   await expect(page.locator(".bcard").filter({ hasText: task }).locator(".bcard__cost")).toContainText("-165,00");
   await page.goto(copyURL!);
   const copy = page.locator('form[action="/entries"]');
-  await expect(copy.locator('[name="booking_direction"]')).toHaveValue("in");
+  await expect(copy.locator('[name="booking_direction"]:checked')).toHaveValue("in");
   await expect(copy.locator('[name="hours"]')).toHaveValue("3");
-  await expect(copy.locator('[name="partner_person_hours"]')).toHaveValue("1.5");
+  await expect(copy.locator('[name="mode"]')).toHaveValue("manual");
+  await expect(copy.locator('[name="tractor_id"]')).toHaveValue("1");
+  await expect(copy.locator('[name="load_level_id"]')).toHaveValue("1");
+  await expect(copy.locator('[name="machine_ids"][value="1"]')).toBeChecked();
+  await expect(copy.locator('[data-agreed-equipment-rate]')).toBeHidden();
+  await expect(copy.locator('[data-rate]')).toHaveText(/46,00/);
+  await expect(firstPersonRow(copy).locator('[name="person_hours"]')).toHaveValue("1.5");
   await copy.locator('[name="task_label"]').fill(task + " Kopie");
   const copied = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === "/entries");
   await copy.getByRole("button", { name: /speichern/i }).click();
@@ -179,7 +207,7 @@ test("incoming work offsets the account without reducing own invoice net or stat
   await saveBooking(page, form, `E2E own revenue ${account.year}`);
   form = await fillBooking(page, account, "labor", "in", `E2E counter labor ${account.year}`);
   await saveBooking(page, form, `E2E counter labor ${account.year}`);
-  await expect(page.locator(".summary-card__value")).toContainText("60,00");
+  await expect(page.locator(".summary-card__value")).toContainText("64,00");
   await page.goto(`/stats?year=${account.yearID}`);
   await expect(page.locator(".kpi--rev .kpi__value")).toContainText("100,00");
   // Make this test independently runnable: the invoice spec need not have
@@ -201,7 +229,7 @@ test("incoming work offsets the account without reducing own invoice net or stat
   await expect(page.locator(".cfm-prev-row").filter({ has: page.getByText("Netto", { exact: true }) })).toContainText("100,00");
   await expect(page.locator(".cfm-prev-row").filter({ has: page.getByText("Brutto", { exact: true }) })).toContainText("120,00");
   await page.goto(`/neighbors/1/beleg?year=${account.yearID}`);
-  await expect(page.locator(".beleg__lrow--ver").filter({ hasText: `E2E counter labor ${account.year}` })).toContainText("-40,00");
+  await expect(page.locator(".beleg__lrow--ver").filter({ hasText: `E2E counter labor ${account.year}` })).toContainText("-36,00");
 });
 
 /** Retains the person attribution and explicit rate when editing and copying own labor. */
@@ -214,23 +242,24 @@ test("own labor remains attributed to its person after edit and copy", async ({ 
   const copyURL = await card.locator('a[href^="/entries/"][href$="/copy"]').getAttribute("href");
   await page.goto(editURL!);
   const edit = page.locator('form[action^="/entries/"][action$="/update"]');
-  await expect(edit.locator('[name="person_id"]')).toHaveValue("1");
-  await edit.locator('[name="hours"]').fill("3");
+  await expect(firstPersonRow(edit).locator('[name="person_id"]')).toHaveValue("1");
+  await firstPersonRow(edit).locator('[name="person_hours"]').fill("3");
   const updated = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/update"));
   await edit.getByRole("button", { name: /speichern/i }).click();
   expect((await updated).status()).toBe(303);
-  await expect(page.locator(".bcard").filter({ hasText: task }).locator(".bcard__cost")).toContainText("60,00");
+  await expect(page.locator(".bcard").filter({ hasText: task }).locator(".bcard__cost")).toContainText("54,00");
   await page.goto(copyURL!);
   const copy = page.locator('form[action="/entries"]');
-  await expect(copy.locator('[name="person_id"]')).toHaveValue("1");
-  await expect(copy.locator('[name="person_rate"]')).toHaveValue("20");
+  const copiedPerson = firstPersonRow(copy);
+  await expect(copiedPerson.locator('[name="person_id"]')).toHaveValue("1");
+  await expect(copiedPerson.locator('[name="person_rate"]')).toHaveValue("18");
   await copy.locator('[name="task_label"]').fill(task + " Kopie");
   const copied = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === "/entries");
-  await copy.getByRole("button", { name: "Buchung anlegen", exact: true }).click();
+  await copy.getByRole("button", { name: "Kopie speichern", exact: true }).click();
   expect((await copied).status()).toBe(303);
   await expect(page.locator(".bcard").filter({ hasText: task })).toHaveCount(2);
   const copyCard = page.locator(".bcard").filter({ hasText: task + " Kopie" });
-  await expect(copyCard.locator(".bcard__cost")).toContainText("60,00");
+  await expect(copyCard.locator(".bcard__cost")).toContainText("54,00");
   await copyCard.locator('a[href^="/entries/"][href$="/edit"]').click();
-  await expect(page.locator('form[action$="/update"] [name="person_id"]')).toHaveValue("1");
+  await expect(firstPersonRow(page.locator('form[action$="/update"]')).locator('[name="person_id"]')).toHaveValue("1");
 });

@@ -102,7 +102,10 @@
 			<span class="beleg__b beleg__r beleg__b--neg">−{{money .Amount}}</span>
 		</div>
 		{{end}}
-		<div class="beleg__lsub beleg__pay"><span></span><span>Offener Rest</span><span class="beleg__r"></span><span class="beleg__r">{{money .Remaining}}</span></div>
+		<div class="beleg__lsub beleg__lsub--total beleg__sum-informal beleg__pay" data-beleg-final-total><span></span><span>Offener Rest</span><span class="beleg__r"></span><span class="beleg__r">{{money .Remaining}}</span></div>
+		{{end}}
+		{{if and .Ledger (not .HasPayments)}}
+		<div class="beleg__lsub beleg__lsub--total beleg__sum-informal" data-beleg-final-total><span></span><span>Saldo</span><span class="beleg__r"></span><span class="beleg__r">{{money .Saldo}}</span></div>
 		{{end}}
 
 		{{if .HasGrund}}

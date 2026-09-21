@@ -10,6 +10,65 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// TestCompanyDecimalLimitsIntegration verifies accepted boundary values and
+// that rejecting one oversized field leaves every saved setting untouched.
+func TestCompanyDecimalLimitsIntegration(t *testing.T) {
+	e := newItEnv(t)
+	fields := []string{"dunning_fee_1", "dunning_fee_2", "vat_rate", "travel_flat", "travel_per_km", "small_business_limit"}
+	for _, tc := range []struct{ name, value, want string }{
+		{name: "empty", value: "", want: "0.00"},
+		{name: "normal", value: "2,5", want: "2.50"},
+		{name: "at limit", value: strings.Repeat("0", 29) + "2,5", want: "2.50"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			form := url.Values{"name": {"Limit test"}, "tax_mode": {"regel"}}
+			for _, field := range fields {
+				form.Set(field, tc.value)
+			}
+			if body := e.post("/admin/company", form); !strings.Contains(body, "Betriebsdaten gespeichert.") {
+				t.Fatal("valid settings were not accepted")
+			}
+			got, err := e.st.GetCompany(e.ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i, value := range []decimal.Decimal{
+				got.DunningFee1, got.DunningFee2, got.VATRate,
+				got.TravelFlat, got.TravelPerKm, got.SmallBusinessLimit,
+			} {
+				if value.StringFixed(2) != tc.want {
+					t.Errorf("%s = %s, want %s", fields[i], value, tc.want)
+				}
+			}
+		})
+	}
+	for _, field := range fields {
+		t.Run(field+" over limit", func(t *testing.T) {
+			body := e.post("/admin/company", url.Values{
+				"name": {"must not save"}, field: {strings.Repeat("1", 33)},
+			})
+			if !strings.Contains(body, "höchstens 32 Zeichen") {
+				t.Fatal("missing length validation")
+			}
+			got, err := e.st.GetCompany(e.ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Name != "Limit test" {
+				t.Error("rejected submission changed company name")
+			}
+			for _, value := range []decimal.Decimal{
+				got.DunningFee1, got.DunningFee2, got.VATRate,
+				got.TravelFlat, got.TravelPerKm, got.SmallBusinessLimit,
+			} {
+				if value.StringFixed(2) != "2.50" {
+					t.Error("rejected submission changed saved decimal settings")
+				}
+			}
+		})
+	}
+}
+
 func TestCompanyRejectsInvalidSkontoIntegration(t *testing.T) {
 	e := newItEnv(t)
 	c, err := e.st.GetCompany(e.ctx)

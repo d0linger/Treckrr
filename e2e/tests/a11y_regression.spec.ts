@@ -96,7 +96,7 @@ test("missing records offer recovery without changing image-client responses", a
 test("booking photo selection has a usable label and preserves native input behavior", async ({ page }) => {
   await login(page);
   await page.goto("/entries/1/edit");
-  const photo = page.getByLabel("Fotos auswählen", { exact: false });
+  const photo = page.getByLabel("Belege auswählen", { exact: false });
   await expect(photo).toHaveAttribute("type", "file");
   await expect(photo).toHaveAttribute("accept", /image/);
   await photo.setInputFiles({

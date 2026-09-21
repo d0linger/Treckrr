@@ -81,7 +81,7 @@ test("bookings list filters, and bulk storno leaves a reason", async ({ page }) 
 
   // Select every booking and cancel it with a reason.
   await page.goto("/buchungen?year=1");
-  const boxes = page.locator('input[name="entry_id"]');
+  const boxes = page.locator('input[name="booking_id"]');
   const count = await boxes.count();
   expect(count).toBeGreaterThan(0);
   for (let i = 0; i < count; i++) await boxes.nth(i).check();

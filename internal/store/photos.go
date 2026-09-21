@@ -13,7 +13,7 @@ type EntryPhoto struct {
 
 // AddEntryPhoto stores a re-encoded image for a booking and returns its id.
 func (s *Store) AddEntryPhoto(ctx context.Context, entryID int64, image []byte, contentType string) (int64, error) {
-	_, neighborID, err := s.entryAccount(ctx, entryID)
+	yearID, neighborID, err := s.entryAccount(ctx, entryID)
 	if err != nil {
 		return 0, err
 	}
@@ -22,7 +22,7 @@ func (s *Store) AddEntryPhoto(ctx context.Context, entryID int64, image []byte, 
 		return 0, err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	if err := lockPersonalDataNeighbor(ctx, tx, neighborID); err != nil {
+	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
 		return 0, err
 	}
 	var id int64
@@ -67,9 +67,24 @@ func (s *Store) GetEntryPhoto(ctx context.Context, entryID, photoID int64) ([]by
 
 // DeleteEntryPhoto removes a photo (scoped to its booking).
 func (s *Store) DeleteEntryPhoto(ctx context.Context, entryID, photoID int64) error {
-	_, err := s.db.ExecContext(ctx,
+	yearID, neighborID, err := s.entryAccount(ctx, entryID)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx,
 		`DELETE FROM entry_photos WHERE id=$1 AND entry_id=$2`, photoID, entryID)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ---- Fotos sichtbar machen (Ausbaukarte 74) --------------------------------
@@ -83,6 +98,7 @@ type PhotoRef struct {
 	EntryDate time.Time
 	TaskLabel string
 	Created   time.Time
+	IsLedger  bool
 }
 
 // PhotoCountsForEntries counts receipt photos for exactly the given entries —
@@ -139,10 +155,14 @@ func (s *Store) PhotoCounts(ctx context.Context, yearID, neighborID int64) (map[
 // booking first, for the gallery.
 func (s *Store) ListNeighborPhotos(ctx context.Context, yearID, neighborID int64) ([]PhotoRef, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT p.id, e.id, e.entry_date, e.task_label, p.created_at
+		`SELECT * FROM (SELECT p.id, e.id AS entry_id, e.entry_date, e.task_label, p.created_at, false AS is_ledger
 		   FROM entry_photos p JOIN entries e ON e.id = p.entry_id
 		  WHERE e.billing_year_id = $1 AND e.neighbor_id = $2
-		  ORDER BY e.entry_date DESC, p.id DESC`, yearID, neighborID)
+		 UNION ALL
+		 SELECT p.id, l.id, l.posting_date, l.description, p.created_at, true
+		   FROM ledger_photos p JOIN neighbor_ledger l ON l.id=p.ledger_id
+		  WHERE l.billing_year_id=$1 AND l.neighbor_id=$2) photos
+		  ORDER BY entry_date DESC, created_at DESC, id DESC`, yearID, neighborID)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +170,7 @@ func (s *Store) ListNeighborPhotos(ctx context.Context, yearID, neighborID int64
 	var out []PhotoRef
 	for rows.Next() {
 		var p PhotoRef
-		if err := rows.Scan(&p.PhotoID, &p.EntryID, &p.EntryDate, &p.TaskLabel, &p.Created); err != nil {
+		if err := rows.Scan(&p.PhotoID, &p.EntryID, &p.EntryDate, &p.TaskLabel, &p.Created, &p.IsLedger); err != nil {
 			return nil, err
 		}
 		out = append(out, p)

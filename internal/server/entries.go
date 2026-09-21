@@ -105,6 +105,7 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Base"] = base
 	data["Neighbor"] = neighbor
 	data["Entries"] = entries
+	data["BookingCount"] = len(entries) + len(ledger)
 	// Pair links: LinkedFrom gives each machine booking its companion's id (the
 	// reverse of the stored direction), PairLabel names the OTHER half for each
 	// side — task and hours, so with several pairs on one day the operator sees
@@ -182,7 +183,17 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	ledgerIDs := make([]int64, 0, len(ledger))
+	for _, item := range ledger {
+		ledgerIDs = append(ledgerIDs, item.ID)
+	}
+	ledgerPhotoCounts, err := s.store.LedgerPhotoCounts(r.Context(), ledgerIDs)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	data["PhotoCounts"] = photoCounts
+	data["LedgerPhotoCounts"] = ledgerPhotoCounts
 	data["Photos"] = photos
 	data["Persons"] = persons
 	data["TravelFlat"] = company.TravelFlat
@@ -193,6 +204,9 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Machines"] = machines
 	data["Gespanne"] = gespanne
 	data["Today"] = time.Now().Format("2006-01-02")
+	data["BookingValues"] = newBookingValues()
+	data["BookingLocked"] = data["HasInvoice"]
+	data["BookingAction"] = "/entries"
 	s.render(w, r, "neighbor", data)
 }
 
@@ -449,6 +463,10 @@ func (s *Server) invoiceLocked(w http.ResponseWriter, r *http.Request, yearID, n
 func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if trimmed(r, "booking_form_version") == "2" {
+		s.handleBookingCreateV2(w, r)
 		return
 	}
 	if s.handleUnifiedLedgerCreate(w, r) {
@@ -832,6 +850,10 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.entryYearOpen(w, r, existing, "Das Abrechnungsjahr ist abgeschlossen – Buchungen können nicht mehr geändert werden.") {
 		return
 	}
+	if trimmed(r, "booking_form_version") == "2" {
+		s.updateBookingEntryV2(w, r, existing)
+		return
+	}
 	kind, direction, selectionMsg := unifiedBookingSelection(r)
 	if selectionMsg != "" || direction == "in" || kind == "fixed" {
 		s.setFlash(w, r, "error", "Die Verrechnungsrichtung einer bestehenden Leistung bleibt erhalten. Bitte bei Bedarf stornieren und neu erfassen.")
@@ -1158,6 +1180,10 @@ func (s *Server) handleLedgerEditForm(w http.ResponseWriter, r *http.Request) {
 			data["BookingDirection"] = "in"
 		}
 	}
+	if err := s.setLedgerBookingForm(r, data, &e, year, neighborID, false); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	s.render(w, r, "ledger_edit", data)
 }
 
@@ -1181,6 +1207,10 @@ func (s *Server) handleLedgerUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if existing.Booking != nil {
+		if trimmed(r, "booking_form_version") == "2" {
+			s.updateBookingLedgerV2(w, r, &existing, yearID, neighborID)
+			return
+		}
 		r.Form.Set("neighbor_id", itoa64(neighborID))
 		r.Form.Set("year_id", itoa64(yearID))
 		kind, direction, msg := unifiedBookingSelection(r)
@@ -1392,6 +1422,12 @@ func (s *Server) handleEntryEditForm(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if err := s.setEntryBookingForm(r, data, entry, false); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	_, invErr := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
+	data["BookingLocked"] = year.Completed() || !errors.Is(invErr, store.ErrNotFound)
 	s.render(w, r, "entry_edit", data)
 }
 
@@ -1452,6 +1488,12 @@ func (s *Server) handleEntryCopy(w http.ResponseWriter, r *http.Request) {
 	}
 	data["Persons"] = persons
 	data["Copy"] = true
+	if err := s.setEntryBookingForm(r, data, entry, true); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	_, invErr := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
+	data["BookingLocked"] = year.Completed() || !errors.Is(invErr, store.ErrNotFound)
 	s.render(w, r, "entry_edit", data)
 }
 

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -31,8 +30,22 @@ func (s *Store) CreateRecurring(ctx context.Context, sourceEntryID, neighborID i
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	if err := lockPersonalDataNeighbor(ctx, tx, neighborID); err != nil {
+	var yearID, sourceNeighbor int64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT billing_year_id,neighbor_id FROM entries WHERE id=$1`, sourceEntryID).
+		Scan(&yearID, &sourceNeighbor); err != nil {
 		return err
+	}
+	if sourceNeighbor != neighborID {
+		return ErrNotFound
+	}
+	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
+		return err
+	}
+	if t.Companions != nil {
+		if err := validateRecurringGroup(ctx, tx, sourceEntryID, t.Companions); err != nil {
+			return err
+		}
 	}
 	var companionPersonID int64
 	companionHours, companionRate := "0", "0"
@@ -185,7 +198,7 @@ func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()) // local midnight, not UTC
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, neighbor_id, template, interval_kind, next_run
-		   FROM recurring_entries WHERE active AND next_run <= $1`, today)
+		   FROM recurring_entries WHERE active AND next_run <= $1::date`, today.Format("2006-01-02"))
 	if err != nil {
 		return 0, err
 	}
@@ -207,6 +220,11 @@ func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 			_ = rows.Close()
 			return 0, err
 		}
+		// PostgreSQL DATE values arrive at UTC midnight. Recurrence is a local
+		// calendar concept; comparing that instant to local midnight skips today's
+		// rule in positive UTC offsets. Rebuild the same calendar day locally.
+		year, month, day := d.next.Date()
+		d.next = time.Date(year, month, day, 0, 0, 0, 0, today.Location())
 		list = append(list, d)
 	}
 	_ = rows.Close()
@@ -220,7 +238,7 @@ func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 		var lastRun *time.Time
 		// Resolved once per rule, not per occurrence: a catch-up run materializes
 		// up to 60 of them and the answer is the same for all.
-		comp, personID, lerr := s.liveRefs(ctx, d.tmpl, d.id)
+		companions, personID, lerr := s.recurringPeople(ctx, d.tmpl, d.id)
 		if lerr != nil {
 			return created, lerr
 		}
@@ -236,25 +254,14 @@ func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 				slog.Warn("recurring booking waiting: no open year", "rule", d.id, "neighbor", d.neighborID, "date", next.Format("2006-01-02"))
 				break
 			}
-			e := entryFromTemplate(d.tmpl)
-			e.PersonID = personID // nil once the helper record is gone
-			e.NeighborID = d.neighborID
-			e.BillingYearID = yid
-			e.Date = next
-			e.IdempotencyKey = fmt.Sprintf("recur:%d:%s", d.id, next.Format("2006-01-02"))
-			var id, companionID int64
-			var cerr error
-			if companion := companionEntry(comp, e); companion != nil {
-				// Counting stays per OCCURRENCE, not per row: the companion is the
-				// same piece of work as the machine booking it is linked to.
-				id, companionID, cerr = s.CreateEntryPair(ctx, e, d.tmpl.MachineIDs, companion)
-			} else {
-				id, cerr = s.CreateEntry(ctx, e, d.tmpl.MachineIDs)
-			}
+			id, cerr := s.materializeRecurring(ctx, recurringOccurrence{
+				Template: d.tmpl, RuleID: d.id, YearID: yid, NeighborID: d.neighborID,
+				Date: next, Companions: companions, PersonID: personID,
+			})
 			if cerr != nil {
 				return created, cerr
 			}
-			if id != 0 || companionID != 0 {
+			if id != 0 {
 				created++
 			}
 			ran := next
@@ -299,7 +306,8 @@ func entryFromTemplate(t models.RecurTemplate) *models.Entry {
 		// A series made FROM a Mannstunden booking keeps its attribution: the
 		// template carried the person id but the rebuilt entry dropped it, so
 		// every occurrence booked the helper's hours as nobody's.
-		PersonID: t.PersonID,
+		PersonID:   t.PersonID,
+		PersonName: t.PersonName,
 	}
 }
 
@@ -449,26 +457,14 @@ func (s *Store) RunRecurringNow(ctx context.Context, id int64) (int64, bool, err
 	if !ok {
 		return 0, false, nil
 	}
-	e := entryFromTemplate(tmpl)
-	e.NeighborID = neighborID
-	e.BillingYearID = yid
-	e.Date = today
-	e.IdempotencyKey = fmt.Sprintf("recur:%d:%s", id, today.Format("2006-01-02"))
-	comp, personID, err := s.liveRefs(ctx, tmpl, id)
+	companions, personID, err := s.recurringPeople(ctx, tmpl, id)
 	if err != nil {
 		return 0, false, err
 	}
-	e.PersonID = personID // nil once the helper record is gone
-	var entryID int64
-	if companion := companionEntry(comp, e); companion != nil {
-		var companionID int64
-		entryID, companionID, err = s.CreateEntryPair(ctx, e, tmpl.MachineIDs, companion)
-		if entryID == 0 {
-			entryID = companionID
-		}
-	} else {
-		entryID, err = s.CreateEntry(ctx, e, tmpl.MachineIDs)
-	}
+	entryID, err := s.materializeRecurring(ctx, recurringOccurrence{
+		Template: tmpl, RuleID: id, YearID: yid, NeighborID: neighborID,
+		Date: today, Companions: companions, PersonID: personID,
+	})
 	if err != nil {
 		return 0, false, err
 	}

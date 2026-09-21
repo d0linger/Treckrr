@@ -124,45 +124,6 @@ func lockMutableEntryAccounts(ctx context.Context, tx *sql.Tx, ids []int64) erro
 	return lockSettlementAccounts(ctx, tx, accounts...)
 }
 
-// VoidEntries marks several bookings as canceled in one transaction, skipping
-// ids that belong to a closed year or to a neighbor whose invoice is already
-// festgeschrieben — the same two locks a single void obeys, enforced here in
-// SQL so a crafted id list cannot slip past them. Returns how many were voided.
-func (s *Store) VoidEntries(ctx context.Context, ids []int64, void bool, reason string) (int, error) {
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err := lockMutableEntryAccounts(ctx, tx, ids); err != nil {
-		return 0, err
-	}
-	res, err := tx.ExecContext(ctx, `
-		UPDATE entries e SET voided = $2, void_reason = CASE WHEN $2 THEN $3 ELSE '' END
-		 WHERE e.id = ANY($1)
-		   AND e.voided <> $2
-		   AND EXISTS (SELECT 1 FROM billing_year_neighbors byn
-		                WHERE byn.billing_year_id = e.billing_year_id
-		                  AND byn.neighbor_id = e.neighbor_id)
-		   AND EXISTS (SELECT 1 FROM billing_years y
-		                WHERE y.id = e.billing_year_id AND y.status <> 'completed')
-		   AND EXISTS (SELECT 1 FROM neighbors n
-		                WHERE n.id = e.neighbor_id AND NOT n.anonymized)
-		   AND NOT EXISTS (SELECT 1 FROM invoices iv
-		                    WHERE iv.billing_year_id = e.billing_year_id
-		                      AND iv.neighbor_id = e.neighbor_id
-		                      AND iv.kind = 'invoice' AND iv.status = 'issued')`,
-		ids, void, reason)
-	if err != nil {
-		return 0, err
-	}
-	n, _ := res.RowsAffected()
-	return int(n), tx.Commit()
-}
-
 // DeleteEntries removes several bookings under the same two locks. A booking
 // is deleted only while its year is open and no invoice froze it.
 func (s *Store) DeleteEntries(ctx context.Context, ids []int64) (int, error) {

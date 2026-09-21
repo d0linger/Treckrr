@@ -329,6 +329,16 @@ func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := neighborURL(p.NeighborID, p.BillingYearID)
+	if s.tooLong(
+		w,
+		r,
+		"Datum",
+		r.FormValue("paid_on"),
+		50,
+	) {
+		redirect(w, r, back)
+		return
+	}
 	if s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) {
 		redirect(w, r, back)
 		return
@@ -408,6 +418,16 @@ func (s *Server) handleInstallmentAdd(w http.ResponseWriter, r *http.Request) {
 	back := neighborURL(neighborID, yearID)
 	if yearID == 0 {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if s.tooLong(
+		w,
+		r,
+		"Datum",
+		r.FormValue("due_on"),
+		50,
+	) {
+		redirect(w, r, back)
 		return
 	}
 	if s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) {
