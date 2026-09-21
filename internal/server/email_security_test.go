@@ -247,3 +247,15 @@ func TestEmailSendFailureDoesNotLeakInternalErrors(t *testing.T) {
 		}
 	})
 }
+
+func TestSanitizeLog_CRLFStripping(t *testing.T) {
+	multilineErr := "SMTP error 550\r\nINJECTED_LOG_HEADER: malicious_value\nSecondary line"
+	sanitized := sanitizeLog(multilineErr)
+
+	if strings.Contains(sanitized, "\r") || strings.Contains(sanitized, "\n") {
+		t.Errorf("sanitizeLog failed to strip CRLF control characters: %q", sanitized)
+	}
+	if !strings.Contains(sanitized, "SMTP error 550") || !strings.Contains(sanitized, "INJECTED_LOG_HEADER") {
+		t.Errorf("sanitizeLog lost content: %q", sanitized)
+	}
+}
