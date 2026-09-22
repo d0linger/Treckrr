@@ -791,7 +791,7 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 		metrics.Inc(metrics.MailFailed)
 		slog.Error("beleg email send failed", "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))
 		s.audit(r, "beleg_email_failed", "neighbor", neighbor.ID,
-			neighbor.Name+" · Rechnung "+iv.Number+" · "+err.Error())
+			neighbor.Name+" · Rechnung "+iv.Number+" · "+sanitizeLog(err.Error()))
 		// Park the exact message for retry by the maintenance loop. Before, the
 		// failure evaporated with the flash: one SMTP hiccup during the yearly
 		// invoice run meant re-clicking every affected neighbor by hand.
