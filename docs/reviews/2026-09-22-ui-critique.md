@@ -124,3 +124,7 @@ combinations plus expanded quick-entry, drawer, skip focus and invoice-repair
 states. The automated page matrix covered 35 authenticated routes at desktop
 and phone widths in both themes. See the implementation review for final test
 results and remaining tool/coverage limitations.
+
+The [all-dialog before/after comparison](2026-09-22-dialog-comparison.md) adds
+66 matched surfaces/states in both themes and device sizes, with a browsable
+machine-local screenshot gallery.
