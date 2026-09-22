@@ -139,6 +139,41 @@ add('undo', 'Undo after six seconds', '/profile', 'Feedback states', 'Before: ac
 add('skip', 'Focused skip link', '/?year=1', 'Feedback states', 'Dark theme: the skip link now uses a contrast-safe foreground.',
   async p => { await p.locator('.skip').focus(); }, { viewport: true });
 
+async function cleanupScenario(page, scenario, errors, prefix) {
+  const recordError = (step, error) => {
+    const detail = `${prefix}/${scenario.id}: ${step} cleanup failed: ${error.message}`;
+    errors.push(detail);
+    console.error(detail);
+  };
+  try {
+    if (scenario.id.startsWith('queue')) await page.evaluate(async () => {
+      let db;
+      try {
+        const request = indexedDB.open('treckrr-offline', 1);
+        db = await new Promise((resolve, reject) => {
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        if (!db.objectStoreNames.contains('queue')) return;
+        const tx = db.transaction('queue', 'readwrite');
+        await new Promise((resolve, reject) => {
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error || new Error('Queue transaction failed'));
+          tx.onabort = () => reject(tx.error || new Error('Queue transaction aborted'));
+          tx.objectStore('queue').clear();
+        });
+      } finally {
+        if (db) db.close();
+      }
+    });
+  } catch (error) {
+    recordError('queue', error);
+  } finally {
+    try { await page.close(); }
+    catch (error) { recordError('page', error); }
+  }
+}
+
 async function captureRevision(browser, revision) {
   const loginContext = await browser.newContext({ baseURL: revision.origin, serviceWorkers: 'block' });
   const login = await loginContext.newPage();
@@ -212,13 +247,7 @@ async function captureRevision(browser, revision) {
         errors.push(detail);
         console.error(detail);
       } finally {
-        if (scenario.id.startsWith('queue')) await page.evaluate(async () => {
-          const request = indexedDB.open('treckrr-offline', 1);
-          const db = await new Promise(resolve => { request.onsuccess = () => resolve(request.result); });
-          const tx = db.transaction('queue', 'readwrite'); tx.objectStore('queue').clear();
-          await new Promise(resolve => { tx.oncomplete = resolve; }); db.close();
-        });
-        await page.close();
+        await cleanupScenario(page, scenario, errors, `${revision.stage}/${width}/${theme}`);
       }
     }
     await context.close();
@@ -262,4 +291,5 @@ async function main() {
   console.log(JSON.stringify({ scenarios: scenarios.length, screenshots: shots.length, errors, output }, null, 2));
   if (errors.length) process.exitCode = 1;
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1; });
+module.exports = { cleanupScenario };
