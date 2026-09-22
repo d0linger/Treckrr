@@ -15,6 +15,17 @@ import (
 	"github.com/d0linger/treckrr/internal/store"
 )
 
+func TestSanitizeLogMultilineMailError(t *testing.T) {
+	err := "SMTP error 550\r\nINJECTED: forged\nSecond line\t\x1b[31m"
+	got := sanitizeLog(err)
+	if strings.ContainsAny(got, "\r\n\t\x1b") {
+		t.Fatalf("control characters survived: %q", got)
+	}
+	if !strings.Contains(got, "SMTP error 550") || !strings.Contains(got, "Second line") {
+		t.Fatalf("diagnostic text lost: %q", got)
+	}
+}
+
 type mockEmailDriver struct{}
 
 func (d *mockEmailDriver) Open(name string) (driver.Conn, error) {

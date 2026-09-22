@@ -15,6 +15,13 @@
 		var add = document.querySelector("[data-quick-add]");
 		if (!body || !add) return;
 		var MAX = 100;
+		function labelRow(row, index) {
+			var names = { q_date: "Datum", q_gespann: "Gespann", q_hours: "Stunden", q_person: "Person" };
+			row.querySelectorAll("input, select").forEach(function (field) {
+				if (names[field.name]) field.setAttribute("aria-label", names[field.name] + " · Zeile " + (index + 1));
+			});
+		}
+		body.querySelectorAll("tr").forEach(labelRow);
 		add.addEventListener("click", function () {
 			var rows = body.querySelectorAll("tr");
 			if (!rows.length || rows.length >= MAX) {
@@ -28,6 +35,7 @@
 				if (i.type !== "date") i.value = "";
 			});
 			clone.querySelectorAll("select").forEach(function (sel) { sel.selectedIndex = 0; });
+			labelRow(clone, rows.length);
 			body.appendChild(clone);
 			var first = clone.querySelector("input, select");
 			if (first) first.focus();

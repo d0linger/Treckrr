@@ -123,21 +123,24 @@
 			</span>
 		</div>
 		<nav class="drawer__nav">
+			<h2 class="drawer__label">Arbeit &amp; Abrechnung</h2>
 			<a class="drawer__item {{if eq .Active "mahnwesen"}}is-active{{end}}" href="/mahnwesen{{if .Year}}?year={{.Year.ID}}{{end}}" {{if eq .Active "mahnwesen"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M5 8h9a3 3 0 0 1 0 6H7"/></svg></span>Mahnwesen</a>
 			<a class="drawer__item {{if eq .Active "entries"}}is-active{{end}}" href="/buchungen{{if .Year}}?year={{.Year.ID}}{{end}}" {{if eq .Active "entries"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>Buchungen &amp; Filter</a>
-			<a class="drawer__item {{if eq .Active "persons"}}is-active{{end}}" href="/personen" {{if eq .Active "persons"}}aria-current="page"{{end}}>
-				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5 20a7 7 0 0 1 14 0"/></svg></span>Personen</a>
 			<a class="drawer__item {{if eq .Active "journal"}}is-active{{end}}" href="/rechnungsjournal{{if .Year}}?year={{.Year.ID}}{{end}}" {{if eq .Active "journal"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>Rechnungsjournal</a>
 			<a class="drawer__item {{if eq .Active "payimport"}}is-active{{end}}" href="/payments/import" {{if eq .Active "payimport"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span>Zahlungs-Import</a>
 			<a class="drawer__item {{if eq .Active "recurring"}}is-active{{end}}" href="/recurring" {{if eq .Active "recurring"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg></span>Wiederkehrend</a>
+			<h2 class="drawer__label">Stammdaten &amp; Konto</h2>
+			<a class="drawer__item {{if eq .Active "persons"}}is-active{{end}}" href="/personen" {{if eq .Active "persons"}}aria-current="page"{{end}}>
+				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5 20a7 7 0 0 1 14 0"/></svg></span>Personen</a>
 			<a class="drawer__item {{if eq .Active "profile"}}is-active{{end}}" href="/profile" {{if eq .Active "profile"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span>Einstellungen</a>
 			{{if .User.IsAdmin}}
+			<h2 class="drawer__label">Verwaltung</h2>
 			<a class="drawer__item {{if eq .Active "admin"}}is-active{{end}}" href="/admin/users" {{if eq .Active "admin"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.1 2.4-5 5.5-5s5.5 1.9 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16.5 15.3c2.5.4 4 2.1 4 4.7"/></svg></span>Benutzer</a>
 			<a class="drawer__item {{if eq .Active "audit"}}is-active{{end}}" href="/admin/audit" {{if eq .Active "audit"}}aria-current="page"{{end}}>
@@ -147,6 +150,7 @@
 			<a class="drawer__item {{if eq .Active "company"}}is-active{{end}}" href="/admin/company" {{if eq .Active "company"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18M6 21V7l6-4 6 4v14"/><path d="M10 12h4M10 16h4"/></svg></span>Betriebsdaten</a>
 			{{end}}
+			<h2 class="drawer__label">Darstellung &amp; Sitzung</h2>
 			<button class="drawer__item" type="button" data-theme-toggle>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg></span>Design wechseln</button>
 			<div class="drawer__sep" role="separator"></div>

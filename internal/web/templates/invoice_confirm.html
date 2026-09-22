@@ -21,7 +21,7 @@
 
 	{{if .CanIssue}}
 	<div class="card">
-		<div class="cfm-h">Snapshot-Vorschau</div>
+		<div class="cfm-h">Rechnungsvorschau</div>
 		<div class="cfm-prev">
 			{{if .Content.ShowVAT}}
 			<div class="cfm-prev-row"><span>Netto</span><span class="num">{{money .Content.Net}}</span></div>
@@ -31,7 +31,7 @@
 			<div class="cfm-prev-row cfm-prev-row--tot"><span>Rechnungsbetrag</span><span class="num">{{money .Content.Gross}}</span></div>
 			{{end}}
 		</div>
-		<p class="muted small">Nach dem Festschreiben ist die Rechnung <strong>unveränderbar</strong> (Snapshot + Integritäts-Hash). Korrekturen nur über Storno oder Gutschrift.</p>
+		<p class="muted small">Nach dem Festschreiben bleiben Rechnungsnummer und Inhalt <strong>unveränderbar gespeichert</strong>. Korrekturen sind nur über Storno oder Gutschrift möglich.</p>
 	</div>
 	<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice" data-confirm="Rechnung jetzt festschreiben? Die Nummer wird fest vergeben und der Inhalt eingefroren.">
 		<label class="field"><span>Rechnungsdatum (nicht in der Zukunft, nicht vor dem jüngsten Dokument des Jahres)</span>
@@ -47,7 +47,7 @@
 	<div class="btnrow">
 		<a class="btn btn--ghost btn--sm" href="{{.BackURL}}">Zurück zum Beleg</a>
 		<a class="btn btn--ghost btn--sm" href="/admin/company">Betriebsdaten</a>
-		<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}">Nachbardaten</a>
+		<a class="btn btn--ghost btn--sm" href="/neighbors?scope=alle&amp;edit={{.Neighbor.ID}}#neighbor-{{.Neighbor.ID}}">Nachbardaten ergänzen</a>
 	</div>
 	{{end}}
 </section>

@@ -791,7 +791,7 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 		metrics.Inc(metrics.MailFailed)
 		slog.Error("beleg email send failed", "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))
 		s.audit(r, "beleg_email_failed", "neighbor", neighbor.ID,
-			neighbor.Name+" · Rechnung "+iv.Number+" · "+err.Error())
+			neighbor.Name+" · Rechnung "+iv.Number+" · "+sanitizeLog(err.Error()))
 		// Park the exact message for retry by the maintenance loop. Before, the
 		// failure evaporated with the flash: one SMTP hiccup during the yearly
 		// invoice run meant re-clicking every affected neighbor by hand.
@@ -816,7 +816,7 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	// don't fail the request — log it and tell the user the send worked but the
 	// history entry didn't, so "zuletzt versendet am …" being absent isn't a mystery.
 	if err := s.store.RecordBelegSend(r.Context(), year.ID, neighbor.ID, "e-mail"); err != nil {
-		slog.Error("record beleg send failed", "year", year.ID, "neighbor", neighbor.ID, "err", err)
+		slog.Error("record beleg send failed", "year", year.ID, "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))
 		s.audit(r, "beleg_email", "neighbor", neighbor.ID, neighbor.Name+" · E-Mail · Rechnung "+iv.Number)
 		s.setFlash(w, r, "success", "Rechnung an "+neighbor.Email+" gesendet (Versand-Historie konnte nicht gespeichert werden).")
 		redirect(w, r, back)
@@ -952,6 +952,12 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
+	if s.tooLong(
+		w, r, "Rechnungsdatum", r.FormValue("issued_on"), 50,
+	) {
+		redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
+		return
+	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if err != nil {
 		s.serverError(w, "invoice: year", err)
@@ -1081,6 +1087,12 @@ func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	back := fmt.Sprintf("/neighbors/%d/beleg?year=%d&rechnung=1", neighborID, yearID)
+	if s.tooLong(
+		w, r, "Betrag", r.FormValue("amount"), maxDecimalLen,
+	) {
+		redirect(w, r, back)
+		return
+	}
 	if !s.requireOpenYear(w, r, yearID, back) {
 		return
 	}

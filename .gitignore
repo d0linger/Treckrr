@@ -60,6 +60,9 @@ Noppanschoftshilfe.xlsx
 # graphify knowledge graph output
 /graphify-out/
 
+# Machine-local critique snapshots (curated review reports live in docs/reviews)
+/.impeccable/critique/
+
 # E2E (Playwright) artifacts
 /treckrr-e2e
 e2e/node_modules/

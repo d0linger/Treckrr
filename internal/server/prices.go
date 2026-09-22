@@ -83,6 +83,12 @@ func (s *Server) handleLoadLevelSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	baseID := s.baseIDFromForm(r)
+	if s.tooLong(
+		w, r, "Kosten je PS", r.FormValue("cost_per_ps"), maxDecimalLen,
+	) {
+		redirect(w, r, pricesURL(baseID))
+		return
+	}
 	if s.lockedRedirect(w, r, baseID, pricesURL(baseID)) {
 		return
 	}
@@ -147,6 +153,12 @@ func (s *Server) handleTractorSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	baseID := s.baseIDFromForm(r)
+	if s.tooLong(
+		w, r, "PS", r.FormValue("ps"), maxDecimalLen,
+	) {
+		redirect(w, r, pricesURL(baseID))
+		return
+	}
 	if s.lockedRedirect(w, r, baseID, pricesURL(baseID)) {
 		return
 	}
@@ -246,6 +258,18 @@ func (s *Server) handleMachineSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	baseID := s.baseIDFromForm(r)
+	for _, field := range []struct{ name, label string }{
+		{name: "working_width", label: "Arbeitsbreite"},
+		{name: "cost_per_ab", label: "Kosten"},
+		{name: "self_cost_per_h", label: "Selbstkosten"},
+	} {
+		if s.tooLong(
+			w, r, field.label, r.FormValue(field.name), maxDecimalLen,
+		) {
+			redirect(w, r, pricesURL(baseID))
+			return
+		}
+	}
 	if s.lockedRedirect(w, r, baseID, pricesURL(baseID)) {
 		return
 	}

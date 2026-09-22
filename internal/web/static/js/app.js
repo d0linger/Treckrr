@@ -210,7 +210,12 @@
 			el.setCustomValidity("");
 			var host = el.closest(".field") || el.parentNode;
 			var box = host && host.querySelector(".field__err");
-			if (box) { box.remove(); el.removeAttribute("aria-describedby"); }
+			if (box) {
+				var remaining = (el.getAttribute("aria-describedby") || "").split(/\s+/).filter(function (id) { return id && id !== box.id; });
+				box.remove();
+				if (remaining.length) el.setAttribute("aria-describedby", remaining.join(" "));
+				else el.removeAttribute("aria-describedby");
+			}
 		}
 		el.addEventListener("invalid", function (e) {
 			// Suppress the native validation bubble; the inline .field__err below
@@ -219,7 +224,15 @@
 			e.preventDefault();
 			var msg = "Bitte dieses Feld ausfüllen.";
 			if (!el.validity.valueMissing) {
-				msg = el.validity.tooShort ? "Eingabe ist zu kurz." : "Bitte einen gültigen Wert eingeben.";
+				var validity = el.validity;
+				if (validity.customError) msg = el.validationMessage;
+				else if (validity.tooShort) msg = "Bitte mindestens " + el.minLength + " Zeichen eingeben.";
+				else if (validity.rangeUnderflow) msg = "Bitte einen Wert ab " + el.min.replace(".", ",") + " eingeben.";
+				else if (validity.rangeOverflow) msg = "Bitte höchstens " + el.max.replace(".", ",") + " eingeben.";
+				else if (validity.stepMismatch) msg = "Bitte einen Wert in Schritten von " + el.step.replace(".", ",") + " eingeben.";
+				else if (validity.typeMismatch && el.type === "email") msg = "Bitte eine gültige E-Mail-Adresse eingeben (z. B. name@hof.at).";
+				else if (validity.badInput) msg = "Bitte eine Zahl eingeben.";
+				else msg = "Bitte einen gültigen Wert eingeben.";
 			}
 			el.setCustomValidity(msg);
 			el.classList.add("is-invalid");
@@ -232,7 +245,7 @@
 				box.setAttribute("role", "alert");
 				if (!el.id) el.id = "f" + Math.random().toString(36).slice(2, 8);
 				box.id = el.id + "-err";
-				el.setAttribute("aria-describedby", box.id);
+				el.setAttribute("aria-describedby", ((el.getAttribute("aria-describedby") || "") + " " + box.id).trim());
 				host.appendChild(box);
 			}
 			box.textContent = msg;
@@ -616,9 +629,8 @@
 		document.addEventListener("click", hide);
 	})();
 
-	// Server-flash toast. Status toasts auto-hide after 4s; error toasts
-	// (role="alert") persist until the user dismisses them (keyboard-operable
-	// close button) or navigates away, so an error cannot vanish unnoticed.
+	// Plain status toasts auto-hide after 4s. Errors and actionable feedback
+	// (especially Undo) stay available until dismissal or navigation.
 	// (Copying recovery codes is handled by the page-scoped recovery.js.)
 	var flash = document.querySelector(".toast");
 	if (flash) {
@@ -629,7 +641,7 @@
 		};
 		var closeBtn = flash.querySelector("[data-toast-dismiss]");
 		if (closeBtn) closeBtn.addEventListener("click", dismissToast);
-		if (flash.getAttribute("role") !== "alert") {
+		if (flash.getAttribute("role") !== "alert" && !flash.querySelector("form, a, button:not([data-toast-dismiss])")) {
 			setTimeout(dismissToast, 4000);
 		}
 	}

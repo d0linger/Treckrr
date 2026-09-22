@@ -76,6 +76,7 @@ func (s *Server) handleNeighborsManage(w http.ResponseWriter, r *http.Request) {
 
 	data := s.newPage(w, r, "Nachbarn", "neighbors")
 	data["Stats"] = shown
+	data["EditNeighborID"] = formInt64(r, "edit")
 	data["Scope"] = scope
 	data["CountActive"] = active
 	data["CountArchived"] = archived

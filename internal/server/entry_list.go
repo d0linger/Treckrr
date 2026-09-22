@@ -274,7 +274,7 @@ func (s *Server) handleEntryBulk(w http.ResponseWriter, r *http.Request) {
 	}
 	yearID := s.yearIDFromForm(r)
 	back := "/buchungen?year=" + itoa64(yearID)
-	if ret := r.FormValue("return_to"); strings.HasPrefix(ret, "/buchungen") {
+	if ret := r.FormValue("return_to"); isSafeBuchungenReturnPath(ret) {
 		back = ret
 	}
 	ids, ok := formBookingRefs(r)
@@ -329,6 +329,19 @@ func (s *Server) handleEntryBulk(w http.ResponseWriter, r *http.Request) {
 		s.setFlash(w, r, "success", fmt.Sprintf("%d Buchung(en) %s.", n, verb))
 	}
 	redirect(w, r, back)
+}
+
+// isSafeBuchungenReturnPath allows only the booking list and its filters/anchor.
+// Reject noncanonical paths rather than returning untrusted traversal segments.
+func isSafeBuchungenReturnPath(ret string) bool {
+	if strings.Contains(ret, "\\") {
+		return false
+	}
+	u, err := url.Parse(ret)
+	if err != nil || u.IsAbs() || u.Host != "" {
+		return false
+	}
+	return u.Path == "/buchungen" && u.RawPath == ""
 }
 
 // auditReason appends a reason to an audit detail, or nothing.
