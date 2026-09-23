@@ -231,6 +231,7 @@ func (s *Server) consumeRecovery(r *http.Request, userID int64, input string) bo
 
 // establishSession creates the login session cookie and finishes the login.
 func (s *Server) establishSession(w http.ResponseWriter, r *http.Request, user *models.User) {
+	s.setCookie(w, r, &http.Cookie{Name: loginCSRFCookie, Value: "", MaxAge: -1})
 	if !s.startSession(w, r, user) {
 		return
 	}
@@ -316,6 +317,8 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 			slog.Error("logout: delete session failed", "err", sanitizeLog(err.Error()))
 		}
 	}
+	s.clearPending2FA(w, r)
+	s.setCookie(w, r, &http.Cookie{Name: loginCSRFCookie, Value: "", MaxAge: -1})
 	s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
 	redirect(w, r, "/login")
 }

@@ -98,6 +98,34 @@ func TestHostPrefixAppliedToEveryCookie(t *testing.T) {
 	}
 }
 
+// TestLogoutClearsTransitionalCookies verifies that handleLogout emits Set-Cookie
+// headers expiring sessionCookie, pending2FACookie, and loginCSRFCookie.
+func TestLogoutClearsTransitionalCookies(t *testing.T) {
+	s := testServer()
+	rr := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/logout", nil)
+
+	s.handleLogout(rr, r)
+
+	cookies := rr.Header().Values("Set-Cookie")
+	cleared := map[string]bool{}
+	for _, c := range cookies {
+		if strings.Contains(c, "Max-Age=0") || strings.Contains(c, "Expires=") {
+			for _, name := range []string{sessionCookie, pending2FACookie, loginCSRFCookie} {
+				if strings.Contains(c, name+"=") {
+					cleared[name] = true
+				}
+			}
+		}
+	}
+
+	for _, name := range []string{sessionCookie, pending2FACookie, loginCSRFCookie} {
+		if !cleared[name] {
+			t.Errorf("handleLogout did not clear cookie %q; Set-Cookie headers: %v", name, cookies)
+		}
+	}
+}
+
 // A cookie written with the prefix must be found by the matching read helper —
 // the two halves have to agree or every cookie silently stops round-tripping.
 func TestCookieReadMatchesWrittenName(t *testing.T) {
