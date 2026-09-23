@@ -129,11 +129,44 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 		machineByID[m.ID] = m
 	}
 
-	// Collect what THIS neighbor actually used this year: which tractors, at
-	// which load levels, and which machines with each — plus the set of machines
-	// used overall. Voided bookings don't count.
+	// Collect which catalog rates were used with THIS neighbor this year: which
+	// tractors, at which load levels, and which machines with each — plus the set
+	// of machines used overall. This includes both outgoing entries and incoming
+	// structured ledger bookings; the direction changes the balance, not the rate
+	// explanation the Beleg owes its reader. Voided positions don't count.
 	usedTractor := map[int64]map[int64]map[int64]bool{} // tractor -> load -> set(machine)
 	usedMachine := map[int64]bool{}
+	collectCatalogUsage := func(tractorID, loadLevelID *int64, machineIDs []int64) {
+		used := make([]int64, 0, len(machineIDs))
+		for _, mid := range machineIDs {
+			if _, ok := machineByID[mid]; ok {
+				used = append(used, mid)
+				usedMachine[mid] = true
+			}
+		}
+		if tractorID == nil || loadLevelID == nil {
+			return
+		}
+		if _, ok := tractorByID[*tractorID]; !ok {
+			return
+		}
+		if _, ok := loadByID[*loadLevelID]; !ok {
+			return
+		}
+		loads := usedTractor[*tractorID]
+		if loads == nil {
+			loads = map[int64]map[int64]bool{}
+			usedTractor[*tractorID] = loads
+		}
+		set := loads[*loadLevelID]
+		if set == nil {
+			set = map[int64]bool{}
+			loads[*loadLevelID] = set
+		}
+		for _, mid := range used {
+			set[mid] = true
+		}
+	}
 	// One batched lookup of every booking's machines (avoids a per-entry query).
 	// Best-effort: on error the appendix simply omits the machine links.
 	machineIDsByEntry, _ := s.store.EntryMachineIDsByNeighborYear(r.Context(), neighbor.ID, year.ID)
@@ -143,39 +176,15 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 			continue
 		}
 		bookings++
-		// The machines are collected for EVERY booking, including a machines-only
-		// one (customer's own tractor). Doing it inside the tractor branch below
-		// used to drop those implements from the price appendix, so the customer
-		// was charged a machine rate the document never explained.
-		var used []int64
-		for _, mid := range machineIDsByEntry[e.ID] {
-			if _, ok := machineByID[mid]; ok {
-				used = append(used, mid)
-				usedMachine[mid] = true
-			}
-		}
-		if e.TractorID == nil || e.LoadLevelID == nil {
+		// Machines-only bookings still need their machine rate explained in the
+		// appendix even though no tractor rate appears on the document.
+		collectCatalogUsage(e.TractorID, e.LoadLevelID, machineIDsByEntry[e.ID])
+	}
+	for _, posting := range ledger {
+		if posting.Voided || posting.Booking == nil || posting.Booking.Kind != "equipment" {
 			continue
 		}
-		if _, ok := tractorByID[*e.TractorID]; !ok {
-			continue
-		}
-		if _, ok := loadByID[*e.LoadLevelID]; !ok {
-			continue
-		}
-		loads := usedTractor[*e.TractorID]
-		if loads == nil {
-			loads = map[int64]map[int64]bool{}
-			usedTractor[*e.TractorID] = loads
-		}
-		set := loads[*e.LoadLevelID]
-		if set == nil {
-			set = map[int64]bool{}
-			loads[*e.LoadLevelID] = set
-		}
-		for _, mid := range used {
-			set[mid] = true
-		}
+		collectCatalogUsage(posting.Booking.TractorID, posting.Booking.LoadLevelID, posting.Booking.MachineIDs)
 	}
 
 	// Build the two tables in the basis' own order (tractors, load levels,

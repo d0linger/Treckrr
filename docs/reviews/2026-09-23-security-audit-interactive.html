@@ -1,0 +1,1097 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Treckrr repository audit · Interactive findings</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ground: #edf1ec;
+      --sheet: #f9fbf9;
+      --sheet-quiet: #eff2ef;
+      --ink: #19211d;
+      --muted: #57645c;
+      --line: #ccd4ce;
+      --line-strong: #aab8ae;
+      --green: #115638;
+      --green-soft: #dbece2;
+      --orange: #e05910;
+      --orange-soft: #fff0e7;
+      --red: #a4262e;
+      --red-soft: #fbe9eb;
+      --amber: #7a5310;
+      --amber-soft: #f7edcf;
+      --blue: #1f6feb;
+      --shadow: 0 1px 2px rgba(25, 33, 29, 0.09);
+      --mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: "Hanken Grotesk", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --ground: #0c1511;
+        --sheet: #19221d;
+        --sheet-quiet: #0c1511;
+        --ink: #dbe5de;
+        --muted: #dbe5de;
+        --line: #57645c;
+        --line-strong: #85d7a9;
+        --green: #85d7a9;
+        --green-soft: #173d2a;
+        --orange: #ff8142;
+        --orange-soft: #452517;
+        --red: #ff9aa4;
+        --red-soft: #472329;
+        --amber: #f3c866;
+        --amber-soft: #40351c;
+        --blue: #79b8ff;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scrollbar-color: var(--line-strong) var(--ground);
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--ground);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.55;
+    }
+
+    ::selection { background: var(--green); color: var(--sheet); }
+
+    button, input, select { font: inherit; }
+
+    button, select, input {
+      color: inherit;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    summary:focus-visible,
+    a:focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 3px;
+    }
+
+    .skip-link {
+      position: fixed;
+      z-index: 20;
+      top: 10px;
+      left: 10px;
+      transform: translateY(-150%);
+      padding: 9px 12px;
+      border-radius: 6px;
+      background: var(--ink);
+      color: var(--sheet);
+    }
+
+    .skip-link:focus { transform: translateY(0); }
+
+    .masthead {
+      border-bottom: 1px solid var(--line);
+      background: var(--sheet);
+    }
+
+    .masthead__inner,
+    main,
+    .footer__inner {
+      width: min(1180px, calc(100% - 32px));
+      margin-inline: auto;
+    }
+
+    .masthead__inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 56px;
+      gap: 20px;
+    }
+
+    .brand,
+    .meta,
+    .metric__label,
+    .field > span,
+    .finding__id,
+    .badge,
+    .dossier h3,
+    code {
+      font-family: var(--mono);
+    }
+
+    .brand {
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .brand span { color: var(--green); }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-align: right;
+    }
+
+    main { padding-block: 52px 72px; }
+
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(270px, 0.6fr);
+      gap: 48px;
+      align-items: end;
+      padding-bottom: 36px;
+      border-bottom: 1px solid var(--line-strong);
+    }
+
+    h1 {
+      max-width: 780px;
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 1.9rem;
+      line-height: 1.1;
+      letter-spacing: -0.01em;
+      text-wrap: balance;
+    }
+
+    .lede {
+      max-width: 72ch;
+      margin: 22px 0 0;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .scope-note {
+      margin: 0;
+      padding: 17px 18px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--sheet);
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .scope-note strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--ink);
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-block: 30px 34px;
+      border-block: 1px solid var(--line);
+    }
+
+    .metric {
+      appearance: none;
+      display: grid;
+      gap: 2px;
+      min-height: 84px;
+      padding: 15px 18px;
+      border: 0;
+      border-right: 1px solid var(--line);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .metric:last-child { border-right: 0; }
+
+    .metric:hover { background: var(--sheet); }
+
+    .metric[aria-pressed="true"] { background: var(--green-soft); }
+
+    .metric__value {
+      font-family: var(--mono);
+      font-size: 1.9rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric__label {
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .controls {
+      position: sticky;
+      z-index: 10;
+      top: 12px;
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) 190px 220px auto;
+      gap: 12px;
+      align-items: end;
+      margin-bottom: 16px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--sheet) 94%, transparent);
+      box-shadow: var(--shadow);
+    }
+
+    @supports (backdrop-filter: blur(8px)) {
+      .controls { backdrop-filter: blur(12px); }
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field > span {
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .input,
+    .select,
+    .button {
+      min-height: 44px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--sheet-quiet);
+    }
+
+    .input,
+    .select { width: 100%; padding: 9px 11px; }
+
+    .input::placeholder { color: var(--muted); opacity: 1; }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .button {
+      padding: 9px 13px;
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .button:hover { border-color: var(--green); color: var(--green); }
+
+    .button--quiet { background: transparent; }
+
+    .result-line {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 0 2px 14px;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .result-line strong { color: var(--ink); }
+
+    .findings { display: grid; gap: 12px; }
+
+    .finding {
+      scroll-margin-top: 120px;
+      overflow: clip;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--sheet);
+    }
+
+    .finding[open] {
+      border-color: var(--line-strong);
+      box-shadow: var(--shadow);
+    }
+
+    .finding--spotlight { outline: 2px solid var(--green); outline-offset: 3px; }
+
+    .finding summary {
+      display: grid;
+      grid-template-columns: 82px minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: center;
+      min-height: 96px;
+      padding: 16px 18px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .finding summary::-webkit-details-marker { display: none; }
+
+    .finding summary:hover { background: var(--sheet-quiet); }
+
+    .finding__id {
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .finding__title {
+      display: block;
+      margin: 3px 0 5px;
+      font-family: var(--mono);
+      font-size: 1.25rem;
+      line-height: 1.25;
+      letter-spacing: -0.015em;
+    }
+
+    .finding__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 13px;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .finding__risk {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 9px;
+      border: 1px solid currentColor;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .badge--high { color: var(--red); background: var(--red-soft); }
+    .badge--medium { color: var(--amber); background: var(--amber-soft); }
+    .badge--low { color: var(--green); background: var(--green-soft); }
+
+    .chevron {
+      width: 20px;
+      height: 20px;
+      color: var(--muted);
+      transition: transform 160ms ease-out;
+    }
+
+    .finding[open] .chevron { transform: rotate(180deg); }
+
+    .dossier {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+      gap: 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .dossier__main,
+    .dossier__aside { padding: 22px; }
+
+    .dossier__main { border-right: 1px solid var(--line); }
+
+    .dossier section + section { margin-top: 24px; }
+
+    .dossier h3 {
+      margin: 0 0 7px;
+      color: var(--green);
+      font-size: 0.75rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .dossier p { max-width: 75ch; margin: 0; }
+
+    .dossier ol,
+    .dossier ul { margin: 0; padding-left: 1.2rem; }
+
+    .dossier li + li { margin-top: 7px; }
+
+    .trace {
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--sheet-quiet);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      line-height: 1.6;
+    }
+
+    .target-list {
+      display: grid;
+      gap: 7px;
+      padding: 0;
+      list-style: none;
+    }
+
+    code {
+      overflow-wrap: anywhere;
+      color: var(--ink);
+      font-size: 0.75rem;
+    }
+
+    .blast {
+      padding: 14px 15px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--orange-soft);
+    }
+
+    .copy-link {
+      width: 100%;
+      margin-top: 18px;
+    }
+
+    .empty {
+      padding: 50px 20px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 10px;
+      text-align: center;
+    }
+
+    .empty h2 { margin: 0 0 6px; font-family: var(--mono); }
+    .empty p { margin: 0; color: var(--muted); }
+
+    .footer { border-top: 1px solid var(--line); background: var(--sheet); }
+
+    .footer__inner {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      padding-block: 22px;
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+
+    [hidden] { display: none !important; }
+
+    @media (max-width: 900px) {
+      .intro { grid-template-columns: 1fr; gap: 24px; }
+      .controls { grid-template-columns: 1fr 1fr; }
+      .controls .field:first-child { grid-column: 1 / -1; }
+      .actions { justify-content: flex-end; }
+      .dossier { grid-template-columns: 1fr; }
+      .dossier__main { border-right: 0; border-bottom: 1px solid var(--line); }
+    }
+
+    @media (max-width: 620px) {
+      .masthead__inner,
+      main,
+      .footer__inner { width: min(100% - 22px, 1180px); }
+      .masthead__inner { align-items: flex-start; padding-block: 11px; }
+      .meta { max-width: 17ch; }
+      main { padding-block: 34px 52px; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+      .metric:nth-child(2) { border-right: 0; }
+      .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .controls { position: static; grid-template-columns: 1fr; }
+      .controls .field:first-child { grid-column: auto; }
+      .actions { justify-content: stretch; }
+      .actions .button { flex: 1; }
+      .finding summary { grid-template-columns: 1fr auto; gap: 10px; min-height: 0; }
+      .finding__id { grid-column: 1 / -1; }
+      .finding__risk { align-self: start; }
+      .dossier__main,
+      .dossier__aside { padding: 18px 16px; }
+      .footer__inner { flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .chevron { transition: none; }
+    }
+
+    @media print {
+      :root { color-scheme: light; }
+      body { background: var(--ground); color: var(--ink); font-size: 1rem; }
+      .masthead, .controls, .metrics, .result-line, .copy-link, .footer { display: none; }
+      main { width: 100%; padding: 0; }
+      .intro { display: block; padding-bottom: 18px; }
+      .scope-note { box-shadow: none; margin-top: 16px; }
+      .finding { break-inside: avoid; border-color: var(--line-strong); }
+      .finding + .finding { margin-top: 10px; }
+      .finding summary { min-height: 0; padding: 12px; }
+      .finding:not([open]) > :not(summary) { display: block; }
+      .dossier { display: block; }
+      .dossier__main { border-right: 0; }
+      .chevron { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#findings">Skip to findings</a>
+  <header class="masthead">
+    <div class="masthead__inner">
+      <div class="brand">Treckrr <span>/ audit</span></div>
+      <div class="meta">Whole repository · 23 Sep 2026</div>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro" aria-labelledby="page-title">
+      <div>
+        <h1 id="page-title">Find the failure path. Then fix the boundary.</h1>
+        <p class="lede">Fifteen confirmed findings across transport security, distributed coordination, external side effects, crash consistency, storage isolation, privacy, and numeric invariants. Filter the set, open a dossier, and move directly from impact to reproduction and remediation.</p>
+      </div>
+      <p class="scope-note"><strong>Diagnostic scope</strong>All Go packages, HTTP and authentication flows, PostgreSQL access and migrations, templates, browser code, backup and restore paths, deployment configuration, and operational jobs. No speculative scanner output is included.</p>
+    </section>
+
+    <section class="metrics" aria-label="Finding counts">
+      <button class="metric" type="button" data-metric="all" aria-pressed="true">
+        <span class="metric__value" data-count="all">15</span>
+        <span class="metric__label">All findings</span>
+      </button>
+      <button class="metric" type="button" data-metric="High" aria-pressed="false">
+        <span class="metric__value" data-count="High">4</span>
+        <span class="metric__label">High</span>
+      </button>
+      <button class="metric" type="button" data-metric="Medium" aria-pressed="false">
+        <span class="metric__value" data-count="Medium">10</span>
+        <span class="metric__label">Medium</span>
+      </button>
+      <button class="metric" type="button" data-metric="Low" aria-pressed="false">
+        <span class="metric__value" data-count="Low">1</span>
+        <span class="metric__label">Low</span>
+      </button>
+    </section>
+
+    <section class="controls" aria-label="Audit filters">
+      <label class="field">
+        <span>Search</span>
+        <input class="input" id="search" type="search" placeholder="ID, target, impact, remediation…" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>Severity</span>
+        <select class="select" id="severity">
+          <option value="all">All severities</option>
+          <option value="High">High</option>
+          <option value="Medium">Medium</option>
+          <option value="Low">Low</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Category</span>
+        <select class="select" id="category">
+          <option value="all">All categories</option>
+        </select>
+      </label>
+      <div class="actions">
+        <button class="button button--quiet" id="expand" type="button">Expand all</button>
+        <button class="button button--quiet" id="reset" type="button">Reset</button>
+      </div>
+    </section>
+
+    <div class="result-line">
+      <output id="result-count" aria-live="polite"><strong>15</strong> findings shown</output>
+      <span>Sorted by severity, then ID</span>
+    </div>
+
+    <section class="findings" id="findings" aria-label="Audit findings"></section>
+    <section class="empty" id="empty" hidden>
+      <h2>No matching findings</h2>
+      <p>Change the search term or reset the filters.</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer__inner">
+      <span>Diagnostic artifact · no repository state is modified by this report.</span>
+      <span>Use the file targets as the starting point for remediation.</span>
+    </div>
+  </footer>
+
+  <noscript>
+    <p>This report needs JavaScript for filtering and expandable dossiers. The source contains the complete finding data.</p>
+  </noscript>
+
+  <script>
+    "use strict";
+
+    const findings = [
+      {
+        id: "SEC-01",
+        title: "Shipped defaults expose non-Secure session cookies over HTTP",
+        category: "Transport Security",
+        severity: "High",
+        exploitability: "Trivial",
+        blast: "Session or administrator account takeover by an on-path attacker.",
+        targets: ["docker-compose.yml:85-98,154-160", "docker-compose.ghcr.yml:70-82,110-112", "cmd/treckrr/main.go:124-130", "internal/server/audit.go:289-297", "internal/server/server.go:824-843"],
+        info: "The supplied Compose profiles publish the application on every host interface while both COOKIE_SECURE and TRUST_PROXY default to false. The server emits a warning, but continues issuing authentication cookies over plain HTTP.",
+        trace: "Default Compose → 0.0.0.0:8080 over HTTP → session cookie without Secure → network capture → bearer-token replay",
+        impact: "HttpOnly and SameSite do not protect a cookie from network interception. A captured token can authenticate as the victim, including an administrator, for up to the 90-day absolute session lifetime unless revoked earlier.",
+        reproduction: "Run either supplied Compose file without overriding the TLS-related settings, authenticate through http://<host>:8080, and inspect or capture the Set-Cookie header and subsequent requests.",
+        remediation: [
+          "Bind the shipped configuration to loopback by default, or require an explicit insecure-development flag before serving plain HTTP.",
+          "Refuse to issue authentication cookies without Secure outside a narrowly defined localhost development mode.",
+          "Ship a TLS-terminating deployment profile with mandatory trusted-proxy configuration."
+        ]
+      },
+      {
+        id: "SEC-02",
+        title: "Logout fails open when server-side revocation fails",
+        category: "Session Revocation",
+        severity: "Medium",
+        exploitability: "Complex",
+        blast: "A captured session remains usable after explicit logout.",
+        targets: ["internal/server/auth.go:314-331", "internal/store/store.go:618-620"],
+        info: "Logout records the audit event first, attempts deletion with a five-second detached context, logs any deletion error, and then always erases the browser cookie and redirects as if revocation succeeded.",
+        trace: "Logout → audit insert → DeleteSession timeout/failure → error logged only → browser token erased → copied database token remains valid",
+        impact: "The legitimate user loses the cookie needed to retry and believes logout succeeded, while an attacker holding a copy can keep using it. The audit log can also claim logout before revocation occurred.",
+        reproduction: "Introduce a database outage, lock, or latency exceeding the logout context immediately before DeleteSession, then replay a previously copied session cookie.",
+        remediation: [
+          "Revoke the server-side session before recording successful logout and return a retryable error when revocation is not confirmed.",
+          "Preserve enough client state to retry, or enqueue a durable revocation operation.",
+          "Record logout success only after deletion, preferably in the same transactional operation."
+        ]
+      },
+      {
+        id: "SEC-03",
+        title: "Bootstrap and break-glass administrator passwords bypass policy",
+        category: "Authentication Policy",
+        severity: "Medium",
+        exploitability: "Trivial",
+        blast: "Weak bootstrap or reset administrator credentials.",
+        targets: ["internal/config/config.go:190-195", "internal/server/admin.go:33-57", "internal/store/bootstrap.go:20-54", "internal/store/user_account.go:18-24", "internal/store/password.go:80-109"],
+        info: "The HTTP account screens enforce length and character rules, but configuration loading rejects only empty and documented-placeholder passwords. Bootstrap and ADMIN_PASSWORD_RESET call store methods that hash the supplied value without applying the UI policy.",
+        trace: "ADMIN_PASSWORD=a → config accepts non-placeholder → EnsureAdmin → CreateAccount/ResetPassword → bcrypt hash → weak admin login",
+        impact: "A fresh installation or break-glass reset can expose an immediately guessable administrator credential. The forced-change flag does not stop the first authentication with that weak value.",
+        reproduction: "Start a fresh installation, or enable ADMIN_PASSWORD_RESET, with a short password that is not the documented placeholder.",
+        remediation: [
+          "Enforce password policy at the store or domain boundary used by every credential-setting path.",
+          "Validate ADMIN_PASSWORD during configuration loading and refuse startup or reset when invalid.",
+          "Keep HTTP validation for feedback, but do not treat it as the security boundary."
+        ]
+      },
+      {
+        id: "SEC-04",
+        title: "Trusted-proxy mode fails open when its allowlist is empty",
+        category: "Proxy Trust / Taint Analysis",
+        severity: "Medium",
+        exploitability: "Trivial",
+        blast: "Rate-limit bypass and forged security audit attribution.",
+        targets: ["internal/config/config.go:149-162", "internal/server/audit.go:240-286", "internal/server/auth.go:77,176", "internal/server/ratelimit.go:89-109", "internal/server/webauthn.go:318-369"],
+        info: "When TRUST_PROXY is true and TRUSTED_PROXIES is empty, proxyTrusted returns true for every direct peer. A client that can reach the published backend controls the right-most X-Forwarded-For value used as its identity.",
+        trace: "TRUST_PROXY=true + empty allowlist → direct backend request → forged X-Forwarded-For → attacker-selected clientIP",
+        impact: "An attacker can rotate past IP-keyed portions of password, MFA, passkey-ceremony, and public-share throttles and inject arbitrary addresses into audit records. Account-specific throttles still apply where present.",
+        reproduction: "Enable proxy trust without an allowlist, leave the application port directly reachable, and rotate X-Forwarded-For while sending failed login or share-token requests.",
+        remediation: [
+          "Reject TRUST_PROXY=true unless at least one valid trusted CIDR is configured.",
+          "Make the application port reachable only from the reverse proxy.",
+          "Model the expected proxy-hop count explicitly and reject malformed or unexpected forwarded chains."
+        ]
+      },
+      {
+        id: "CNC-01",
+        title: "Restore lease silently disappears with its PostgreSQL session",
+        category: "Distributed Coordination",
+        severity: "High",
+        exploitability: "Complex",
+        blast: "Live traffic can overlap a destructive database restore.",
+        targets: ["internal/db/maintenance.go:19-97", "cmd/treckrr/main.go:135-144,204-209"],
+        info: "The application lease is a session-scoped advisory lock held through one pinned database connection. It has no heartbeat, re-acquisition, readiness transition, or fencing generation.",
+        trace: "Shared advisory lock → PostgreSQL session loss/failover → automatic lock release → normal pool reconnects → app keeps serving → another process acquires exclusive restore lock",
+        impact: "Requests can read or mutate partially restored schemas and data, producing transaction failures, inconsistent billing state, schema/cache mismatch, and extended unavailability.",
+        reproduction: "Terminate the backend connection holding the advisory lock without stopping the process, verify pooled application queries recover, and then begin an offline restore.",
+        remediation: [
+          "Heartbeat the lease connection and immediately fail readiness and stop application traffic when ownership is lost.",
+          "Add a durable fenced maintenance generation validated by every business transaction.",
+          "Require orchestration-level shutdown of every serving instance before destructive restore."
+        ]
+      },
+      {
+        id: "CNC-02",
+        title: "Backup serialization is local to one process",
+        category: "Distributed Concurrency",
+        severity: "Medium",
+        exploitability: "Complex",
+        blast: "Backup collisions, duplicate database load, and unreliable recovery metadata.",
+        targets: ["internal/db/maintenance.go:27-30", "cmd/treckrr/main.go:184-200", "internal/backup/backup.go:233-265,327-330,946-997"],
+        info: "Multiple serving instances are permitted by the shared application lease, but every instance starts a scheduler whose mutexes, semaphores, retry timestamps, and status read-modify-write cycle are process-local.",
+        trace: "Two app replicas → same due schedule → independent local semaphores → same-second backup name → shared staging/final/S3/status destinations",
+        impact: "Concurrent pg_dump and Argon2 operations multiply database, CPU, and memory load. Shared destinations receive last-writer-wins updates and pruning can act on incomplete cross-process state.",
+        reproduction: "Start two application replicas against the same database with backups enabled and the same volume or S3 configuration, then make a scheduled backup due.",
+        remediation: [
+          "Use a database advisory lock or leader election for every scheduled backup, mirror, rotation, and prune job.",
+          "Use collision-resistant names and conditional object creation.",
+          "Store cluster-wide scheduler state transactionally in PostgreSQL."
+        ]
+      },
+      {
+        id: "DST-01",
+        title: "SMTP delivery and database bookkeeping cannot commit atomically",
+        category: "External Side-Effect Atomicity",
+        severity: "High",
+        exploitability: "Complex",
+        blast: "Duplicate invoices or reminders, or missing delivery records.",
+        targets: ["internal/mail/mail.go:31-120,123-154", "internal/server/beleg.go:790-825", "internal/server/dunning.go:374-405", "internal/store/mail_outbox.go:178-243"],
+        info: "SMTP acceptance is an external side effect separated from both outbox status and legal delivery records. The MIME message has no stable Message-ID or provider idempotency key.",
+        trace: "SMTP DATA accepted → response lost or process killed → Treckrr sees failure/pending → retry sends duplicate; or status='sent' → trail write fails → delivered mail has no history",
+        impact: "Recipients can receive duplicate invoices, reminders, or fees. The opposite ordering failure leaves missing delivery evidence for a document that was actually delivered.",
+        reproduction: "Use an SMTP server that accepts the DATA payload and closes before returning the final response, or kill the process immediately after mail.Send succeeds.",
+        remediation: [
+          "Create every outbound message in a transactional outbox before attempting delivery, including synchronous UI sends.",
+          "Assign a stable delivery identifier and use provider idempotency where available.",
+          "Represent ambiguous delivery outcomes explicitly and reconcile them instead of treating them as definitively unsent."
+        ]
+      },
+      {
+        id: "CNC-03",
+        title: "Batch dunning has neither run-level nor recipient-level idempotency",
+        category: "Concurrency / Idempotency",
+        severity: "High",
+        exploitability: "Trivial",
+        blast: "Duplicate legal notices and fees across all overdue recipients.",
+        targets: ["internal/server/dunning.go:505-595", "internal/store/dunning.go:62-97", "internal/store/dunning_notices.go:27-41"],
+        info: "The batch selects every overdue invoice without considering an in-flight or previously sent stage. It detaches from request cancellation, has no total execution deadline, and records notices with unconditional inserts.",
+        trace: "Batch starts → response lost or second operator submits → two detached loops select same recipients → both send and insert notice rows",
+        impact: "The same reminder stage and fee can be delivered repeatedly to every overdue neighbor. Slow batches can outlive the response deadline and create partial or contradictory delivery trails.",
+        reproduction: "Submit two batch requests concurrently, or disconnect after submission and retry while the first detached loop is still running.",
+        remediation: [
+          "Persist a batch job and atomically claim each invoice, stage, and recipient before sending.",
+          "Execute through a lifecycle-managed worker with bounded chunks, deadlines, progress, and shutdown coordination.",
+          "Separate explicit resend from the normal idempotent batch action."
+        ]
+      },
+      {
+        id: "RES-01",
+        title: "Mail processing escapes the maintenance deadline and restore drain",
+        category: "Cancellation / Resource Lifecycle",
+        severity: "Medium",
+        exploitability: "Trivial",
+        blast: "Restore starvation and recurring maintenance failure.",
+        targets: ["cmd/treckrr/main.go:270-347", "internal/server/backup_resources.go:19-28", "internal/store/mail_outbox.go:120-176"],
+        info: "The maintenance cycle creates a one-minute context, but outbox processing uses the root process context and can run ten independent 45-second delivery budgets while holding the global activity read lock.",
+        trace: "Background acquires activity RLock → one-minute context starts → outbox ignores it → SMTP batch runs for minutes → cleanup receives expired context → restore waits for write lock",
+        impact: "A slow SMTP server can stretch one maintenance tick across several minutes, starve later cleanup, delay restore, and prolong shutdown. A recurring backlog sustains the condition.",
+        reproduction: "Queue multiple due messages and configure an SMTP endpoint that stalls each connection near its timeout.",
+        remediation: [
+          "Give each maintenance task its own context while enforcing a deadline on the whole outbox batch.",
+          "Stop starting messages when the batch deadline is near.",
+          "Do not hold the global restore-admission lock across external SMTP I/O; track cancellable workers explicitly."
+        ]
+      },
+      {
+        id: "RES-02",
+        title: "Backup status persistence failures are reported as success",
+        category: "Backup State Integrity",
+        severity: "Medium",
+        exploitability: "Trivial",
+        blast: "Backup retry storms and stale health reporting.",
+        targets: ["internal/backup/backup.go:251-259", "internal/backup/backup.go:503-560", "internal/backup/backup.go:946-997", "internal/backup/backup.go:1250-1263"],
+        info: "Status writes return no error. A failed write is logged, but the archive operation returns nil and the scheduler clears its retry backoff as though durable scheduler state advanced.",
+        trace: "Archive succeeds → status write fails → error logged only → run returns success → stale LastBackup remains due → heavy backup runs again next minute",
+        impact: "An unwritable or full status mount can trigger repeated pg_dump and Argon2 work while the administration panel and monitoring continue showing stale health data.",
+        reproduction: "Keep the backup directory writable while making the status-file directory read-only or exhausting its filesystem.",
+        remediation: [
+          "Return status persistence errors through updateStatus and backup result values.",
+          "Distinguish archive creation from health-state persistence, but apply retry backoff to both failures.",
+          "Store scheduler state in a durable transactional table rather than process-local JSON."
+        ]
+      },
+      {
+        id: "RES-03",
+        title: "Backup renames are atomic but not crash-durable",
+        category: "Crash Consistency",
+        severity: "Medium",
+        exploitability: "Complex",
+        blast: "Recently reported backups may disappear after host failure.",
+        targets: ["internal/backup/backup.go:518-541,1270-1294", "internal/backup/rotate.go:78-97"],
+        info: "Backup and status files are fsynced before rename, but the parent directory is never fsynced after the directory entry changes.",
+        trace: "Temp file write + fsync → rename to staging/final → success recorded → sudden power loss before directory metadata is durable",
+        impact: "The newest backup, rotated replacement, or status file can disappear after reboot despite having been reported successful. Archive and status ordering is not crash-durable.",
+        reproduction: "Force a VM or host power loss immediately after rename on a filesystem that does not synchronously persist directory metadata.",
+        remediation: [
+          "Open and fsync the parent directory after every durability-critical rename.",
+          "Persist status only after the promoted archive and its directory entry are durable.",
+          "Exercise the sequence with filesystem fault injection on the production volume type."
+        ]
+      },
+      {
+        id: "ISO-01",
+        title: "S3 retention has no installation ownership boundary",
+        category: "Storage Namespace Isolation",
+        severity: "Medium",
+        exploitability: "Complex",
+        blast: "One installation can overwrite or prune another installation’s backups.",
+        targets: ["internal/config/config.go:123-128", ".env.example:120-127", "internal/backup/backup.go:1071-1103", "internal/backup/backup.go:1175-1206"],
+        info: "An empty or shared S3 prefix is accepted. Listing considers every flat treckrr-*.dump.enc object locally owned and retention prunes the combined namespace.",
+        trace: "Two installations share bucket/prefix → both produce matching flat names → same-second overwrite or combined retention list → either installation prunes the other",
+        impact: "One installation can destroy another installation’s off-site recovery points or replace them with an archive encrypted under a different key.",
+        reproduction: "Configure two independent databases with the same S3 bucket and prefix, enable retention, and allow both to upload and prune for more than one day.",
+        remediation: [
+          "Require a normalized, nonempty installation-specific prefix whenever S3 backup is enabled.",
+          "Embed and verify an installation identifier in object metadata or a signed manifest.",
+          "Scope credentials to the installation prefix and use conditional object creation."
+        ]
+      },
+      {
+        id: "PRI-01",
+        title: "Failed outbox messages retain full financial documents indefinitely",
+        category: "Data Retention / Queue Idempotency",
+        severity: "Medium",
+        exploitability: "Trivial",
+        blast: "Indefinite PII retention and unbounded database growth.",
+        targets: ["internal/store/mail_outbox.go:74-101", "internal/store/mail_outbox.go:248-275", "internal/db/migrations/0042_mail_outbox.sql:16-33"],
+        info: "A failed send stores recipient, body, and complete PDF. Equivalent rows have no delivery key or uniqueness constraint, and after six failed attempts they become permanent failed records excluded from the sent-mail purge.",
+        trace: "SMTP outage → repeated send actions → duplicate outbox rows with PDFs → six failures each → status=failed → purge ignores them forever",
+        impact: "Sensitive invoices and reminders remain in PostgreSQL and every database backup indefinitely. Prolonged failure or repeated batch submission can grow both without a bound.",
+        reproduction: "Disable SMTP, repeatedly send the same invoice or batch, and let every queued row exhaust its attempts.",
+        remediation: [
+          "Add an idempotency key derived from document revision, recipient, and delivery purpose, then upsert a pending row.",
+          "Remove or redact failed attachment and body data under a retention policy while preserving a minimal failure ledger.",
+          "Enforce queue-count and aggregate-attachment-size limits with an administrator cleanup workflow."
+        ]
+      },
+      {
+        id: "DOS-01",
+        title: "Audit CSV export materializes the entire retained history",
+        category: "Resource Exhaustion",
+        severity: "Medium",
+        exploitability: "Trivial",
+        blast: "Administrator-triggered process OOM and service restart.",
+        targets: ["internal/server/audit.go:101-125", "internal/store/audit.go:173-227", "cmd/treckrr/main.go:302-306"],
+        info: "The export requests limit zero, the store interprets that as all rows, and scanAuditRows appends every row and string to memory before the first CSV record is written.",
+        trace: "Unbounded export request → query all retained rows → allocate complete []AuditEntry → container memory ceiling → process termination",
+        impact: "A sufficiently large audit history can exceed the 768 MiB application limit and interrupt every user. Concurrent exports multiply memory pressure.",
+        reproduction: "Populate a large multi-year audit log and request /admin/audit/export without a narrow date filter.",
+        remediation: [
+          "Stream rows directly from the database cursor to the CSV writer with context checks and periodic flushing.",
+          "Require a date range or enforce an interactive export row limit.",
+          "Use stable keyset pagination for large asynchronous export jobs."
+        ]
+      },
+      {
+        id: "BND-01",
+        title: "WebAuthn signature counters narrow without a database invariant",
+        category: "Numeric Boundary / Invariant",
+        severity: "Low",
+        exploitability: "Theoretical",
+        blast: "Incorrect passkey clone-detection state for one credential.",
+        targets: ["internal/db/migrations/0010_webauthn.sql:15", "internal/store/webauthn.go:54-71", "internal/server/webauthn.go:76-95,412-425"],
+        info: "PostgreSQL stores sign_count as an unconstrained BIGINT, while the store converts it directly to uint32 for the WebAuthn library.",
+        trace: "Negative or >uint32 database value → int64 scan → unchecked uint32 conversion → modulo wrap → corrupted clone-counter comparison",
+        impact: "A legitimate credential can produce a false clone warning, while a high counter that wraps downward can suppress an otherwise meaningful regression. Clone warnings are audited but do not block authentication.",
+        reproduction: "Set a credential sign_count to -1 or 4294967296, then authenticate with that passkey.",
+        remediation: [
+          "Add a database constraint enforcing 0 ≤ sign_count ≤ 4294967295.",
+          "Validate the scanned int64 before conversion and reject or quarantine invalid credentials.",
+          "Validate existing rows before applying the constraint."
+        ]
+      }
+    ];
+
+    const severityRank = { High: 0, Medium: 1, Low: 2 };
+    const search = document.querySelector("#search");
+    const severity = document.querySelector("#severity");
+    const category = document.querySelector("#category");
+    const container = document.querySelector("#findings");
+    const empty = document.querySelector("#empty");
+    const resultCount = document.querySelector("#result-count");
+    const expandButton = document.querySelector("#expand");
+    const resetButton = document.querySelector("#reset");
+    const metricButtons = [...document.querySelectorAll("[data-metric]")];
+
+    const sortedFindings = [...findings].sort((a, b) =>
+      severityRank[a.severity] - severityRank[b.severity] || a.id.localeCompare(b.id)
+    );
+
+    for (const value of [...new Set(findings.map(finding => finding.category))].sort()) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      category.append(option);
+    }
+
+    for (const level of ["all", "High", "Medium", "Low"]) {
+      const count = level === "all" ? findings.length : findings.filter(finding => finding.severity === level).length;
+      document.querySelector(`[data-count="${level}"]`).textContent = String(count);
+    }
+
+    function element(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    function dossierSection(title, content, className = "") {
+      const section = element("section", className);
+      section.append(element("h3", "", title), content);
+      return section;
+    }
+
+    function buildFinding(finding) {
+      const details = element("details", "finding");
+      details.id = finding.id;
+      details.dataset.severity = finding.severity;
+      details.dataset.category = finding.category;
+
+      const summary = document.createElement("summary");
+      const id = element("span", "finding__id", finding.id);
+      const heading = element("span", "finding__heading");
+      heading.append(element("strong", "finding__title", finding.title));
+      const meta = element("span", "finding__meta");
+      meta.append(element("span", "", finding.category), element("span", "", `Exploitability: ${finding.exploitability}`));
+      heading.append(meta);
+      const risk = element("span", "finding__risk");
+      risk.append(element("span", `badge badge--${finding.severity.toLowerCase()}`, finding.severity));
+      const chevron = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      chevron.setAttribute("class", "chevron");
+      chevron.setAttribute("viewBox", "0 0 24 24");
+      chevron.setAttribute("fill", "none");
+      chevron.setAttribute("stroke", "currentColor");
+      chevron.setAttribute("stroke-width", "2");
+      chevron.setAttribute("aria-hidden", "true");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", "m6 9 6 6 6-6");
+      chevron.append(path);
+      risk.append(chevron);
+      summary.append(id, heading, risk);
+
+      const dossier = element("div", "dossier");
+      const main = element("div", "dossier__main");
+      main.append(
+        dossierSection("Finding", element("p", "", finding.info)),
+        dossierSection("Failure path", element("p", "trace", finding.trace)),
+        dossierSection("Impact", element("p", "", finding.impact)),
+        dossierSection("Reproduction", element("p", "", finding.reproduction))
+      );
+
+      const remediationList = document.createElement("ol");
+      for (const item of finding.remediation) remediationList.append(element("li", "", item));
+      main.append(dossierSection("Remediation", remediationList));
+
+      const aside = element("aside", "dossier__aside");
+      const blast = element("p", "blast", finding.blast);
+      aside.append(dossierSection("Blast radius", blast));
+      const targetList = element("ul", "target-list");
+      for (const target of finding.targets) {
+        const item = document.createElement("li");
+        item.append(element("code", "", target));
+        targetList.append(item);
+      }
+      aside.append(dossierSection("Targets", targetList));
+      const copy = element("button", "button button--quiet copy-link", "Copy direct link");
+      copy.type = "button";
+      copy.addEventListener("click", async () => {
+        const url = `${location.href.split("#")[0]}#${finding.id}`;
+        try {
+          await navigator.clipboard.writeText(url);
+          copy.textContent = "Link copied";
+        } catch {
+          location.hash = finding.id;
+          copy.textContent = "Link selected in address bar";
+        }
+        setTimeout(() => { copy.textContent = "Copy direct link"; }, 1800);
+      });
+      aside.append(copy);
+
+      dossier.append(main, aside);
+      details.append(summary, dossier);
+      details.addEventListener("toggle", updateExpandLabel);
+      return details;
+    }
+
+    for (const finding of sortedFindings) container.append(buildFinding(finding));
+
+    function searchableText(finding) {
+      return [finding.id, finding.title, finding.category, finding.severity, finding.exploitability,
+        finding.blast, finding.info, finding.trace, finding.impact, finding.reproduction,
+        ...finding.targets, ...finding.remediation].join(" ").toLocaleLowerCase();
+    }
+
+    function updateMetrics() {
+      for (const button of metricButtons) {
+        const value = button.dataset.metric;
+        button.setAttribute("aria-pressed", String((severity.value === "all" && value === "all") || severity.value === value));
+      }
+    }
+
+    function applyFilters() {
+      const query = search.value.trim().toLocaleLowerCase();
+      let shown = 0;
+      sortedFindings.forEach((finding, index) => {
+        const matches = (severity.value === "all" || finding.severity === severity.value) &&
+          (category.value === "all" || finding.category === category.value) &&
+          (!query || searchableText(finding).includes(query));
+        container.children[index].hidden = !matches;
+        if (matches) shown++;
+      });
+      resultCount.replaceChildren(element("strong", "", String(shown)), document.createTextNode(` ${shown === 1 ? "finding" : "findings"} shown`));
+      empty.hidden = shown !== 0;
+      updateMetrics();
+      updateExpandLabel();
+    }
+
+    function visibleDetails() {
+      return [...container.querySelectorAll(".finding:not([hidden])")];
+    }
+
+    function updateExpandLabel() {
+      const visible = visibleDetails();
+      expandButton.textContent = visible.length > 0 && visible.every(detail => detail.open) ? "Collapse all" : "Expand all";
+    }
+
+    search.addEventListener("input", applyFilters);
+    severity.addEventListener("change", applyFilters);
+    category.addEventListener("change", applyFilters);
+
+    for (const button of metricButtons) {
+      button.addEventListener("click", () => {
+        severity.value = button.dataset.metric;
+        applyFilters();
+      });
+    }
+
+    expandButton.addEventListener("click", () => {
+      const visible = visibleDetails();
+      const open = !visible.every(detail => detail.open);
+      for (const detail of visible) detail.open = open;
+      updateExpandLabel();
+    });
+
+    resetButton.addEventListener("click", () => {
+      search.value = "";
+      severity.value = "all";
+      category.value = "all";
+      applyFilters();
+      search.focus();
+    });
+
+    function openHashTarget() {
+      const id = decodeURIComponent(location.hash.slice(1));
+      if (!id) return;
+      const target = document.getElementById(id);
+      if (!target || !target.classList.contains("finding")) return;
+      search.value = "";
+      severity.value = "all";
+      category.value = "all";
+      applyFilters();
+      target.open = true;
+      target.classList.add("finding--spotlight");
+      target.scrollIntoView({ block: "start" });
+      setTimeout(() => target.classList.remove("finding--spotlight"), 1800);
+    }
+
+    window.addEventListener("hashchange", openHashTarget);
+    applyFilters();
+    openHashTarget();
+  </script>
+</body>
+</html>

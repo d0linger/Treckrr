@@ -84,7 +84,7 @@
 		{{range .Ledger}}
 		<div class="beleg__lrow beleg__lrow--ver{{if .Voided}} beleg__lrow--void{{end}}">
 			<span class="beleg__d">{{.Date.Format "02.01."}}</span>
-			<span class="beleg__t">{{if .Amount.IsNegative}}Ich schulde{{else}}Zusatzforderung{{end}}{{if .Description}} · {{.Description}}{{end}}{{if .Voided}} · storniert{{end}}</span>
+			<span class="beleg__t">{{.DisplayDescription}}{{if .Voided}} · storniert{{end}}</span>
 			<span class="beleg__h beleg__r"></span>
 			<span class="beleg__b beleg__r{{if .Amount.IsNegative}} beleg__b--neg{{end}}">{{money .Amount}}</span>
 		</div>

@@ -78,7 +78,10 @@ func (b LedgerBooking) BookingPeople() []BookingPerson {
 // metadata, including both independent service calculations and the original note.
 func (b LedgerBooking) Summary() string {
 	parts := []string{b.TaskLabel}
-	if b.PartnerLabel != "" {
+	// A catalog selection becomes the task label when the operator leaves the
+	// optional task field empty. Do not print that derived label twice on Belege
+	// and exports (for example "Zwangsmischer · Zwangsmischer").
+	if b.PartnerLabel != "" && !strings.EqualFold(strings.TrimSpace(b.PartnerLabel), strings.TrimSpace(b.TaskLabel)) {
 		parts = append(parts, b.PartnerLabel)
 	}
 	if len(b.People) == 0 || b.Kind != "labor" {
