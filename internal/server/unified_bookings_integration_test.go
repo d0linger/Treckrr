@@ -151,6 +151,16 @@ func TestUnifiedBookingsIntegration(t *testing.T) {
 	if entries, err := e.st.ListEntries(e.ctx, e.neighborID, e.yearID64); err != nil || len(entries) != 0 {
 		t.Fatalf("counterclaim entered outgoing work: %d %v", len(entries), err)
 	}
+	beleg := html.UnescapeString(e.get(fmt.Sprintf("/neighbors/%d/beleg?year=%d&grundlage=1", e.neighborID, e.yearID64)))
+	if strings.Contains(beleg, "Ich schulde") || strings.Contains(beleg, "IT-Gespann · IT-Gespann") {
+		t.Fatalf("incoming equipment is redundantly described on Beleg")
+	}
+	if !strings.Contains(beleg, `<div class="beleg__gm"><span>IT-Maschine</span>`) {
+		t.Fatalf("incoming catalog machine missing from Beleg cost basis")
+	}
+	if !strings.Contains(beleg, "Aktuelle Katalog-Referenzwerte; gebuchte Verrechnungssätze stehen in den Positionen.") {
+		t.Fatalf("incoming catalog rates are not identified as current reference values")
+	}
 	incoming.Set("hours", "3")
 	incoming.Set("person_row_id", itoa64(snapshot.People[0].ID))
 	e.post(fmt.Sprintf("/ledger/%d/update", ledger[0].ID), incoming)

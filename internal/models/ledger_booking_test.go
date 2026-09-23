@@ -45,6 +45,45 @@ func TestLedgerBookingSnapshot(t *testing.T) {
 	}
 }
 
+// TestLedgerBookingSummaryDeduplicatesDerivedLabel keeps a catalog-derived task
+// from appearing twice in Belege and exports.
+func TestLedgerBookingSummaryDeduplicatesDerivedLabel(t *testing.T) {
+	t.Parallel()
+	b := LedgerBooking{Version: 1, Kind: "equipment", TaskLabel: "Zwangsmischer", PartnerLabel: " zwangsmischer ",
+		Unit: "h", Quantity: dec("2.5"), UnitPrice: dec("12")}
+	if got, want := b.Summary(), "Zwangsmischer · 2,5 h × 12 €"; got != want {
+		t.Fatalf("Summary() = %q, want %q", got, want)
+	}
+}
+
+// TestLedgerEntryDisplayDescription prefers current structured presentation but
+// preserves manual legacy descriptions.
+func TestLedgerEntryDisplayDescription(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		row  LedgerEntry
+		want string
+	}{
+		{
+			name: "structured booking",
+			row: LedgerEntry{Description: "stale duplicate", Booking: &LedgerBooking{Version: 1, Kind: "equipment",
+				TaskLabel: "Zwangsmischer", PartnerLabel: "Zwangsmischer", Unit: "h", Quantity: dec("2.5"), UnitPrice: dec("12")}},
+			want: "Zwangsmischer · 2,5 h × 12 €",
+		},
+		{name: "legacy posting", row: LedgerEntry{Description: "Gegenleistung Heuernte"}, want: "Gegenleistung Heuernte"},
+		{name: "empty legacy posting", row: LedgerEntry{}, want: "Verrechnung"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.row.DisplayDescription(); got != tt.want {
+				t.Fatalf("DisplayDescription() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestLedgerBookingLegacyEquipmentSnapshotCompatibility prevents typed edits
 // from erasing snapshot keys written by the retired neighbor-specific catalog.
 func TestLedgerBookingLegacyEquipmentSnapshotCompatibility(t *testing.T) {

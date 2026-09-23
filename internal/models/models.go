@@ -419,6 +419,20 @@ type LedgerEntry struct {
 	Booking *LedgerBooking
 }
 
+// DisplayDescription returns the structured booking summary when available and
+// falls back to the legacy description for manual postings and transfers.
+func (e LedgerEntry) DisplayDescription() string {
+	if e.Booking != nil {
+		if summary := strings.TrimSpace(e.Booking.Summary()); summary != "" {
+			return summary
+		}
+	}
+	if description := strings.TrimSpace(e.Description); description != "" {
+		return description
+	}
+	return "Verrechnung"
+}
+
 // Payment is a dated amount a neighbor paid toward a billing year. Payments are
 // decoupled from year status (a completed year still accepts them) and there may
 // be several per (year, neighbor) — partial payments settle the balance over time.

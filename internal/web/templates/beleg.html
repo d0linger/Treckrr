@@ -84,7 +84,7 @@
 		{{range .Ledger}}
 		<div class="beleg__lrow beleg__lrow--ver{{if .Voided}} beleg__lrow--void{{end}}">
 			<span class="beleg__d">{{.Date.Format "02.01."}}</span>
-			<span class="beleg__t">{{if .Amount.IsNegative}}Ich schulde{{else}}Zusatzforderung{{end}}{{if .Description}} · {{.Description}}{{end}}{{if .Voided}} · storniert{{end}}</span>
+			<span class="beleg__t">{{if and .Amount.IsNegative (not .Booking)}}Ich schulde · {{end}}{{.DisplayDescription}}{{if .Voided}} · storniert{{end}}</span>
 			<span class="beleg__h beleg__r"></span>
 			<span class="beleg__b beleg__r{{if .Amount.IsNegative}} beleg__b--neg{{end}}">{{money .Amount}}</span>
 		</div>
@@ -111,7 +111,7 @@
 		{{if .HasGrund}}
 		<div class="beleg__grund" id="beleg-grund">
 			<div class="beleg__grund-h"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Kostengrundlage{{with .Year.Base}} · {{.Name}} ({{.Year}}){{end}}</div>
-			<div class="beleg__grund-sub">Nur die {{.Year.Year}} verwendeten Sätze.</div>
+			<div class="beleg__grund-sub">{{if .GrundCatalogReference}}Aktuelle Katalog-Referenzwerte; gebuchte Verrechnungssätze stehen in den Positionen.{{else}}Nur die {{.Year.Year}} verwendeten Sätze.{{end}}</div>
 
 			{{if .GrundTractors}}
 			<div class="beleg__gt beleg__gt--head"><span class="beleg__ghcap">Traktor</span><span>Belastung</span><span class="beleg__r">€/PS·h</span><span class="beleg__r">€/h</span></div>
