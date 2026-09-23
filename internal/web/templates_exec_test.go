@@ -126,7 +126,7 @@ func TestBelegPageRenders(t *testing.T) {
 			{"Label": "Schwadern groß", "Count": 2, "Hours": d(3), "Cost": d(247)},
 			{"Label": "Mähen", "Count": 1, "Hours": d(2.25), "Cost": d(251.19)},
 		},
-		"Bundle": true, "ShowGrund": true, "HasGrund": true,
+		"Bundle": true, "ShowGrund": true, "HasGrund": true, "GrundCatalogReference": true,
 		"GrundTractors": []map[string]any{
 			{"Ident": "4095", "PS": "100", "Loads": []map[string]any{
 				{"Load": "mittel", "CostPS": "0,40", "Rate": d(40), "Machines": []string{"Frontmähwerk", "Heckmähwerk"}},
@@ -154,9 +154,62 @@ func TestBelegPageRenders(t *testing.T) {
 		"AT00 FIXIERTE IBAN",                           // frozen payment IBAN
 		"UID/Steuernummer des Empfängers erforderlich", // soft § 11 reminder
 		"Freie Sonderleistung",                         // note used instead of "Sonstige"
+		"Aktuelle Katalog-Referenzwerte; gebuchte Verrechnungssätze stehen in den Positionen.",
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("beleg HTML missing %q", want)
+		}
+	}
+}
+
+// TestBelegLedgerDescriptionPrefixesOnlyLegacyPayables distinguishes manual
+// account postings from structured incoming bookings without losing void state.
+func TestBelegLedgerDescriptionPrefixesOnlyLegacyPayables(t *testing.T) {
+	t.Parallel()
+	d := decimal.RequireFromString
+	page := html.UnescapeString(execPage(t, "beleg", map[string]any{
+		"Title":      "Beleg",
+		"Neighbor":   models.Neighbor{ID: 2, Name: "Bio-Hof Steiner"},
+		"Year":       models.BillingYear{ID: 1, Year: 2026},
+		"TotalCost":  decimal.Zero,
+		"TotalHours": decimal.Zero,
+		"Ledger": []models.LedgerEntry{
+			{Date: time.Now(), Description: "Legacy payable", Amount: d("-10")},
+			{Date: time.Now(), Description: "Legacy receivable", Amount: d("10")},
+			{Date: time.Now(), Amount: d("-24"), Booking: &models.LedgerBooking{
+				Version: 1, Kind: "equipment", TaskLabel: "Incoming equipment",
+				Unit: "h", Quantity: d("2"), UnitPrice: d("12"),
+			}},
+			{Date: time.Now(), Amount: d("-6"), Voided: true, Booking: &models.LedgerBooking{
+				Version: 1, Kind: "equipment", TaskLabel: "Voided incoming",
+				Unit: "h", Quantity: d("1"), UnitPrice: d("6"),
+			}},
+		},
+		"LedgerSum": d("-30"),
+		"Saldo":     d("-30"),
+		"Today":     "23.09.2026",
+	}))
+
+	if count := strings.Count(page, "Ich schulde · "); count != 1 {
+		t.Fatalf("legacy payable prefix count = %d, want 1", count)
+	}
+	for _, want := range []string{
+		"Ich schulde · Legacy payable",
+		"Legacy receivable",
+		"Incoming equipment · 2 h × 12 €",
+		"Voided incoming · 1 h × 6 € · storniert",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("beleg ledger missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{
+		"Ich schulde · Legacy receivable",
+		"Ich schulde · Incoming equipment",
+		"Ich schulde · Voided incoming",
+	} {
+		if strings.Contains(page, unwanted) {
+			t.Errorf("beleg ledger unexpectedly contains %q", unwanted)
 		}
 	}
 }

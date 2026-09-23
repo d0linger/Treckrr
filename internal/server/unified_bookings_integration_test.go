@@ -158,6 +158,9 @@ func TestUnifiedBookingsIntegration(t *testing.T) {
 	if !strings.Contains(beleg, `<div class="beleg__gm"><span>IT-Maschine</span>`) {
 		t.Fatalf("incoming catalog machine missing from Beleg cost basis")
 	}
+	if !strings.Contains(beleg, "Aktuelle Katalog-Referenzwerte; gebuchte Verrechnungssätze stehen in den Positionen.") {
+		t.Fatalf("incoming catalog rates are not identified as current reference values")
+	}
 	incoming.Set("hours", "3")
 	incoming.Set("person_row_id", itoa64(snapshot.People[0].ID))
 	e.post(fmt.Sprintf("/ledger/%d/update", ledger[0].ID), incoming)

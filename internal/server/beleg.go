@@ -136,23 +136,26 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	// explanation the Beleg owes its reader. Voided positions don't count.
 	usedTractor := map[int64]map[int64]map[int64]bool{} // tractor -> load -> set(machine)
 	usedMachine := map[int64]bool{}
-	collectCatalogUsage := func(tractorID, loadLevelID *int64, machineIDs []int64) {
+	collectCatalogUsage := func(tractorID, loadLevelID *int64, machineIDs []int64) bool {
+		collected := false
 		used := make([]int64, 0, len(machineIDs))
 		for _, mid := range machineIDs {
 			if _, ok := machineByID[mid]; ok {
 				used = append(used, mid)
 				usedMachine[mid] = true
+				collected = true
 			}
 		}
 		if tractorID == nil || loadLevelID == nil {
-			return
+			return collected
 		}
 		if _, ok := tractorByID[*tractorID]; !ok {
-			return
+			return collected
 		}
 		if _, ok := loadByID[*loadLevelID]; !ok {
-			return
+			return collected
 		}
+		collected = true
 		loads := usedTractor[*tractorID]
 		if loads == nil {
 			loads = map[int64]map[int64]bool{}
@@ -166,6 +169,7 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 		for _, mid := range used {
 			set[mid] = true
 		}
+		return collected
 	}
 	// One batched lookup of every booking's machines (avoids a per-entry query).
 	// Best-effort: on error the appendix simply omits the machine links.
@@ -180,11 +184,14 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 		// appendix even though no tractor rate appears on the document.
 		collectCatalogUsage(e.TractorID, e.LoadLevelID, machineIDsByEntry[e.ID])
 	}
+	grundCatalogReference := false
 	for _, posting := range ledger {
 		if posting.Voided || posting.Booking == nil || posting.Booking.Kind != "equipment" {
 			continue
 		}
-		collectCatalogUsage(posting.Booking.TractorID, posting.Booking.LoadLevelID, posting.Booking.MachineIDs)
+		if collectCatalogUsage(posting.Booking.TractorID, posting.Booking.LoadLevelID, posting.Booking.MachineIDs) {
+			grundCatalogReference = true
+		}
 	}
 
 	// Build the two tables in the basis' own order (tractors, load levels,
@@ -447,6 +454,7 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 		strings.TrimSpace(invRecipient.TaxID) == ""
 	data["GrundTractors"] = gTractors
 	data["GrundMachines"] = gMachines
+	data["GrundCatalogReference"] = grundCatalogReference
 	data["HasGrund"] = len(gTractors) > 0 || len(gMachines) > 0
 	data["Bookings"] = bookings
 	data["ShowGrund"] = r.URL.Query().Get("grundlage") == "1"
