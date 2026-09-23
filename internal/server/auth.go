@@ -218,7 +218,6 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logins.reset(r.Context(), rlKey)
 	s.sensitiveReset(r, userID)
-	s.clearPending2FA(w, r)
 	s.establishSession(w, r, user)
 }
 
@@ -246,6 +245,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 		s.serverError(w, r.URL.Path, err)
 		return false
 	}
+	s.clearTransitionalAuthCookies(w, r)
 	s.setCookie(w, r, &http.Cookie{
 		Name:   sessionCookie,
 		Value:  token,
@@ -301,6 +301,11 @@ func (s *Server) clearPending2FA(w http.ResponseWriter, r *http.Request) {
 	s.setCookie(w, r, &http.Cookie{Name: pending2FACookie, Value: "", MaxAge: -1})
 }
 
+func (s *Server) clearTransitionalAuthCookies(w http.ResponseWriter, r *http.Request) {
+	s.clearPending2FA(w, r)
+	s.setCookie(w, r, &http.Cookie{Name: loginCSRFCookie, Value: "", MaxAge: -1})
+}
+
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
 	defer cancel()
@@ -316,6 +321,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 			slog.Error("logout: delete session failed", "err", sanitizeLog(err.Error()))
 		}
 	}
+	s.clearTransitionalAuthCookies(w, r)
 	s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
 	redirect(w, r, "/login")
 }

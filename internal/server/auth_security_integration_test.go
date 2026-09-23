@@ -110,6 +110,36 @@ func TestPasswordChangeRotatesCookieIntegration(t *testing.T) {
 	}
 }
 
+func TestStartSessionClearsTransitionalCookiesIntegration(t *testing.T) {
+	st, _ := securityTestStore(t)
+	id, err := st.CreateUser(t.Context(), "cookie-cleanup-editor", "Password-123", models.RoleEditor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := st.GetUser(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret"}, store: st}
+	r := httptest.NewRequest(http.MethodPost, "/login/passkey/finish", nil).WithContext(t.Context())
+	r.AddCookie(&http.Cookie{Name: pending2FACookie, Value: "pending"})
+	r.AddCookie(&http.Cookie{Name: loginCSRFCookie, Value: "login-csrf"})
+	w := httptest.NewRecorder()
+
+	if !s.startSession(w, r, user) {
+		t.Fatalf("startSession status = %d, want success", w.Code)
+	}
+
+	cookies := responseCookiesByName(t, w)
+	for _, name := range []string{pending2FACookie, loginCSRFCookie} {
+		requireClearedCookie(t, cookies, name)
+	}
+	session, ok := cookies[sessionCookie]
+	if !ok || session.Value == "" || session.MaxAge != int(sessionTTL.Seconds()) {
+		t.Fatalf("session cookie not established correctly: %#v", session)
+	}
+}
+
 func TestConcurrentHTTPLoginAdmissionIntegration(t *testing.T) {
 	st, pool := securityTestStore(t)
 	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret"}, store: st, logins: newLoginLimiter(st)}

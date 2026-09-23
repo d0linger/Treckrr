@@ -98,6 +98,19 @@ func TestHostPrefixAppliedToEveryCookie(t *testing.T) {
 	}
 }
 
+func TestLogoutClearsAuthCookies(t *testing.T) {
+	s := testServer()
+	rr := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/logout", nil)
+
+	s.handleLogout(rr, r)
+
+	cookies := responseCookiesByName(t, rr)
+	for _, name := range []string{sessionCookie, pending2FACookie, loginCSRFCookie} {
+		requireClearedCookie(t, cookies, name)
+	}
+}
+
 // A cookie written with the prefix must be found by the matching read helper —
 // the two halves have to agree or every cookie silently stops round-tripping.
 func TestCookieReadMatchesWrittenName(t *testing.T) {
@@ -121,6 +134,28 @@ func TestCookieReadMatchesWrittenName(t *testing.T) {
 		if got.Value != "abc" {
 			t.Errorf("cookieSecure=%v: value = %q, want abc", cookieSecure, got.Value)
 		}
+	}
+}
+
+func responseCookiesByName(t *testing.T, rr *httptest.ResponseRecorder) map[string]*http.Cookie {
+	t.Helper()
+	response := rr.Result()
+	t.Cleanup(func() { _ = response.Body.Close() })
+	cookies := make(map[string]*http.Cookie)
+	for _, cookie := range response.Cookies() {
+		cookies[cookie.Name] = cookie
+	}
+	return cookies
+}
+
+func requireClearedCookie(t *testing.T, cookies map[string]*http.Cookie, name string) {
+	t.Helper()
+	cookie, ok := cookies[name]
+	if !ok {
+		t.Fatalf("response did not clear cookie %q; cookies: %v", name, cookies)
+	}
+	if cookie.Value != "" || cookie.MaxAge >= 0 {
+		t.Errorf("cookie %q was not expired: value=%q max_age=%d", name, cookie.Value, cookie.MaxAge)
 	}
 }
 
