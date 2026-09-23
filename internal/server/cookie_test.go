@@ -98,6 +98,8 @@ func TestHostPrefixAppliedToEveryCookie(t *testing.T) {
 	}
 }
 
+// TestLogoutClearsAuthCookies verifies logout expires both the established
+// session cookie and every transitional login cookie.
 func TestLogoutClearsAuthCookies(t *testing.T) {
 	s := testServer()
 	rr := httptest.NewRecorder()
@@ -137,6 +139,7 @@ func TestCookieReadMatchesWrittenName(t *testing.T) {
 	}
 }
 
+// responseCookiesByName parses response cookies into a lookup keyed by wire name.
 func responseCookiesByName(t *testing.T, rr *httptest.ResponseRecorder) map[string]*http.Cookie {
 	t.Helper()
 	response := rr.Result()
@@ -148,6 +151,7 @@ func responseCookiesByName(t *testing.T, rr *httptest.ResponseRecorder) map[stri
 	return cookies
 }
 
+// requireClearedCookie asserts that a response expires the named cookie.
 func requireClearedCookie(t *testing.T, cookies map[string]*http.Cookie, name string) {
 	t.Helper()
 	cookie, ok := cookies[name]

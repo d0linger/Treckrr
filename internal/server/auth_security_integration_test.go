@@ -110,6 +110,8 @@ func TestPasswordChangeRotatesCookieIntegration(t *testing.T) {
 	}
 }
 
+// TestStartSessionClearsTransitionalCookiesIntegration verifies every successful
+// session start expires pending 2FA and login-CSRF state before issuing a session cookie.
 func TestStartSessionClearsTransitionalCookiesIntegration(t *testing.T) {
 	st, _ := securityTestStore(t)
 	id, err := st.CreateUser(t.Context(), "cookie-cleanup-editor", "Password-123", models.RoleEditor)

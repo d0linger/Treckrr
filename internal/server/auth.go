@@ -297,15 +297,20 @@ func (s *Server) verifyPending2FA(value string) (int64, bool) {
 	return uid, true
 }
 
+// clearPending2FA expires the signed cookie that authorizes the second login step.
 func (s *Server) clearPending2FA(w http.ResponseWriter, r *http.Request) {
 	s.setCookie(w, r, &http.Cookie{Name: pending2FACookie, Value: "", MaxAge: -1})
 }
 
+// clearTransitionalAuthCookies removes pre-session state once authentication
+// succeeds or the user logs out, so it cannot outlive the login flow.
 func (s *Server) clearTransitionalAuthCookies(w http.ResponseWriter, r *http.Request) {
 	s.clearPending2FA(w, r)
 	s.setCookie(w, r, &http.Cookie{Name: loginCSRFCookie, Value: "", MaxAge: -1})
 }
 
+// handleLogout invalidates the server-side session and expires every browser
+// cookie that can carry authentication or pre-session state.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
 	defer cancel()
