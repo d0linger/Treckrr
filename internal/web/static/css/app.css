@@ -848,6 +848,7 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .tag--done { background: var(--primary-tint); color: var(--primary-strong); }
 .tag--paid { background: var(--primary-tint); color: var(--primary-strong); }
 .tag--open { background: var(--danger-tint); color: var(--danger-text); }
+.tag--credit { background: color-mix(in srgb, var(--owe) 16%, transparent); color: var(--owe-text); }
 
 /* ---- Flash ------------------------------------------------------------ */
 .flash { padding: .7rem 1rem; border-radius: var(--radius-sm); font-size: .9rem; font-weight: 500; }
@@ -1258,6 +1259,9 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 	font-size: .9rem; font-weight: 800; flex: 0 0 auto; }
 .attn__ic--warn { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent-text); }
 .attn__ic--owe { background: color-mix(in srgb, var(--owe) 18%, transparent); color: var(--owe); }
+/* Guthaben (I owe the neighbor): same hue as the tile's Guthaben chip. */
+.attn__row--credit { border-color: color-mix(in srgb, var(--owe) 55%, var(--border)); background: color-mix(in srgb, var(--owe) 11%, var(--surface)); }
+.attn__ic--credit { background: color-mix(in srgb, var(--owe) 24%, transparent); color: var(--owe-text); }
 .attn__ic--pay { background: color-mix(in srgb, var(--pay) 18%, transparent); color: var(--pay); }
 .attn__txt { flex: 1; font-size: .85rem; }
 .attn__txt strong { font-weight: 800; }

@@ -644,3 +644,36 @@ func TestMahnungPagePreservesDocumentAndPaymentActions(t *testing.T) {
 		})
 	}
 }
+
+// TestDashboardShowsCreditAsOwedNotPaid pins the reverse of "offene Zahlung":
+// a neighbor with a negative rest (Guthaben) is money I still owe. A completed
+// year must list it under "Zu erledigen" and in the status row, and its tile
+// must say Guthaben — never Bezahlt.
+func TestDashboardShowsCreditAsOwedNotPaid(t *testing.T) {
+	d := decimal.NewFromFloat
+	page := execPage(t, "dashboard", map[string]any{
+		"User":      models.User{ID: 1, Username: "admin", Role: models.RoleAdmin},
+		"Year":      models.BillingYear{ID: 5, Year: 2026, Base: &models.PriceBase{Year: 2026}},
+		"Completed": true,
+		"GrandCost": d(-60), "GrandHours": decimal.Zero,
+		"PaidCost": decimal.Zero, "OpenCost": decimal.Zero,
+		"CreditCount": 1, "CreditCost": d(60),
+		"Summaries": []map[string]any{{
+			"Neighbor": models.Neighbor{ID: 9, Name: "Demo-Hof Leitner"},
+			"Cost":     d(-60), "Hours": decimal.Zero, "Entries": 0,
+			"Paid": false, "Credit": true, "Remaining": d(-60),
+		}},
+	})
+	for _, want := range []string{
+		"mit Guthaben – noch auszuzahlen · 60,00 €",
+		"Guthaben 60,00 €",
+		"Guthaben · 60,00 €",
+	} {
+		if !strings.Contains(html.UnescapeString(page), want) {
+			t.Errorf("dashboard missing %q", want)
+		}
+	}
+	if strings.Contains(page, "paychip--paid") {
+		t.Error("a Guthaben tile must not render the Bezahlt chip")
+	}
+}

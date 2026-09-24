@@ -30,7 +30,7 @@
 		</div>
 	</div>
 
-	{{if or (and (not .Completed) .StaleCount) (and .Completed .OpenCount)}}
+	{{if or (and (not .Completed) .StaleCount) (and .Completed (or .OpenCount .CreditCount))}}
 	<div>
 		<h2 class="section-title">Zu erledigen</h2>
 		<div class="attn">
@@ -48,6 +48,13 @@
 				<span class="attn__go">›</span>
 			</a>
 			{{end}}
+			{{if and .Completed .CreditCount}}
+			<a class="attn__row attn__row--credit" href="#nachbarn">
+				<span class="attn__ic attn__ic--credit">€</span>
+				<span class="attn__txt"><strong>{{.CreditCount}} Nachbar(n)</strong> mit Guthaben – noch auszuzahlen · {{money .CreditCost}}</span>
+				<span class="attn__go">›</span>
+			</a>
+			{{end}}
 		</div>
 	</div>
 	{{end}}
@@ -62,6 +69,7 @@
 			<span class="paysummary">
 				<span class="tag tag--paid">Bezahlt {{money .PaidCost}}</span>
 				<span class="tag tag--open">Offen {{money .OpenCost}}</span>
+				{{if .CreditCount}}<span class="tag tag--credit">Guthaben {{money .CreditCost}}</span>{{end}}
 			</span>
 			{{end}}
 		</div>
