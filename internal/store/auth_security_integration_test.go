@@ -17,7 +17,7 @@ const totpTestFixture = "JBSWY3DPEHPK3PXP" // #nosec G101 -- public test seed, n
 // TestEnsureAdminValidatesOnlyCredentialWritesIntegration proves an unused weak
 // legacy bootstrap value cannot block normal startup or reach a create/reset.
 func TestEnsureAdminValidatesOnlyCredentialWritesIntegration(t *testing.T) {
-	st, _ := scratchStore(t)
+	st, pool := scratchStore(t)
 	ctx := t.Context()
 	username := fmt.Sprintf("legacy-admin-%d", time.Now().UnixNano())
 	if _, err := st.CreateUser(ctx, username, "existing-admin-123", models.RoleAdmin); err != nil {
@@ -34,6 +34,21 @@ func TestEnsureAdminValidatesOnlyCredentialWritesIntegration(t *testing.T) {
 	}
 	if err := st.EnsureAdmin(ctx, username+"-missing", "weak-password", false); err == nil {
 		t.Fatal("weak bootstrap password was accepted for a new admin")
+	}
+
+	editor := fmt.Sprintf("legacy-editor-%d", time.Now().UnixNano())
+	if _, err := st.CreateUser(ctx, editor, "existing-editor-123", models.RoleEditor); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.EnsureAdmin(ctx, editor, "weak-password", true); err == nil {
+		t.Fatal("weak reset password was accepted while promoting a non-admin")
+	}
+	var role string
+	if err := pool.QueryRowContext(ctx, `SELECT role FROM users WHERE username=$1`, editor).Scan(&role); err != nil {
+		t.Fatal(err)
+	}
+	if role != string(models.RoleEditor) {
+		t.Fatalf("rejected reset promoted non-admin to %q", role)
 	}
 }
 

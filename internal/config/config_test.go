@@ -63,8 +63,8 @@ func TestLoadRejectsPlaceholders(t *testing.T) {
 		if cfg.S3Prefix != "farm-a/production/" {
 			t.Fatalf("S3Prefix = %q", cfg.S3Prefix)
 		}
-		if cfg.S3LegacyPrefix != `/farm-a/production/` {
-			t.Fatalf("S3LegacyPrefix = %q", cfg.S3LegacyPrefix)
+		if cfg.S3LegacyPrefix == nil || *cfg.S3LegacyPrefix != `/farm-a/production/` {
+			t.Fatalf("S3LegacyPrefix = %v", cfg.S3LegacyPrefix)
 		}
 	})
 

@@ -46,6 +46,13 @@ func (s *Store) EnsureAdmin(ctx context.Context, username, password string, rese
 		}
 		return nil
 	}
+	if reset {
+		// Validate before any mutation: a rejected break-glass credential must
+		// not promote an existing non-admin account as a side effect.
+		if err := auth.ValidatePassword(password); err != nil {
+			return fmt.Errorf("validate bootstrap admin reset password: %w", err)
+		}
+	}
 	if !isAdmin {
 		if err := s.SetAdmin(ctx, id, true); err != nil {
 			return err
@@ -55,8 +62,5 @@ func (s *Store) EnsureAdmin(ctx context.Context, username, password string, rese
 		return nil
 	}
 	// Break-glass: reset to the env password, force a change, and revoke sessions.
-	if err := auth.ValidatePassword(password); err != nil {
-		return fmt.Errorf("validate bootstrap admin reset password: %w", err)
-	}
 	return s.ResetPassword(ctx, id, password, true)
 }

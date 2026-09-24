@@ -87,9 +87,10 @@ func TestS3LegacyPrefixRemainsReadable(t *testing.T) {
 	}))
 	defer ts.Close()
 
+	legacyPrefix := "site-a"
 	s := New(Options{S3: S3Options{
 		Endpoint: strings.TrimPrefix(ts.URL, "http://"), Bucket: "test",
-		AccessKey: "test", SecretKey: "test", Prefix: "site-a/", LegacyPrefix: "site-a",
+		AccessKey: "test", SecretKey: "test", Prefix: "site-a/", LegacyPrefix: &legacyPrefix,
 	}}, nil)
 	files, err := s.S3List(t.Context())
 	if err != nil || len(files) != 1 || files[0].Name != name {
@@ -105,6 +106,20 @@ func TestS3LegacyPrefixRemainsReadable(t *testing.T) {
 	}
 	if strings.Join(listed, ",") != "site-a/,site-a" {
 		t.Fatalf("listed prefixes = %v", listed)
+	}
+}
+
+// TestS3ReadPrefixesPreservesExplicitBucketRoot verifies an explicitly
+// configured empty legacy prefix remains distinct from no legacy namespace.
+func TestS3ReadPrefixesPreservesExplicitBucketRoot(t *testing.T) {
+	legacyPrefix := ""
+	s := New(Options{S3: S3Options{Prefix: "site-a/", LegacyPrefix: &legacyPrefix}}, nil)
+	if got := s.s3ReadPrefixes(); len(got) != 2 || got[0] != "site-a/" || got[1] != "" {
+		t.Fatalf("explicit bucket-root prefixes = %q", got)
+	}
+	absent := New(Options{S3: S3Options{Prefix: "site-a/"}}, nil)
+	if got := absent.s3ReadPrefixes(); len(got) != 1 || got[0] != "site-a/" {
+		t.Fatalf("absent legacy prefixes = %q", got)
 	}
 }
 

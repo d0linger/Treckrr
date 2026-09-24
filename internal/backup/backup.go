@@ -194,7 +194,7 @@ type S3Options struct {
 	AccessKey    string
 	SecretKey    string
 	Prefix       string
-	LegacyPrefix string
+	LegacyPrefix *string
 	UseSSL       bool
 }
 
@@ -1157,8 +1157,8 @@ func s3ObjectNotFound(err error) bool {
 // legacy concatenation prefix, when they differ.
 func (s *Service) s3ReadPrefixes() []string {
 	prefixes := []string{s.opt.S3.Prefix}
-	if legacy := s.opt.S3.LegacyPrefix; legacy != "" && legacy != s.opt.S3.Prefix {
-		prefixes = append(prefixes, legacy)
+	if legacy := s.opt.S3.LegacyPrefix; legacy != nil && *legacy != s.opt.S3.Prefix {
+		prefixes = append(prefixes, *legacy)
 	}
 	return prefixes
 }

@@ -113,7 +113,8 @@ func (s *Store) SetYearStatus(ctx context.Context, id int64, status string) erro
 	return tx.Commit()
 }
 
-// ResetYearPayments sets every neighbor of a year back to "open" (unpaid).
+// ResetYearPayments clears the retired per-neighbor payment compatibility flag.
+// Payment rows remain intact and continue to determine the account balance.
 func (s *Store) ResetYearPayments(ctx context.Context, yearID int64) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE billing_year_neighbors SET paid = FALSE, paid_at = NULL WHERE billing_year_id = $1`, yearID)

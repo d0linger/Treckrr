@@ -80,7 +80,7 @@ type Config struct {
 	S3AccessKey    string
 	S3SecretKey    string
 	S3Prefix       string
-	S3LegacyPrefix string
+	S3LegacyPrefix *string
 	S3UseSSL       bool
 	// WebAuthn (passkeys). RPID is the effective domain (host only, no scheme);
 	// RPOrigin is the full origin the browser sees. Both must match the site.
@@ -162,7 +162,7 @@ func Load() (*Config, error) {
 		}
 		c.S3Prefix = prefix
 		if legacyPrefix != prefix {
-			c.S3LegacyPrefix = legacyPrefix
+			c.S3LegacyPrefix = &legacyPrefix
 		}
 	}
 

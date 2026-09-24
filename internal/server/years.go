@@ -230,13 +230,14 @@ func (s *Server) handleYearStatus(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SetYearStatus(r.Context(), id, status); err != nil {
 		s.setFlash(w, r, "error", "Statuswechsel fehlgeschlagen.")
 	} else if status == models.YearCompleted {
-		// Every neighbor starts as "open" when the year is closed for billing.
+		// Keep the retired compatibility flag in its historic reset state. Real
+		// payment rows remain intact and determine Bezahlt, Offen, or Guthaben.
 		if err := s.store.ResetYearPayments(r.Context(), id); err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		s.audit(r, "complete", "year", id, "Jahr "+s.yearLabel(r, id))
-		s.setFlash(w, r, "success", "Abrechnungsjahr abgeschlossen. Zahlungsstatus je Nachbar steht auf offen.")
+		s.setFlash(w, r, "success", "Abrechnungsjahr abgeschlossen. Offene Beträge und Guthaben sind in der Übersicht markiert.")
 	} else {
 		s.audit(r, "reopen", "year", id, "Jahr "+s.yearLabel(r, id)+" · Grund: "+reason)
 		s.setFlash(w, r, "success", "Abrechnungsjahr wieder geöffnet.")

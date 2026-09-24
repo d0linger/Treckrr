@@ -73,8 +73,12 @@ func TestYearClosingIntegration(t *testing.T) {
 		}
 	}
 
-	// Close the year.
-	e.post(fmt.Sprintf("/years/%d/status", yid), url.Values{"status": {"completed"}})
+	// Close the year. The confirmation must describe the balance states that
+	// actually remain after closing; recorded payments are not reset.
+	closePage := e.post(fmt.Sprintf("/years/%d/status", yid), url.Values{"status": {"completed"}})
+	if !strings.Contains(closePage, "Offene Beträge und Guthaben sind in der Übersicht markiert") {
+		t.Fatalf("close confirmation describes stale payment-reset behavior")
+	}
 	year, err := e.st.GetBillingYear(e.ctx, yid)
 	if err != nil || !year.Completed() {
 		t.Fatalf("year not completed: %v", err)
@@ -115,6 +119,24 @@ func TestYearClosingIntegration(t *testing.T) {
 
 	// That extra 5 makes it an overpayment, so a credit now exists — but paying
 	// it out writes to the ledger and must be refused while the year is closed.
+	summaries, err := e.st.YearNeighborSummaries(e.ctx, yid)
+	if err != nil || len(summaries) != 1 {
+		t.Fatalf("closed-year summaries = %d rows, %v; want 1", len(summaries), err)
+	}
+	if got := summaries[0]; got.Paid || !got.Credit || got.Remaining.StringFixed(2) != "-5.00" {
+		t.Fatalf("closed-year paid/credit/remaining = %v/%v/%s, want false/true/-5.00",
+			got.Paid, got.Credit, got.Remaining)
+	}
+	dashboard := e.get(dashboardURL(yid))
+	for _, want := range []string{"mit Guthaben", "paychip paychip--credit", `data-due="credit"`} {
+		if !strings.Contains(dashboard, want) {
+			t.Errorf("closed-year dashboard missing %q", want)
+		}
+	}
+	if strings.Contains(dashboard, "paychip paychip--paid") {
+		t.Error("closed-year Guthaben rendered as Bezahlt")
+	}
+
 	ledgerBefore, _ := e.st.NeighborLedgerSum(e.ctx, yid, nid)
 	if body := e.post(fmt.Sprintf("/neighbors/%d/credit-payout", nid),
 		url.Values{"year_id": {itoa64(yid)}}); !strings.Contains(body, "abgeschlossen") {
