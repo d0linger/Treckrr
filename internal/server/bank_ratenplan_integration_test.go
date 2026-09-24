@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/d0linger/treckrr/internal/bankimport"
 )
@@ -77,6 +78,7 @@ func TestBankImportMatchingIntegration(t *testing.T) {
 	// plus one credit that matches nothing. The nonce keeps every de-dup hash
 	// unique across test runs against the shared database.
 	nonce := fmt.Sprintf("RUN%d", time.Now().UnixNano())
+	longReferenceTail := strings.Repeat("\u00e4", maxNoteLen+100)
 	statement := fmt.Sprintf(`<?xml version="1.0"?>
 <Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.02">
  <BkToCstmrDbtCdtNtfctn><Ntfctn>
@@ -87,7 +89,7 @@ func TestBankImportMatchingIntegration(t *testing.T) {
     <NtryDtls>
       <TxDtls>
         <Amt Ccy="EUR">40.00</Amt>
-        <RmtInf><Ustrd>Zahlung %s %s</Ustrd></RmtInf>
+        <RmtInf><Ustrd>Zahlung %s %s %s</Ustrd></RmtInf>
       </TxDtls>
       <TxDtls>
         <Amt Ccy="EUR">30.00</Amt>
@@ -102,7 +104,7 @@ func TestBankImportMatchingIntegration(t *testing.T) {
     <NtryDtls><TxDtls><RmtInf><Ustrd>Blumen %s</Ustrd></RmtInf></TxDtls></NtryDtls>
   </Ntry>
  </Ntfctn></BkToCstmrDbtCdtNtfctn>
-</Document>`, e.uname, nonce, iv.PaymentReference, nonce, nonce, nonce)
+</Document>`, e.uname, nonce, iv.PaymentReference, nonce, longReferenceTail, nonce, nonce)
 
 	// The imported hashes are not covered by the name-prefix purge (they carry
 	// no neighbor link) — clean them up explicitly.
@@ -143,6 +145,8 @@ func TestBankImportMatchingIntegration(t *testing.T) {
 	if err != nil || len(pays) != 3 {
 		t.Fatalf("payments after import: %v (n=%d, want 3)", err, len(pays))
 	}
+	longNotePrefix := "Bank-Import: Zahlung " + iv.PaymentReference + " " + nonce + " "
+	longNoteFound := false
 	for _, p := range pays {
 		if p.Method != "überweisung" {
 			t.Errorf("imported payment has method %q, want überweisung", p.Method)
@@ -150,6 +154,21 @@ func TestBankImportMatchingIntegration(t *testing.T) {
 		if p.InvoiceID == nil || p.InvoiceNumber != iv.Number {
 			t.Errorf("imported payment not linked to %s: %v/%q", iv.Number, p.InvoiceID, p.InvoiceNumber)
 		}
+		if got := utf8.RuneCountInString(p.Note); got > maxNoteLen {
+			t.Errorf("imported payment note has %d runes, want at most %d", got, maxNoteLen)
+		}
+		if strings.HasPrefix(p.Note, longNotePrefix) {
+			longNoteFound = true
+			if got := utf8.RuneCountInString(p.Note); got != maxNoteLen {
+				t.Errorf("long imported payment note has %d runes, want %d", got, maxNoteLen)
+			}
+			if !utf8.ValidString(p.Note) {
+				t.Errorf("long imported payment note is invalid UTF-8: %q", p.Note)
+			}
+		}
+	}
+	if !longNoteFound {
+		t.Errorf("long imported payment note with prefix %q not found", longNotePrefix)
 	}
 
 	// Re-committing the same statement must book nothing (hash de-dup).
