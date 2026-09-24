@@ -39,7 +39,7 @@
 			<div class="beleg__hl beleg__sum-invoice">Restbetrag zu zahlen</div>
 			<div class="beleg__hv beleg__sum-invoice">{{money .InvRest}}</div>
 			{{end}}
-			<div class="beleg__hl beleg__sum-informal">{{if .HasPayments}}Offener Rest{{else}}Saldo{{if .Completed}} · {{if .Paid}}bezahlt{{else}}offen{{end}}{{end}}{{end}}</div>
+			<div class="beleg__hl beleg__sum-informal">{{if .HasPayments}}Offener Rest{{else}}Saldo{{if .Completed}} · {{if .Paid}}bezahlt{{else if .Credit}}Guthaben{{else}}offen{{end}}{{end}}{{end}}</div>
 			<div class="beleg__hv beleg__sum-informal">{{if .HasPayments}}{{money .Remaining}}{{else}}{{money .Saldo}}{{end}}</div>
 			<div class="beleg__hb">
 				<span>Leistungen {{money .TotalCost}}</span>

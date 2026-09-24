@@ -110,7 +110,8 @@ type NeighborYearHistoryRow struct {
 	PaidAmount decimal.Decimal // sum of recorded payments
 	Payable    decimal.Decimal // frozen invoice gross plus issued credits, or live booking net before issuance
 	Remaining  decimal.Decimal // Payable + Ledger - PaidAmount
-	Paid       bool            // fully settled (Remaining <= 0)
+	Paid       bool            // fully settled (Remaining == 0)
+	Credit     bool            // neighbor holds a Guthaben: I owe them (Remaining < 0)
 }
 
 // NeighborYearHistory returns a neighbor's per-year history (newest first) in a
@@ -163,7 +164,8 @@ func (s *Store) NeighborYearHistory(ctx context.Context, neighborID int64) ([]Ne
 		}
 		r.Net = r.Cost.Add(r.Ledger)
 		r.Remaining = r.Payable.Add(r.Ledger).Sub(r.PaidAmount)
-		r.Paid = !r.Remaining.IsPositive()
+		r.Paid = r.Remaining.IsZero()
+		r.Credit = r.Remaining.IsNegative()
 		out = append(out, r)
 	}
 	return out, rows.Err()

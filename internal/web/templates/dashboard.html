@@ -103,6 +103,8 @@
 			{{if $.Completed}}
 			{{if .Paid}}
 				<span class="paychip paychip--paid">{{template "ic-check"}} Bezahlt</span>
+				{{else if .Credit}}
+				<a class="paychip paychip--credit" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}" title="Guthaben des Nachbarn – auszahlen oder ins Folgejahr übernehmen">Guthaben · {{money .Remaining.Neg}}</a>
 				{{else}}
 				<form method="post" action="/years/mark-paid" class="paytoggle"
 					data-confirm="Restbetrag ({{money .Remaining}}) als bezahlt verbuchen?">
@@ -113,11 +115,13 @@
 					</button>
 				</form>
 				{{end}}
-			{{else if gt .Entries 0}}
+			{{else if or (gt .Entries 0) (not .Remaining.IsZero)}}
 				{{/* Running year: show payment status at a glance (read-only — the
 				     "als bezahlt verbuchen" toggle stays gated to completed years). */}}
 				{{if .Paid}}
 				<span class="paychip paychip--paid" title="Vollständig bezahlt">{{template "ic-check"}} Bezahlt</span>
+				{{else if .Credit}}
+				<span class="paychip paychip--credit paychip--static" title="Guthaben des Nachbarn – noch an ihn auszuzahlen">Guthaben · {{money .Remaining.Neg}}</span>
 				{{else}}
 				<span class="paychip paychip--open paychip--static" title="Noch offener Betrag">Offen · {{money .Remaining}}</span>
 				{{end}}

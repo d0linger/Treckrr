@@ -21,6 +21,7 @@ type neighborSummary struct {
 	Hours     decimal.Decimal
 	Entries   int
 	Paid      bool // fully settled (nothing remaining)
+	Credit    bool // negative rest: the neighbor holds a Guthaben (I owe them)
 	Remaining decimal.Decimal
 }
 
@@ -44,7 +45,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		summaries = append(summaries, neighborSummary{
 			Neighbor: models.Neighbor{ID: row.NeighborID, Name: row.Name},
 			Cost:     row.Cost, Hours: row.Hours, Entries: row.Entries,
-			Paid: row.Paid, Remaining: row.Remaining,
+			Paid: row.Paid, Credit: row.Credit, Remaining: row.Remaining,
 		})
 		grandCost = grandCost.Add(row.Cost)
 		grandHours = grandHours.Add(row.Hours)

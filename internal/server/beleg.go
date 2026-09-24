@@ -287,7 +287,7 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	}
 	saldo := cost.Add(ledgerSum)
 	remaining := saldo.Sub(paidSum)
-	paid := !remaining.IsPositive() // fully settled
+	paid := remaining.IsZero() // fully settled; a negative rest is a Guthaben I owe
 
 	// Invoice (Rechnung) mode: sender settings + the issued number (if any).
 	company, _ := s.store.GetCompany(r.Context())
@@ -324,6 +324,7 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	data["Saldo"] = saldo
 	data["Completed"] = year.Completed()
 	data["Paid"] = paid
+	data["Credit"] = remaining.IsNegative()
 	data["Payments"] = payments
 	data["PaidSum"] = paidSum
 	data["Remaining"] = remaining

@@ -10,10 +10,11 @@ import (
 
 // StatementYear is one billing year's line on the Kontoauszug.
 type StatementYear struct {
-	Year  int
-	Cost  decimal.Decimal
-	Hours decimal.Decimal
-	Paid  bool
+	Year   int
+	Cost   decimal.Decimal
+	Hours  decimal.Decimal
+	Paid   bool
+	Credit bool // negative rest: the neighbor holds a Guthaben
 }
 
 // StatementData is the multi-year Kontoauszug PDF's content.
@@ -75,8 +76,11 @@ func RenderStatement(s StatementData) ([]byte, error) {
 		gtext(pdf, colYear, y, 9.5, false, strconv.Itoa(r.Year))
 		gtextR(pdf, colHours+30, y, 9.5, false, trimZeros(r.Hours)+" h")
 		status := "offen"
-		if r.Paid {
+		switch {
+		case r.Paid:
 			status = "bezahlt"
+		case r.Credit:
+			status = "Guthaben"
 		}
 		gtext(pdf, colPaid, y, 9.5, false, status)
 		gtextR(pdf, right, y, 9.5, false, money(r.Cost))

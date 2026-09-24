@@ -1028,6 +1028,11 @@ button.paychip { min-height: var(--tap); padding: .35rem .8rem; }
 .paychip--static { cursor: default; }
 .paychip--static.paychip--open:hover { background: color-mix(in srgb, var(--accent) 13%, transparent); }
 span.paychip { cursor: default; }
+/* Guthaben: a negative rest is money I still owe the neighbor — never "Bezahlt". */
+.paychip--credit { background: color-mix(in srgb, var(--owe) 13%, transparent); color: var(--owe-text); border-color: color-mix(in srgb, var(--owe) 38%, transparent); text-decoration: none; }
+.paychip--credit::before { content: "€"; flex: none; }
+a.paychip--credit { min-height: var(--tap); padding: .35rem .8rem; }
+a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transparent); }
 .carryover strong { display: block; white-space: nowrap; }
 .carryover .muted { font-size: .82rem; }
 
@@ -1195,6 +1200,7 @@ span.paychip { cursor: default; }
 .chip2--open { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
 .chip2--void { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
 .chip2--stale { color: var(--accent-text); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.chip2--credit { color: var(--owe-text); background: color-mix(in srgb, var(--owe) 14%, transparent); border-color: color-mix(in srgb, var(--owe) 30%, transparent); }
 .chip2--owe { color: var(--owe); background: color-mix(in srgb, var(--owe) 14%, transparent); border-color: color-mix(in srgb, var(--owe) 30%, transparent); }
 .chip2--prog { color: var(--accent-text); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 
