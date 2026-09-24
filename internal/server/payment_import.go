@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/d0linger/treckrr/internal/bankimport"
 	"github.com/d0linger/treckrr/internal/store"
@@ -248,6 +249,10 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		note := "Bank-Import"
 		if ref := strings.TrimSpace(row.Txn.Reference); ref != "" {
 			note += ": " + ref
+		}
+		if utf8.RuneCountInString(note) > maxNoteLen {
+			runes := []rune(note)
+			note = string(runes[:maxNoteLen])
 		}
 		// A statement without a parseable date carries the zero time; book it as
 		// received today. The de-dup hash is unaffected (it never uses time.Now()).

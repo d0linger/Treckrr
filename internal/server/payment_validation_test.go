@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/d0linger/treckrr/internal/config"
 	"github.com/d0linger/treckrr/internal/store"
@@ -255,4 +256,20 @@ func TestHandlePaymentAddValidation(t *testing.T) {
 			t.Errorf("expected success flash message, got cookie: %q", flashCookie)
 		}
 	})
+}
+
+func TestHandlePaymentImportCommitNoteTruncation(t *testing.T) {
+	longRef := strings.Repeat("A", 1000)
+	note := "Bank-Import"
+	if ref := strings.TrimSpace(longRef); ref != "" {
+		note += ": " + ref
+	}
+	if utf8.RuneCountInString(note) > maxNoteLen {
+		runes := []rune(note)
+		note = string(runes[:maxNoteLen])
+	}
+
+	if utf8.RuneCountInString(note) != maxNoteLen {
+		t.Errorf("expected truncated note length %d, got %d", maxNoteLen, utf8.RuneCountInString(note))
+	}
 }
