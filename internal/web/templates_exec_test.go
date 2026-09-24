@@ -677,3 +677,40 @@ func TestDashboardShowsCreditAsOwedNotPaid(t *testing.T) {
 		t.Error("a Guthaben tile must not render the Bezahlt chip")
 	}
 }
+
+// TestDashboardDueRowsTargetMatchingTiles pins the "Zu erledigen" → tile ring:
+// each row jumps to its own anchor, and only unsettled tiles carry the matching
+// data-due marker (the CSS :has(:target) rule keys on both).
+func TestDashboardDueRowsTargetMatchingTiles(t *testing.T) {
+	d := decimal.NewFromFloat
+	tile := func(id int64, paid, credit bool, rest float64) map[string]any {
+		return map[string]any{
+			"Neighbor": models.Neighbor{ID: id, Name: "Hof " + strconv.FormatInt(id, 10)},
+			"Cost":     d(rest), "Hours": decimal.Zero, "Entries": 1,
+			"Paid": paid, "Credit": credit, "Remaining": d(rest),
+		}
+	}
+	page := execPage(t, "dashboard", map[string]any{
+		"User":      models.User{ID: 1, Username: "admin", Role: models.RoleAdmin},
+		"Year":      models.BillingYear{ID: 5, Year: 2026, Base: &models.PriceBase{Year: 2026}},
+		"Completed": true,
+		"GrandCost": d(40), "GrandHours": decimal.Zero,
+		"PaidCost": decimal.Zero, "OpenCost": d(100),
+		"OpenCount": 1, "CreditCount": 1, "CreditCost": d(60),
+		"Summaries": []map[string]any{tile(1, false, false, 100), tile(2, false, true, -60), tile(3, true, false, 0)},
+	})
+	for _, want := range []string{
+		`href="#offene-zahlungen"`, `id="offene-zahlungen"`,
+		`href="#auszuzahlen"`, `id="auszuzahlen"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("dashboard missing %s", want)
+		}
+	}
+	if n := strings.Count(page, `data-due="open"`); n != 1 {
+		t.Errorf(`data-due="open" tiles = %d, want 1`, n)
+	}
+	if n := strings.Count(page, `data-due="credit"`); n != 1 {
+		t.Errorf(`data-due="credit" tiles = %d, want 1`, n)
+	}
+}

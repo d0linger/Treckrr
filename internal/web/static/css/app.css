@@ -545,6 +545,11 @@ em { font-style: normal; color: var(--muted); }
    which card the link meant. scroll-margin keeps it clear of the app bar. */
 .bcard { scroll-margin-top: 4.5rem; }
 .bcard:target { outline: 2px solid var(--accent-text, var(--accent, #8a5e12)); outline-offset: 2px; }
+/* "Zu erledigen" → Nachbarn: the clicked row's hash rings every still-open tile
+   of that kind (open payment / Guthaben to pay out); settled tiles stay plain. */
+.due-anchor { display: block; scroll-margin-top: 4.5rem; }
+body:has(#offene-zahlungen:target) [data-due="open"],
+body:has(#auszuzahlen:target) [data-due="credit"] { outline: 2px solid var(--accent-text, var(--accent, #8a5e12)); outline-offset: 2px; }
 .modal__check { margin-top: .65rem; display: flex; gap: .5rem; align-items: center; }
 .list__actions form { margin: 0; }
 .list__main--link { text-decoration: none; color: inherit; flex: 1 1 auto; min-width: 0; }
