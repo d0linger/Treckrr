@@ -116,6 +116,8 @@ func TestLogoutClearsAuthCookies(t *testing.T) {
 	}
 }
 
+// TestLogoutPreservesSessionCookieWhenRevocationFails keeps the bearer visible
+// to the user when the server could not revoke it.
 func TestLogoutPreservesSessionCookieWhenRevocationFails(t *testing.T) {
 	pool, err := sql.Open("mock_account", "")
 	if err != nil {

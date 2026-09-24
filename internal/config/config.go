@@ -9,8 +9,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/d0linger/treckrr/internal/auth"
 )
 
 // Documented Compose placeholders that must never reach a running instance
@@ -77,12 +75,13 @@ type Config struct {
 	BackupKeep int
 	// Optional S3-compatible off-box destination for scheduled backups (3-2-1).
 	// Empty S3Endpoint/S3Bucket disables it.
-	S3Endpoint  string
-	S3Bucket    string
-	S3AccessKey string
-	S3SecretKey string
-	S3Prefix    string
-	S3UseSSL    bool
+	S3Endpoint     string
+	S3Bucket       string
+	S3AccessKey    string
+	S3SecretKey    string
+	S3Prefix       string
+	S3LegacyPrefix string
+	S3UseSSL       bool
 	// WebAuthn (passkeys). RPID is the effective domain (host only, no scheme);
 	// RPOrigin is the full origin the browser sees. Both must match the site.
 	RPID     string
@@ -156,11 +155,15 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("S3_ENDPOINT and S3_BUCKET must either both be set or both be empty")
 	}
 	if c.S3Endpoint != "" {
-		prefix, err := normalizeS3Prefix(c.S3Prefix)
+		legacyPrefix := c.S3Prefix
+		prefix, err := normalizeS3Prefix(legacyPrefix)
 		if err != nil {
 			return nil, err
 		}
 		c.S3Prefix = prefix
+		if legacyPrefix != prefix {
+			c.S3LegacyPrefix = legacyPrefix
+		}
 	}
 
 	// Optional allowlist of trusted reverse-proxy networks (SH-05). Invalid CIDRs
@@ -219,9 +222,8 @@ func Load() (*Config, error) {
 	if c.AdminPassword == placeholderAdminPassword {
 		return nil, fmt.Errorf("ADMIN_PASSWORD is still the documented placeholder — set a real admin password")
 	}
-	if err := auth.ValidatePassword(c.AdminPassword); err != nil {
-		return nil, fmt.Errorf("ADMIN_PASSWORD does not satisfy the password policy: %w", err)
-	}
+	// EnsureAdmin validates the password immediately before a bootstrap or reset
+	// write. A normal restart must not reject an unused legacy bootstrap value.
 	// Backups are optional (unset = off). If a key is set it must be a real
 	// secret: reject a whitespace-only value (it would derive a guessable key)
 	// and require real length. The original key bytes are kept untrimmed.

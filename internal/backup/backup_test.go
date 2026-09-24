@@ -110,6 +110,7 @@ func TestWriteFileAtomicConcurrent(t *testing.T) {
 	}
 }
 
+// TestWriteFileAtomicReportsStatusPathFailure verifies durable status errors are surfaced.
 func TestWriteFileAtomicReportsStatusPathFailure(t *testing.T) {
 	svc := New(Options{StatusFile: filepath.Join(t.TempDir(), "missing", "status.json")}, nil)
 	err := svc.updateStatus(func(st *Status) { st.OK = true })
@@ -118,6 +119,7 @@ func TestWriteFileAtomicReportsStatusPathFailure(t *testing.T) {
 	}
 }
 
+// TestDurableRename verifies staging promotion preserves the expected bytes.
 func TestDurableRename(t *testing.T) {
 	dir := t.TempDir()
 	oldPath := filepath.Join(dir, "old")
@@ -136,6 +138,7 @@ func TestDurableRename(t *testing.T) {
 	}
 }
 
+// TestFilenameAvoidsSameSecondCollision pins nanosecond backup-name uniqueness.
 func TestFilenameAvoidsSameSecondCollision(t *testing.T) {
 	base := time.Date(2026, 9, 24, 10, 11, 12, 1, time.UTC)
 	first := Filename(base)

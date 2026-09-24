@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestValidatePassword covers byte limits and the shared letter/digit policy.
 func TestValidatePassword(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -30,6 +31,7 @@ func TestValidatePassword(t *testing.T) {
 	}
 }
 
+// TestHashPasswordEnforcesPolicy verifies hashing cannot bypass validation.
 func TestHashPasswordEnforcesPolicy(t *testing.T) {
 	if _, err := HashPassword("weakpass"); !errors.Is(err, ErrPasswordComplexity) {
 		t.Fatalf("HashPassword() error = %v, want %v", err, ErrPasswordComplexity)

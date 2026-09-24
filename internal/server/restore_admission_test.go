@@ -88,6 +88,8 @@ func TestRestoreWaitsForBackgroundAndCancellationReopensGate(t *testing.T) {
 	finish(true)
 }
 
+// TestRestoreCancelsAndDrainsRegisteredBackgroundTask verifies exclusive restore
+// admission waits for cancellable maintenance work to exit.
 func TestRestoreCancelsAndDrainsRegisteredBackgroundTask(t *testing.T) {
 	s := &Server{}
 	started := make(chan struct{})
@@ -112,6 +114,8 @@ func TestRestoreCancelsAndDrainsRegisteredBackgroundTask(t *testing.T) {
 	finish(true)
 }
 
+// TestFailClosedCancelsBackgroundAndReadiness verifies lease loss stops work and
+// permanently removes the instance from readiness.
 func TestFailClosedCancelsBackgroundAndReadiness(t *testing.T) {
 	s := &Server{}
 	canceled := make(chan struct{})
@@ -137,6 +141,54 @@ func TestFailClosedCancelsBackgroundAndReadiness(t *testing.T) {
 	if !s.maintenance.Load() {
 		t.Fatal("fail-closed left readiness enabled")
 	}
+	if !s.leaseLost.Load() {
+		t.Fatal("fail-closed did not record irreversible lease loss")
+	}
+}
+
+// TestLeaseLossSurvivesRestoreCleanup verifies neither successful completion nor
+// a canceled restore drain can reopen traffic after the application lease dies.
+func TestLeaseLossSurvivesRestoreCleanup(t *testing.T) {
+	t.Run("successful finish", func(t *testing.T) {
+		s := &Server{}
+		finish, err := s.beginRestore(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.FailClosed()
+		finish(true)
+		if !s.leaseLost.Load() || !s.maintenanceActive() {
+			t.Fatal("successful restore finish cleared lease-loss gate")
+		}
+	})
+
+	t.Run("canceled drain", func(t *testing.T) {
+		s := &Server{}
+		s.activity.RLock()
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan error, 1)
+		go func() {
+			_, err := s.beginRestore(ctx)
+			done <- err
+		}()
+		for i := 0; i < 1000 && !s.maintenance.Load(); i++ {
+			time.Sleep(time.Millisecond)
+		}
+		if !s.maintenance.Load() {
+			s.activity.RUnlock()
+			cancel()
+			t.Fatal("restore did not enter maintenance")
+		}
+		s.FailClosed()
+		cancel()
+		if err := <-done; !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled restore = %v", err)
+		}
+		s.activity.RUnlock()
+		if !s.leaseLost.Load() || !s.maintenanceActive() {
+			t.Fatal("restore error path cleared lease-loss gate")
+		}
+	})
 }
 
 func TestRestoreLeaseFailureIsFailClosed(t *testing.T) {

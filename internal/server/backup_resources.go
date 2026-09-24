@@ -23,12 +23,12 @@ func (s *Server) SetRestoreLease(acquire func(context.Context) (func() error, er
 
 // Background admits maintenance jobs through the same drain gate as HTTP.
 func (s *Server) Background(ctx context.Context, work func()) {
-	if ctx.Err() != nil || s.maintenance.Load() {
+	if ctx.Err() != nil || s.maintenanceActive() {
 		return
 	}
 	s.activity.RLock()
 	defer s.activity.RUnlock()
-	if ctx.Err() == nil && !s.maintenance.Load() {
+	if ctx.Err() == nil && !s.maintenanceActive() {
 		work()
 	}
 }
@@ -38,14 +38,14 @@ func (s *Server) Background(ctx context.Context, work func()) {
 // new registrations, then cancels and drains every registered task before it
 // takes the exclusive database lease.
 func (s *Server) BackgroundTask(ctx context.Context, work func(context.Context)) {
-	if ctx.Err() != nil || s.maintenance.Load() {
+	if ctx.Err() != nil || s.maintenanceActive() {
 		return
 	}
 	taskCtx, cancel := context.WithCancel(ctx)
 	task := backgroundTask{cancel: cancel, done: make(chan struct{})}
 
 	s.backgroundMu.Lock()
-	if s.maintenance.Load() {
+	if s.maintenanceActive() {
 		s.backgroundMu.Unlock()
 		cancel()
 		return
@@ -92,6 +92,7 @@ func (s *Server) cancelBackground(ctx context.Context) error {
 // registered background task to stop. It is used when the PostgreSQL session
 // holding the restore-exclusion lease is lost.
 func (s *Server) FailClosed() {
+	s.leaseLost.Store(true)
 	s.setMaintenance(true)
 	s.backgroundMu.Lock()
 	for _, task := range s.backgroundTasks {
@@ -100,9 +101,14 @@ func (s *Server) FailClosed() {
 	s.backgroundMu.Unlock()
 }
 
+// beginRestore drains admitted work, acquires exclusive restore ownership, and
+// returns a completion callback that reopens traffic only after reconciliation.
 func (s *Server) beginRestore(ctx context.Context) (func(bool), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if s.leaseLost.Load() {
+		return nil, errors.New("application maintenance lease was lost")
 	}
 	if !s.maintenance.CompareAndSwap(false, true) {
 		return nil, errors.New("a restore is already in progress")
@@ -111,7 +117,7 @@ func (s *Server) beginRestore(ctx context.Context) (func(bool), error) {
 		release()
 	}
 	if err := s.cancelBackground(ctx); err != nil {
-		s.setMaintenance(false)
+		s.clearRestoreMaintenance()
 		return nil, err
 	}
 	ticker := time.NewTicker(10 * time.Millisecond)
@@ -119,15 +125,19 @@ func (s *Server) beginRestore(ctx context.Context) (func(bool), error) {
 	for !s.activity.TryLock() {
 		select {
 		case <-ctx.Done():
-			s.setMaintenance(false)
+			s.clearRestoreMaintenance()
 			return nil, ctx.Err()
 		case <-ticker.C:
 		}
 	}
 	if err := ctx.Err(); err != nil {
 		s.activity.Unlock()
-		s.setMaintenance(false)
+		s.clearRestoreMaintenance()
 		return nil, err
+	}
+	if s.leaseLost.Load() {
+		s.activity.Unlock()
+		return nil, errors.New("application maintenance lease was lost")
 	}
 	release := func() error { return nil }
 	if s.restoreLease != nil {
@@ -135,7 +145,7 @@ func (s *Server) beginRestore(ctx context.Context) (func(bool), error) {
 		release, err = s.restoreLease(ctx)
 		if err != nil {
 			s.activity.Unlock()
-			s.setMaintenance(false)
+			s.clearRestoreMaintenance()
 			return nil, err
 		}
 	}
@@ -145,7 +155,7 @@ func (s *Server) beginRestore(ctx context.Context) (func(bool), error) {
 			reconciled = false
 		}
 		if reconciled {
-			s.setMaintenance(false)
+			s.clearRestoreMaintenance()
 		}
 		s.activity.Unlock()
 	}, nil

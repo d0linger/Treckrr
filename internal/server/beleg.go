@@ -812,7 +812,7 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 		AttName: att.Filename, AttType: att.ContentType, AttData: att.Data,
 		DeliveryKey: fmt.Sprintf("beleg:%d:%s", iv.ID,
 			strings.ToLower(strings.TrimSpace(neighbor.Email))),
-		MessageID: messageID, RetryFailed: true,
+		MessageID: messageID, RetryFailed: true, ForceResend: true,
 	})
 	if err != nil {
 		slog.Error("beleg email intent failed", "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))

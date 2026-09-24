@@ -71,7 +71,7 @@ func (s *Store) AttemptMail(ctx context.Context, id int64,
 	if err != nil {
 		return "", err
 	}
-	mctx, cancel := context.WithTimeout(ctx, perMailBudget)
+	mctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), perMailBudget)
 	defer cancel()
 	status, _, err := s.processOneOutboxMail(mctx, m, false, send)
 	return status, err

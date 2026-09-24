@@ -43,6 +43,8 @@ func (e *itEnv) postMultipart(path, filename string, content []byte) string {
 // splitting (Ausbaukarte 44-46). One statement exercises all three paths:
 // reference match, IBAN fallback, and a hand-assigned credit — booked with
 // method and invoice link, and de-duplicated on a re-commit.
+// TestBankImportMatchingIntegration exercises reference, IBAN, manual matching,
+// bounded notes, and import de-duplication through the real handlers.
 func TestBankImportMatchingIntegration(t *testing.T) {
 	e := newItEnv(t)
 	nid, yid := e.neighborID, e.yearID64

@@ -62,6 +62,8 @@ func TestApplicationLeaseCoordinatesRestore(t *testing.T) {
 	last.Close()
 }
 
+// TestApplicationLeaseMonitorDetectsSessionLoss terminates the lease backend and
+// verifies the monitor fails closed.
 func TestApplicationLeaseMonitorDetectsSessionLoss(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {

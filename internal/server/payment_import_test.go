@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 )
 
+// TestBankImportNote covers blank, boundary, and multibyte remittance references.
 func TestBankImportNote(t *testing.T) {
 	const prefix = "Bank-Import: "
 	tests := []struct {

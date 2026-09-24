@@ -17,6 +17,8 @@ import (
 // The outbox exists so a failed send stops evaporating with its flash message.
 // This walks the whole lifecycle against a real database: park, retry with
 // backoff, deliver, and give up — with the audit trail as the visible record.
+// TestMailOutboxLifecycleIntegration exercises durable parking, bounded retry,
+// delivery bookkeeping, and terminal exhaustion against PostgreSQL.
 func TestMailOutboxLifecycleIntegration(t *testing.T) {
 	ctx := context.Background()
 	// Processing and purging deliberately scan the whole queue. Keep this
@@ -319,6 +321,8 @@ func TestMailOutboxMahnungRetryBookkeepingIntegration(t *testing.T) {
 	}
 }
 
+// TestMailIntentIdempotencyAndAmbiguityIntegration verifies duplicate requests
+// stay terminal unless a single-recipient action explicitly forces a resend.
 func TestMailIntentIdempotencyAndAmbiguityIntegration(t *testing.T) {
 	ctx := context.Background()
 	st, pool := scratchStore(t)
@@ -382,6 +386,62 @@ func TestMailIntentIdempotencyAndAmbiguityIntegration(t *testing.T) {
 		})
 	if err != nil || status != store.MailStatusAmbiguous {
 		t.Fatalf("terminal ambiguous intent: status=%q err=%v", status, err)
+	}
+	duplicate := store.OutboxMail{
+		Kind: "beleg", Recipient: marker, Subject: "Idempotent", Body: "same",
+		DeliveryKey: "it:idempotent:" + marker, MessageID: "<it-idempotent@example.invalid>",
+		RetryFailed: true,
+	}
+	unchanged, wasCreated, err := st.CreateMailIntent(ctx, duplicate)
+	if err != nil || wasCreated || unchanged.Status != store.MailStatusAmbiguous {
+		t.Fatalf("failed-only retry reopened ambiguity: status=%q created=%v err=%v",
+			unchanged.Status, wasCreated, err)
+	}
+	duplicate.ForceResend = true
+	reopened, wasCreated, err := st.CreateMailIntent(ctx, duplicate)
+	if err != nil || !wasCreated || reopened.Status != store.MailStatusPending || reopened.Attempts != 0 {
+		t.Fatalf("forced ambiguous resend: status=%q attempts=%d created=%v err=%v",
+			reopened.Status, reopened.Attempts, wasCreated, err)
+	}
+}
+
+// TestAttemptMailSettlesAfterCallerCancellationIntegration verifies a claimed
+// SMTP attempt retains its bounded settlement context after the request ends.
+func TestAttemptMailSettlesAfterCallerCancellationIntegration(t *testing.T) {
+	st, pool := scratchStore(t)
+	cleanupCtx := context.Background()
+	marker := fmt.Sprintf("attempt-cancel-%d-%d@example.invalid", os.Getpid(), time.Now().UnixNano())
+	t.Cleanup(func() {
+		if _, err := pool.ExecContext(cleanupCtx, `DELETE FROM mail_outbox WHERE recipient=$1`, marker); err != nil {
+			t.Errorf("purge canceled-attempt row: %v", err)
+		}
+	})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	intent, created, err := st.CreateMailIntent(ctx, store.OutboxMail{
+		Kind: "beleg", Recipient: marker, Subject: "Cancellation", Body: "body",
+		DeliveryKey: "it:attempt-cancel:" + marker,
+	})
+	if err != nil || !created {
+		t.Fatalf("create intent: created=%v err=%v", created, err)
+	}
+	status, err := st.AttemptMail(ctx, intent.ID,
+		func(sendCtx context.Context, _, _, _, _, _, _ string, _ []byte) error {
+			cancel()
+			if err := sendCtx.Err(); err != nil {
+				t.Fatalf("caller cancellation reached claimed attempt: %v", err)
+			}
+			return nil
+		})
+	if err != nil || status != store.MailStatusSent {
+		t.Fatalf("attempt settlement: status=%q err=%v", status, err)
+	}
+	var stored string
+	if err := pool.QueryRowContext(cleanupCtx, `SELECT status FROM mail_outbox WHERE id=$1`, intent.ID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != store.MailStatusSent {
+		t.Fatalf("stored status = %q, want sent", stored)
 	}
 }
 

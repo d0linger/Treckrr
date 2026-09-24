@@ -96,12 +96,13 @@ func newBackup(cfg *config.Config, pool *sql.DB, st *store.Store, maxBytes int64
 		SkipStartupCleanup: cli,
 		RehearseURL:        cfg.BackupRehearseURL,
 		S3: backup.S3Options{
-			Endpoint:  cfg.S3Endpoint,
-			Bucket:    cfg.S3Bucket,
-			AccessKey: cfg.S3AccessKey,
-			SecretKey: cfg.S3SecretKey,
-			Prefix:    cfg.S3Prefix,
-			UseSSL:    cfg.S3UseSSL,
+			Endpoint:     cfg.S3Endpoint,
+			Bucket:       cfg.S3Bucket,
+			AccessKey:    cfg.S3AccessKey,
+			SecretKey:    cfg.S3SecretKey,
+			Prefix:       cfg.S3Prefix,
+			LegacyPrefix: cfg.S3LegacyPrefix,
+			UseSSL:       cfg.S3UseSSL,
 		},
 		SettingsFn: func(ctx context.Context) backup.Settings {
 			s, err := st.GetBackupSettings(ctx)
@@ -116,6 +117,8 @@ func newBackup(cfg *config.Config, pool *sql.DB, st *store.Store, maxBytes int64
 	}, pool)
 }
 
+// run initializes validated dependencies, starts background workers, and serves
+// until the process receives a shutdown signal.
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {

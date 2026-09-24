@@ -188,7 +188,7 @@ func SendWithMessageID(ctx context.Context, cfg *config.Config, to, subject, bod
 	}
 	if _, err := wc.Write(msg); err != nil {
 		_ = wc.Close()
-		return &AmbiguousDeliveryError{err: fmt.Errorf("SMTP-Datenübertragung: %w", err)}
+		return fmt.Errorf("SMTP-Datenübertragung: %w", err)
 	}
 	if err := wc.Close(); err != nil {
 		// A structured SMTP reply is authoritative: 4xx/5xx means the server

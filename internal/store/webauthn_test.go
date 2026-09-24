@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestCheckedWebauthnSignCount rejects negative and overflowing database counters.
 func TestCheckedWebauthnSignCount(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

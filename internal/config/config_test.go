@@ -63,6 +63,9 @@ func TestLoadRejectsPlaceholders(t *testing.T) {
 		if cfg.S3Prefix != "farm-a/production/" {
 			t.Fatalf("S3Prefix = %q", cfg.S3Prefix)
 		}
+		if cfg.S3LegacyPrefix != `/farm-a/production/` {
+			t.Fatalf("S3LegacyPrefix = %q", cfg.S3LegacyPrefix)
+		}
 	})
 
 	t.Run("placeholder SESSION_SECRET is rejected", func(t *testing.T) {
@@ -156,11 +159,11 @@ func TestLoadRejectsPlaceholders(t *testing.T) {
 		}
 	})
 
-	t.Run("weak ADMIN_PASSWORD is rejected", func(t *testing.T) {
+	t.Run("weak legacy ADMIN_PASSWORD is deferred to the write path", func(t *testing.T) {
 		setValid(t)
 		t.Setenv("ADMIN_PASSWORD", "weak-password")
-		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "password policy") {
-			t.Fatalf("expected ADMIN_PASSWORD policy error, got %v", err)
+		if _, err := Load(); err != nil {
+			t.Fatalf("unused legacy ADMIN_PASSWORD blocked startup: %v", err)
 		}
 	})
 }

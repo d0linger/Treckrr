@@ -378,6 +378,8 @@ func TestRecalcCannotCommitAfterInvoiceFreeze(t *testing.T) {
 	}
 }
 
+// TestPaymentMutationAuditIsAtomicAndAttributable verifies payment writes and
+// actor-attributed audit rows commit or roll back together.
 func TestPaymentMutationAuditIsAtomicAndAttributable(t *testing.T) {
 	st, pool, yearID, neighborID, _ := invoiceFixture(t, false)
 	ctx := context.Background()

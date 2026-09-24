@@ -51,6 +51,9 @@ type OutboxMail struct {
 	// RetryFailed is a request-only control: an explicit single-recipient resend
 	// may reopen a definitively failed intent. Batch callers leave it false.
 	RetryFailed bool
+	// ForceResend is a request-only control for an operator-confirmed resend of an
+	// ambiguous intent. Batch callers must leave it false to avoid duplicates.
+	ForceResend bool
 	// Meta carries what the retry loop needs to finish the kind's bookkeeping
 	// on delivery — for a Mahnung: stage, fee, grace and invoice number, so
 	// RecordDunningNotice can be written when the mail ACTUALLY went out, not
@@ -113,8 +116,8 @@ func defaultMessageID(m OutboxMail) string {
 
 // CreateMailIntent persists a message before SMTP is attempted. DeliveryKey is
 // unique: a repeated request returns the existing intent and never creates a
-// second independently deliverable row. An explicit RetryFailed request reopens
-// only a definitively failed intent; sent and ambiguous outcomes stay terminal.
+// second independently deliverable row. Explicit single-recipient actions may
+// reopen failed or ambiguous outcomes through separate request controls.
 func (s *Store) CreateMailIntent(ctx context.Context, m OutboxMail) (OutboxMail, bool, error) {
 	if m.Meta.Fee.IsNegative() {
 		return OutboxMail{}, false, ErrNegativeDunningFee
@@ -151,7 +154,14 @@ func (s *Store) CreateMailIntent(ctx context.Context, m OutboxMail) (OutboxMail,
 		  FROM mail_outbox WHERE delivery_key=$1`, m.DeliveryKey).
 		Scan(&m.ID, &m.Status, &m.Attempts, &m.MessageID)
 	if err == nil {
-		if m.RetryFailed && m.Status == MailStatusFailed {
+		reopenStatus := ""
+		switch {
+		case m.RetryFailed && m.Status == MailStatusFailed:
+			reopenStatus = MailStatusFailed
+		case m.ForceResend && m.Status == MailStatusAmbiguous:
+			reopenStatus = MailStatusAmbiguous
+		}
+		if reopenStatus != "" {
 			var queueRows, payloadBytes int64
 			if err := tx.QueryRowContext(ctx, `
 				SELECT count(*), COALESCE(sum(octet_length(att_data)),0)
@@ -172,9 +182,9 @@ func (s *Store) CreateMailIntent(ctx context.Context, m OutboxMail) (OutboxMail,
 				       att_data=$7, meta=$8, message_id=$9, status='pending', attempts=0,
 				       next_attempt_at=now(), claimed_at=NULL, terminal_at=NULL,
 				       sent_at=NULL, redacted_at=NULL, last_error=''
-				 WHERE id=$1 AND status='failed'
+				 WHERE id=$1 AND status=$10
 				 RETURNING status, attempts`, m.ID, m.Recipient, m.Subject, m.Body,
-				m.AttName, m.AttType, m.AttData, meta, m.MessageID).
+				m.AttName, m.AttType, m.AttData, meta, m.MessageID, reopenStatus).
 				Scan(&m.Status, &m.Attempts)
 			if err != nil {
 				return OutboxMail{}, false, err

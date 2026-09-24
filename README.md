@@ -98,7 +98,7 @@ Open **http://localhost:8080** and log in as `admin`. You are forced to change t
 **Prebuilt image instead of building locally** (multi-arch, amd64 + arm64):
 
 ```bash
-TRUSTED_PROXIES=10.0.0.5/32 \
+TRUSTED_PROXIES='REPLACE_WITH_PROXY_SOURCE_IP_OR_CIDR' \
 docker compose -f docker-compose.ghcr.yml up -d
 ```
 

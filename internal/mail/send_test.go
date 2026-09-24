@@ -152,6 +152,7 @@ func TestSendRequiresStartTLS(t *testing.T) {
 	}
 }
 
+// TestStableMessageID verifies equivalent addresses and content retain one SMTP identity.
 func TestStableMessageID(t *testing.T) {
 	atts := []Attachment{{Filename: "rechnung.pdf", ContentType: "application/pdf", Data: []byte("pdf")}}
 	a := StableMessageID("MR <sender@example.at>", "Kunde <TO@example.at>", "Rechnung", "Text", atts)

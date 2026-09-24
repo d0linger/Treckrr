@@ -71,6 +71,7 @@ func TestSendDataAcknowledgementIsDeliveryBoundary(t *testing.T) {
 	}
 }
 
+// TestSendMarksLostFinalReplyAmbiguous verifies uncertainty begins only after DATA closes.
 func TestSendMarksLostFinalReplyAmbiguous(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

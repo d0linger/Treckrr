@@ -12,6 +12,7 @@ import (
 	appdb "github.com/d0linger/treckrr/internal/db"
 )
 
+// TestSchedulerLeaseAndStateAreClusterWide verifies one scheduler runs across replicas.
 func TestSchedulerLeaseAndStateAreClusterWide(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -68,6 +69,7 @@ func TestSchedulerLeaseAndStateAreClusterWide(t *testing.T) {
 	}
 }
 
+// nullableTime converts a nullable database timestamp for stable assertions.
 func nullableTime(value sql.NullTime) any {
 	if !value.Valid {
 		return nil

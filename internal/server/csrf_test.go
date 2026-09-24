@@ -10,6 +10,7 @@ import (
 	"github.com/d0linger/treckrr/internal/config"
 )
 
+// testServer builds the smallest server configuration needed by middleware tests.
 func testServer() *Server {
 	return &Server{cfg: &config.Config{
 		SessionSecret:     "test-secret-at-least-16",

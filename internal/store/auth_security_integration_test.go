@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,6 +14,31 @@ import (
 
 const totpTestFixture = "JBSWY3DPEHPK3PXP" // #nosec G101 -- public test seed, not a credential
 
+// TestEnsureAdminValidatesOnlyCredentialWritesIntegration proves an unused weak
+// legacy bootstrap value cannot block normal startup or reach a create/reset.
+func TestEnsureAdminValidatesOnlyCredentialWritesIntegration(t *testing.T) {
+	st, _ := scratchStore(t)
+	ctx := t.Context()
+	username := fmt.Sprintf("legacy-admin-%d", time.Now().UnixNano())
+	if _, err := st.CreateUser(ctx, username, "existing-admin-123", models.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.EnsureAdmin(ctx, username, "weak-password", false); err != nil {
+		t.Fatalf("unused legacy value blocked existing admin: %v", err)
+	}
+	if err := st.EnsureAdmin(ctx, username, "weak-password", true); err == nil {
+		t.Fatal("weak reset password was accepted")
+	}
+	if _, err := st.AuthenticateUser(ctx, username, "existing-admin-123"); err != nil {
+		t.Fatalf("rejected reset changed the existing credential: %v", err)
+	}
+	if err := st.EnsureAdmin(ctx, username+"-missing", "weak-password", false); err == nil {
+		t.Fatal("weak bootstrap password was accepted for a new admin")
+	}
+}
+
+// TestCredentialRotationAtomicIntegration verifies password, session, role, and
+// audit changes preserve their transaction boundaries under failure.
 func TestCredentialRotationAtomicIntegration(t *testing.T) {
 	st, pool := scratchStore(t)
 	ctx := t.Context()

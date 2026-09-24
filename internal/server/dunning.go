@@ -356,9 +356,9 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 // deliverMahnung persists a durable, idempotent intent before SMTP and then
 // attempts only a newly-created row. The store settles delivery history and
 // outbox state in one transaction; ambiguous SMTP outcomes are never retried.
-// retryFailed is reserved for an explicit single-recipient action; a batch can
-// never reopen a terminal failure by being submitted twice.
-func (s *Server) deliverMahnung(ctx context.Context, v *mahnungView, retryFailed bool) (string, error) {
+// explicitResend is reserved for a single-recipient POST; a batch can never
+// reopen a terminal failed or ambiguous outcome by being submitted twice.
+func (s *Server) deliverMahnung(ctx context.Context, v *mahnungView, explicitResend bool) (string, error) {
 	blob, err := v.toPDF()
 	if err != nil {
 		return "", err
@@ -374,7 +374,7 @@ func (s *Server) deliverMahnung(ctx context.Context, v *mahnungView, retryFailed
 		Meta: store.OutboxMeta{Stage: v.Stage, Fee: v.Fee, GraceUntil: v.GraceUntil, InvoiceNumber: v.Invoice.Number},
 		DeliveryKey: fmt.Sprintf("mahnung:%d:%d:%s", v.Invoice.ID, v.Stage,
 			strings.ToLower(strings.TrimSpace(v.Neighbor.Email))),
-		MessageID: messageID, RetryFailed: retryFailed,
+		MessageID: messageID, RetryFailed: explicitResend, ForceResend: explicitResend,
 	})
 	if err != nil {
 		return "", err

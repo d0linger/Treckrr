@@ -87,6 +87,8 @@ func TestDunningFlowIntegration(t *testing.T) {
 
 // The batch run must not lose anyone: no address means skipped-and-said, a dead
 // SMTP server means parked in the outbox — never a silent nothing.
+// TestDunningBatchEmailFallsBackToOutboxIntegration verifies batch failures stay
+// durable and repeated submissions remain idempotent.
 func TestDunningBatchEmailFallsBackToOutboxIntegration(t *testing.T) {
 	e := newItEnv(t)
 	nid, yid := e.neighborID, e.yearID64

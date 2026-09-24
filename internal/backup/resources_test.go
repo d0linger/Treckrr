@@ -49,6 +49,65 @@ func TestBackupWorkAdmission(t *testing.T) {
 	}
 }
 
+// TestS3LegacyPrefixRemainsReadable verifies normalized writes do not hide
+// archives created by the former direct prefix-plus-name concatenation.
+func TestS3LegacyPrefixRemainsReadable(t *testing.T) {
+	const (
+		name = "treckrr-2026-09-24-120000.000000000.dump.enc"
+		body = "legacy-encrypted-backup"
+	)
+	var listed []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("location") {
+			fmt.Fprint(w, `<LocationConstraint>us-east-1</LocationConstraint>`)
+			return
+		}
+		switch {
+		case r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/site-a/"+name):
+			w.Header().Set("X-Amz-Error-Code", "NoSuchKey")
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodHead:
+			w.Header().Set("Content-Length", fmt.Sprint(len(body)))
+			w.Header().Set("Last-Modified", "Thu, 24 Sep 2026 12:00:00 GMT")
+			w.Header().Set("ETag", `"0123456789abcdef0123456789abcdef"`)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "site-a"+name):
+			w.Header().Set("Content-Length", fmt.Sprint(len(body)))
+			w.Header().Set("Last-Modified", "Thu, 24 Sep 2026 12:00:00 GMT")
+			w.Header().Set("ETag", `"0123456789abcdef0123456789abcdef"`)
+			fmt.Fprint(w, body)
+		default:
+			prefix := r.URL.Query().Get("prefix")
+			listed = append(listed, prefix)
+			fmt.Fprint(w, `<ListBucketResult><Name>test</Name><IsTruncated>false</IsTruncated>`)
+			if prefix == "site-a" {
+				fmt.Fprintf(w, `<Contents><Key>site-a%s</Key><Size>%d</Size><LastModified>2026-09-24T12:00:00Z</LastModified></Contents>`, name, len(body))
+			}
+			fmt.Fprint(w, `</ListBucketResult>`)
+		}
+	}))
+	defer ts.Close()
+
+	s := New(Options{S3: S3Options{
+		Endpoint: strings.TrimPrefix(ts.URL, "http://"), Bucket: "test",
+		AccessKey: "test", SecretKey: "test", Prefix: "site-a/", LegacyPrefix: "site-a",
+	}}, nil)
+	files, err := s.S3List(t.Context())
+	if err != nil || len(files) != 1 || files[0].Name != name {
+		t.Fatalf("legacy listing: files=%+v err=%v", files, err)
+	}
+	data, err := s.S3Get(t.Context(), name)
+	if err != nil || string(data) != body {
+		t.Fatalf("legacy read: data=%q err=%v", data, err)
+	}
+	owned, err := s.s3ObjectOwned(t.Context(), name)
+	if err != nil || owned {
+		t.Fatalf("legacy object ownership: owned=%v err=%v", owned, err)
+	}
+	if strings.Join(listed, ",") != "site-a/,site-a" {
+		t.Fatalf("listed prefixes = %v", listed)
+	}
+}
+
 func TestBackupMemoryBounds(t *testing.T) {
 	s := New(Options{MaxBytes: 8}, nil)
 	if data, err := s.readArchive(strings.NewReader("12345678")); err != nil || string(data) != "12345678" {
@@ -88,6 +147,7 @@ func TestRestoreListExcludesOnlyAuthenticationData(t *testing.T) {
 	}
 }
 
+// TestS3PruneOnlyOwnedOldArchives protects foreign and recent bucket objects.
 func TestS3PruneOnlyOwnedOldArchives(t *testing.T) {
 	var mu sync.Mutex
 	var deleted []string
@@ -134,6 +194,7 @@ func TestS3PruneOnlyOwnedOldArchives(t *testing.T) {
 	}
 }
 
+// TestS3UploadIsConditionalAndTagged pins collision prevention and ownership metadata.
 func TestS3UploadIsConditionalAndTagged(t *testing.T) {
 	var ifNoneMatch, owner string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +224,7 @@ func TestS3UploadIsConditionalAndTagged(t *testing.T) {
 	}
 }
 
+// TestS3OversizedObjectsRejectedBeforeGet verifies size bounds precede body reads.
 func TestS3OversizedObjectsRejectedBeforeGet(t *testing.T) {
 	var reads atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
