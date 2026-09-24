@@ -39,7 +39,7 @@ func TestWebauthnBackupFlagsRoundTrip(t *testing.T) {
 	suffix := make([]byte, 6)
 	_, _ = rand.Read(suffix)
 	username := "wa-flags-" + hex.EncodeToString(suffix)
-	uid, err := st.CreateUser(ctx, username, "pw-at-least-8-chars", models.RoleAdmin)
+	uid, err := st.CreateUser(ctx, username, "pw-at-least-8-chars-1", models.RoleAdmin)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}

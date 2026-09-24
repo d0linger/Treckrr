@@ -124,4 +124,16 @@ func TestDunningBatchEmailFallsBackToOutboxIntegration(t *testing.T) {
 	if notices != 0 {
 		t.Errorf("%d notices recorded although nothing was delivered", notices)
 	}
+
+	// Repeating the normal batch action with identical document content must
+	// reuse the pending intent instead of creating another deliverable message.
+	e.post("/mahnwesen/batch-email", url.Values{"year": {itoa64(yid)}, "stufe": {"1"}})
+	var intents int
+	if err := e.pool.QueryRowContext(e.ctx,
+		`SELECT count(*) FROM mail_outbox WHERE neighbor_id=$1 AND kind='mahnung'`, nid).Scan(&intents); err != nil {
+		t.Fatal(err)
+	}
+	if intents != 1 {
+		t.Errorf("repeated batch created %d intents, want 1", intents)
+	}
 }

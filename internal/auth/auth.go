@@ -7,14 +7,51 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
-// HashPassword returns a bcrypt hash of the given plaintext password.
+var (
+	// ErrPasswordTooShort reports a password shorter than the shared minimum.
+	ErrPasswordTooShort = errors.New("password must be at least 8 bytes")
+	// ErrPasswordTooLong reports a password that bcrypt cannot represent fully.
+	ErrPasswordTooLong = errors.New("password must be at most 72 bytes")
+	// ErrPasswordComplexity reports a password without both an ASCII letter and digit.
+	ErrPasswordComplexity = errors.New("password must contain a letter and a digit")
+)
+
+// ValidatePassword applies the password policy shared by every credential-setting
+// path. Length is measured in bytes because bcrypt's input limit is byte-based.
+func ValidatePassword(pw string) error {
+	if len(pw) < 8 {
+		return ErrPasswordTooShort
+	}
+	if len(pw) > 72 {
+		return ErrPasswordTooLong
+	}
+	var hasLetter, hasDigit bool
+	for _, c := range pw {
+		switch {
+		case c >= '0' && c <= '9':
+			hasDigit = true
+		case (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'):
+			hasLetter = true
+		}
+	}
+	if !hasLetter || !hasDigit {
+		return ErrPasswordComplexity
+	}
+	return nil
+}
+
+// HashPassword validates and returns a bcrypt hash of the plaintext password.
 func HashPassword(pw string) (string, error) {
+	if err := ValidatePassword(pw); err != nil {
+		return "", err
+	}
 	b, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 	if err != nil {
 		return "", err

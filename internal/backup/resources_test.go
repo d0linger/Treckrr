@@ -91,7 +91,9 @@ func TestRestoreListExcludesOnlyAuthenticationData(t *testing.T) {
 func TestS3PruneOnlyOwnedOldArchives(t *testing.T) {
 	var mu sync.Mutex
 	var deleted []string
+	var ownerID string
 	old := time.Now().Add(-48 * time.Hour).UTC().Format(time.RFC3339)
+	oldHTTP := time.Now().Add(-48 * time.Hour).UTC().Format(http.TimeFormat)
 	recent := time.Now().UTC().Format(time.RFC3339)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -100,25 +102,64 @@ func TestS3PruneOnlyOwnedOldArchives(t *testing.T) {
 			deleted = append(deleted, r.URL.Path)
 			mu.Unlock()
 			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodHead:
+			w.Header().Set("Content-Length", "42")
+			w.Header().Set("Last-Modified", oldHTTP)
+			w.Header().Set("ETag", `"0123456789abcdef0123456789abcdef"`)
+			if !strings.Contains(r.URL.Path, "treckrr-0002.dump.enc") {
+				w.Header().Set("X-Amz-Meta-Treckrr-Installation", ownerID)
+			}
+			w.WriteHeader(http.StatusOK)
 		case r.URL.Query().Has("location"):
 			fmt.Fprint(w, `<LocationConstraint>us-east-1</LocationConstraint>`)
 		default:
 			fmt.Fprintf(w, `<ListBucketResult><Name>test</Name><IsTruncated>false</IsTruncated>
-<Contents><Key>treckrr-9999.dump.enc</Key><Size>42</Size><LastModified>%s</LastModified></Contents>
-<Contents><Key>treckrr-9998.dump.enc</Key><Size>42</Size><LastModified>%s</LastModified></Contents>
-<Contents><Key>treckrr-0001.dump.enc</Key><Size>42</Size><LastModified>%s</LastModified></Contents>
+<Contents><Key>site-a/treckrr-9999.dump.enc</Key><Size>42</Size><LastModified>%s</LastModified></Contents>
+<Contents><Key>site-a/treckrr-9998.dump.enc</Key><Size>42</Size><LastModified>%s</LastModified></Contents>
+<Contents><Key>site-a/treckrr-0002.dump.enc</Key><Size>42</Size><LastModified>%s</LastModified></Contents>
+<Contents><Key>site-a/treckrr-0001.dump.enc</Key><Size>42</Size><LastModified>%s</LastModified></Contents>
 <Contents><Key>foreign.dump.enc</Key><Size>42</Size><LastModified>%s</LastModified></Contents>
 <Contents><Key>nested/treckrr-0000.dump.enc</Key><Size>42</Size><LastModified>%s</LastModified></Contents>
-</ListBucketResult>`, recent, recent, old, old, old)
+</ListBucketResult>`, recent, recent, old, old, old, old)
 		}
 	}))
 	defer ts.Close()
-	s := New(Options{S3: S3Options{Endpoint: strings.TrimPrefix(ts.URL, "http://"), Bucket: "test", AccessKey: "test", SecretKey: "test"}}, nil)
+	s := New(Options{S3: S3Options{Endpoint: strings.TrimPrefix(ts.URL, "http://"), Bucket: "test", AccessKey: "test", SecretKey: "test", Prefix: "site-a/"}}, nil)
+	ownerID = s.s3InstallationID()
 	s.pruneS3(t.Context(), 1)
 	mu.Lock()
 	defer mu.Unlock()
-	if len(deleted) != 1 || deleted[0] != "/test/treckrr-0001.dump.enc" {
+	if len(deleted) != 1 || deleted[0] != "/test/site-a/treckrr-0001.dump.enc" {
 		t.Fatalf("deleted=%v", deleted)
+	}
+}
+
+func TestS3UploadIsConditionalAndTagged(t *testing.T) {
+	var ifNoneMatch, owner string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("location") {
+			fmt.Fprint(w, `<LocationConstraint>us-east-1</LocationConstraint>`)
+			return
+		}
+		ifNoneMatch = r.Header.Get("If-None-Match")
+		owner = r.Header.Get("X-Amz-Meta-Treckrr-Installation")
+		w.Header().Set("ETag", `"0123456789abcdef0123456789abcdef"`)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	s := New(Options{S3: S3Options{
+		Endpoint: strings.TrimPrefix(ts.URL, "http://"), Bucket: "test",
+		AccessKey: "test", SecretKey: "test", Prefix: "site-a/",
+	}}, nil)
+	if err := s.uploadS3(t.Context(), "treckrr-test.dump.enc", []byte("encrypted")); err != nil {
+		t.Fatal(err)
+	}
+	if ifNoneMatch != "*" {
+		t.Fatalf("If-None-Match = %q, want *", ifNoneMatch)
+	}
+	if owner != s.s3InstallationID() {
+		t.Fatalf("ownership metadata = %q, want %q", owner, s.s3InstallationID())
 	}
 }
 
@@ -138,7 +179,7 @@ func TestS3OversizedObjectsRejectedBeforeGet(t *testing.T) {
 		}
 	}))
 	defer ts.Close()
-	s := New(Options{MaxBytes: 8, S3: S3Options{Endpoint: strings.TrimPrefix(ts.URL, "http://"), Bucket: "test", AccessKey: "test", SecretKey: "test"}}, nil)
+	s := New(Options{MaxBytes: 8, S3: S3Options{Endpoint: strings.TrimPrefix(ts.URL, "http://"), Bucket: "test", AccessKey: "test", SecretKey: "test", Prefix: "site-a/"}}, nil)
 	if err := s.verifyS3Object(t.Context(), "treckrr-test.dump.enc", 9); err == nil {
 		t.Fatal("oversized verify accepted")
 	}

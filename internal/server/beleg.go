@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -804,43 +805,54 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	body := mailBody(company, neighbor.Name, "anbei die Rechnung "+iv.Number+" als PDF.")
 	att := mail.Attachment{Filename: "Rechnung_" + sanitizeFilename(iv.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
 	subject := "Rechnung " + iv.Number
-	if err := mail.Send(r.Context(), s.cfg, neighbor.Email, subject, body, []mail.Attachment{att}); err != nil {
-		metrics.Inc(metrics.MailFailed)
-		slog.Error("beleg email send failed", "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))
-		s.audit(r, "beleg_email_failed", "neighbor", neighbor.ID,
-			neighbor.Name+" · Rechnung "+iv.Number+" · "+sanitizeLog(err.Error()))
-		// Park the exact message for retry by the maintenance loop. Before, the
-		// failure evaporated with the flash: one SMTP hiccup during the yearly
-		// invoice run meant re-clicking every affected neighbor by hand.
-		if qerr := s.store.EnqueueMail(r.Context(), store.OutboxMail{
-			Kind: "beleg", NeighborID: neighbor.ID, BillingYearID: year.ID,
-			Recipient: neighbor.Email, Subject: "Rechnung " + iv.Number, Body: body,
-			AttName: att.Filename, AttType: att.ContentType, AttData: att.Data,
-		}); qerr != nil {
-			slog.Error("beleg email enqueue failed", "neighbor", neighbor.ID, "err", sanitizeLog(qerr.Error()))
-			s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
+	messageID := mail.StableMessageID(s.cfg.SMTPFrom, neighbor.Email, subject, body, []mail.Attachment{att})
+	intent, created, err := s.store.CreateMailIntent(r.Context(), store.OutboxMail{
+		Kind: "beleg", NeighborID: neighbor.ID, BillingYearID: year.ID,
+		Recipient: neighbor.Email, Subject: subject, Body: body,
+		AttName: att.Filename, AttType: att.ContentType, AttData: att.Data,
+		DeliveryKey: fmt.Sprintf("beleg:%d:%s", iv.ID,
+			strings.ToLower(strings.TrimSpace(neighbor.Email))),
+		MessageID: messageID, RetryFailed: true,
+	})
+	if err != nil {
+		slog.Error("beleg email intent failed", "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))
+		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
+		redirect(w, r, back)
+		return
+	}
+	status := intent.Status
+	if created {
+		status, err = s.store.AttemptMail(r.Context(), intent.ID,
+			func(ctx context.Context, messageID, to, subject, body, attName, attType string, attData []byte) error {
+				return mail.SendWithMessageID(ctx, s.cfg, to, subject, body, []mail.Attachment{{
+					Filename: attName, ContentType: attType, Data: attData,
+				}}, messageID)
+			})
+		if err != nil {
+			slog.Error("beleg email attempt failed", "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))
+			s.setFlash(w, r, "error", "Versandstatus konnte nicht gespeichert werden. Bitte im Audit-Log prüfen.")
 			redirect(w, r, back)
 			return
 		}
+	}
+	switch status {
+	case store.MailStatusSent:
+		if created {
+			s.sendMailCopy(r.Context(), company, subject, body, []mail.Attachment{att})
+			s.setFlash(w, r, "success", "Rechnung an "+neighbor.Email+" gesendet.")
+		} else {
+			s.setFlash(w, r, "success", "Rechnung wurde bereits per E-Mail versendet.")
+		}
+	case store.MailStatusPending, store.MailStatusSending:
+		metrics.Inc(metrics.MailFailed)
 		s.setFlash(w, r, "error", "Versand fehlgeschlagen — ein erneuter Versuch wurde eingeplant (automatisch, mit Protokoll im Audit-Log).")
-		redirect(w, r, back)
-		return
+	case store.MailStatusAmbiguous:
+		metrics.Inc(metrics.MailFailed)
+		s.setFlash(w, r, "error", "Zustellung unklar — keine automatische Wiederholung. Bitte Empfänger und Audit-Log prüfen.")
+	default:
+		metrics.Inc(metrics.MailFailed)
+		s.setFlash(w, r, "error", "Versand endgültig fehlgeschlagen. Bitte im Audit-Log prüfen.")
 	}
-	// Delivery succeeded — send the configured CC its copy (Nr. 99) before the
-	// bookkeeping below; best-effort, it must not turn a good send into an error.
-	s.sendMailCopy(r.Context(), company, subject, body, []mail.Attachment{att})
-	// The send-trail marker is secondary. If recording it fails
-	// don't fail the request — log it and tell the user the send worked but the
-	// history entry didn't, so "zuletzt versendet am …" being absent isn't a mystery.
-	if err := s.store.RecordBelegSend(r.Context(), year.ID, neighbor.ID, "e-mail"); err != nil {
-		slog.Error("record beleg send failed", "year", year.ID, "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))
-		s.audit(r, "beleg_email", "neighbor", neighbor.ID, neighbor.Name+" · E-Mail · Rechnung "+iv.Number)
-		s.setFlash(w, r, "success", "Rechnung an "+neighbor.Email+" gesendet (Versand-Historie konnte nicht gespeichert werden).")
-		redirect(w, r, back)
-		return
-	}
-	s.audit(r, "beleg_email", "neighbor", neighbor.ID, neighbor.Name+" · E-Mail · Rechnung "+iv.Number)
-	s.setFlash(w, r, "success", "Rechnung an "+neighbor.Email+" gesendet.")
 	redirect(w, r, back)
 }
 

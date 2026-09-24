@@ -9,6 +9,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/d0linger/treckrr/internal/auth"
 )
 
 // Documented Compose placeholders that must never reach a running instance
@@ -38,10 +40,12 @@ type Config struct {
 	EncryptionSecret string
 	CookieSecure     bool
 	TrustProxy       bool
+	// AllowInsecureHTTP is an explicit development-only opt-in for cookies that
+	// must round-trip over plain HTTP. Production defaults fail closed to Secure.
+	AllowInsecureHTTP bool
 	// TrustedProxies, when set via TRUSTED_PROXIES (comma-separated CIDRs),
 	// restricts TRUST_PROXY so forwarded headers are only honored when the direct
-	// peer (RemoteAddr) is inside one of these networks (SH-05). Empty keeps the
-	// legacy behavior: TRUST_PROXY alone trusts the forwarded header.
+	// peer (RemoteAddr) is inside one of these networks (SH-05).
 	TrustedProxies []*net.IPNet
 	AdminUsername  string
 	AdminPassword  string
@@ -109,8 +113,9 @@ func Load() (*Config, error) {
 		Port:                getenv("APP_PORT", "8080"),
 		DatabaseURL:         os.Getenv("DATABASE_URL"),
 		SessionSecret:       os.Getenv("SESSION_SECRET"),
-		CookieSecure:        strings.EqualFold(getenv("COOKIE_SECURE", "false"), "true"),
+		CookieSecure:        strings.EqualFold(getenv("COOKIE_SECURE", "true"), "true"),
 		TrustProxy:          strings.EqualFold(getenv("TRUST_PROXY", "false"), "true"),
+		AllowInsecureHTTP:   strings.EqualFold(getenv("ALLOW_INSECURE_HTTP", "false"), "true"),
 		AdminUsername:       getenv("ADMIN_USERNAME", "admin"),
 		AdminPassword:       os.Getenv("ADMIN_PASSWORD"),
 		AdminPasswordReset:  strings.EqualFold(getenv("ADMIN_PASSWORD_RESET", "false"), "true"),
@@ -145,6 +150,18 @@ func Load() (*Config, error) {
 	if c.S3Keep < 0 {
 		return nil, fmt.Errorf("S3_KEEP must be nonnegative (0 means unlimited retention)")
 	}
+	c.S3Endpoint = strings.TrimSpace(c.S3Endpoint)
+	c.S3Bucket = strings.TrimSpace(c.S3Bucket)
+	if (c.S3Endpoint == "") != (c.S3Bucket == "") {
+		return nil, fmt.Errorf("S3_ENDPOINT and S3_BUCKET must either both be set or both be empty")
+	}
+	if c.S3Endpoint != "" {
+		prefix, err := normalizeS3Prefix(c.S3Prefix)
+		if err != nil {
+			return nil, err
+		}
+		c.S3Prefix = prefix
+	}
 
 	// Optional allowlist of trusted reverse-proxy networks (SH-05). Invalid CIDRs
 	// fail fast rather than silently disabling the tightening.
@@ -159,6 +176,15 @@ func Load() (*Config, error) {
 			}
 			c.TrustedProxies = append(c.TrustedProxies, ipnet)
 		}
+	}
+	if c.TrustProxy && len(c.TrustedProxies) == 0 {
+		return nil, fmt.Errorf("TRUST_PROXY=true requires at least one TRUSTED_PROXIES CIDR")
+	}
+	if c.AllowInsecureHTTP && (c.CookieSecure || c.TrustProxy) {
+		return nil, fmt.Errorf("ALLOW_INSECURE_HTTP=true is only valid with COOKIE_SECURE=false and TRUST_PROXY=false")
+	}
+	if !c.CookieSecure && !c.AllowInsecureHTTP {
+		return nil, fmt.Errorf("COOKIE_SECURE=false requires explicit ALLOW_INSECURE_HTTP=true for local development")
 	}
 
 	if c.DatabaseURL == "" {
@@ -193,6 +219,9 @@ func Load() (*Config, error) {
 	if c.AdminPassword == placeholderAdminPassword {
 		return nil, fmt.Errorf("ADMIN_PASSWORD is still the documented placeholder — set a real admin password")
 	}
+	if err := auth.ValidatePassword(c.AdminPassword); err != nil {
+		return nil, fmt.Errorf("ADMIN_PASSWORD does not satisfy the password policy: %w", err)
+	}
 	// Backups are optional (unset = off). If a key is set it must be a real
 	// secret: reject a whitespace-only value (it would derive a guessable key)
 	// and require real length. The original key bytes are kept untrimmed.
@@ -218,6 +247,26 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// normalizeS3Prefix canonicalizes and validates the installation-owned S3
+// namespace, always returning one trailing slash.
+func normalizeS3Prefix(raw string) (string, error) {
+	prefix := strings.Trim(strings.ReplaceAll(strings.TrimSpace(raw), `\`, "/"), "/")
+	if prefix == "" {
+		return "", fmt.Errorf("S3_PREFIX is required and must be unique to this Treckrr installation when S3 is enabled")
+	}
+	for _, segment := range strings.Split(prefix, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return "", fmt.Errorf("S3_PREFIX contains an invalid path segment")
+		}
+		for _, r := range segment {
+			if r < 0x20 || r == 0x7f {
+				return "", fmt.Errorf("S3_PREFIX contains a control character")
+			}
+		}
+	}
+	return prefix + "/", nil
 }
 
 // getenvInt parses an integer option. An unparseable value is REPORTED, not

@@ -36,16 +36,19 @@ const (
 
 // Server holds shared dependencies for the HTTP handlers.
 type Server struct {
-	cfg          *config.Config
-	store        *store.Store
-	backup       *backup.Service
-	templates    map[string]*template.Template
-	logins       *loginLimiter
-	wa           *webauthn.WebAuthn
-	started      time.Time
-	maintenance  atomic.Bool  // set during a restore: the gate serves 503 for normal traffic
-	activity     sync.RWMutex // drains requests and background maintenance before restore
-	restoreLease func(context.Context) (func() error, error)
+	cfg             *config.Config
+	store           *store.Store
+	backup          *backup.Service
+	templates       map[string]*template.Template
+	logins          *loginLimiter
+	wa              *webauthn.WebAuthn
+	started         time.Time
+	maintenance     atomic.Bool  // set during a restore: the gate serves 503 for normal traffic
+	activity        sync.RWMutex // drains requests and background maintenance before restore
+	restoreLease    func(context.Context) (func() error, error)
+	backgroundMu    sync.Mutex
+	backgroundNext  uint64
+	backgroundTasks map[uint64]backgroundTask
 	// photoSlots bounds concurrent image decodes; see maxConcurrentPhotoDecodes.
 	photoSlots chan struct{}
 }

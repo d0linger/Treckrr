@@ -40,7 +40,7 @@ func TestTotpMigrationIntegration(t *testing.T) {
 	f := fixtures{UsernameLike: fmt.Sprintf(`t06\_%d`, os.Getpid())}
 	purgeFixtures(t, ctx, pool, f)
 	t.Cleanup(func() { purgeFixtures(t, ctx, pool, f) })
-	uid, err := st.CreateUser(ctx, fmt.Sprintf("t06_%d", os.Getpid()), "pw-xxxxxxxxxxxx", models.RoleEditor)
+	uid, err := st.CreateUser(ctx, fmt.Sprintf("t06_%d", os.Getpid()), "pw-1xxxxxxxxxxx", models.RoleEditor)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}

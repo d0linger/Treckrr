@@ -87,7 +87,7 @@ openssl rand -hex 32   # SESSION_SECRET
 openssl rand -hex 32   # BACKUP_ENCRYPTION_KEY (optional, enables backups)
 ```
 
-Set at minimum **SESSION_SECRET**, **ADMIN_PASSWORD** and **POSTGRES_PASSWORD** — and put the same database password inside **DATABASE_URL**. The app refuses to start while any of them still holds the documented placeholder value.
+Set at minimum **SESSION_SECRET**, **ADMIN_PASSWORD** and **POSTGRES_PASSWORD** — and put the same database password inside **DATABASE_URL**. The app refuses to start while any of them still holds the documented placeholder value. The local source-build profile explicitly enables direct HTTP for development; do not reuse that setting in production.
 
 ```bash
 docker compose up -d
@@ -98,10 +98,13 @@ Open **http://localhost:8080** and log in as `admin`. You are forced to change t
 **Prebuilt image instead of building locally** (multi-arch, amd64 + arm64):
 
 ```bash
+TRUSTED_PROXIES=10.0.0.5/32 \
 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
-Pin a release rather than tracking `latest` with `TRECKRR_TAG=1.4`.
+The GHCR profile is the production/TLS path: it forces Secure cookies, enables
+proxy trust, and requires `TRUSTED_PROXIES`. Pin a release rather than tracking
+`latest` with `TRECKRR_TAG=1.4`.
 
 ---
 
@@ -118,7 +121,8 @@ Pin a release rather than tracking `latest` with `TRECKRR_TAG=1.4`.
 | **APP_PORT** | Port inside the container | `8080` | No |
 | **HOST_PORT** | Published port on the host | `8080` | No |
 | **HOST_BIND** | Host interface to bind; `127.0.0.1` only reaches a proxy on the host itself | `0.0.0.0` | No |
-| **COOKIE_SECURE** | Force the `Secure` cookie flag (set behind HTTPS) | `false` | No |
+| **COOKIE_SECURE** | Force the `Secure` cookie flag | `true` (local Compose overrides to `false`) | No |
+| **ALLOW_INSECURE_HTTP** | Explicit direct-HTTP opt-in for local development only | `false` (local Compose sets `true`) | No |
 | **TRUST_PROXY** | Honour `X-Forwarded-For` / `-Proto` from a reverse proxy | `false` | No |
 | **TRUSTED_PROXIES** | Comma-separated CIDRs allowed to set forwarded headers | — | No |
 | **ENCRYPTION_SECRET** | Data-at-rest key for TOTP secrets; pin to the OLD value before rotating `SESSION_SECRET` | `SESSION_SECRET` | No |
@@ -131,7 +135,7 @@ Pin a release rather than tracking `latest` with `TRECKRR_TAG=1.4`.
 | **BACKUP_REHEARSE_URL** | Postgres URL allowed to create/drop a scratch DB; enables real restore rehearsals | — | No |
 | **S3_ENDPOINT** / **S3_BUCKET** | Off-box backup target; empty disables it | — | No |
 | **S3_KEEP** | Objects to keep in the bucket, 0 = all; seeds the GUI value on first boot only | `0` | No |
-| **S3_ACCESS_KEY** / **S3_SECRET_KEY** / **S3_PREFIX** | S3 credentials and key prefix | — | No |
+| **S3_ACCESS_KEY** / **S3_SECRET_KEY** / **S3_PREFIX** | S3 credentials and mandatory installation-unique key prefix when S3 is enabled | — | No |
 | **S3_USE_SSL** | TLS for the S3 endpoint | `true` | No |
 | **SMTP_HOST** / **SMTP_FROM** | E-mail delivery; both must be set to enable it | — | No |
 | **SMTP_PORT** / **SMTP_USER** / **SMTP_PASSWORD** | SMTP credentials | `587` | No |
@@ -246,11 +250,14 @@ The current whole-archive format needs several times the archive size plus the
 64 MiB key-derivation workspace. Do not run overlapping CLI jobs in a live app's
 memory budget.
 
-S3 retention is limited to flat `treckrr-*.dump.enc` objects under the configured
-prefix and never deletes objects younger than 24 hours (or with unknown dates).
-Use a dedicated prefix per instance; a different Treckrr instance's matching
-names cannot be distinguished. `S3_KEEP=0` keeps everything. Retention env values
-seed the GUI settings only on first boot; existing GUI values remain authoritative.
+S3 requires a normalized, installation-unique prefix. New objects carry a stable
+ownership marker and are created conditionally, so a collision is reported rather
+than overwritten. Retention is limited to owned flat `treckrr-*.dump.enc` objects
+under that prefix and never deletes objects younger than 24 hours (or with unknown
+dates). Existing untagged objects remain readable but are never auto-pruned.
+`S3_KEEP=0` keeps everything. Scope the S3 credentials to the same prefix.
+Retention env values seed the GUI settings only on first boot; existing GUI values
+remain authoritative.
 
 ### Verified release images
 
@@ -365,16 +372,16 @@ proxy_set_header X-Forwarded-Proto $scheme;
 ```
 
 ```bash
+COOKIE_SECURE=true
+ALLOW_INSECURE_HTTP=false
 TRUST_PROXY=true
 TRUSTED_PROXIES=10.0.0.5/32        # the proxy's address — see below
 RP_ID=treckrr.example.org          # host only, no scheme
 RP_ORIGIN=https://treckrr.example.org
 ```
 
-- **Set TRUSTED_PROXIES.** With `TRUST_PROXY=true` and no allow-list, the app
-  honours forwarded headers from *any* peer that can reach the published port —
-  so anyone on the same network can forge their IP into the audit log and rotate
-  past the per-IP rate limits. Restrict it to your proxy, or set
+- **Set TRUSTED_PROXIES.** The app refuses to start with `TRUST_PROXY=true` and
+  an empty allow-list. Restrict it to your proxy, or set
   `HOST_BIND=127.0.0.1` — but only when the proxy is installed natively on this
   host or runs with `network_mode: host`. A proxy in its own container on a bridge
   network cannot reach the host's loopback; put it on the same Docker network as
@@ -383,9 +390,9 @@ RP_ORIGIN=https://treckrr.example.org
   the proxy actually observed; earlier ones are client-supplied. This assumes
   exactly one trusted hop.
 - **RP_ID / RP_ORIGIN must match the browser's URL**, or passkeys silently fail.
-- **Cookies** become `Secure` and get the `__Host-` prefix automatically once
-  `X-Forwarded-Proto: https` arrives from a trusted proxy. `COOKIE_SECURE=true`
-  forces it.
+- **Cookies** fail closed to `Secure` and get the `__Host-` prefix. The only
+  plain-HTTP exception is the explicit local-development combination
+  `COOKIE_SECURE=false`, `TRUST_PROXY=false`, `ALLOW_INSECURE_HTTP=true`.
 - **Let the app own HSTS.** It already sends
   `max-age=31536000; includeSubDomains` over HTTPS. If the proxy adds a second
   header, browsers process only the first (RFC 6797 §8.1) and the other is dead.

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/d0linger/treckrr/internal/db"
+	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -84,6 +85,19 @@ func TestAuditFilterPaginationIntegration(t *testing.T) {
 	}
 	if n, err := st.CountAudit(ctx, store.AuditQuery{Action: "itest_a"}); err != nil || n != 80 {
 		t.Fatalf("CountAudit(itest_a) = %d, %v; want 80", n, err)
+	}
+	streamed := 0
+	if err := st.StreamAuditFiltered(ctx, store.AuditQuery{Action: "itest_a"}, func(e models.AuditEntry) error {
+		if e.Action != "itest_a" {
+			t.Fatalf("stream returned action %q", e.Action)
+		}
+		streamed++
+		return nil
+	}); err != nil {
+		t.Fatalf("StreamAuditFiltered: %v", err)
+	}
+	if streamed != 80 {
+		t.Fatalf("StreamAuditFiltered count = %d, want 80", streamed)
 	}
 
 	// Paging: first page full, later page holds the remainder.

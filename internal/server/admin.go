@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/d0linger/treckrr/internal/auth"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
 )
@@ -33,28 +34,18 @@ func validRole(role string) bool {
 // passwordPolicyError validates a password against the policy and returns a
 // German error message, or "" when the password is acceptable.
 func passwordPolicyError(pw string) string {
-	if len(pw) < 8 {
+	switch err := auth.ValidatePassword(pw); {
+	case errors.Is(err, auth.ErrPasswordTooShort):
 		return "Passwort muss mindestens 8 Zeichen haben."
-	}
-	// bcrypt silently truncates input beyond 72 bytes, so anything longer would
-	// have unused tail bytes (and, with GenerateFromPassword, error out). Reject
-	// it explicitly instead of hashing a silently-shortened password.
-	if len(pw) > 72 {
+	case errors.Is(err, auth.ErrPasswordTooLong):
 		return "Passwort darf höchstens 72 Zeichen lang sein."
-	}
-	var hasLetter, hasDigit bool
-	for _, c := range pw {
-		switch {
-		case c >= '0' && c <= '9':
-			hasDigit = true
-		case (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'):
-			hasLetter = true
-		}
-	}
-	if !hasLetter || !hasDigit {
+	case errors.Is(err, auth.ErrPasswordComplexity):
 		return "Passwort muss Buchstaben und Ziffern enthalten."
+	case err != nil:
+		return "Passwort ist ungültig."
+	default:
+		return ""
 	}
-	return ""
 }
 
 func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {

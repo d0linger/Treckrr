@@ -206,6 +206,19 @@ func run() error {
 		return err
 	}
 	srv.SetRestoreLease(appLease.Exclusive)
+	var leaseWG sync.WaitGroup
+	leaseWG.Add(1)
+	go func() {
+		defer leaseWG.Done()
+		if err := appLease.Monitor(ctx, time.Second); err != nil {
+			// The advisory lock vanished with its PostgreSQL session. Do not
+			// attempt to reacquire it: an offline restore may already own the
+			// exclusive lock. Remove readiness first, then begin shutdown.
+			srv.FailClosed()
+			slog.Error("application maintenance lease lost; shutting down", "err", err)
+			stop()
+		}
+	}()
 	go func() { defer purgeWG.Done(); purgeLoop(ctx, cfg, st, srv) }()
 
 	httpServer := &http.Server{
@@ -249,6 +262,7 @@ func run() error {
 	if !waitTimeout(&purgeWG, 50*time.Second) {
 		slog.Warn("shutdown: the maintenance tick was still running after 50s; exiting anyway")
 	}
+	leaseWG.Wait()
 	return err
 }
 
@@ -269,36 +283,42 @@ func waitTimeout(wg *sync.WaitGroup, d time.Duration) bool {
 // ctx is canceled. It runs one purge shortly after boot, then on a fixed tick.
 func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store, srv *server.Server) {
 	purge := func() {
-		srv.Background(ctx, func() {
-			bg, cancel := context.WithTimeout(context.Background(), time.Minute)
-			defer cancel()
+		srv.BackgroundTask(ctx, func(taskCtx context.Context) {
 			metrics.Inc(metrics.MaintenanceRuns)
-			if err := st.PurgeExpiredSessions(bg); err != nil {
-				metrics.Inc(metrics.MaintenanceFails)
-				slog.Error("purge sessions", "err", err)
-			}
-			if err := st.PurgeStaleRateLimits(bg); err != nil {
-				slog.Error("purge rate limits", "err", err)
-			}
-			if err := st.PurgeExpiredWebauthnCeremonies(bg); err != nil {
-				slog.Error("purge webauthn ceremonies", "err", err)
-			}
-			// Materialize any due recurring bookings (idempotent).
-			if n, err := st.RunDueRecurring(bg); err != nil {
-				metrics.Inc(metrics.MaintenanceFails)
-				slog.Error("recurring generation", "err", err)
-			} else if n > 0 {
-				metrics.Add(metrics.RecurringCreated, int64(n))
-				slog.Info("recurring bookings created", "count", n)
-				// These are system-created bookings (no HTTP request / user), so record a
-				// system-actor audit line — otherwise the entries appear in the DB with no
-				// trail explaining who created them. Best-effort: a missing line must not
-				// abort the maintenance tick.
-				detail := fmt.Sprintf("%d Buchung(en) aus fälligen Serien erzeugt", n)
-				if err := st.AddAudit(bg, nil, "system", "recurring_run", "recurring", "", detail, ""); err != nil {
-					slog.Error("audit recurring run", "err", err)
+			maintenanceTask(taskCtx, 30*time.Second, func(bg context.Context) {
+				if err := st.PurgeExpiredSessions(bg); err != nil {
+					metrics.Inc(metrics.MaintenanceFails)
+					slog.Error("purge sessions", "err", err)
 				}
-			}
+			})
+			maintenanceTask(taskCtx, 30*time.Second, func(bg context.Context) {
+				if err := st.PurgeStaleRateLimits(bg); err != nil {
+					slog.Error("purge rate limits", "err", err)
+				}
+			})
+			maintenanceTask(taskCtx, 30*time.Second, func(bg context.Context) {
+				if err := st.PurgeExpiredWebauthnCeremonies(bg); err != nil {
+					slog.Error("purge webauthn ceremonies", "err", err)
+				}
+			})
+			// Materialize any due recurring bookings (idempotent).
+			maintenanceTask(taskCtx, time.Minute, func(bg context.Context) {
+				if n, err := st.RunDueRecurring(bg); err != nil {
+					metrics.Inc(metrics.MaintenanceFails)
+					slog.Error("recurring generation", "err", err)
+				} else if n > 0 {
+					metrics.Add(metrics.RecurringCreated, int64(n))
+					slog.Info("recurring bookings created", "count", n)
+					// These are system-created bookings (no HTTP request / user), so record a
+					// system-actor audit line — otherwise the entries appear in the DB with no
+					// trail explaining who created them. Best-effort: a missing line must not
+					// abort the maintenance tick.
+					detail := fmt.Sprintf("%d Buchung(en) aus fälligen Serien erzeugt", n)
+					if err := st.AddAudit(bg, nil, "system", "recurring_run", "recurring", "", detail, ""); err != nil {
+						slog.Error("audit recurring run", "err", err)
+					}
+				}
+			})
 			// Staggered audit-log retention: pure security/auth/ops noise expires after the
 			// short window (DSGVO Art. 5(1)(e) data minimisation); business- and tax-relevant
 			// events are kept for the long window (§ 132 BAO, 7 years). The classification
@@ -308,44 +328,48 @@ func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store, srv *se
 			// the store stays free of a config dependency; each delivery gets its own
 			// bounded context so one slow SMTP dialog cannot eat the whole tick.
 			if cfg.MailEnabled() {
-				// The LOOP ctx, not bg: between mails it is the shutdown stop signal,
-				// while each mail runs on its own detached 45s budget inside the
-				// store — the old shared 1-minute bg could expire between a
-				// successful SMTP dialog and the status='sent' write, and the next
-				// tick re-sent a delivered invoice.
-				sent, gaveUp, err := st.ProcessMailOutbox(ctx, func(ctx context.Context, to, subject, body, attName, attType string, attData []byte) error {
-					sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-					defer cancel()
-					var atts []mail.Attachment
-					if attName != "" {
-						atts = append(atts, mail.Attachment{Filename: attName, ContentType: attType, Data: attData})
+				maintenanceTask(taskCtx, time.Minute, func(mailCtx context.Context) {
+					// ProcessMailOutbox observes mailCtx between messages. A message
+					// already accepted for delivery retains its own bounded settlement
+					// budget so it cannot be sent and left pending on cancellation.
+					sent, gaveUp, err := st.ProcessMailOutbox(mailCtx, func(ctx context.Context, messageID, to, subject, body, attName, attType string, attData []byte) error {
+						sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+						defer cancel()
+						var atts []mail.Attachment
+						if attName != "" {
+							atts = append(atts, mail.Attachment{Filename: attName, ContentType: attType, Data: attData})
+						}
+						return mail.SendWithMessageID(sctx, cfg, to, subject, body, atts, messageID)
+					})
+					if err != nil {
+						metrics.Inc(metrics.MaintenanceFails)
+						slog.Error("mail outbox", "err", err)
 					}
-					return mail.Send(sctx, cfg, to, subject, body, atts)
+					if sent > 0 {
+						metrics.Add(metrics.MailSent, int64(sent))
+						slog.Info("mail outbox delivered", "count", sent)
+					}
+					if gaveUp > 0 {
+						metrics.Add(metrics.MailFailed, int64(gaveUp))
+						slog.Warn("mail outbox gave up", "count", gaveUp)
+					}
 				})
-				if err != nil {
+			}
+			maintenanceTask(taskCtx, 30*time.Second, func(bg context.Context) {
+				if err := st.PurgeSentMail(bg, time.Now().Add(-30*24*time.Hour)); err != nil {
+					slog.Error("purge sent mail", "err", err)
+				}
+			})
+			maintenanceTask(taskCtx, time.Minute, func(bg context.Context) {
+				shortCutoff, longCutoff := auditRetentionCutoffs(time.Now())
+				if n, err := st.PurgeAuditLog(bg, shortCutoff, longCutoff); err != nil {
 					metrics.Inc(metrics.MaintenanceFails)
-					slog.Error("mail outbox", "err", err)
+					slog.Error("purge audit log", "err", err)
+				} else if n > 0 {
+					metrics.Add(metrics.AuditPurged, n)
+					slog.Info("audit log purged", "count", n)
 				}
-				if sent > 0 {
-					metrics.Add(metrics.MailSent, int64(sent))
-					slog.Info("mail outbox delivered", "count", sent)
-				}
-				if gaveUp > 0 {
-					metrics.Add(metrics.MailFailed, int64(gaveUp))
-					slog.Warn("mail outbox gave up", "count", gaveUp)
-				}
-			}
-			if err := st.PurgeSentMail(bg, time.Now().Add(-30*24*time.Hour)); err != nil {
-				slog.Error("purge sent mail", "err", err)
-			}
-			shortCutoff, longCutoff := auditRetentionCutoffs(time.Now())
-			if n, err := st.PurgeAuditLog(bg, shortCutoff, longCutoff); err != nil {
-				metrics.Inc(metrics.MaintenanceFails)
-				slog.Error("purge audit log", "err", err)
-			} else if n > 0 {
-				metrics.Add(metrics.AuditPurged, n)
-				slog.Info("audit log purged", "count", n)
-			}
+			})
 		})
 	}
 	purge()
@@ -359,6 +383,17 @@ func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store, srv *se
 			purge()
 		}
 	}
+}
+
+// maintenanceTask runs one maintenance unit within the caller's lifecycle and
+// a bounded deadline, skipping work once shutdown has begun.
+func maintenanceTask(parent context.Context, timeout time.Duration, work func(context.Context)) {
+	if parent.Err() != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	work(ctx)
 }
 
 // runCommand dispatches CLI subcommands. Destructive restore requires typed

@@ -309,23 +309,30 @@ func (s *Server) clearTransitionalAuthCookies(w http.ResponseWriter, r *http.Req
 	s.setCookie(w, r, &http.Cookie{Name: loginCSRFCookie, Value: "", MaxAge: -1})
 }
 
-// handleLogout invalidates the server-side session and expires every browser
-// cookie that can carry authentication or pre-session state.
+// handleLogout invalidates the server-side session and records success
+// transactionally before expiring browser state. A database failure preserves
+// the session cookie so the user can retry revocation.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	c, err := s.cookie(r, sessionCookie)
+	if err != nil || c.Value == "" {
+		s.clearTransitionalAuthCookies(w, r)
+		s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
+		redirect(w, r, "/login")
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
 	defer cancel()
-	if u := s.currentUser(r); u != nil {
-		if err := s.store.AddAudit(ctx, &u.ID, u.Username, "logout", "auth", "", "", s.clientIP(r)); err != nil {
-			slog.Warn("audit write failed", "action", "logout", "err", sanitizeLog(err.Error()))
-		}
+	_, err = s.store.LogoutSession(ctx, c.Value, s.clientIP(r))
+	if err != nil {
+		slog.Error("logout failed", "err", sanitizeLog(err.Error()))
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Retry-After", "5")
+		http.Error(w, "Abmeldung fehlgeschlagen. Bitte erneut versuchen.", http.StatusServiceUnavailable)
+		return
 	}
-	if c, err := s.cookie(r, sessionCookie); err == nil && c.Value != "" {
-		// Invalidate the server-side session, not just the cookie: if this fails the
-		// token stays valid server-side, so a captured token would still authenticate.
-		if err := s.store.DeleteSession(ctx, c.Value); err != nil {
-			slog.Error("logout: delete session failed", "err", sanitizeLog(err.Error()))
-		}
-	}
+	// A missing row means the server-side bearer is already invalid; clearing the
+	// browser state is safe even though there is no new success event to audit.
 	s.clearTransitionalAuthCookies(w, r)
 	s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
 	redirect(w, r, "/login")

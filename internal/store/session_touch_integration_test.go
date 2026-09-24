@@ -35,7 +35,7 @@ func TestSessionSlideIsThrottledIntegration(t *testing.T) {
 	purgeFixtures(t, ctx, pool, f)
 	defer purgeFixtures(t, ctx, pool, f)
 
-	uid, err := st.CreateUser(ctx, fmt.Sprintf("slide%d", os.Getpid()), "correct-horse-battery", "editor")
+	uid, err := st.CreateUser(ctx, fmt.Sprintf("slide%d", os.Getpid()), "correct-horse-battery-1", "editor")
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}

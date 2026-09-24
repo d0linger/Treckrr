@@ -29,6 +29,10 @@ func TestCredentialRotationAtomicIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	logoutToken, err := st.CreateSession(ctx, userID, time.Hour, "logout", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	change := store.PasswordChange{UserID: userID, CurrentPassword: "original-pass-123", NewPassword: "replacement-pass-456", CurrentToken: oldToken, TTL: time.Hour, AbsoluteTTL: 24 * time.Hour}
 	if _, err := pool.ExecContext(ctx, `CREATE FUNCTION reject_test_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test audit unavailable'; END $$;
 		CREATE TRIGGER reject_test_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION reject_test_audit()`); err != nil {
@@ -37,11 +41,17 @@ func TestCredentialRotationAtomicIntegration(t *testing.T) {
 	if _, err := st.ChangePassword(ctx, change); err == nil {
 		t.Fatal("audit failure must roll back password rotation")
 	}
+	if _, err := st.LogoutSession(ctx, logoutToken, "127.0.0.1"); err == nil {
+		t.Fatal("logout ignored audit failure")
+	}
 	if _, err := st.AuthenticateUser(ctx, "rotate-user", change.CurrentPassword); err != nil {
 		t.Fatal("old password lost on rollback", err)
 	}
 	if _, err := st.UserFromSession(ctx, oldToken, time.Hour, 24*time.Hour); err != nil {
 		t.Fatal("old session lost on rollback", err)
+	}
+	if _, err := st.UserFromSession(ctx, logoutToken, time.Hour, 24*time.Hour); err != nil {
+		t.Fatal("logout session lost on audit rollback", err)
 	}
 	if err := st.ResetPassword(ctx, userID, "admin-password-789", true); err == nil {
 		t.Fatal("admin reset ignored audit failure")
@@ -71,6 +81,20 @@ func TestCredentialRotationAtomicIntegration(t *testing.T) {
 	}
 	if _, err := pool.ExecContext(ctx, `DROP TRIGGER reject_test_audit ON audit_log`); err != nil {
 		t.Fatal(err)
+	}
+	deleted, err := st.LogoutSession(ctx, logoutToken, "127.0.0.1")
+	if err != nil || !deleted {
+		t.Fatalf("logout session deleted=%v err=%v", deleted, err)
+	}
+	if _, err := st.UserFromSession(ctx, logoutToken, time.Hour, 24*time.Hour); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("logout session survived: %v", err)
+	}
+	var logoutAudits int
+	if err := pool.QueryRowContext(ctx, `SELECT count(*) FROM audit_log WHERE user_id=$1 AND action='logout'`, userID).Scan(&logoutAudits); err != nil {
+		t.Fatal(err)
+	}
+	if logoutAudits != 1 {
+		t.Fatalf("logout audit count = %d, want 1", logoutAudits)
 	}
 	newToken, err := st.ChangePassword(ctx, change)
 	if err != nil {

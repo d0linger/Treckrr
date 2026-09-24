@@ -10,6 +10,11 @@ import (
 
 type restoreAdmissionKey struct{}
 
+type backgroundTask struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
 // SetRestoreLease supplies the serving process's database-scoped restore lease.
 // Configure it before starting the HTTP server or any background workers.
 func (s *Server) SetRestoreLease(acquire func(context.Context) (func() error, error)) {
@@ -28,6 +33,73 @@ func (s *Server) Background(ctx context.Context, work func()) {
 	}
 }
 
+// BackgroundTask registers cancellable background work without holding the
+// request activity lock across external I/O. Restore admission first prevents
+// new registrations, then cancels and drains every registered task before it
+// takes the exclusive database lease.
+func (s *Server) BackgroundTask(ctx context.Context, work func(context.Context)) {
+	if ctx.Err() != nil || s.maintenance.Load() {
+		return
+	}
+	taskCtx, cancel := context.WithCancel(ctx)
+	task := backgroundTask{cancel: cancel, done: make(chan struct{})}
+
+	s.backgroundMu.Lock()
+	if s.maintenance.Load() {
+		s.backgroundMu.Unlock()
+		cancel()
+		return
+	}
+	if s.backgroundTasks == nil {
+		s.backgroundTasks = make(map[uint64]backgroundTask)
+	}
+	s.backgroundNext++
+	id := s.backgroundNext
+	s.backgroundTasks[id] = task
+	s.backgroundMu.Unlock()
+
+	defer func() {
+		cancel()
+		s.backgroundMu.Lock()
+		delete(s.backgroundTasks, id)
+		close(task.done)
+		s.backgroundMu.Unlock()
+	}()
+	work(taskCtx)
+}
+
+// cancelBackground asks every registered task to stop and waits for the task
+// registry to drain within ctx.
+func (s *Server) cancelBackground(ctx context.Context) error {
+	s.backgroundMu.Lock()
+	tasks := make([]backgroundTask, 0, len(s.backgroundTasks))
+	for _, task := range s.backgroundTasks {
+		tasks = append(tasks, task)
+		task.cancel()
+	}
+	s.backgroundMu.Unlock()
+	for _, task := range tasks {
+		select {
+		case <-task.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+// FailClosed immediately removes this process from readiness and asks every
+// registered background task to stop. It is used when the PostgreSQL session
+// holding the restore-exclusion lease is lost.
+func (s *Server) FailClosed() {
+	s.setMaintenance(true)
+	s.backgroundMu.Lock()
+	for _, task := range s.backgroundTasks {
+		task.cancel()
+	}
+	s.backgroundMu.Unlock()
+}
+
 func (s *Server) beginRestore(ctx context.Context) (func(bool), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -37,6 +109,10 @@ func (s *Server) beginRestore(ctx context.Context) (func(bool), error) {
 	}
 	if release, ok := ctx.Value(restoreAdmissionKey{}).(func()); ok {
 		release()
+	}
+	if err := s.cancelBackground(ctx); err != nil {
+		s.setMaintenance(false)
+		return nil, err
 	}
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()

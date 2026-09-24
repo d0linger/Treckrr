@@ -110,6 +110,44 @@ func TestWriteFileAtomicConcurrent(t *testing.T) {
 	}
 }
 
+func TestWriteFileAtomicReportsStatusPathFailure(t *testing.T) {
+	svc := New(Options{StatusFile: filepath.Join(t.TempDir(), "missing", "status.json")}, nil)
+	err := svc.updateStatus(func(st *Status) { st.OK = true })
+	if err == nil || !strings.Contains(err.Error(), "write backup status") {
+		t.Fatalf("status persistence error = %v, want propagated write failure", err)
+	}
+}
+
+func TestDurableRename(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old")
+	newPath := filepath.Join(dir, "new")
+	if err := os.WriteFile(oldPath, []byte("durable"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := durableRename(oldPath, newPath); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(newPath); err != nil || string(got) != "durable" {
+		t.Fatalf("renamed content = %q, %v", got, err)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("source still exists after rename: %v", err)
+	}
+}
+
+func TestFilenameAvoidsSameSecondCollision(t *testing.T) {
+	base := time.Date(2026, 9, 24, 10, 11, 12, 1, time.UTC)
+	first := Filename(base)
+	second := Filename(base.Add(time.Nanosecond))
+	if first == second {
+		t.Fatalf("same-second names collided: %q", first)
+	}
+	if !validName(first) || !validName(second) {
+		t.Fatalf("new names rejected: %q %q", first, second)
+	}
+}
+
 func TestValidName(t *testing.T) {
 	cases := map[string]bool{
 		"treckrr-2026-08-01-030000.dump.enc": true,
@@ -266,6 +304,7 @@ func TestVerifyS3ObjectRejectsBadIntegration(t *testing.T) {
 			Bucket:    os.Getenv("TEST_S3_BUCKET"),
 			AccessKey: os.Getenv("TEST_S3_ACCESS_KEY"),
 			SecretKey: os.Getenv("TEST_S3_SECRET_KEY"),
+			Prefix:    fmt.Sprintf("treckrr-tests/%d/", time.Now().UnixNano()),
 			UseSSL:    false,
 		},
 	}, nil)

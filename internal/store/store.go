@@ -614,10 +614,38 @@ func (s *Store) DeleteSessionForUser(ctx context.Context, userID int64, tokenHas
 	return n > 0, nil
 }
 
-// DeleteSession removes a session (logout). token is the raw cookie value.
-func (s *Store) DeleteSession(ctx context.Context, token string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token=$1`, HashToken(token))
-	return err
+// LogoutSession removes the session identified by the raw cookie token and
+// records the successful logout in the same transaction. If the audit insert or
+// commit fails, the deletion is rolled back so the caller can preserve the
+// cookie and offer a retry instead of pretending the bearer was revoked.
+func (s *Store) LogoutSession(ctx context.Context, token, ip string) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+
+	var userID int64
+	var username string
+	err = tx.QueryRowContext(ctx, `
+		DELETE FROM sessions AS s
+		USING users AS u
+		WHERE s.token=$1 AND u.id=s.user_id
+		RETURNING u.id, u.username`, HashToken(token)).Scan(&userID, &username)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	ctx = WithAuditActor(ctx, AuditActor{UserID: &userID, Username: username, IP: ip})
+	if err := addAuditTx(ctx, tx, "logout", "auth", "", ""); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // PurgeExpiredSessions deletes sessions past their expiry.

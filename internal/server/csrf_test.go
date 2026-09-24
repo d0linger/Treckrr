@@ -11,7 +11,10 @@ import (
 )
 
 func testServer() *Server {
-	return &Server{cfg: &config.Config{SessionSecret: "test-secret-at-least-16"}}
+	return &Server{cfg: &config.Config{
+		SessionSecret:     "test-secret-at-least-16",
+		AllowInsecureHTTP: true,
+	}}
 }
 
 func TestInjectCSRFField(t *testing.T) {

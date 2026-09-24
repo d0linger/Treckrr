@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -15,6 +16,12 @@ const applicationLeaseKey = 472019260910
 
 // ErrApplicationRunning refuses exclusive recovery until other instances stop.
 var ErrApplicationRunning = errors.New("another application or restore is using this database; stop all app instances first")
+
+// ErrApplicationLeaseLost means the dedicated PostgreSQL session that fenced
+// this serving process from an offline restore is no longer usable. Callers
+// must stop admitting traffic immediately; reconnecting the ordinary pool does
+// not recreate a session-scoped advisory lock.
+var ErrApplicationLeaseLost = errors.New("application maintenance lease lost")
 
 // ApplicationLease coordinates participating binaries through one dedicated
 // pool connection. It is not fencing for external writers or network partitions.
@@ -78,6 +85,35 @@ func (l *ApplicationLease) Exclusive(ctx context.Context) (func() error, error) 
 		l.mu.Unlock()
 		return err
 	}, nil
+}
+
+// Monitor verifies that the dedicated session holding the application lease is
+// still alive. It returns nil on normal context cancellation and a wrapped
+// ErrApplicationLeaseLost on the first failed heartbeat. A failed lease must
+// never be silently reacquired: an offline restore may already hold the
+// exclusive lock by then.
+func (l *ApplicationLease) Monitor(ctx context.Context, interval time.Duration) error {
+	if interval <= 0 {
+		interval = time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			checkCtx, cancel := context.WithTimeout(ctx, interval)
+			err := l.conn.PingContext(checkCtx)
+			cancel()
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return fmt.Errorf("%w: %v", ErrApplicationLeaseLost, err)
+			}
+		}
+	}
 }
 
 // Close releases the lease and discards its session rather than returning a

@@ -88,6 +88,57 @@ func TestRestoreWaitsForBackgroundAndCancellationReopensGate(t *testing.T) {
 	finish(true)
 }
 
+func TestRestoreCancelsAndDrainsRegisteredBackgroundTask(t *testing.T) {
+	s := &Server{}
+	started := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.BackgroundTask(t.Context(), func(ctx context.Context) {
+			close(started)
+			<-ctx.Done()
+		})
+	}()
+	<-started
+	finish, err := s.beginRestore(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	default:
+		t.Fatal("restore acquired lease before background task drained")
+	}
+	finish(true)
+}
+
+func TestFailClosedCancelsBackgroundAndReadiness(t *testing.T) {
+	s := &Server{}
+	canceled := make(chan struct{})
+	go s.BackgroundTask(t.Context(), func(ctx context.Context) {
+		<-ctx.Done()
+		close(canceled)
+	})
+	for i := 0; i < 100; i++ {
+		s.backgroundMu.Lock()
+		registered := len(s.backgroundTasks) == 1
+		s.backgroundMu.Unlock()
+		if registered {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	s.FailClosed()
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("fail-closed did not cancel background work")
+	}
+	if !s.maintenance.Load() {
+		t.Fatal("fail-closed left readiness enabled")
+	}
+}
+
 func TestRestoreLeaseFailureIsFailClosed(t *testing.T) {
 	s := &Server{}
 	s.SetRestoreLease(func(context.Context) (func() error, error) { return nil, errors.New("another instance") })

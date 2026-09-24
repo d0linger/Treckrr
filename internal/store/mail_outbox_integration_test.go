@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/d0linger/treckrr/internal/mail"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -41,12 +44,18 @@ func TestMailOutboxLifecycleIntegration(t *testing.T) {
 
 	// Freshly parked mail is NOT due yet — the first retry waits out the backoff,
 	// so a still-broken SMTP server is not hammered seconds after failing.
-	early, _, err := st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, []byte) error {
+	early, _, err := st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, string, []byte) error {
 		t.Fatal("a just-enqueued mail must not be attempted before its backoff")
 		return nil
 	})
 	if err != nil || early != 0 {
 		t.Fatalf("early process: delivered=%d err=%v", early, err)
+	}
+	// Simulate an intent created before migration 0059. Its first claim must
+	// derive and persist a stable Message-ID before invoking the sender.
+	if _, err := pool.ExecContext(ctx,
+		`UPDATE mail_outbox SET message_id=NULL WHERE recipient=$1`, marker); err != nil {
+		t.Fatalf("clear legacy message id: %v", err)
 	}
 
 	due := func() {
@@ -59,17 +68,19 @@ func TestMailOutboxLifecycleIntegration(t *testing.T) {
 	// One failing attempt: stays pending, attempt counted, error recorded,
 	// next attempt pushed into the future.
 	due()
-	if _, _, err := st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, []byte) error {
+	var stableMessageID string
+	if _, _, err := st.ProcessMailOutbox(ctx, func(_ context.Context, messageID, _, _, _, _, _ string, _ []byte) error {
+		stableMessageID = messageID
 		return errors.New("smtp kaputt")
 	}); err != nil {
 		t.Fatalf("failing process: %v", err)
 	}
 	var attempts int
-	var status, lastErr string
+	var status, lastErr, persistedMessageID string
 	var next time.Time
 	if err := pool.QueryRowContext(ctx,
-		`SELECT attempts, status, last_error, next_attempt_at FROM mail_outbox WHERE recipient=$1`, marker).
-		Scan(&attempts, &status, &lastErr, &next); err != nil {
+		`SELECT attempts, status, last_error, next_attempt_at, message_id FROM mail_outbox WHERE recipient=$1`, marker).
+		Scan(&attempts, &status, &lastErr, &next, &persistedMessageID); err != nil {
 		t.Fatalf("read row: %v", err)
 	}
 	if attempts != 1 || status != "pending" || lastErr != "smtp kaputt" {
@@ -78,12 +89,18 @@ func TestMailOutboxLifecycleIntegration(t *testing.T) {
 	if !next.After(time.Now().Add(10 * time.Minute)) {
 		t.Errorf("next attempt %v is not backed off", next)
 	}
+	if stableMessageID == "" || persistedMessageID != stableMessageID {
+		t.Errorf("legacy Message-ID was not persisted: sent=%q stored=%q", stableMessageID, persistedMessageID)
+	}
 
 	// Successful delivery: sent, payload arrives intact, audit line written.
 	due()
 	var gotBody string
 	var gotAtt []byte
-	delivered, _, err := st.ProcessMailOutbox(ctx, func(_ context.Context, to, subject, body, attName, attType string, attData []byte) error {
+	delivered, _, err := st.ProcessMailOutbox(ctx, func(_ context.Context, messageID, to, subject, body, attName, attType string, attData []byte) error {
+		if messageID != stableMessageID {
+			t.Fatalf("retry Message-ID = %q, want persisted %q", messageID, stableMessageID)
+		}
 		gotBody, gotAtt = body, attData
 		return nil
 	})
@@ -104,12 +121,13 @@ func TestMailOutboxLifecycleIntegration(t *testing.T) {
 	// and is never attempted again.
 	if err := st.EnqueueMail(ctx, store.OutboxMail{
 		Kind: "mahnung", Recipient: marker, Subject: "IT-Mahnung", Body: "x",
+		AttName: "mahnung.pdf", AttType: "application/pdf", AttData: []byte("sensitive-pdf"),
 	}); err != nil {
 		t.Fatalf("enqueue 2: %v", err)
 	}
 	for range 6 {
 		due()
-		if _, _, err := st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, []byte) error {
+		if _, _, err := st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, string, []byte) error {
 			return errors.New("dauerhaft kaputt")
 		}); err != nil {
 			t.Fatalf("exhaust: %v", err)
@@ -124,14 +142,15 @@ func TestMailOutboxLifecycleIntegration(t *testing.T) {
 		t.Errorf("exhausted mail: status=%s attempts=%d, want failed/6", status, attempts)
 	}
 	due() // even if forced due, a failed row must stay untouched
-	if _, _, err := st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, []byte) error {
+	if _, _, err := st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, string, []byte) error {
 		t.Fatal("a failed-for-good mail must never be retried")
 		return nil
 	}); err != nil {
 		t.Fatalf("post-exhaust process: %v", err)
 	}
 
-	// Purge removes only delivered rows; the failed one is the record.
+	// Retention deletes delivered rows and redacts payload bytes from the failed
+	// row while preserving its minimal delivery/failure ledger.
 	if err := st.PurgeSentMail(ctx, time.Now().Add(time.Minute)); err != nil {
 		t.Fatalf("purge sent: %v", err)
 	}
@@ -143,6 +162,23 @@ func TestMailOutboxLifecycleIntegration(t *testing.T) {
 	}
 	if sentLeft != 0 || failedLeft != 1 {
 		t.Errorf("after purge: sent=%d failed=%d, want 0/1", sentLeft, failedLeft)
+	}
+	var recipient, subject, body, attName, attType, retainedErr string
+	var attData []byte
+	var redacted bool
+	if err := pool.QueryRowContext(ctx, `
+		SELECT recipient, subject, body, att_name, att_type, COALESCE(att_data,''::bytea),
+		       last_error, redacted_at IS NOT NULL
+		  FROM mail_outbox WHERE recipient=$1 AND status='failed'`, marker).
+		Scan(&recipient, &subject, &body, &attName, &attType, &attData, &retainedErr, &redacted); err != nil {
+		t.Fatalf("read redacted row: %v", err)
+	}
+	if recipient != marker || subject != "IT-Mahnung" || retainedErr == "" {
+		t.Errorf("minimal failure ledger was not retained: recipient=%q subject=%q error=%q", recipient, subject, retainedErr)
+	}
+	if body != "" || attName != "" || attType != "" || len(attData) != 0 || !redacted {
+		t.Errorf("payload was not redacted: body=%q name=%q type=%q bytes=%d redacted=%v",
+			body, attName, attType, len(attData), redacted)
 	}
 }
 
@@ -196,9 +232,18 @@ func TestMailOutboxMahnungRetryBookkeepingIntegration(t *testing.T) {
 		`UPDATE mail_outbox SET next_attempt_at=now() WHERE recipient=$1`, marker); err != nil {
 		t.Fatalf("force due: %v", err)
 	}
+	if _, _, err := st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, string, []byte) error {
+		return errors.New("temporary SMTP failure")
+	}); err != nil {
+		t.Fatalf("first failed attempt: %v", err)
+	}
+	if _, err := pool.ExecContext(ctx,
+		`UPDATE mail_outbox SET next_attempt_at=now() WHERE recipient=$1 AND status='pending'`, marker); err != nil {
+		t.Fatalf("force retry due: %v", err)
+	}
 	// >= 1, not == 1: the outbox is a shared global queue and another test's
 	// leftover due row would otherwise flake this count.
-	delivered, _, err := st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, []byte) error {
+	delivered, _, err := st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, string, []byte) error {
 		return nil
 	})
 	if err != nil || delivered < 1 {
@@ -249,7 +294,7 @@ func TestMailOutboxMahnungRetryBookkeepingIntegration(t *testing.T) {
 		nid, yearID, marker); err != nil {
 		t.Fatalf("insert legacy row: %v", err)
 	}
-	delivered, _, err = st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, []byte) error {
+	delivered, _, err = st.ProcessMailOutbox(ctx, func(context.Context, string, string, string, string, string, string, []byte) error {
 		return nil
 	})
 	if err != nil || delivered < 1 {
@@ -271,5 +316,134 @@ func TestMailOutboxMahnungRetryBookkeepingIntegration(t *testing.T) {
 	}
 	if sends != 2 {
 		t.Errorf("beleg_sends after legacy delivery = %d, want 2", sends)
+	}
+}
+
+func TestMailIntentIdempotencyAndAmbiguityIntegration(t *testing.T) {
+	ctx := context.Background()
+	st, pool := scratchStore(t)
+	marker := fmt.Sprintf("intent-%d-%d@example.invalid", os.Getpid(), time.Now().UnixNano())
+	t.Cleanup(func() {
+		if _, err := pool.ExecContext(ctx, `DELETE FROM mail_outbox WHERE recipient=$1`, marker); err != nil {
+			t.Errorf("purge intent rows: %v", err)
+		}
+	})
+
+	const workers = 8
+	var created atomic.Int32
+	errCh := make(chan error, workers)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, wasCreated, err := st.CreateMailIntent(ctx, store.OutboxMail{
+				Kind: "beleg", Recipient: marker, Subject: "Idempotent", Body: "same",
+				DeliveryKey: "it:idempotent:" + marker, MessageID: "<it-idempotent@example.invalid>",
+			})
+			if wasCreated {
+				created.Add(1)
+			}
+			errCh <- err
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("create intent: %v", err)
+		}
+	}
+	if got := created.Load(); got != 1 {
+		t.Fatalf("created intents = %d, want 1", got)
+	}
+	var count int
+	var id int64
+	if err := pool.QueryRowContext(ctx,
+		`SELECT count(*), min(id) FROM mail_outbox WHERE delivery_key=$1`, "it:idempotent:"+marker).
+		Scan(&count, &id); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("durable intents = %d, want 1", count)
+	}
+
+	status, err := st.AttemptMail(ctx, id,
+		func(context.Context, string, string, string, string, string, string, []byte) error {
+			return mail.Ambiguous(errors.New("final SMTP reply lost"))
+		})
+	if err != nil || status != store.MailStatusAmbiguous {
+		t.Fatalf("ambiguous attempt: status=%q err=%v", status, err)
+	}
+	status, err = st.AttemptMail(ctx, id,
+		func(context.Context, string, string, string, string, string, string, []byte) error {
+			t.Fatal("ambiguous delivery must never be retried")
+			return nil
+		})
+	if err != nil || status != store.MailStatusAmbiguous {
+		t.Fatalf("terminal ambiguous intent: status=%q err=%v", status, err)
+	}
+}
+
+// TestExplicitMailRetryReopensOnlyFailedIntentIntegration verifies that batch-
+// style duplicates stay terminal while an explicit retry refreshes redacted data.
+func TestExplicitMailRetryReopensOnlyFailedIntentIntegration(t *testing.T) {
+	ctx := context.Background()
+	st, pool := scratchStore(t)
+	marker := fmt.Sprintf("explicit-retry-%d-%d@example.invalid", os.Getpid(), time.Now().UnixNano())
+	key := "it:explicit-retry:" + marker
+	t.Cleanup(func() {
+		if _, err := pool.ExecContext(ctx, `DELETE FROM mail_outbox WHERE recipient=$1`, marker); err != nil {
+			t.Errorf("purge explicit retry row: %v", err)
+		}
+	})
+
+	base := store.OutboxMail{
+		Kind: "beleg", Recipient: marker, Subject: "Original", Body: "old",
+		AttName: "old.pdf", AttType: "application/pdf", AttData: []byte("old-pdf"),
+		DeliveryKey: key, MessageID: "<old@example.invalid>",
+	}
+	intent, created, err := st.CreateMailIntent(ctx, base)
+	if err != nil || !created {
+		t.Fatalf("create failed intent: created=%v err=%v", created, err)
+	}
+	if _, err := pool.ExecContext(ctx, `
+		UPDATE mail_outbox
+		   SET status='failed', attempts=6, terminal_at=now(), redacted_at=now(),
+		       body='', att_name='', att_type='', att_data=NULL
+		 WHERE id=$1`, intent.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	unchanged, created, err := st.CreateMailIntent(ctx, base)
+	if err != nil || created || unchanged.Status != store.MailStatusFailed {
+		t.Fatalf("ordinary duplicate reopened failure: status=%q created=%v err=%v", unchanged.Status, created, err)
+	}
+
+	base.RetryFailed = true
+	base.Subject = "Explicit retry"
+	base.Body = "fresh"
+	base.AttName = "fresh.pdf"
+	base.AttData = []byte("fresh-pdf")
+	base.MessageID = "<fresh@example.invalid>"
+	reopened, created, err := st.CreateMailIntent(ctx, base)
+	if err != nil || !created || reopened.Status != store.MailStatusPending || reopened.Attempts != 0 {
+		t.Fatalf("explicit retry: status=%q attempts=%d created=%v err=%v",
+			reopened.Status, reopened.Attempts, created, err)
+	}
+	var subject, body, attName, messageID string
+	var attData []byte
+	var redacted bool
+	if err := pool.QueryRowContext(ctx, `
+		SELECT subject, body, att_name, COALESCE(att_data,''::bytea), message_id,
+		       redacted_at IS NOT NULL
+		  FROM mail_outbox WHERE id=$1`, intent.ID).
+		Scan(&subject, &body, &attName, &attData, &messageID, &redacted); err != nil {
+		t.Fatal(err)
+	}
+	if subject != base.Subject || body != base.Body || attName != base.AttName ||
+		string(attData) != string(base.AttData) || messageID != base.MessageID || redacted {
+		t.Fatalf("reopened payload not refreshed: subject=%q body=%q name=%q bytes=%q id=%q redacted=%v",
+			subject, body, attName, attData, messageID, redacted)
 	}
 }

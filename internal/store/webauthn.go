@@ -5,10 +5,24 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/d0linger/treckrr/internal/models"
 )
+
+// ErrInvalidWebauthnSignCount identifies persisted counter corruption. Values
+// outside uint32 are rejected rather than wrapped or repaired.
+var ErrInvalidWebauthnSignCount = errors.New("invalid WebAuthn signature counter")
+
+// checkedWebauthnSignCount rejects persisted values that cannot be represented
+// by the WebAuthn protocol counter type.
+func checkedWebauthnSignCount(count int64) (uint32, error) {
+	if count < 0 || count > int64(1<<32-1) {
+		return 0, fmt.Errorf("%w: %d", ErrInvalidWebauthnSignCount, count)
+	}
+	return uint32(count), nil
+}
 
 // WebauthnHandle returns the user's stable random WebAuthn handle, generating
 // and persisting one on first use. The handle (not the DB id) is what
@@ -67,7 +81,10 @@ func (s *Store) ListWebauthnCredentials(ctx context.Context, userID int64) ([]mo
 			&c.Created, &c.LastUsed); err != nil {
 			return nil, err
 		}
-		c.SignCount = uint32(count) //nolint:gosec // sign_count is a small non-negative counter
+		c.SignCount, err = checkedWebauthnSignCount(count)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, c)
 	}
 	return out, rows.Err()
