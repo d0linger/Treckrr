@@ -236,6 +236,7 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 		YearID    int64
 		Cost      decimal.Decimal
 		Hours     decimal.Decimal
+		Remaining decimal.Decimal
 		Paid      bool
 		Credit    bool
 		Completed bool
@@ -244,8 +245,14 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 	var totalCost, totalHours decimal.Decimal
 	for _, h := range history {
 		rows = append(rows, yearRow{
-			Year: h.Year, YearID: h.YearID, Cost: h.Net, Hours: h.Hours,
-			Paid: h.Paid, Credit: h.Credit, Completed: h.Status == models.YearCompleted,
+			Year:      h.Year,
+			YearID:    h.YearID,
+			Cost:      h.Net,
+			Hours:     h.Hours,
+			Remaining: h.Remaining,
+			Paid:      h.Paid,
+			Credit:    h.Credit,
+			Completed: h.Status == models.YearCompleted,
 		})
 		totalCost = totalCost.Add(h.Net)
 		totalHours = totalHours.Add(h.Hours)
@@ -325,7 +332,14 @@ func (s *Server) handleNeighborOverviewPDF(w http.ResponseWriter, r *http.Reques
 		RecipientName: neighbor.Name, RecipientAddr: neighbor.Address, Today: time.Now(),
 	}
 	for _, h := range history {
-		sd.Rows = append(sd.Rows, pdf.StatementYear{Year: h.Year, Cost: h.Net, Hours: h.Hours, Paid: h.Paid, Credit: h.Credit})
+		sd.Rows = append(sd.Rows, pdf.StatementYear{
+			Year:      h.Year,
+			Cost:      h.Net,
+			Hours:     h.Hours,
+			Remaining: h.Remaining,
+			Paid:      h.Paid,
+			Credit:    h.Credit,
+		})
 		sd.TotalCost = sd.TotalCost.Add(h.Net)
 		sd.TotalHours = sd.TotalHours.Add(h.Hours)
 	}

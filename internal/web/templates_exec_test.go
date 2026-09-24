@@ -162,6 +162,66 @@ func TestBelegPageRenders(t *testing.T) {
 	}
 }
 
+// TestBelegCreditLabelsTakePrecedenceOverPayments verifies an overpayment is
+// presented as a Guthaben in both receipt totals, never as an open amount.
+func TestBelegCreditLabelsTakePrecedenceOverPayments(t *testing.T) {
+	t.Parallel()
+	d := decimal.RequireFromString
+	page := html.UnescapeString(execPage(t, "beleg", map[string]any{
+		"Title":       "Beleg",
+		"Neighbor":    models.Neighbor{ID: 2, Name: "Bio-Hof Steiner"},
+		"Year":        models.BillingYear{ID: 1, Year: 2026, Status: models.YearCompleted},
+		"TotalCost":   d("100"),
+		"TotalHours":  decimal.Zero,
+		"Saldo":       d("100"),
+		"Completed":   true,
+		"Credit":      true,
+		"HasPayments": true,
+		"PaidSum":     d("105"),
+		"Remaining":   d("-5"),
+		"Payments": []models.Payment{{
+			PaidOn: time.Now(), Amount: d("105"),
+		}},
+		"Today": "24.09.2026",
+	}))
+
+	if count := strings.Count(page, "Guthaben"); count != 2 {
+		t.Fatalf("Guthaben labels = %d, want hero and final total", count)
+	}
+	if strings.Contains(page, "Offener Rest") {
+		t.Fatal("negative remainder is labeled as Offener Rest")
+	}
+}
+
+// TestNeighborOverviewShowsCreditBalanceSeparateFromCost pins that the credit
+// amount comes from the negative remainder, while Cost remains the year's net
+// service value.
+func TestNeighborOverviewShowsCreditBalanceSeparateFromCost(t *testing.T) {
+	t.Parallel()
+	d := decimal.RequireFromString
+	page := html.UnescapeString(execPage(t, "neighbor_overview", map[string]any{
+		"Title":      "Bio-Hof Steiner · Verlauf",
+		"Neighbor":   models.Neighbor{ID: 2, Name: "Bio-Hof Steiner"},
+		"TotalCost":  d("100"),
+		"TotalHours": decimal.Zero,
+		"Rows": []map[string]any{{
+			"Year": 2026, "YearID": int64(1), "Cost": d("100"),
+			"Hours": decimal.Zero, "Remaining": d("-5"),
+			"Paid": false, "Credit": true, "Completed": true,
+		}},
+		"Today": time.Now(),
+	}))
+
+	for _, want := range []string{"Guthaben · 5,00 €", "100,00 €"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("neighbor overview missing %q", want)
+		}
+	}
+	if strings.Contains(page, "Guthaben · 100,00 €") {
+		t.Fatal("neighbor overview reused net cost as the credit balance")
+	}
+}
+
 // TestBelegLedgerDescriptionPrefixesOnlyLegacyPayables distinguishes manual
 // account postings from structured incoming bookings without losing void state.
 func TestBelegLedgerDescriptionPrefixesOnlyLegacyPayables(t *testing.T) {

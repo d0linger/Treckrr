@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"html"
 	"net/url"
 	"strings"
 	"testing"
@@ -135,6 +136,10 @@ func TestYearClosingIntegration(t *testing.T) {
 	}
 	if strings.Contains(dashboard, "paychip paychip--paid") {
 		t.Error("closed-year Guthaben rendered as Bezahlt")
+	}
+	overview := html.UnescapeString(e.get(fmt.Sprintf("/neighbors/%d/overview", nid)))
+	if !strings.Contains(overview, "Guthaben · 5,00 €") {
+		t.Error("neighbor history does not show the positive remaining credit")
 	}
 
 	ledgerBefore, _ := e.st.NeighborLedgerSum(e.ctx, yid, nid)
