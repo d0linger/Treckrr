@@ -42,6 +42,12 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 		"Startdatum",
 		r.FormValue("next_run"),
 		maxNameLen,
+	) || s.tooLong(
+		w,
+		r,
+		"Intervall",
+		r.FormValue("interval_kind"),
+		maxNameLen,
 	) {
 		redirect(w, r, "/recurring")
 		return
@@ -177,6 +183,12 @@ func (s *Server) handleRecurringUpdate(w http.ResponseWriter, r *http.Request) {
 		r,
 		"Startdatum",
 		r.FormValue("next_run"),
+		maxNameLen,
+	) || s.tooLong(
+		w,
+		r,
+		"Intervall",
+		r.FormValue("interval_kind"),
 		maxNameLen,
 	) {
 		redirect(w, r, "/recurring")
