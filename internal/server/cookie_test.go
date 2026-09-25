@@ -1,10 +1,13 @@
 package server
 
 import (
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // TestSameSiteStrictForShortLivedCookies ensures that the transitional short-lived cookies
@@ -43,7 +46,7 @@ func TestSameSiteStrictForShortLivedCookies(t *testing.T) {
 // cookie work: a cookie created without an explicit SameSite must still be
 // emitted with SameSite=Lax (and Path=/), and Secure must follow cookieSecure.
 func TestSetCookieAppliesDefaults(t *testing.T) {
-	s := testServer() // CookieSecure=false, TrustProxy=false
+	s := testServer() // explicit direct HTTP development mode
 	rr := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 
@@ -88,7 +91,7 @@ func TestHostPrefixAppliedToEveryCookie(t *testing.T) {
 		}
 	}
 
-	plain := testServer() // CookieSecure=false, TrustProxy=false
+	plain := testServer() // explicit direct HTTP development mode
 	for _, name := range names {
 		rr := httptest.NewRecorder()
 		plain.setCookie(rr, httptest.NewRequest(http.MethodGet, "/", nil), &http.Cookie{Name: name, Value: "v"})
@@ -110,6 +113,37 @@ func TestLogoutClearsAuthCookies(t *testing.T) {
 	cookies := responseCookiesByName(t, rr)
 	for _, name := range []string{sessionCookie, pending2FACookie, loginCSRFCookie} {
 		requireClearedCookie(t, cookies, name)
+	}
+}
+
+// TestLogoutPreservesSessionCookieWhenRevocationFails keeps the bearer visible
+// to the user when the server could not revoke it.
+func TestLogoutPreservesSessionCookieWhenRevocationFails(t *testing.T) {
+	pool, err := sql.Open("mock_account", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s := testServer()
+	s.store = store.New(pool, "test-key")
+	r := httptest.NewRequest(http.MethodPost, "/logout", nil)
+	r.AddCookie(&http.Cookie{Name: sessionCookie, Value: "retryable-session"})
+	rr := httptest.NewRecorder()
+
+	s.handleLogout(rr, r)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("logout status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
+	}
+	if got := rr.Header().Get("Retry-After"); got == "" {
+		t.Fatal("logout failure did not advertise a retry")
+	}
+	for _, cookie := range responseCookiesByName(t, rr) {
+		if cookie.Name == sessionCookie && cookie.MaxAge < 0 {
+			t.Fatalf("logout failure expired the retryable session cookie: %#v", cookie)
+		}
 	}
 }
 

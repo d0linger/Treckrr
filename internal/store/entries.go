@@ -776,7 +776,8 @@ type YearNeighborSummary struct {
 	PaidAmount decimal.Decimal // sum of recorded payments
 	Payable    decimal.Decimal // frozen gross or live net, plus credits and ledger
 	Remaining  decimal.Decimal // Payable − PaidAmount
-	Paid       bool            // fully settled (Remaining <= 0)
+	Paid       bool            // fully settled (Remaining == 0)
+	Credit     bool            // neighbor holds a Guthaben: I owe them (Remaining < 0)
 }
 
 // YearNeighborSummaries returns one row per neighbor in the year in a single
@@ -837,7 +838,9 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 			return nil, err
 		}
 		r.Remaining = r.Payable.Sub(r.PaidAmount)
-		r.Paid = !r.Remaining.IsPositive() // fully settled when nothing remains
+		// A negative rest is money I owe the neighbor, not a settled account.
+		r.Paid = r.Remaining.IsZero()
+		r.Credit = r.Remaining.IsNegative()
 		out = append(out, r)
 	}
 	return out, rows.Err()

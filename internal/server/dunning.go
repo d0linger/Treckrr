@@ -331,82 +331,83 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
-	status, err := s.deliverMahnung(r.Context(), r, v, "")
+	status, err := s.deliverMahnung(r.Context(), v, true)
 	if err != nil {
-		s.serverError(w, "mahnung email: pdf", err)
+		slog.Error("mahnung email intent failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
+		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
+		redirect(w, r, back)
 		return
 	}
 	switch status {
 	case "sent":
 		s.setFlash(w, r, "success", v.Title+" an "+v.Neighbor.Email+" gesendet.")
-	case "sentNoTrail":
-		s.setFlash(w, r, "success", v.Title+" an "+v.Neighbor.Email+" gesendet (Versand-Historie konnte nicht gespeichert werden).")
+	case "alreadySent":
+		s.setFlash(w, r, "success", v.Title+" wurde bereits per E-Mail versendet.")
 	case "queued":
 		s.setFlash(w, r, "error", "Versand fehlgeschlagen — zur automatischen Wiederholung eingeplant.")
+	case "ambiguous":
+		s.setFlash(w, r, "error", "Zustellung unklar — keine automatische Wiederholung. Bitte Empfänger und Audit-Log prüfen.")
 	default:
-		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
+		s.setFlash(w, r, "error", "Versand endgültig fehlgeschlagen. Bitte im Audit-Log prüfen.")
 	}
 	redirect(w, r, back)
 }
 
-// deliverMahnung is the one delivery tail for a reminder — PDF, body,
-// attachment, SMTP, and on failure the retry-outbox park (with the meta the
-// outbox needs to write the Mahnhistorie when the retry finally lands); on
-// success the CC copy and the dunning/send trail. Single send and Sammellauf
-// both call it — the two hand-written copies had already drifted (the batch
-// never wrote RecordBelegSend, so the year-closing "nie versendet" check
-// reported batch-dunned neighbors as never contacted).
-//
-// Returns: "sent", "sentNoTrail" (delivered, trail write failed), "queued"
-// (parked for retry) or "failed" (send AND park failed); err only for the PDF.
-func (s *Server) deliverMahnung(ctx context.Context, r *http.Request, v *mahnungView, auditSuffix string) (string, error) {
+// deliverMahnung persists a durable, idempotent intent before SMTP and then
+// attempts only a newly-created row. The store settles delivery history and
+// outbox state in one transaction; ambiguous SMTP outcomes are never retried.
+// explicitResend is reserved for a single-recipient POST; a batch can never
+// reopen a terminal failed or ambiguous outcome by being submitted twice.
+func (s *Server) deliverMahnung(ctx context.Context, v *mahnungView, explicitResend bool) (string, error) {
 	blob, err := v.toPDF()
 	if err != nil {
 		return "", err
 	}
-	// Audits ride on the given ctx, not the request's: the batch runs on a
-	// WithoutCancel context so a closed browser tab cannot lose the trail of
-	// mails that DID go out.
-	ar := r.WithContext(ctx)
 	body := mailBody(v.Company, v.Neighbor.Name, "anbei "+v.Title+" zur Rechnung "+v.Invoice.Number+" als PDF.")
 	att := mail.Attachment{Filename: "Mahnung_" + sanitizeFilename(v.Invoice.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
 	subject := v.Title + " · Rechnung " + v.Invoice.Number
-	if err := mail.Send(ctx, s.cfg, v.Neighbor.Email, subject, body, []mail.Attachment{att}); err != nil {
-		metrics.Inc(metrics.MailFailed)
-		s.audit(ar, "mahnung_email_failed", "neighbor", v.Neighbor.ID,
-			v.Neighbor.Name+" · "+v.Title+" · Rechnung "+v.Invoice.Number+" · "+sanitizeLog(err.Error())+auditSuffix)
-		slog.Error("mahnung email send failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
-		if qerr := s.store.EnqueueMail(ctx, store.OutboxMail{
-			Kind: "mahnung", NeighborID: v.Neighbor.ID, BillingYearID: v.Invoice.BillingYearID,
-			Recipient: v.Neighbor.Email, Subject: subject, Body: body,
-			AttName: att.Filename, AttType: att.ContentType, AttData: att.Data,
-			Meta: store.OutboxMeta{Stage: v.Stage, Fee: v.Fee, GraceUntil: v.GraceUntil, InvoiceNumber: v.Invoice.Number},
-		}); qerr != nil {
-			slog.Error("mahnung email enqueue failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(qerr.Error()))
-			return "failed", nil
+	messageID := mail.StableMessageID(s.cfg.SMTPFrom, v.Neighbor.Email, subject, body, []mail.Attachment{att})
+	intent, created, err := s.store.CreateMailIntent(ctx, store.OutboxMail{
+		Kind: "mahnung", NeighborID: v.Neighbor.ID, BillingYearID: v.Invoice.BillingYearID,
+		Recipient: v.Neighbor.Email, Subject: subject, Body: body,
+		AttName: att.Filename, AttType: att.ContentType, AttData: att.Data,
+		Meta: store.OutboxMeta{Stage: v.Stage, Fee: v.Fee, GraceUntil: v.GraceUntil, InvoiceNumber: v.Invoice.Number},
+		DeliveryKey: fmt.Sprintf("mahnung:%d:%d:%s", v.Invoice.ID, v.Stage,
+			strings.ToLower(strings.TrimSpace(v.Neighbor.Email))),
+		MessageID: messageID, RetryFailed: explicitResend, ForceResend: explicitResend,
+	})
+	if err != nil {
+		return "", err
+	}
+	status := intent.Status
+	if created {
+		status, err = s.store.AttemptMail(ctx, intent.ID,
+			func(sendCtx context.Context, messageID, to, subject, body, attName, attType string, attData []byte) error {
+				return mail.SendWithMessageID(sendCtx, s.cfg, to, subject, body, []mail.Attachment{{
+					Filename: attName, ContentType: attType, Data: attData,
+				}}, messageID)
+			})
+		if err != nil {
+			return "", err
 		}
+	}
+	switch status {
+	case store.MailStatusSent:
+		if created {
+			s.sendMailCopy(ctx, v.Company, subject, body, []mail.Attachment{att})
+			return "sent", nil
+		}
+		return "alreadySent", nil
+	case store.MailStatusPending, store.MailStatusSending:
+		metrics.Inc(metrics.MailFailed)
 		return "queued", nil
+	case store.MailStatusAmbiguous:
+		metrics.Inc(metrics.MailFailed)
+		return "ambiguous", nil
+	default:
+		metrics.Inc(metrics.MailFailed)
+		return "failed", nil
 	}
-	// Delivered — the configured CC gets its copy (Nr. 99), best-effort.
-	s.sendMailCopy(ctx, v.Company, subject, body, []mail.Attachment{att})
-	trailOK := true
-	if err := s.store.RecordDunningNotice(ctx, store.DunningNotice{
-		BillingYearID: v.Invoice.BillingYearID, NeighborID: v.Neighbor.ID,
-		InvoiceNumber: v.Invoice.Number, Stage: v.Stage, Channel: "e-mail",
-		GraceUntil: v.GraceUntil, Fee: v.Fee,
-	}); err != nil {
-		slog.Error("record dunning notice failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
-		trailOK = false
-	}
-	if err := s.store.RecordBelegSend(ctx, v.Year.ID, v.Neighbor.ID, "mahnung"); err != nil {
-		slog.Error("record beleg send failed", "kind", "mahnung", "year", v.Year.ID, "neighbor", v.Neighbor.ID, "err", err)
-		trailOK = false
-	}
-	s.audit(ar, "mahnung_email", "neighbor", v.Neighbor.ID, v.Neighbor.Name+" · E-Mail · "+v.Title+" "+v.Invoice.Number+auditSuffix)
-	if !trailOK {
-		return "sentNoTrail", nil
-	}
-	return "sent", nil
 }
 
 // handleMahnungEpcQR serves the EPC/GiroCode QR for a reminder, encoding the
@@ -540,46 +541,66 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 	// remaining letters half-sent with their trail unwritten: the deadline is
 	// extended and the loop runs detached from the request's cancellation.
 	extendWriteDeadline(w, 10*time.Minute)
-	bctx := context.WithoutCancel(r.Context())
+	bctx, cancelBatch := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Minute)
+	defer cancelBatch()
 
-	var sent, queued, skipped, failed int
-	for _, row := range rows {
-		// Company and year are loop-invariant (see buildMahnungDataWith); only
-		// the per-neighbor rows are fetched inside the loop.
-		v, ok, err := s.buildMahnungDataWith(r.WithContext(bctx), row.NeighborID, stage, company, year)
-		if err != nil {
-			slog.Error("mahnwesen batch data failed", "neighbor", row.NeighborID, "err", sanitizeLog(err.Error()))
-			failed++
-			continue
+	var sent, alreadySent, queued, ambiguous, skipped, failed int
+	ran := false
+	s.BackgroundTask(bctx, func(taskCtx context.Context) {
+		ran = true
+		for i, row := range rows {
+			if taskCtx.Err() != nil {
+				failed += len(rows) - i
+				break
+			}
+			// Company and year are loop-invariant (see buildMahnungDataWith); only
+			// the per-neighbor rows are fetched inside the loop.
+			v, ok, err := s.buildMahnungDataWith(r.WithContext(taskCtx), row.NeighborID, stage, company, year)
+			if err != nil {
+				slog.Error("mahnwesen batch data failed", "neighbor", row.NeighborID, "err", sanitizeLog(err.Error()))
+				failed++
+				continue
+			}
+			if !ok {
+				continue
+			}
+			if strings.TrimSpace(v.Neighbor.Email) == "" {
+				skipped++
+				continue
+			}
+			status, err := s.deliverMahnung(taskCtx, v, false)
+			if err != nil {
+				slog.Error("mahnwesen batch delivery failed", "neighbor", row.NeighborID, "err", sanitizeLog(err.Error()))
+				failed++
+				continue
+			}
+			switch status {
+			case "sent":
+				sent++
+			case "alreadySent":
+				alreadySent++
+			case "queued":
+				queued++
+			case "ambiguous":
+				ambiguous++
+			default:
+				failed++
+			}
 		}
-		if !ok {
-			continue
-		}
-		if strings.TrimSpace(v.Neighbor.Email) == "" {
-			skipped++
-			continue
-		}
-		status, err := s.deliverMahnung(bctx, r, v, " (Sammellauf)")
-		if err != nil {
-			slog.Error("mahnwesen batch pdf failed", "neighbor", row.NeighborID, "err", sanitizeLog(err.Error()))
-			failed++
-			continue
-		}
-		switch status {
-		case "sent", "sentNoTrail":
-			sent++
-		case "queued":
-			queued++
-		default:
-			// Send AND retry-park failed — this neighbor HAS an address; counting
-			// them under "ohne E-Mail-Adresse übersprungen" told the operator a lie.
-			failed++
-		}
+	})
+	if !ran {
+		failed = len(rows)
 	}
 
 	msg := fmt.Sprintf("Sammel-Mahnlauf: %d gesendet", sent)
+	if alreadySent > 0 {
+		msg += fmt.Sprintf(", %d bereits zuvor versendet", alreadySent)
+	}
 	if queued > 0 {
 		msg += fmt.Sprintf(", %d zur Wiederholung eingeplant", queued)
+	}
+	if ambiguous > 0 {
+		msg += fmt.Sprintf(", %d mit unklarem Zustellstatus (manuell prüfen)", ambiguous)
 	}
 	if failed > 0 {
 		msg += fmt.Sprintf(", %d fehlgeschlagen (bitte prüfen und nur betroffene Nachbarn erneut senden)", failed)
@@ -588,7 +609,7 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 		msg += fmt.Sprintf(", %d ohne E-Mail-Adresse übersprungen", skipped)
 	}
 	kind := "success"
-	if failed > 0 {
+	if failed > 0 || ambiguous > 0 {
 		kind = "error"
 	}
 	s.setFlash(w, r, kind, msg+".")

@@ -71,12 +71,16 @@ services:
       APP_PORT: ${APP_PORT:-8080}
       DATABASE_URL: ${DATABASE_URL:-postgres://treckrr:treckrr-db-password-change-me@db:5432/treckrr?sslmode=disable}
       SESSION_SECRET: ${SESSION_SECRET:-change-me-please-generate-a-random-value}
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      TRUST_PROXY: ${TRUST_PROXY:-false}
+      # The prebuilt-image profile is the production/TLS path. Keep cookies
+      # Secure even if a proxy omits X-Forwarded-Proto, and require an explicit
+      # proxy allowlist before the container can be created.
+      COOKIE_SECURE: "true"
+      ALLOW_INSECURE_HTTP: "false"
+      TRUST_PROXY: "true"
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?Set TRUSTED_PROXIES to the reverse proxy CIDR}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-admin-password}
       # Passkeys (WebAuthn): set to your public host / origin behind a proxy.
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:-}
       RP_ID: ${RP_ID:-localhost}
       RP_ORIGIN: ${RP_ORIGIN:-http://localhost:8080}
@@ -96,6 +100,7 @@ services:
       S3_BUCKET: ${S3_BUCKET:-}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      # Required when S3 is enabled; use a unique namespace per installation.
       S3_PREFIX: ${S3_PREFIX:-}
       S3_USE_SSL: ${S3_USE_SSL:-true}
       SMTP_HOST: ${SMTP_HOST:-}

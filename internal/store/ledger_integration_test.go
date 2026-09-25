@@ -129,3 +129,72 @@ func TestLedgerNetIntegration(t *testing.T) {
 		t.Fatalf("CountLedgerForNeighborYear = %d, %v; want 2", n, err)
 	}
 }
+
+// TestLedgerCreditIsNotPaidIntegration pins that a negative rest — the neighbor
+// did work for me and "verrechnet" it, no payment yet — is a Guthaben I owe,
+// never "Bezahlt". The dashboard and history used Remaining <= 0 as "paid",
+// so closing the year showed the unpaid 60 € as settled.
+func TestLedgerCreditIsNotPaidIntegration(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping DB integration test")
+	}
+	ctx := context.Background()
+	pool, err := db.Connect(ctx, url)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	st := store.New(pool, "test-encryption-secret")
+
+	purgeFixtures(t, ctx, pool, fixtures{Years: []int{2078}, NeighborNames: []string{"Guthaben-Nachbar"}})
+	baseID, err := st.CreateEmptyBase(ctx, 2078, "Guthaben-Basis")
+	if err != nil {
+		t.Fatalf("base: %v", err)
+	}
+	yearID, err := st.CreateBillingYear(ctx, 2078, baseID, "Guthaben-Jahr")
+	if err != nil {
+		t.Fatalf("year: %v", err)
+	}
+	nid, err := st.CreateNeighbor(ctx, "Guthaben-Nachbar", "")
+	if err != nil {
+		t.Fatalf("neighbor: %v", err)
+	}
+	defer purgeRootsByID(t, ctx, pool, []int64{yearID}, []int64{nid}, []int64{baseID})
+	if err := st.AddNeighborToYear(ctx, yearID, nid); err != nil {
+		t.Fatalf("add neighbor: %v", err)
+	}
+	if _, err := st.AddNeighborLedger(ctx, yearID, nid, decimal.RequireFromString("-60"), "Nachbar presst Ballen", time.Now()); err != nil {
+		t.Fatalf("ledger credit: %v", err)
+	}
+
+	summaries, err := st.YearNeighborSummaries(ctx, yearID)
+	if err != nil || len(summaries) != 1 {
+		t.Fatalf("YearNeighborSummaries = %d rows, %v; want 1", len(summaries), err)
+	}
+	if s := summaries[0]; s.Paid || !s.Credit || !s.Remaining.Equal(decimal.RequireFromString("-60")) {
+		t.Fatalf("summary paid/credit/remaining = %v/%v/%s, want false/true/-60", s.Paid, s.Credit, s.Remaining)
+	}
+	history, err := st.NeighborYearHistory(ctx, nid)
+	if err != nil || len(history) != 1 {
+		t.Fatalf("NeighborYearHistory = %d rows, %v; want 1", len(history), err)
+	}
+	if h := history[0]; h.Paid || !h.Credit {
+		t.Fatalf("history paid/credit = %v/%v, want false/true", h.Paid, h.Credit)
+	}
+
+	// Paying the Guthaben out settles the account: Paid, no longer Credit.
+	if _, err := st.PayoutCredit(ctx, yearID, nid, time.Now(), "Guthaben ausbezahlt"); err != nil {
+		t.Fatalf("payout: %v", err)
+	}
+	summaries, err = st.YearNeighborSummaries(ctx, yearID)
+	if err != nil || len(summaries) != 1 {
+		t.Fatalf("after payout YearNeighborSummaries = %d rows, %v", len(summaries), err)
+	}
+	if s := summaries[0]; !s.Paid || s.Credit {
+		t.Fatalf("after payout paid/credit = %v/%v, want true/false", s.Paid, s.Credit)
+	}
+}

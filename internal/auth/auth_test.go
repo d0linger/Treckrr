@@ -2,9 +2,48 @@ package auth
 
 import (
 	"crypto/sha256"
+	"errors"
 	"strings"
 	"testing"
 )
+
+// TestValidatePassword covers byte limits and the shared letter/digit policy.
+func TestValidatePassword(t *testing.T) {
+	tests := []struct {
+		name     string
+		password string
+		wantErr  error
+	}{
+		{"valid", "secure-pass-123", nil},
+		{"eight byte boundary", "abcdefg1", nil},
+		{"too short", "abc123", ErrPasswordTooShort},
+		{"too long", "a1" + strings.Repeat("x", 71), ErrPasswordTooLong},
+		{"missing digit", "letters-only", ErrPasswordComplexity},
+		{"missing letter", "12345678", ErrPasswordComplexity},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidatePassword(tt.password)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("ValidatePassword() error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestHashPasswordEnforcesPolicy verifies hashing cannot bypass validation.
+func TestHashPasswordEnforcesPolicy(t *testing.T) {
+	if _, err := HashPassword("weakpass"); !errors.Is(err, ErrPasswordComplexity) {
+		t.Fatalf("HashPassword() error = %v, want %v", err, ErrPasswordComplexity)
+	}
+	hash, err := HashPassword("strong-pass-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CheckPassword(hash, "strong-pass-123") {
+		t.Fatal("valid password did not round-trip through bcrypt")
+	}
+}
 
 func TestLooksLikeRecoveryCode(t *testing.T) {
 	cases := []struct {

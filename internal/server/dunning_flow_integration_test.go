@@ -87,6 +87,8 @@ func TestDunningFlowIntegration(t *testing.T) {
 
 // The batch run must not lose anyone: no address means skipped-and-said, a dead
 // SMTP server means parked in the outbox — never a silent nothing.
+// TestDunningBatchEmailFallsBackToOutboxIntegration verifies batch failures stay
+// durable and repeated submissions remain idempotent.
 func TestDunningBatchEmailFallsBackToOutboxIntegration(t *testing.T) {
 	e := newItEnv(t)
 	nid, yid := e.neighborID, e.yearID64
@@ -123,5 +125,17 @@ func TestDunningBatchEmailFallsBackToOutboxIntegration(t *testing.T) {
 	}
 	if notices != 0 {
 		t.Errorf("%d notices recorded although nothing was delivered", notices)
+	}
+
+	// Repeating the normal batch action with identical document content must
+	// reuse the pending intent instead of creating another deliverable message.
+	e.post("/mahnwesen/batch-email", url.Values{"year": {itoa64(yid)}, "stufe": {"1"}})
+	var intents int
+	if err := e.pool.QueryRowContext(e.ctx,
+		`SELECT count(*) FROM mail_outbox WHERE neighbor_id=$1 AND kind='mahnung'`, nid).Scan(&intents); err != nil {
+		t.Fatal(err)
+	}
+	if intents != 1 {
+		t.Errorf("repeated batch created %d intents, want 1", intents)
 	}
 }

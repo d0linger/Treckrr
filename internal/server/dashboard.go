@@ -21,6 +21,7 @@ type neighborSummary struct {
 	Hours     decimal.Decimal
 	Entries   int
 	Paid      bool // fully settled (nothing remaining)
+	Credit    bool // negative rest: the neighbor holds a Guthaben (I owe them)
 	Remaining decimal.Decimal
 }
 
@@ -38,13 +39,13 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	summaries := make([]neighborSummary, 0, len(summaryRows))
-	var grandCost, grandHours, paidCost, openCost decimal.Decimal
-	openCount := 0
+	var grandCost, grandHours, paidCost, openCost, creditCost decimal.Decimal
+	openCount, creditCount := 0, 0
 	for _, row := range summaryRows {
 		summaries = append(summaries, neighborSummary{
 			Neighbor: models.Neighbor{ID: row.NeighborID, Name: row.Name},
 			Cost:     row.Cost, Hours: row.Hours, Entries: row.Entries,
-			Paid: row.Paid, Remaining: row.Remaining,
+			Paid: row.Paid, Credit: row.Credit, Remaining: row.Remaining,
 		})
 		grandCost = grandCost.Add(row.Cost)
 		grandHours = grandHours.Add(row.Hours)
@@ -55,6 +56,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			// attention strip reports a consistent pair.
 			openCost = openCost.Add(row.Remaining)
 			openCount++
+		}
+		if row.Credit {
+			// The reverse case: a Guthaben I still owe the neighbor (e.g. their
+			// "verrechnete" work). Kept as its own pair, shown as a positive sum.
+			creditCost = creditCost.Add(row.Remaining.Neg())
+			creditCount++
 		}
 	}
 
@@ -100,6 +107,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	data["PaidCost"] = paidCost
 	data["OpenCost"] = openCost
 	data["OpenCount"] = openCount
+	data["CreditCost"] = creditCost
+	data["CreditCount"] = creditCount
 	// How many bookings are out of sync with the current basis (open years only).
 	// Gate first (0040): one indexed count answers "could anything be stale?".
 	// When it says no — the normal case, since the basis is rarely edited — the

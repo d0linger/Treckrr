@@ -89,7 +89,7 @@ func (s *Service) RotateKey(ctx context.Context, oldSecret string) (RotateResult
 			res.Skipped = append(res.Skipped, name+": write failed: "+err.Error())
 			continue
 		}
-		if err := os.Rename(staging, path); err != nil {
+		if err := durableRename(staging, path); err != nil {
 			_ = os.Remove(staging)
 			res.Skipped = append(res.Skipped, name+": replace failed: "+err.Error())
 			continue

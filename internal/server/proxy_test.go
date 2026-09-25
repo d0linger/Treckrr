@@ -24,7 +24,7 @@ func TestClientIPProxyAllowlist(t *testing.T) {
 		{"allowlisted proxy → header trusted", true, []*net.IPNet{net10}, "10.1.2.3:5555", "1.2.3.4", "1.2.3.4"},
 		{"non-allowlisted peer → header ignored", true, []*net.IPNet{net10}, "203.0.113.5:5555", "1.2.3.4", "203.0.113.5"},
 		{"rightmost hop when chained", true, []*net.IPNet{net10}, "10.0.0.9:5555", "9.9.9.9, 8.8.8.8", "8.8.8.8"},
-		{"no allowlist → legacy trust", true, nil, "203.0.113.5:5555", "1.2.3.4", "1.2.3.4"},
+		{"no allowlist → fail closed", true, nil, "203.0.113.5:5555", "1.2.3.4", "203.0.113.5"},
 		{"trust proxy off → always peer", false, []*net.IPNet{net10}, "10.1.2.3:5555", "1.2.3.4", "10.1.2.3"},
 		{"allowlisted but no header → peer", true, []*net.IPNet{net10}, "10.1.2.3:5555", "", "10.1.2.3"},
 	}

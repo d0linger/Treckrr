@@ -545,6 +545,11 @@ em { font-style: normal; color: var(--muted); }
    which card the link meant. scroll-margin keeps it clear of the app bar. */
 .bcard { scroll-margin-top: 4.5rem; }
 .bcard:target { outline: 2px solid var(--accent-text, var(--accent, #8a5e12)); outline-offset: 2px; }
+/* "Zu erledigen" → Nachbarn: the clicked row's hash rings every still-open tile
+   of that kind (open payment / Guthaben to pay out); settled tiles stay plain. */
+.due-anchor { display: block; scroll-margin-top: 4.5rem; }
+body:has(#offene-zahlungen:target) [data-due="open"],
+body:has(#auszuzahlen:target) [data-due="credit"] { outline: 2px solid var(--accent-text, var(--accent, #8a5e12)); outline-offset: 2px; }
 .modal__check { margin-top: .65rem; display: flex; gap: .5rem; align-items: center; }
 .list__actions form { margin: 0; }
 .list__main--link { text-decoration: none; color: inherit; flex: 1 1 auto; min-width: 0; }
@@ -848,6 +853,7 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .tag--done { background: var(--primary-tint); color: var(--primary-strong); }
 .tag--paid { background: var(--primary-tint); color: var(--primary-strong); }
 .tag--open { background: var(--danger-tint); color: var(--danger-text); }
+.tag--credit { background: color-mix(in srgb, var(--owe) 16%, transparent); color: var(--owe-text); }
 
 /* ---- Flash ------------------------------------------------------------ */
 .flash { padding: .7rem 1rem; border-radius: var(--radius-sm); font-size: .9rem; font-weight: 500; }
@@ -1028,6 +1034,11 @@ button.paychip { min-height: var(--tap); padding: .35rem .8rem; }
 .paychip--static { cursor: default; }
 .paychip--static.paychip--open:hover { background: color-mix(in srgb, var(--accent) 13%, transparent); }
 span.paychip { cursor: default; }
+/* Guthaben: a negative rest is money I still owe the neighbor — never "Bezahlt". */
+.paychip--credit { background: color-mix(in srgb, var(--owe) 13%, transparent); color: var(--owe-text); border-color: color-mix(in srgb, var(--owe) 38%, transparent); text-decoration: none; }
+.paychip--credit::before { content: "€"; flex: none; }
+a.paychip--credit { min-height: var(--tap); padding: .35rem .8rem; }
+a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transparent); }
 .carryover strong { display: block; white-space: nowrap; }
 .carryover .muted { font-size: .82rem; }
 
@@ -1195,6 +1206,7 @@ span.paychip { cursor: default; }
 .chip2--open { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
 .chip2--void { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
 .chip2--stale { color: var(--accent-text); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.chip2--credit { color: var(--owe-text); background: color-mix(in srgb, var(--owe) 14%, transparent); border-color: color-mix(in srgb, var(--owe) 30%, transparent); }
 .chip2--owe { color: var(--owe); background: color-mix(in srgb, var(--owe) 14%, transparent); border-color: color-mix(in srgb, var(--owe) 30%, transparent); }
 .chip2--prog { color: var(--accent-text); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 
@@ -1252,6 +1264,9 @@ span.paychip { cursor: default; }
 	font-size: .9rem; font-weight: 800; flex: 0 0 auto; }
 .attn__ic--warn { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent-text); }
 .attn__ic--owe { background: color-mix(in srgb, var(--owe) 18%, transparent); color: var(--owe); }
+/* Guthaben (I owe the neighbor): same hue as the tile's Guthaben chip. */
+.attn__row--credit { border-color: color-mix(in srgb, var(--owe) 55%, var(--border)); background: color-mix(in srgb, var(--owe) 11%, var(--surface)); }
+.attn__ic--credit { background: color-mix(in srgb, var(--owe) 24%, transparent); color: var(--owe-text); }
 .attn__ic--pay { background: color-mix(in srgb, var(--pay) 18%, transparent); color: var(--pay); }
 .attn__txt { flex: 1; font-size: .85rem; }
 .attn__txt strong { font-weight: 800; }

@@ -36,16 +36,20 @@ const (
 
 // Server holds shared dependencies for the HTTP handlers.
 type Server struct {
-	cfg          *config.Config
-	store        *store.Store
-	backup       *backup.Service
-	templates    map[string]*template.Template
-	logins       *loginLimiter
-	wa           *webauthn.WebAuthn
-	started      time.Time
-	maintenance  atomic.Bool  // set during a restore: the gate serves 503 for normal traffic
-	activity     sync.RWMutex // drains requests and background maintenance before restore
-	restoreLease func(context.Context) (func() error, error)
+	cfg             *config.Config
+	store           *store.Store
+	backup          *backup.Service
+	templates       map[string]*template.Template
+	logins          *loginLimiter
+	wa              *webauthn.WebAuthn
+	started         time.Time
+	maintenance     atomic.Bool  // set during a restore: the gate serves 503 for normal traffic
+	leaseLost       atomic.Bool  // irreversible: the application lease session was lost
+	activity        sync.RWMutex // drains requests and background maintenance before restore
+	restoreLease    func(context.Context) (func() error, error)
+	backgroundMu    sync.Mutex
+	backgroundNext  uint64
+	backgroundTasks map[uint64]backgroundTask
 	// photoSlots bounds concurrent image decodes; see maxConcurrentPhotoDecodes.
 	photoSlots chan struct{}
 }
@@ -326,6 +330,24 @@ func (s *Server) userCacheMW(next http.Handler) http.Handler {
 // for normal traffic so no request can observe the database mid-restore.
 func (s *Server) setMaintenance(on bool) { s.maintenance.Store(on) }
 
+// maintenanceActive reports both reversible restore maintenance and irreversible
+// application-lease loss; either state must keep normal traffic closed.
+func (s *Server) maintenanceActive() bool {
+	return s.maintenance.Load() || s.leaseLost.Load()
+}
+
+// clearRestoreMaintenance ends only reversible restore maintenance. A concurrent
+// lease loss wins permanently, including when it races this cleanup.
+func (s *Server) clearRestoreMaintenance() {
+	if s.leaseLost.Load() {
+		return
+	}
+	s.maintenance.Store(false)
+	if s.leaseLost.Load() {
+		s.maintenance.Store(true)
+	}
+}
+
 // maintenanceGate returns 503 for normal traffic while a restore is in progress.
 // Only the DB-free liveness probe (/livez) and static assets stay reachable, so
 // the orchestrator doesn't restart the app and the 503 page's CSS renders. Every
@@ -335,7 +357,7 @@ func (s *Server) setMaintenance(on bool) { s.maintenance.Store(on) }
 // through the gate is deterministic, versus letting handleHealth's DB ping flap.
 func (s *Server) maintenanceGate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.maintenance.Load() && !isMaintenanceExempt(r.URL.Path) {
+		if s.maintenanceActive() && !isMaintenanceExempt(r.URL.Path) {
 			w.Header().Set("Retry-After", "30")
 			writeErrorPage(w, http.StatusServiceUnavailable, "Wartung",
 				"Eine Wiederherstellung läuft gerade. Bitte in Kürze erneut versuchen.")
@@ -349,7 +371,7 @@ func (s *Server) maintenanceGate(next http.Handler) http.Handler {
 			var once sync.Once
 			release := func() { once.Do(s.activity.RUnlock) }
 			defer release()
-			if s.maintenance.Load() {
+			if s.maintenanceActive() {
 				http.Error(w, "Wartung: bitte später erneut versuchen.", http.StatusServiceUnavailable)
 				return
 			}

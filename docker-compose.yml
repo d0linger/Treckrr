@@ -87,13 +87,11 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://treckrr:treckrr-db-password-change-me@db:5432/treckrr?sslmode=disable}
       SESSION_SECRET: ${SESSION_SECRET:-change-me-please-generate-a-random-value}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      # Reverse proxy. These were documented in .env.example but never projected
-      # into the container, so setting them had NO effect: the app fell back to
-      # TRUST_PROXY=false and ignored X-Forwarded-Proto (insecure cookies behind a
-      # TLS proxy), or — once enabled — trusted forwarded headers from any peer.
-      # With TRUST_PROXY=true, set TRUSTED_PROXIES to your proxy's address so a
-      # client that reaches the published port directly cannot forge its IP into
-      # the audit log and past the per-IP rate limits.
+      # This source-build profile is the explicit direct-HTTP development path.
+      # Remove the opt-in and enable the secure proxy settings for production.
+      ALLOW_INSECURE_HTTP: ${ALLOW_INSECURE_HTTP:-true}
+      # TRUST_PROXY fails closed unless TRUSTED_PROXIES contains at least one
+      # CIDR, so direct clients can never supply their own forwarded identity.
       TRUST_PROXY: ${TRUST_PROXY:-false}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       # Data-at-rest key for TOTP secrets. Defaults to SESSION_SECRET; set it
@@ -119,7 +117,8 @@ services:
       BACKUP_REHEARSE_URL: ${BACKUP_REHEARSE_URL:-}
       S3_KEEP: ${S3_KEEP:-0}
       # Optional off-box S3/Backblaze destination for scheduled backups (3-2-1).
-      # Empty S3_ENDPOINT/S3_BUCKET disables it.
+      # Empty S3_ENDPOINT/S3_BUCKET disables it. When enabled, S3_PREFIX is
+      # mandatory and must be unique to this installation (for example farm-a/).
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_BUCKET: ${S3_BUCKET:-}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}

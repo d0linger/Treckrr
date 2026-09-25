@@ -70,3 +70,51 @@ func TestSendDataAcknowledgementIsDeliveryBoundary(t *testing.T) {
 		})
 	}
 }
+
+// TestSendMarksLostFinalReplyAmbiguous verifies uncertainty begins only after DATA closes.
+func TestSendMarksLostFinalReplyAmbiguous(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, acceptErr := ln.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = conn.Write([]byte("220 test ESMTP\r\n"))
+		reader := bufio.NewReader(conn)
+		inData := false
+		for {
+			line, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				return
+			}
+			if inData {
+				if line == ".\r\n" {
+					return // DATA may be accepted, but the final reply is lost.
+				}
+				continue
+			}
+			if strings.HasPrefix(line, "DATA") {
+				inData = true
+				_, _ = conn.Write([]byte("354 send data\r\n"))
+			} else {
+				_, _ = conn.Write([]byte("250 ok\r\n"))
+			}
+		}
+	}()
+
+	host, port, _ := net.SplitHostPort(ln.Addr().String())
+	err = Send(t.Context(), &config.Config{
+		SMTPHost: host, SMTPPort: port, SMTPFrom: "test@example.invalid",
+	}, "to@example.invalid", "subject", "body", nil)
+	if !IsAmbiguous(err) {
+		t.Fatalf("lost final DATA reply error = %v, want ambiguous", err)
+	}
+	<-done
+}

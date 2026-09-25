@@ -13,7 +13,11 @@ type StatementYear struct {
 	Year  int
 	Cost  decimal.Decimal
 	Hours decimal.Decimal
-	Paid  bool
+	// Remaining is the unsettled balance; a negative value is a credit owed to
+	// the neighbor and is distinct from the year's net service cost.
+	Remaining decimal.Decimal
+	Paid      bool
+	Credit    bool // negative rest: the neighbor holds a Guthaben
 }
 
 // StatementData is the multi-year Kontoauszug PDF's content.
@@ -74,11 +78,7 @@ func RenderStatement(s StatementData) ([]byte, error) {
 		}
 		gtext(pdf, colYear, y, 9.5, false, strconv.Itoa(r.Year))
 		gtextR(pdf, colHours+30, y, 9.5, false, trimZeros(r.Hours)+" h")
-		status := "offen"
-		if r.Paid {
-			status = "bezahlt"
-		}
-		gtext(pdf, colPaid, y, 9.5, false, status)
+		gtext(pdf, colPaid, y, 9.5, false, statementStatus(r))
 		gtextR(pdf, right, y, 9.5, false, money(r.Cost))
 		y += 14
 	}
@@ -102,4 +102,16 @@ func RenderStatement(s StatementData) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// statementStatus formats settlement state independently from the service cost.
+func statementStatus(r StatementYear) string {
+	switch {
+	case r.Paid:
+		return "bezahlt"
+	case r.Credit:
+		return "Guthaben · " + money(r.Remaining.Neg())
+	default:
+		return "offen"
+	}
 }

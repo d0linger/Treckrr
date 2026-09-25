@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/d0linger/treckrr/internal/metrics"
+	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -101,18 +102,16 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 // handleAuditExport streams the (optionally filtered) audit trail as CSV.
 func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 	aq := auditQueryFromRequest(r)
-
-	filtered, err := s.store.ListAuditFiltered(r.Context(), aq, 0, 0)
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
-	}
-
 	cw, finish := csvDownload(w, r, "treckrr_audit.csv")
 	defer finish()
-	_ = cw.Write([]string{"Zeitpunkt", "Benutzer", "Aktion", "Objekt", "ID", "Detail", "IP"})
-	for _, e := range filtered {
-		_ = cw.Write([]string{
+	if err := cw.Write([]string{"Zeitpunkt", "Benutzer", "Aktion", "Objekt", "ID", "Detail", "IP"}); err != nil {
+		return
+	}
+	err := s.store.StreamAuditFiltered(r.Context(), aq, func(e models.AuditEntry) error {
+		if err := r.Context().Err(); err != nil {
+			return err
+		}
+		return cw.Write([]string{
 			e.Created.Format("2006-01-02 15:04:05"),
 			csvSafe(e.Username),
 			csvSafe(e.Action),
@@ -121,6 +120,9 @@ func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 			csvSafe(e.Detail),
 			csvSafe(e.IP),
 		})
+	})
+	if err != nil {
+		slog.Warn("audit CSV export incomplete", "err", sanitizeLog(err.Error()))
 	}
 }
 
@@ -267,12 +269,11 @@ func hostOf(remoteAddr string) string {
 }
 
 // proxyTrusted reports whether the direct peer may be trusted to have set the
-// forwarded headers. With TRUSTED_PROXIES configured, only peers inside those
-// CIDRs qualify (SH-05); without it, the TRUST_PROXY boolean alone decides
-// (legacy behavior, so existing single-proxy deployments keep working).
+// forwarded headers. Only peers inside TRUSTED_PROXIES qualify; an empty
+// allowlist fails closed even when a Config is constructed outside config.Load.
 func (s *Server) proxyTrusted(host string) bool {
 	if len(s.cfg.TrustedProxies) == 0 {
-		return true
+		return false
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
@@ -288,7 +289,8 @@ func (s *Server) proxyTrusted(host string) bool {
 
 // cookieSecure decides whether auth cookies get the Secure flag: either forced
 // via COOKIE_SECURE, or auto-detected from X-Forwarded-Proto behind a trusted
-// proxy that terminates TLS.
+// proxy that terminates TLS. config.Load rejects the insecure combination unless
+// ALLOW_INSECURE_HTTP explicitly enables local direct-HTTP development.
 func (s *Server) cookieSecure(r *http.Request) bool {
 	if s.cfg.CookieSecure {
 		return true

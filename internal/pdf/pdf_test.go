@@ -119,6 +119,17 @@ func TestRenderStatement(t *testing.T) {
 	}
 }
 
+func TestStatementStatusUsesRemainingForCredit(t *testing.T) {
+	row := StatementYear{
+		Cost:      decimal.RequireFromString("100"),
+		Remaining: decimal.RequireFromString("-5"),
+		Credit:    true,
+	}
+	if got, want := statementStatus(row), "Guthaben · 5,00 €"; got != want {
+		t.Fatalf("statementStatus() = %q, want %q", got, want)
+	}
+}
+
 func TestMoney(t *testing.T) {
 	cases := map[string]string{"1234.56": "1.234,56 €", "0": "0,00 €", "-50": "-50,00 €", "1000000": "1.000.000,00 €"}
 	for in, want := range cases {

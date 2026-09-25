@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,6 +14,46 @@ import (
 
 const totpTestFixture = "JBSWY3DPEHPK3PXP" // #nosec G101 -- public test seed, not a credential
 
+// TestEnsureAdminValidatesOnlyCredentialWritesIntegration proves an unused weak
+// legacy bootstrap value cannot block normal startup or reach a create/reset.
+func TestEnsureAdminValidatesOnlyCredentialWritesIntegration(t *testing.T) {
+	st, pool := scratchStore(t)
+	ctx := t.Context()
+	username := fmt.Sprintf("legacy-admin-%d", time.Now().UnixNano())
+	if _, err := st.CreateUser(ctx, username, "existing-admin-123", models.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.EnsureAdmin(ctx, username, "weak-password", false); err != nil {
+		t.Fatalf("unused legacy value blocked existing admin: %v", err)
+	}
+	if err := st.EnsureAdmin(ctx, username, "weak-password", true); err == nil {
+		t.Fatal("weak reset password was accepted")
+	}
+	if _, err := st.AuthenticateUser(ctx, username, "existing-admin-123"); err != nil {
+		t.Fatalf("rejected reset changed the existing credential: %v", err)
+	}
+	if err := st.EnsureAdmin(ctx, username+"-missing", "weak-password", false); err == nil {
+		t.Fatal("weak bootstrap password was accepted for a new admin")
+	}
+
+	editor := fmt.Sprintf("legacy-editor-%d", time.Now().UnixNano())
+	if _, err := st.CreateUser(ctx, editor, "existing-editor-123", models.RoleEditor); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.EnsureAdmin(ctx, editor, "weak-password", true); err == nil {
+		t.Fatal("weak reset password was accepted while promoting a non-admin")
+	}
+	var role string
+	if err := pool.QueryRowContext(ctx, `SELECT role FROM users WHERE username=$1`, editor).Scan(&role); err != nil {
+		t.Fatal(err)
+	}
+	if role != string(models.RoleEditor) {
+		t.Fatalf("rejected reset promoted non-admin to %q", role)
+	}
+}
+
+// TestCredentialRotationAtomicIntegration verifies password, session, role, and
+// audit changes preserve their transaction boundaries under failure.
 func TestCredentialRotationAtomicIntegration(t *testing.T) {
 	st, pool := scratchStore(t)
 	ctx := t.Context()
@@ -29,6 +70,10 @@ func TestCredentialRotationAtomicIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	logoutToken, err := st.CreateSession(ctx, userID, time.Hour, "logout", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	change := store.PasswordChange{UserID: userID, CurrentPassword: "original-pass-123", NewPassword: "replacement-pass-456", CurrentToken: oldToken, TTL: time.Hour, AbsoluteTTL: 24 * time.Hour}
 	if _, err := pool.ExecContext(ctx, `CREATE FUNCTION reject_test_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test audit unavailable'; END $$;
 		CREATE TRIGGER reject_test_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION reject_test_audit()`); err != nil {
@@ -37,11 +82,17 @@ func TestCredentialRotationAtomicIntegration(t *testing.T) {
 	if _, err := st.ChangePassword(ctx, change); err == nil {
 		t.Fatal("audit failure must roll back password rotation")
 	}
+	if _, err := st.LogoutSession(ctx, logoutToken, "127.0.0.1"); err == nil {
+		t.Fatal("logout ignored audit failure")
+	}
 	if _, err := st.AuthenticateUser(ctx, "rotate-user", change.CurrentPassword); err != nil {
 		t.Fatal("old password lost on rollback", err)
 	}
 	if _, err := st.UserFromSession(ctx, oldToken, time.Hour, 24*time.Hour); err != nil {
 		t.Fatal("old session lost on rollback", err)
+	}
+	if _, err := st.UserFromSession(ctx, logoutToken, time.Hour, 24*time.Hour); err != nil {
+		t.Fatal("logout session lost on audit rollback", err)
 	}
 	if err := st.ResetPassword(ctx, userID, "admin-password-789", true); err == nil {
 		t.Fatal("admin reset ignored audit failure")
@@ -71,6 +122,20 @@ func TestCredentialRotationAtomicIntegration(t *testing.T) {
 	}
 	if _, err := pool.ExecContext(ctx, `DROP TRIGGER reject_test_audit ON audit_log`); err != nil {
 		t.Fatal(err)
+	}
+	deleted, err := st.LogoutSession(ctx, logoutToken, "127.0.0.1")
+	if err != nil || !deleted {
+		t.Fatalf("logout session deleted=%v err=%v", deleted, err)
+	}
+	if _, err := st.UserFromSession(ctx, logoutToken, time.Hour, 24*time.Hour); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("logout session survived: %v", err)
+	}
+	var logoutAudits int
+	if err := pool.QueryRowContext(ctx, `SELECT count(*) FROM audit_log WHERE user_id=$1 AND action='logout'`, userID).Scan(&logoutAudits); err != nil {
+		t.Fatal(err)
+	}
+	if logoutAudits != 1 {
+		t.Fatalf("logout audit count = %d, want 1", logoutAudits)
 	}
 	newToken, err := st.ChangePassword(ctx, change)
 	if err != nil {

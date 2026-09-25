@@ -162,6 +162,66 @@ func TestBelegPageRenders(t *testing.T) {
 	}
 }
 
+// TestBelegCreditLabelsTakePrecedenceOverPayments verifies an overpayment is
+// presented as a Guthaben in both receipt totals, never as an open amount.
+func TestBelegCreditLabelsTakePrecedenceOverPayments(t *testing.T) {
+	t.Parallel()
+	d := decimal.RequireFromString
+	page := html.UnescapeString(execPage(t, "beleg", map[string]any{
+		"Title":       "Beleg",
+		"Neighbor":    models.Neighbor{ID: 2, Name: "Bio-Hof Steiner"},
+		"Year":        models.BillingYear{ID: 1, Year: 2026, Status: models.YearCompleted},
+		"TotalCost":   d("100"),
+		"TotalHours":  decimal.Zero,
+		"Saldo":       d("100"),
+		"Completed":   true,
+		"Credit":      true,
+		"HasPayments": true,
+		"PaidSum":     d("105"),
+		"Remaining":   d("-5"),
+		"Payments": []models.Payment{{
+			PaidOn: time.Now(), Amount: d("105"),
+		}},
+		"Today": "24.09.2026",
+	}))
+
+	if count := strings.Count(page, "Guthaben"); count != 2 {
+		t.Fatalf("Guthaben labels = %d, want hero and final total", count)
+	}
+	if strings.Contains(page, "Offener Rest") {
+		t.Fatal("negative remainder is labeled as Offener Rest")
+	}
+}
+
+// TestNeighborOverviewShowsCreditBalanceSeparateFromCost pins that the credit
+// amount comes from the negative remainder, while Cost remains the year's net
+// service value.
+func TestNeighborOverviewShowsCreditBalanceSeparateFromCost(t *testing.T) {
+	t.Parallel()
+	d := decimal.RequireFromString
+	page := html.UnescapeString(execPage(t, "neighbor_overview", map[string]any{
+		"Title":      "Bio-Hof Steiner · Verlauf",
+		"Neighbor":   models.Neighbor{ID: 2, Name: "Bio-Hof Steiner"},
+		"TotalCost":  d("100"),
+		"TotalHours": decimal.Zero,
+		"Rows": []map[string]any{{
+			"Year": 2026, "YearID": int64(1), "Cost": d("100"),
+			"Hours": decimal.Zero, "Remaining": d("-5"),
+			"Paid": false, "Credit": true, "Completed": true,
+		}},
+		"Today": time.Now(),
+	}))
+
+	for _, want := range []string{"Guthaben · 5,00 €", "100,00 €"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("neighbor overview missing %q", want)
+		}
+	}
+	if strings.Contains(page, "Guthaben · 100,00 €") {
+		t.Fatal("neighbor overview reused net cost as the credit balance")
+	}
+}
+
 // TestBelegLedgerDescriptionPrefixesOnlyLegacyPayables distinguishes manual
 // account postings from structured incoming bookings without losing void state.
 func TestBelegLedgerDescriptionPrefixesOnlyLegacyPayables(t *testing.T) {
@@ -642,5 +702,75 @@ func TestMahnungPagePreservesDocumentAndPaymentActions(t *testing.T) {
 				t.Errorf("correctly targeted email form present = %v, want %v", got, tc.wantEmail)
 			}
 		})
+	}
+}
+
+// TestDashboardShowsCreditAsOwedNotPaid pins the reverse of "offene Zahlung":
+// a neighbor with a negative rest (Guthaben) is money I still owe. A completed
+// year must list it under "Zu erledigen" and in the status row, and its tile
+// must say Guthaben — never Bezahlt.
+func TestDashboardShowsCreditAsOwedNotPaid(t *testing.T) {
+	d := decimal.NewFromFloat
+	page := execPage(t, "dashboard", map[string]any{
+		"User":      models.User{ID: 1, Username: "admin", Role: models.RoleAdmin},
+		"Year":      models.BillingYear{ID: 5, Year: 2026, Base: &models.PriceBase{Year: 2026}},
+		"Completed": true,
+		"GrandCost": d(-60), "GrandHours": decimal.Zero,
+		"PaidCost": decimal.Zero, "OpenCost": decimal.Zero,
+		"CreditCount": 1, "CreditCost": d(60),
+		"Summaries": []map[string]any{{
+			"Neighbor": models.Neighbor{ID: 9, Name: "Demo-Hof Leitner"},
+			"Cost":     d(-60), "Hours": decimal.Zero, "Entries": 0,
+			"Paid": false, "Credit": true, "Remaining": d(-60),
+		}},
+	})
+	for _, want := range []string{
+		"mit Guthaben – noch auszuzahlen · 60,00 €",
+		"Guthaben 60,00 €",
+		"Guthaben · 60,00 €",
+	} {
+		if !strings.Contains(html.UnescapeString(page), want) {
+			t.Errorf("dashboard missing %q", want)
+		}
+	}
+	if strings.Contains(page, "paychip--paid") {
+		t.Error("a Guthaben tile must not render the Bezahlt chip")
+	}
+}
+
+// TestDashboardDueRowsTargetMatchingTiles pins the "Zu erledigen" → tile ring:
+// each row jumps to its own anchor, and only unsettled tiles carry the matching
+// data-due marker (the CSS :has(:target) rule keys on both).
+func TestDashboardDueRowsTargetMatchingTiles(t *testing.T) {
+	d := decimal.NewFromFloat
+	tile := func(id int64, paid, credit bool, rest float64) map[string]any {
+		return map[string]any{
+			"Neighbor": models.Neighbor{ID: id, Name: "Hof " + strconv.FormatInt(id, 10)},
+			"Cost":     d(rest), "Hours": decimal.Zero, "Entries": 1,
+			"Paid": paid, "Credit": credit, "Remaining": d(rest),
+		}
+	}
+	page := execPage(t, "dashboard", map[string]any{
+		"User":      models.User{ID: 1, Username: "admin", Role: models.RoleAdmin},
+		"Year":      models.BillingYear{ID: 5, Year: 2026, Base: &models.PriceBase{Year: 2026}},
+		"Completed": true,
+		"GrandCost": d(40), "GrandHours": decimal.Zero,
+		"PaidCost": decimal.Zero, "OpenCost": d(100),
+		"OpenCount": 1, "CreditCount": 1, "CreditCost": d(60),
+		"Summaries": []map[string]any{tile(1, false, false, 100), tile(2, false, true, -60), tile(3, true, false, 0)},
+	})
+	for _, want := range []string{
+		`href="#offene-zahlungen"`, `id="offene-zahlungen"`,
+		`href="#auszuzahlen"`, `id="auszuzahlen"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("dashboard missing %s", want)
+		}
+	}
+	if n := strings.Count(page, `data-due="open"`); n != 1 {
+		t.Errorf(`data-due="open" tiles = %d, want 1`, n)
+	}
+	if n := strings.Count(page, `data-due="credit"`); n != 1 {
+		t.Errorf(`data-due="credit" tiles = %d, want 1`, n)
 	}
 }

@@ -8,10 +8,24 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/d0linger/treckrr/internal/bankimport"
 	"github.com/d0linger/treckrr/internal/store"
 )
+
+// bankImportNote formats an imported payment note and bounds untrusted
+// remittance text to the same rune limit as manually entered payment notes.
+func bankImportNote(reference string) string {
+	note := "Bank-Import"
+	if ref := strings.TrimSpace(reference); ref != "" {
+		note += ": " + ref
+	}
+	if utf8.RuneCountInString(note) <= maxNoteLen {
+		return note
+	}
+	return string([]rune(note)[:maxNoteLen])
+}
 
 // paymentImportRow is one parsed bank credit with its match result, for the
 // dry-run preview.
@@ -245,10 +259,7 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		if !row.Importable() {
 			continue
 		}
-		note := "Bank-Import"
-		if ref := strings.TrimSpace(row.Txn.Reference); ref != "" {
-			note += ": " + ref
-		}
+		note := bankImportNote(row.Txn.Reference)
 		// A statement without a parseable date carries the zero time; book it as
 		// received today. The de-dup hash is unaffected (it never uses time.Now()).
 		paidOn := row.Txn.Date

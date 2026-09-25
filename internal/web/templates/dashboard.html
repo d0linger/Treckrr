@@ -30,7 +30,7 @@
 		</div>
 	</div>
 
-	{{if or (and (not .Completed) .StaleCount) (and .Completed .OpenCount)}}
+	{{if or (and (not .Completed) .StaleCount) (and .Completed (or .OpenCount .CreditCount))}}
 	<div>
 		<h2 class="section-title">Zu erledigen</h2>
 		<div class="attn">
@@ -42,9 +42,16 @@
 			</a>
 			{{end}}
 			{{if and .Completed .OpenCount}}
-			<a class="attn__row attn__row--owe" href="#nachbarn">
+			<a class="attn__row attn__row--owe" href="#offene-zahlungen">
 				<span class="attn__ic attn__ic--owe">€</span>
 				<span class="attn__txt"><strong>{{.OpenCount}} Nachbar(n)</strong> mit offener Zahlung · {{money .OpenCost}}</span>
+				<span class="attn__go">›</span>
+			</a>
+			{{end}}
+			{{if and .Completed .CreditCount}}
+			<a class="attn__row attn__row--credit" href="#auszuzahlen">
+				<span class="attn__ic attn__ic--credit">€</span>
+				<span class="attn__txt"><strong>{{.CreditCount}} Nachbar(n)</strong> mit Guthaben – noch auszuzahlen · {{money .CreditCost}}</span>
 				<span class="attn__go">›</span>
 			</a>
 			{{end}}
@@ -62,6 +69,7 @@
 			<span class="paysummary">
 				<span class="tag tag--paid">Bezahlt {{money .PaidCost}}</span>
 				<span class="tag tag--open">Offen {{money .OpenCost}}</span>
+				{{if .CreditCount}}<span class="tag tag--credit">Guthaben {{money .CreditCost}}</span>{{end}}
 			</span>
 			{{end}}
 		</div>
@@ -80,6 +88,9 @@
 		<a class="btn btn--ghost btn--sm" href="/years/{{.Year.ID}}/issue-all" title="Alle offenen Nachbarn auf einmal abrechnen">Sammel-Festschreibung</a>
 	</div>
 
+	{{/* Targets of the "Zu erledigen" rows: jumping here rings every tile of
+	     that kind (CSS :has(:target)), like the linked booking cards. */}}
+	<span class="due-anchor" id="offene-zahlungen"></span><span class="due-anchor" id="auszuzahlen"></span>
 	<h2 class="section-title" id="nachbarn">Nachbarn im Jahr {{.Year.Year}}</h2>
 	{{if .Summaries}}
 	<div class="listtools">
@@ -94,7 +105,7 @@
 	{{end}}
 	<div class="list">
 		{{range .Summaries}}
-		<div class="list__row card" data-nb-item{{if and $.Completed (not .Paid)}} data-open="1"{{end}}>
+		<div class="list__row card" data-nb-item{{if and $.Completed (not .Paid)}} data-open="1"{{end}}{{if $.Completed}}{{if .Credit}} data-due="credit"{{else if not .Paid}} data-due="open"{{end}}{{end}}>
 			<a class="list__main list__main--link" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}">
 				<span class="list__title">{{.Neighbor.Name}}</span>
 				<span class="list__sub">{{.Entries}} Buchungen · {{num .Hours}} h</span>
@@ -103,6 +114,8 @@
 			{{if $.Completed}}
 			{{if .Paid}}
 				<span class="paychip paychip--paid">{{template "ic-check"}} Bezahlt</span>
+				{{else if .Credit}}
+				<a class="paychip paychip--credit" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}" title="Guthaben des Nachbarn – auszahlen oder ins Folgejahr übernehmen">Guthaben · {{money .Remaining.Neg}}</a>
 				{{else}}
 				<form method="post" action="/years/mark-paid" class="paytoggle"
 					data-confirm="Restbetrag ({{money .Remaining}}) als bezahlt verbuchen?">
@@ -113,11 +126,13 @@
 					</button>
 				</form>
 				{{end}}
-			{{else if gt .Entries 0}}
+			{{else if or (gt .Entries 0) (not .Remaining.IsZero)}}
 				{{/* Running year: show payment status at a glance (read-only — the
 				     "als bezahlt verbuchen" toggle stays gated to completed years). */}}
 				{{if .Paid}}
 				<span class="paychip paychip--paid" title="Vollständig bezahlt">{{template "ic-check"}} Bezahlt</span>
+				{{else if .Credit}}
+				<span class="paychip paychip--credit paychip--static" title="Guthaben des Nachbarn – noch an ihn auszuzahlen">Guthaben · {{money .Remaining.Neg}}</span>
 				{{else}}
 				<span class="paychip paychip--open paychip--static" title="Noch offener Betrag">Offen · {{money .Remaining}}</span>
 				{{end}}

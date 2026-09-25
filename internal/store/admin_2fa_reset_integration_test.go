@@ -41,7 +41,7 @@ func TestResetTotpRevokesSessionsIntegration(t *testing.T) {
 	defer purgeFixtures(t, ctx, pool, f)
 
 	username := fmt.Sprintf("tfareset%d", os.Getpid())
-	uid, err := st.CreateUser(ctx, username, "correct-horse-battery", "editor")
+	uid, err := st.CreateUser(ctx, username, "correct-horse-battery-1", "editor")
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}

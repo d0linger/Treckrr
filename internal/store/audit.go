@@ -189,6 +189,37 @@ func (s *Store) ListAuditFiltered(ctx context.Context, aq AuditQuery, limit, off
 	return scanAuditRows(rows)
 }
 
+// StreamAuditFiltered visits matching audit rows in stable newest-first order
+// without materializing the retained history in memory. The callback must not
+// retain pointers into the entry after it returns.
+func (s *Store) StreamAuditFiltered(ctx context.Context, aq AuditQuery, yield func(models.AuditEntry) error) error {
+	q := `SELECT id, user_id, username, action, entity, entity_id, detail, ip, created_at
+	        FROM audit_log` + auditFilter + ` ORDER BY created_at DESC, id DESC`
+	rows, err := s.db.QueryContext(ctx, q, auditArgs(aq)...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			e   models.AuditEntry
+			uid sql.NullInt64
+		)
+		if err := rows.Scan(&e.ID, &uid, &e.Username, &e.Action, &e.Entity,
+			&e.EntityID, &e.Detail, &e.IP, &e.Created); err != nil {
+			return err
+		}
+		if uid.Valid {
+			id := uid.Int64
+			e.UserID = &id
+		}
+		if err := yield(e); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 // AuditActions returns the distinct action names (for the filter dropdown),
 // across the whole audit history.
 func (s *Store) AuditActions(ctx context.Context) ([]string, error) {

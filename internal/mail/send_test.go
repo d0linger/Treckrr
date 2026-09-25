@@ -151,3 +151,23 @@ func TestSendRequiresStartTLS(t *testing.T) {
 		t.Fatalf("expected STARTTLS-required rejection, got %v", err)
 	}
 }
+
+// TestStableMessageID verifies equivalent addresses and content retain one SMTP identity.
+func TestStableMessageID(t *testing.T) {
+	atts := []Attachment{{Filename: "rechnung.pdf", ContentType: "application/pdf", Data: []byte("pdf")}}
+	a := StableMessageID("MR <sender@example.at>", "Kunde <TO@example.at>", "Rechnung", "Text", atts)
+	b := StableMessageID("sender@example.at", "to@example.at", "Rechnung", "Text", atts)
+	if a != b {
+		t.Fatalf("equivalent delivery IDs differ: %q != %q", a, b)
+	}
+	if !strings.HasPrefix(a, "<treckrr.") || !strings.HasSuffix(a, "@example.at>") {
+		t.Fatalf("message ID is not RFC-shaped: %q", a)
+	}
+	if changed := StableMessageID("sender@example.at", "to@example.at", "Rechnung", "anderer Text", atts); changed == a {
+		t.Fatal("different content reused the same message ID")
+	}
+	msg := string(buildMessage("sender@example.at", "to@example.at", "Rechnung", "Text", atts))
+	if !strings.Contains(msg, "Message-ID: "+a+"\r\n") {
+		t.Fatalf("message is missing stable Message-ID %q", a)
+	}
+}

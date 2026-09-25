@@ -189,15 +189,19 @@ type Settings struct {
 
 // S3Options configures an optional S3-compatible off-box destination.
 type S3Options struct {
-	Endpoint  string
-	Bucket    string
-	AccessKey string
-	SecretKey string
-	Prefix    string
-	UseSSL    bool
+	Endpoint     string
+	Bucket       string
+	AccessKey    string
+	SecretKey    string
+	Prefix       string
+	LegacyPrefix *string
+	UseSSL       bool
 }
 
-func (o S3Options) enabled() bool { return o.Endpoint != "" && o.Bucket != "" }
+// enabled reports whether every non-secret S3 namespace field is configured.
+func (o S3Options) enabled() bool {
+	return o.Endpoint != "" && o.Bucket != "" && strings.TrimSpace(o.Prefix) != ""
+}
 
 // Options configures a Service. EncKey empty means backups are disabled.
 type Options struct {
@@ -251,12 +255,22 @@ const statusRetryBackoff = 15 * time.Minute
 // updateStatus applies mutate to status.json under the lock, re-reading first so
 // a concurrent run's fields (e.g. the other destination's timestamps) are
 // preserved instead of clobbered by a stale read-modify-write.
-func (s *Service) updateStatus(mutate func(*Status)) {
+func (s *Service) updateStatus(mutate func(*Status)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st := s.readStatus()
 	mutate(&st)
-	s.writeStatus(st)
+	return s.writeStatus(st)
+}
+
+// withFailedStatus records a failed backup without hiding either the original
+// operation error or a status-persistence failure.
+func (s *Service) withFailedStatus(cause error) error {
+	statusErr := s.updateStatus(func(st *Status) { st.OK = false })
+	if statusErr != nil {
+		statusErr = fmt.Errorf("persist failed backup status: %w", statusErr)
+	}
+	return errors.Join(cause, statusErr)
 }
 
 // New builds a Service. When opt.EncKey is empty the service is disabled and all
@@ -324,9 +338,11 @@ func (s *Service) Enabled() bool { return s.secret != nil }
 // ErrDisabled is returned when no BACKUP_ENCRYPTION_KEY is configured.
 var ErrDisabled = fmt.Errorf("backups are not configured (set BACKUP_ENCRYPTION_KEY)")
 
-// Filename is the name of a dump taken at t, e.g. treckrr-2026-08-01-030000.dump.enc.
+// Filename is the collision-resistant name of a dump taken at t. Nanoseconds
+// prevent two serialized manual/scheduled runs in the same second from
+// replacing one another locally or in S3.
 func Filename(t time.Time) string {
-	return "treckrr-" + t.Format("2006-01-02-150405") + ".dump.enc"
+	return "treckrr-" + t.Format("2006-01-02-150405.000000000") + ".dump.enc"
 }
 
 // encrypt seals plaintext with AES-256-GCM into the TRKBK2 layout:
@@ -486,14 +502,17 @@ func (s *Service) RunScheduled(ctx context.Context) error {
 		return ErrDisabled
 	}
 	set := s.currentSettings(ctx)
-	if err := s.runVolume(ctx, set.VolumeKeep); err != nil {
-		return err
+	now := time.Now()
+	volumeErr := s.runVolume(ctx, set.VolumeKeep)
+	if stateErr := s.persistSchedulerResult(ctx, "volume", volumeErr == nil, now); volumeErr != nil || stateErr != nil {
+		return errors.Join(volumeErr, stateErr)
 	}
 	if s.S3Enabled() {
 		// Surface the S3 result: the volume dump already succeeded above, but a
 		// failed off-box copy must not be reported as overall success (3-2-1), so
 		// the CLI `treckrr backup` exits non-zero and cron can alert.
-		return s.runS3Mirror(ctx, set.S3Keep)
+		s3Err := s.runS3Mirror(ctx, set.S3Keep)
+		return errors.Join(s3Err, s.persistSchedulerResult(ctx, "s3", s3Err == nil, time.Now()))
 	}
 	return nil
 }
@@ -508,12 +527,10 @@ func (s *Service) runVolume(ctx context.Context, keep int) error {
 	defer release()
 	enc, name, err := s.CreateEncrypted(ctx)
 	if err != nil {
-		s.updateStatus(func(st *Status) { st.OK = false })
-		return err
+		return s.withFailedStatus(err)
 	}
 	if err := os.MkdirAll(s.opt.Dir, 0o750); err != nil {
-		s.updateStatus(func(st *Status) { st.OK = false })
-		return err
+		return s.withFailedStatus(err)
 	}
 	// Write to a staging name first. List() only returns *.dump.enc, so the staging
 	// file (…​.dump.enc.staging) is never listed or S3-mirrored until it has been
@@ -521,8 +538,7 @@ func (s *Service) runVolume(ctx context.Context, keep int) error {
 	finalPath := filepath.Join(s.opt.Dir, name)
 	stagingPath := finalPath + ".staging"
 	if err := writeFileAtomic(stagingPath, enc); err != nil {
-		s.updateStatus(func(st *Status) { st.OK = false })
-		return err
+		return s.withFailedStatus(err)
 	}
 	// Verify BEFORE the dump becomes visible and before pruning — a backup you have
 	// never restored is not a backup. On failure delete the staging artifact, keep
@@ -530,20 +546,18 @@ func (s *Service) runVolume(ctx context.Context, keep int) error {
 	// fail closed): a corrupt new dump must never replace the last good recovery point.
 	if err := s.verifyRestorable(ctx, enc); err != nil {
 		_ = os.Remove(stagingPath)
-		s.updateStatus(func(st *Status) { st.OK = false })
-		return fmt.Errorf("backup verification failed, prior backups kept: %w", err)
+		return s.withFailedStatus(fmt.Errorf("backup verification failed, prior backups kept: %w", err))
 	}
 	// Verified — atomically promote it to the listable/mirrorable final name.
-	if err := os.Rename(stagingPath, finalPath); err != nil {
+	if err := durableRename(stagingPath, finalPath); err != nil {
 		_ = os.Remove(stagingPath)
-		s.updateStatus(func(st *Status) { st.OK = false })
-		return err
+		return s.withFailedStatus(err)
 	}
 	// Now it is safe to prune older backups to `keep`.
 	s.prune(keep)
 	schema := s.SchemaVersion(ctx)
 	now := time.Now()
-	s.updateStatus(func(st *Status) {
+	return s.updateStatus(func(st *Status) {
 		st.Encrypted = true
 		st.SchemaVersion = schema
 		st.LastBackup = now
@@ -557,7 +571,6 @@ func (s *Service) runVolume(ctx context.Context, keep int) error {
 		// scratch database and queries it, stamps that field.
 		st.ArchiveVerified = now
 	})
-	return nil
 }
 
 // runS3Mirror uploads the newest volume dump not already in the bucket, prunes S3
@@ -587,6 +600,18 @@ func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
 				// off-box copy forever. Re-verify the stored bytes (also catches at-rest
 				// bit-rot); if it's bad but we still hold a good local dump, self-heal by
 				// overwriting it rather than staying failed until the next volume cycle.
+				owned, ownErr := s.s3ObjectOwned(ctx, newest)
+				if ownErr != nil {
+					return ownErr
+				}
+				if !owned {
+					// The name is occupied by a legacy or foreign object. Never send it
+					// through repair: create a distinct, owned recovery point instead.
+					if data, name, err = s.createVerifiedDump(ctx); err != nil {
+						return err
+					}
+					break
+				}
 				err := s.verifyS3Object(ctx, newest, files[0].Size)
 				if err != nil {
 					if rerr := s.repairS3Mirror(ctx, newest); rerr != nil {
@@ -597,28 +622,27 @@ func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
 				}
 				ok := err == nil
 				now := time.Now()
-				s.updateStatus(func(st *Status) { st.S3OK, st.LastS3 = &ok, now })
+				statusErr := s.updateStatus(func(st *Status) { st.S3OK, st.LastS3 = &ok, now })
 				if ok {
 					s.pruneS3(ctx, s3keep)
 				}
-				return err
+				return errors.Join(err, statusErr)
 			}
 		}
-		name = newest
-		if data, err = s.OpenContext(ctx, newest); err != nil {
-			return err
+		if name == "" {
+			name = newest
+			if data, err = s.OpenContext(ctx, newest); err != nil {
+				return err
+			}
 		}
 	} else {
 		// No local volume dump (e.g. the volume schedule is off) — create a fresh
 		// one just for S3 so the off-box copy still happens rather than silently
-		// never running.
-		if data, name, err = s.CreateEncrypted(ctx); err != nil {
-			return err
-		}
-		// Verify it restores before it becomes the ONLY off-box copy — an unverified
+		// never running. Verify it restores before it becomes the ONLY off-box copy —
+		// an unverified
 		// backup is not a backup. runVolume verifies before promoting a local dump;
 		// this fresh S3-only dump gets the same drill. On failure, don't upload.
-		if err := s.verifyRestorable(ctx, data); err != nil {
+		if data, name, err = s.createVerifiedDump(ctx); err != nil {
 			return err
 		}
 	}
@@ -630,15 +654,28 @@ func (s *Service) runS3Mirror(ctx context.Context, s3keep int) error {
 	}
 	ok := uerr == nil
 	now := time.Now()
-	s.updateStatus(func(st *Status) { st.S3OK, st.LastS3 = &ok, now })
+	statusErr := s.updateStatus(func(st *Status) { st.S3OK, st.LastS3 = &ok, now })
 	if ok {
 		s.pruneS3(ctx, s3keep)
 	}
-	return uerr
+	return errors.Join(uerr, statusErr)
 }
 
-// repairS3Mirror re-pushes the local dump `name` to overwrite a remote copy that
-// failed verification, then re-verifies the replacement. The local archive is
+// createVerifiedDump creates a fresh encrypted recovery point and validates its
+// archive before it can become an off-box-only copy.
+func (s *Service) createVerifiedDump(ctx context.Context) ([]byte, string, error) {
+	data, name, err := s.CreateEncrypted(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := s.verifyRestorable(ctx, data); err != nil {
+		return nil, "", err
+	}
+	return data, name, nil
+}
+
+// repairS3Mirror replaces a corrupt object only after ownership metadata proves
+// this installation created it, then re-verifies the replacement. The local archive is
 // verified first, so a bad local dump is never pushed over the (differently) bad
 // remote — repair only ever replaces a bad off-box copy with a known-good one.
 func (s *Service) repairS3Mirror(ctx context.Context, name string) error {
@@ -648,6 +685,20 @@ func (s *Service) repairS3Mirror(ctx context.Context, name string) error {
 	}
 	if err := s.verifyRestorable(ctx, data); err != nil {
 		return fmt.Errorf("local dump not restorable: %w", err)
+	}
+	owned, err := s.s3ObjectOwned(ctx, name)
+	if err != nil {
+		return err
+	}
+	if !owned {
+		return fmt.Errorf("refusing to replace unowned S3 object %q", name)
+	}
+	cl, err := s.s3Client()
+	if err != nil {
+		return err
+	}
+	if err := cl.RemoveObject(ctx, s.opt.S3.Bucket, s.opt.S3.Prefix+name, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("remove corrupt owned S3 object: %w", err)
 	}
 	if err := s.uploadS3(ctx, name, data); err != nil {
 		return err
@@ -963,33 +1014,54 @@ func (s *Service) Loop(ctx context.Context, logger *slog.Logger) {
 	}
 }
 
+// tick runs due schedules only while this instance owns the scheduler lease.
 func (s *Service) tick(ctx context.Context, logger *slog.Logger) {
+	releaseScheduler, acquired, err := s.acquireSchedulerLease(ctx)
+	if err != nil {
+		logger.Error("backup scheduler lease failed", "err", err)
+		return
+	}
+	if !acquired {
+		return
+	}
+	defer func() {
+		if err := releaseScheduler(); err != nil {
+			logger.Error("backup scheduler lease release failed", "err", err)
+		}
+	}()
+
 	set := s.currentSettings(ctx)
 	st := s.readStatus()
 	now := time.Now()
+	state, err := s.loadSchedulerState(ctx, st)
+	if err != nil {
+		logger.Error("backup scheduler state failed", "err", err)
+		return
+	}
 	// The `now.After(retryAt)` guard bounds a persistently failing destination to
 	// one attempt per statusRetryBackoff instead of a heavy pg_dump every minute
 	// (LastBackup/LastS3 only advance on success, so cronDue stays true meanwhile).
-	if cronDue(set.VolumeCron, st.LastBackup, now) && now.After(s.volRetryAt) {
+	if cronDue(set.VolumeCron, state.volumeLast, now) && now.After(state.volumeRetry) {
 		c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
-		if err := s.runVolume(c, set.VolumeKeep); err != nil {
+		runErr := s.runVolume(c, set.VolumeKeep)
+		stateErr := s.persistSchedulerResult(ctx, "volume", runErr == nil, now)
+		if runErr != nil || stateErr != nil {
 			s.volRetryAt = now.Add(statusRetryBackoff)
-			logger.Error("volume backup failed", "err", err)
+			logger.Error("volume backup failed", "err", errors.Join(runErr, stateErr))
 		} else {
-			s.volRetryAt = time.Time{}
 			logger.Info("volume backup written", "dir", s.opt.Dir)
 		}
 		cancel()
 	}
 	if s.S3Enabled() {
-		st = s.readStatus()
-		if cronDue(set.S3Cron, st.LastS3, now) && now.After(s.s3RetryAt) {
+		if cronDue(set.S3Cron, state.s3Last, now) && now.After(state.s3Retry) {
 			c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
-			if err := s.runS3Mirror(c, set.S3Keep); err != nil {
+			runErr := s.runS3Mirror(c, set.S3Keep)
+			stateErr := s.persistSchedulerResult(ctx, "s3", runErr == nil, now)
+			if runErr != nil || stateErr != nil {
 				s.s3RetryAt = now.Add(statusRetryBackoff)
-				logger.Error("s3 mirror failed", "err", err)
+				logger.Error("s3 mirror failed", "err", errors.Join(runErr, stateErr))
 			} else {
-				s.s3RetryAt = time.Time{}
 				logger.Info("s3 mirror updated")
 			}
 			cancel()
@@ -1002,7 +1074,8 @@ func (s *Service) ManualVolume(ctx context.Context) error {
 	if !s.Enabled() {
 		return ErrDisabled
 	}
-	return s.runVolume(ctx, s.currentSettings(ctx).VolumeKeep)
+	err := s.runVolume(ctx, s.currentSettings(ctx).VolumeKeep)
+	return errors.Join(err, s.persistSchedulerResult(ctx, "volume", err == nil, time.Now()))
 }
 
 // ManualS3 creates a fresh encrypted dump and uploads it straight to S3 now —
@@ -1037,9 +1110,13 @@ func (s *Service) ManualS3(ctx context.Context) (string, error) {
 	}
 	ok := uerr == nil
 	now := time.Now()
-	s.updateStatus(func(st *Status) { st.S3OK, st.LastS3 = &ok, now })
-	if uerr != nil {
-		return "", uerr
+	statusErr := s.updateStatus(func(st *Status) { st.S3OK, st.LastS3 = &ok, now })
+	if uerr != nil || statusErr != nil {
+		stateErr := s.persistSchedulerResult(ctx, "s3", false, now)
+		return "", errors.Join(uerr, statusErr, stateErr)
+	}
+	if err := s.persistSchedulerResult(ctx, "s3", true, now); err != nil {
+		return "", err
 	}
 	return name, nil
 }
@@ -1067,13 +1144,79 @@ func (s *Service) s3Client() (*minio.Client, error) {
 	})
 }
 
-// pruneS3 keeps only the newest keep objects in the bucket (0 = keep all).
+const s3OwnerMetadata = "treckrr-installation"
+
+// s3ObjectNotFound reports the S3-compatible not-found variants returned by
+// different providers for HEAD requests.
+func s3ObjectNotFound(err error) bool {
+	resp := minio.ToErrorResponse(err)
+	return resp.StatusCode == 404 || resp.Code == "NoSuchKey" || resp.Code == "NoSuchObject"
+}
+
+// s3ReadPrefixes returns the normalized write namespace followed by the exact
+// legacy concatenation prefix, when they differ.
+func (s *Service) s3ReadPrefixes() []string {
+	prefixes := []string{s.opt.S3.Prefix}
+	if legacy := s.opt.S3.LegacyPrefix; legacy != nil && *legacy != s.opt.S3.Prefix {
+		prefixes = append(prefixes, *legacy)
+	}
+	return prefixes
+}
+
+// s3InstallationID is a stable, non-secret ownership marker derived from the
+// bucket namespace. Configuration requires the prefix to be installation-
+// specific; hashing avoids copying the raw deployment name into metadata.
+func (s *Service) s3InstallationID() string {
+	digest := sha256.Sum256([]byte(s.opt.S3.Bucket + "\x00" + s.opt.S3.Prefix))
+	return fmt.Sprintf("%x", digest[:])
+}
+
+// s3ObjectOwned verifies that an object carries this installation's immutable
+// ownership marker before destructive maintenance may act on it.
+func (s *Service) s3ObjectOwned(ctx context.Context, name string) (bool, error) {
+	cl, err := s.s3Client()
+	if err != nil {
+		return false, err
+	}
+	info, err := cl.StatObject(ctx, s.opt.S3.Bucket, s.opt.S3.Prefix+name, minio.StatObjectOptions{})
+	if err != nil {
+		if s3ObjectNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("s3 head %q: %w", name, err)
+	}
+	want := s.s3InstallationID()
+	for key, value := range info.UserMetadata {
+		if strings.EqualFold(key, s3OwnerMetadata) {
+			return value == want, nil
+		}
+	}
+	return false, nil
+}
+
+// pruneS3 keeps only the newest owned objects in this installation's namespace
+// (0 = keep all). Untagged legacy and foreign objects remain readable, but are
+// never counted toward retention and never deleted automatically.
 func (s *Service) pruneS3(ctx context.Context, keep int) {
 	if keep <= 0 {
 		return
 	}
 	files, err := s.S3List(ctx)
-	if err != nil || len(files) <= keep {
+	if err != nil {
+		return
+	}
+	owned := make([]BackupFile, 0, len(files))
+	for _, file := range files {
+		isOwned, ownErr := s.s3ObjectOwned(ctx, file.Name)
+		if ownErr != nil {
+			slog.Warn("backup prune: s3 ownership check failed", "object", file.Name, "err", ownErr)
+			continue
+		}
+		if isOwned {
+			owned = append(owned, file)
+		}
+	}
+	if len(owned) <= keep {
 		return
 	}
 	cl, err := s.s3Client()
@@ -1081,7 +1224,7 @@ func (s *Service) pruneS3(ctx context.Context, keep int) {
 		return
 	}
 	cutoff := time.Now().Add(-minRetention)
-	for _, f := range files[keep:] { // S3List is newest-first
+	for _, f := range owned[keep:] { // S3List is newest-first
 		if f.ModTime.IsZero() || f.ModTime.After(cutoff) {
 			continue
 		}
@@ -1098,8 +1241,15 @@ func (s *Service) uploadS3(ctx context.Context, name string, data []byte) error 
 	if err != nil {
 		return err
 	}
+	opts := minio.PutObjectOptions{
+		ContentType:  "application/octet-stream",
+		UserMetadata: map[string]string{s3OwnerMetadata: s.s3InstallationID()},
+	}
+	// A collision must fail instead of overwriting an object that another
+	// process or installation may have created.
+	opts.SetMatchETagExcept("*")
 	_, err = cl.PutObject(ctx, s.opt.S3.Bucket, s.opt.S3.Prefix+name, bytes.NewReader(data), int64(len(data)),
-		minio.PutObjectOptions{ContentType: "application/octet-stream"})
+		opts)
 	return err
 }
 
@@ -1120,6 +1270,17 @@ func (s *Service) verifyS3Object(ctx context.Context, name string, wantSize int6
 	info, err := cl.StatObject(ctx, s.opt.S3.Bucket, key, minio.StatObjectOptions{})
 	if err != nil {
 		return fmt.Errorf("s3 head: %w", err)
+	}
+	owned := false
+	wantOwner := s.s3InstallationID()
+	for key, value := range info.UserMetadata {
+		if strings.EqualFold(key, s3OwnerMetadata) && value == wantOwner {
+			owned = true
+			break
+		}
+	}
+	if !owned {
+		return fmt.Errorf("s3 object %q is legacy or belongs to another installation", name)
 	}
 	if info.Size != wantSize {
 		return fmt.Errorf("s3 stored %d bytes, expected %d (incomplete upload?)", info.Size, wantSize)
@@ -1188,22 +1349,47 @@ func (s *Service) S3List(ctx context.Context) ([]BackupFile, error) {
 	defer cancel()
 	var out []BackupFile
 	seen := 0
-	for obj := range cl.ListObjects(lctx, s.opt.S3.Bucket,
-		minio.ListObjectsOptions{Prefix: s.opt.S3.Prefix, Recursive: true}) {
-		if obj.Err != nil {
-			return nil, obj.Err
+	names := make(map[string]struct{})
+	for _, prefix := range s.s3ReadPrefixes() {
+		for obj := range cl.ListObjects(lctx, s.opt.S3.Bucket,
+			minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+			if obj.Err != nil {
+				return nil, obj.Err
+			}
+			if seen++; seen > maxS3Listing {
+				return nil, fmt.Errorf("S3 listing exceeds %d objects; refusing to enumerate unbounded", maxS3Listing)
+			}
+			name := strings.TrimPrefix(obj.Key, prefix)
+			if !validName(name) {
+				continue
+			}
+			if _, exists := names[name]; exists {
+				continue
+			}
+			names[name] = struct{}{}
+			out = append(out, BackupFile{Name: name, Size: obj.Size, ModTime: obj.LastModified})
 		}
-		if seen++; seen > maxS3Listing {
-			return nil, fmt.Errorf("S3 listing exceeds %d objects; refusing to enumerate unbounded", maxS3Listing)
-		}
-		name := strings.TrimPrefix(obj.Key, s.opt.S3.Prefix)
-		if !validName(name) {
-			continue
-		}
-		out = append(out, BackupFile{Name: name, Size: obj.Size, ModTime: obj.LastModified})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name > out[j].Name })
 	return out, nil
+}
+
+// s3ReadableObject locates a backup in the normalized namespace first, then in
+// the exact legacy concatenation namespace used by earlier releases.
+func (s *Service) s3ReadableObject(ctx context.Context, cl *minio.Client, name string) (string, minio.ObjectInfo, error) {
+	var notFound error
+	for _, prefix := range s.s3ReadPrefixes() {
+		key := prefix + name
+		info, err := cl.StatObject(ctx, s.opt.S3.Bucket, key, minio.StatObjectOptions{})
+		if err == nil {
+			return key, info, nil
+		}
+		if !s3ObjectNotFound(err) {
+			return "", minio.ObjectInfo{}, err
+		}
+		notFound = err
+	}
+	return "", minio.ObjectInfo{}, notFound
 }
 
 // S3Get downloads one object from the bucket (still encrypted).
@@ -1223,12 +1409,13 @@ func (s *Service) S3Get(ctx context.Context, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	key := s.opt.S3.Prefix + name
+	key, info, err := s.s3ReadableObject(ctx, cl, name)
+	if err != nil {
+		return nil, err
+	}
 	// Reject an oversized object up front (SH-06) so a compromised endpoint can't
 	// exhaust memory before the read.
-	if info, err := cl.StatObject(ctx, s.opt.S3.Bucket, key, minio.StatObjectOptions{}); err != nil {
-		return nil, err
-	} else if info.Size < 0 || info.Size > s.maxBytes() {
+	if info.Size < 0 || info.Size > s.maxBytes() {
 		return nil, fmt.Errorf("backup object too large: %d bytes", info.Size)
 	}
 	obj, err := cl.GetObject(ctx, s.opt.S3.Bucket, key, minio.GetObjectOptions{})
@@ -1247,20 +1434,19 @@ func (s *Service) S3Get(ctx context.Context, name string) ([]byte, error) {
 	return data, nil
 }
 
-func (s *Service) writeStatus(st Status) {
+// writeStatus durably replaces the local scheduler status document.
+func (s *Service) writeStatus(st Status) error {
 	if s.opt.StatusFile == "" {
-		return
+		return nil
 	}
 	b, err := json.Marshal(st)
 	if err != nil {
-		slog.Error("backup: marshal status failed", "err", err)
-		return
+		return fmt.Errorf("marshal backup status: %w", err)
 	}
 	if err := writeFileAtomic(s.opt.StatusFile, b); err != nil {
-		// Surface a status-write failure (T-04) instead of silently dropping it —
-		// a stale status.json otherwise misreports backup health to operators.
-		slog.Error("backup: status write failed", "err", err)
+		return fmt.Errorf("write backup status: %w", err)
 	}
+	return nil
 }
 
 // writeFileAtomic writes via a per-call unique temp file + rename so readers
@@ -1287,7 +1473,7 @@ func writeFileAtomic(path string, data []byte) error {
 		_ = os.Remove(tmp)
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := durableRename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}

@@ -102,7 +102,7 @@ func TestLastAdminGuardIntegration(t *testing.T) {
 	})
 
 	t.Run("non-admin users are unaffected", func(t *testing.T) {
-		ed, err := st.CreateUser(ctx, u("editor"), "pw-editor-xxxxxx", models.RoleEditor)
+		ed, err := st.CreateUser(ctx, u("editor"), "pw-editor-1xxxxx", models.RoleEditor)
 		if err != nil {
 			t.Fatalf("create editor: %v", err)
 		}

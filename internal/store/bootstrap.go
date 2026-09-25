@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/d0linger/treckrr/internal/auth"
 	"github.com/d0linger/treckrr/internal/models"
 )
 
@@ -26,6 +27,9 @@ func (s *Store) EnsureAdmin(ctx context.Context, username, password string, rese
 	err := s.db.QueryRowContext(ctx,
 		`SELECT id, role='admin', disabled FROM users WHERE username=$1`, username).Scan(&id, &isAdmin, &disabled)
 	if errors.Is(err, sql.ErrNoRows) {
+		if err := auth.ValidatePassword(password); err != nil {
+			return fmt.Errorf("validate bootstrap admin password: %w", err)
+		}
 		_, err := s.CreateAccount(ctx, NewAccount{Username: username, Password: password, Role: models.RoleAdmin, MustChangePassword: true})
 		if err != nil {
 			return fmt.Errorf("create admin: %w", err)
@@ -41,6 +45,13 @@ func (s *Store) EnsureAdmin(ctx context.Context, username, password string, rese
 			return fmt.Errorf("bootstrap admin is disabled; choose an active administrator")
 		}
 		return nil
+	}
+	if reset {
+		// Validate before any mutation: a rejected break-glass credential must
+		// not promote an existing non-admin account as a side effect.
+		if err := auth.ValidatePassword(password); err != nil {
+			return fmt.Errorf("validate bootstrap admin reset password: %w", err)
+		}
 	}
 	if !isAdmin {
 		if err := s.SetAdmin(ctx, id, true); err != nil {
