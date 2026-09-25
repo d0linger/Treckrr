@@ -205,6 +205,33 @@ func TestLegacyBookingInputLimits(t *testing.T) {
 	}
 }
 
+// TestRecurringInputLimits checks that oversized recurring input parameters are rejected.
+func TestRecurringInputLimits(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	for _, tc := range []struct {
+		name, field, label string
+		handler            http.HandlerFunc
+	}{
+		{name: "create next_run", field: "next_run", label: "Startdatum", handler: s.handleRecurringCreate},
+		{name: "create interval_kind", field: "interval_kind", label: "Intervall", handler: s.handleRecurringCreate},
+		{name: "update next_run", field: "next_run", label: "Startdatum", handler: s.handleRecurringUpdate},
+		{name: "update interval_kind", field: "interval_kind", label: "Intervall", handler: s.handleRecurringUpdate},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			form := url.Values{"next_run": {"2026-03-30"}, "interval_kind": {"weekly"}}
+			form.Set(tc.field, strings.Repeat("a", maxNameLen+1))
+			assertFormRedirect(
+				t,
+				s,
+				tc.handler,
+				form,
+				"/recurring",
+				tc.label+" darf höchstens 100 Zeichen lang sein.",
+			)
+		})
+	}
+}
+
 // TestPaymentDateLimits checks rejection at 51 characters and preserves both
 // ordinary dates and padded dates at the existing 50-character boundary.
 func TestPaymentDateLimits(t *testing.T) {
