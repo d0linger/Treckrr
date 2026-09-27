@@ -112,6 +112,10 @@ func (s *Server) handleUserPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	password := r.FormValue("password")
+	if s.passwordTooLong(w, r, password) {
+		redirect(w, r, "/admin/users")
+		return
+	}
 	if msg := passwordPolicyError(password); msg != "" {
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, "/admin/users")
@@ -133,7 +137,15 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
 	role := r.FormValue("role")
+	if s.tooLong(w, r, "Rolle", role, maxNameLen) {
+		redirect(w, r, "/admin/users")
+		return
+	}
 	if !validRole(role) {
 		s.setFlash(w, r, "error", "Unbekannte Rolle.")
 		redirect(w, r, "/admin/users")

@@ -200,6 +200,52 @@ func TestHandleUserCreateValidation(t *testing.T) {
 	})
 }
 
+func TestHandleUserPasswordAndRoleValidation(t *testing.T) {
+	s := testAdminServer(t)
+
+	t.Run("overly long password rejected in handleUserPassword", func(t *testing.T) {
+		longPw := strings.Repeat("a", 73)
+		form := url.Values{}
+		form.Set("password", longPw)
+
+		req := httptest.NewRequest(http.MethodPost, "/admin/users/123/password", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("id", "123")
+		rr := httptest.NewRecorder()
+
+		s.handleUserPassword(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Passwort darf höchstens 72 Byte lang sein.") {
+			t.Errorf("expected long password flash message, got cookie: %q", flashCookie)
+		}
+	})
+
+	t.Run("overly long role rejected in handleUserRole", func(t *testing.T) {
+		longRole := strings.Repeat("r", 101)
+		form := url.Values{}
+		form.Set("role", longRole)
+
+		req := httptest.NewRequest(http.MethodPost, "/admin/users/123/role", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("id", "123")
+		rr := httptest.NewRecorder()
+
+		s.handleUserRole(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Rolle darf höchstens 100 Zeichen lang sein.") {
+			t.Errorf("expected long role flash message, got cookie: %q", flashCookie)
+		}
+	})
+}
+
 func TestHandleUserUpdateValidation(t *testing.T) {
 	s := testAdminServer(t)
 
