@@ -47,25 +47,25 @@ func TestVerifyBelegShare_OversizedToken(t *testing.T) {
 // pending-2FA cookie token.
 func TestVerifyPending2FA_OversizedToken(t *testing.T) {
 	s := testServer()
+	binding := []byte("credential-state")
+	lookup := func(int64) ([]byte, error) { return binding, nil }
 
-	if uID, ok := s.verifyPending2FA(s.signPending2FA(42)); !ok || uID != 42 {
+	if uID, ok := s.verifyPending2FAWith(s.signPending2FA(42, binding), lookup); !ok || uID != 42 {
 		t.Fatalf("valid pending-2FA token failed to verify: uID=%d ok=%v", uID, ok)
 	}
 
 	craft := func(pad int) string {
 		payload := fmt.Sprintf("2fa:%d|%s%d", 42, strings.Repeat("0", pad), time.Now().Add(pending2FATTL).Unix())
-		mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
-		mac.Write([]byte(payload))
-		return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + hex.EncodeToString(mac.Sum(nil))
+		return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + hex.EncodeToString(s.pending2FAMAC(payload, binding))
 	}
-	if _, ok := s.verifyPending2FA(craft(0)); !ok {
+	if _, ok := s.verifyPending2FAWith(craft(0), lookup); !ok {
 		t.Fatal("crafted (un-padded) pending-2FA token should verify — construction mismatch")
 	}
 	over := craft(300)
 	if len(over) <= maxPending2FATokenLen {
 		t.Fatalf("crafted token is not oversized: len=%d", len(over))
 	}
-	if _, ok := s.verifyPending2FA(over); ok {
+	if _, ok := s.verifyPending2FAWith(over, lookup); ok {
 		t.Fatal("an otherwise-valid oversized pending-2FA token must be rejected by the length cap")
 	}
 }

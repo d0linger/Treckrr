@@ -22,6 +22,7 @@
 			<p class="muted">Bestätige die Anmeldung mit deinem zweiten Faktor.</p>
 		</div>
 		<form method="post" action="/login/2fa" class="form">
+			<input type="hidden" name="csrf_token" value="{{.TwoFactorCSRF}}">
 			<label class="field">
 				<span data-2fa-label>Zwei‑Faktor‑Code</span>
 				<input class="otp" type="text" name="totp" inputmode="numeric"

@@ -50,6 +50,15 @@ func code(secret string, counter uint64) (string, error) {
 	return fmt.Sprintf("%0*d", digits, value%1_000_000), nil
 }
 
+// CodeAt returns the code for the time step containing at, and that step. It
+// is what an authenticator app would display at that moment (used by tests
+// that drive the real login and enrollment flows).
+func CodeAt(secret string, at time.Time) (string, uint64, error) {
+	step := uint64(at.Unix() / period) //nosec G115 -- Unix time is non-negative
+	c, err := code(secret, step)
+	return c, step, err
+}
+
 // Validate reports whether the supplied code matches the secret within a ±1
 // step window (to tolerate clock skew).
 func Validate(secret, input string) bool {

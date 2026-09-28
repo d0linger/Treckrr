@@ -663,6 +663,9 @@ func (s *Store) PurgeExpiredSessions(ctx context.Context) error {
 // was protecting stay alive. Since that button exists mainly for a compromised
 // account or a lost authenticator, a half-applied reset is the one outcome it
 // must never produce.
+//
+// Passkeys are revoked in the same transaction: a passkey login skips TOTP
+// entirely, so one enrolled by an attacker would outlive the reset untouched.
 func (s *Store) ResetTotpForUser(ctx context.Context, userID int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -683,7 +686,12 @@ func (s *Store) ResetTotpForUser(ctx context.Context, userID int64) error {
 		`DELETE FROM sessions WHERE user_id=$1`, userID); err != nil {
 		return fmt.Errorf("reset totp: revoke sessions: %w", err)
 	}
-	if err := addAuditTx(ctx, tx, "2fa_reset", "user", strconv.FormatInt(userID, 10), "durch Admin; Sitzungen beendet"); err != nil {
+	passkeys, err := revokePasskeysTx(ctx, tx, userID)
+	if err != nil {
+		return fmt.Errorf("reset totp: %w", err)
+	}
+	if err := addAuditTx(ctx, tx, "2fa_reset", "user", strconv.FormatInt(userID, 10),
+		"durch Admin; Sitzungen beendet"+passkeyRevocationNote(passkeys)); err != nil {
 		return err
 	}
 	return tx.Commit()

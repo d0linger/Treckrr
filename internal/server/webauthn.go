@@ -221,10 +221,13 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	user := userFromCtx(r)
 	// Step-up: adding a durable passkey requires re-entering the password, so a
-	// hijacked session can't silently enroll one (SH-02). The body is bounded by
-	// limitBody.
+	// hijacked session can't silently enroll one (SH-02). With TOTP enabled the
+	// second factor is required as well: a passkey login never asks for TOTP, so
+	// a password-only step-up let a hijacked session plus a known password mint a
+	// permanent, TOTP-free way back in. The body is bounded by limitBody.
 	var body struct {
 		Password string `json:"password"`
+		Code     string `json:"code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "Ungültige Anfrage.", http.StatusBadRequest)
@@ -244,9 +247,20 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 			http.StatusTooManyRequests)
 		return
 	}
+	// One message for either failure when 2FA is on, so the endpoint is no
+	// password oracle for someone holding only the session.
+	denied := "Passwort falsch."
+	if user.TotpEnabled {
+		denied = "Passwort oder Zwei‑Faktor‑Code falsch."
+	}
 	if _, err := s.store.AuthenticateUser(r.Context(), user.Username, body.Password); err != nil {
 		s.audit(r, "passkey_add_denied", "user", user.ID, "Passwort falsch")
-		http.Error(w, "Passwort falsch.", http.StatusForbidden)
+		http.Error(w, denied, http.StatusForbidden)
+		return
+	}
+	if user.TotpEnabled && !s.verifySecondFactor(r, user.ID, strings.TrimSpace(body.Code)) {
+		s.audit(r, "passkey_add_denied", "user", user.ID, "Zwei-Faktor-Code falsch")
+		http.Error(w, denied, http.StatusForbidden)
 		return
 	}
 	s.sensitiveReset(r, user.ID)
@@ -315,7 +329,7 @@ func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request)
 	// FAILED logins, so a client that never attempts one never trips it and could
 	// create ceremony rows without bound. The ceremony limiter below charges every
 	// begin — successful ones included — because the row is created either way.
-	ip := s.clientIP(r)
+	ip := s.limiterIP(r)
 	if s.logins.blocked(r.Context(), ip) {
 		s.auditLogin(r, "", "login_passkey_failed", "Rate-Limit: zu viele Fehlversuche")
 		http.Error(w, "Zu viele Fehlversuche. Bitte später erneut versuchen.", http.StatusTooManyRequests)
@@ -366,7 +380,7 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 	}
 	s.clearWASession(w, r)
 
-	rlKey := s.clientIP(r)
+	rlKey := s.limiterIP(r)
 	if s.logins.blocked(r.Context(), rlKey) {
 		s.auditLogin(r, "", "login_passkey_failed", "Rate-Limit: zu viele Fehlversuche")
 		http.Error(w, "Zu viele Fehlversuche. Bitte später erneut versuchen.", http.StatusTooManyRequests)
@@ -405,26 +419,45 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Anmeldung mit Passkey fehlgeschlagen.", http.StatusUnauthorized)
 		return
 	}
-	s.logins.reset(r.Context(), rlKey)
-	// A completed login clears the ceremony budget too, so a user who retried a
-	// few times doesn't carry the count into their next login.
+	s.completePasskeyLogin(w, r, loggedIn, cred, rlKey)
+}
+
+// completePasskeyLogin finishes a verified passkey assertion: clone check,
+// counter persistence, audit and session. The per-IP failure bucket is left
+// alone on success — it is shared by every account behind the address, so
+// clearing it would let a working login launder other accounts' failures.
+func (s *Server) completePasskeyLogin(w http.ResponseWriter, r *http.Request, user *models.User, cred *webauthn.Credential, rlKey string) {
+	// Clone detection: go-webauthn flags a signature counter that did not
+	// advance (never for counter-less synced authenticators, which stay at 0).
+	// The persisted counter is then only advanced when it is still below the
+	// asserted one, so two racing assertions cannot let the lower count win and
+	// hide a later regression; losing that race counts as a regression too.
+	// Either way the login is refused: counter-based clone detection that only
+	// logs lets a cloned hardware key keep working unnoticed.
+	advanced := false
+	if !cred.Authenticator.CloneWarning {
+		var err error
+		advanced, err = s.store.TouchWebauthnCredential(r.Context(), cred.ID, cred.Authenticator.SignCount, cred.Flags.BackupState)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+	}
+	if !advanced {
+		s.logins.fail(r.Context(), rlKey)
+		slog.Warn("passkey login refused: possible clone (signature counter did not advance)",
+			"user", sanitizeLog(user.Username), "ip", sanitizeLog(s.clientIP(r)))
+		s.auditLogin(r, user.Username, "login_passkey_clone_warning",
+			"Signaturzähler nicht gestiegen – möglicher Klon, Anmeldung abgelehnt")
+		http.Error(w, "Anmeldung mit diesem Passkey abgelehnt: möglicher Klon erkannt. "+
+			"Bitte mit Passwort anmelden und den Passkey in den Einstellungen prüfen.", http.StatusUnauthorized)
+		return
+	}
+	// A completed login clears the ceremony budget, so a user who retried a few
+	// times doesn't carry the count into their next login.
 	s.logins.ceremonyReset(r.Context(), rlKey)
-	// Clone detection: go-webauthn flags a regressed signature counter (never
-	// for counter-less synced authenticators, which stay at 0). Surface it —
-	// login still proceeds, but an admin can see the signal in the trail.
-	if cred.Authenticator.CloneWarning {
-		slog.Warn("passkey login: possible clone (signature counter regressed)",
-			"user", sanitizeLog(loggedIn.Username), "ip", sanitizeLog(s.clientIP(r)))
-		s.auditLogin(r, loggedIn.Username, "login_passkey_clone_warning", "Signaturzähler rückläufig – möglicher Klon")
-	}
-	// Persist the updated counter/backup-state; a failure here would leave stale
-	// state for the next assertion, so log it rather than swallowing it.
-	if err := s.store.TouchWebauthnCredential(r.Context(), cred.ID, cred.Authenticator.SignCount, cred.Flags.BackupState); err != nil {
-		slog.Error("passkey login: credential state update failed",
-			"user", sanitizeLog(loggedIn.Username), "err", sanitizeLog(err.Error()))
-	}
-	s.auditLogin(r, loggedIn.Username, "login_passkey", "")
-	if !s.startSession(w, r, loggedIn) {
+	s.auditLogin(r, user.Username, "login_passkey", "")
+	if !s.startSession(w, r, user) {
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok", "redirect": "/"})

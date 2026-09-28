@@ -129,8 +129,18 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 
 // ---- Two-factor authentication (TOTP) -----------------------------------
 
+// twoFactorRetryPath is where a failed setup confirmation returns to: the same
+// setup page, but keeping the pending seed the user has just scanned.
+const twoFactorRetryPath = "/account/2fa?retry=1"
+
 // handleTwoFactor shows the 2FA setup / status page. When 2FA is not yet
 // enabled it generates (and persists as pending) a secret to display.
+//
+// Every fresh visit mints a NEW pending seed. The seed used to be stored once
+// and shown again on every visit, so anyone who once glimpsed the setup page —
+// this GET has no step-up — held the very factor the user enrolled later. Only
+// the redirect back from a failed confirmation (?retry=1) keeps the seed, so a
+// mistyped code or password does not force a rescan.
 func (s *Server) handleTwoFactor(w http.ResponseWriter, r *http.Request) {
 	user := userFromCtx(r)
 	// 2FA management (enabled state) now lives inline on the Einstellungen
@@ -142,14 +152,19 @@ func (s *Server) handleTwoFactor(w http.ResponseWriter, r *http.Request) {
 	}
 	data := s.newPage(w, r, "Zwei‑Faktor einrichten", "profile")
 	data["Enabled"] = false
-	secret, err := s.store.GetTotpSecret(r.Context(), user.ID)
-	if err != nil {
-		// A read/decrypt failure must surface, not be masked by minting a fresh
-		// secret and overwriting the stored one on a failed read.
-		s.serverError(w, "2fa setup: load secret", err)
-		return
+	secret := ""
+	if r.URL.Query().Get("retry") == "1" {
+		var err error
+		secret, err = s.store.GetTotpSecret(r.Context(), user.ID)
+		if err != nil {
+			// A read/decrypt failure must surface, not be masked by minting a
+			// fresh secret and overwriting the stored one on a failed read.
+			s.serverError(w, "2fa setup: load secret", err)
+			return
+		}
 	}
 	if secret == "" {
+		var err error
 		secret, err = totp.GenerateSecret()
 		if err != nil {
 			s.serverError(w, "2fa setup: generate secret", err)
@@ -192,8 +207,10 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
+	// Failures return to the setup page WITH the pending seed (retry), so the
+	// user does not have to rescan the QR code after a typo.
 	if s.passwordTooLong(w, r, r.FormValue("password")) {
-		redirect(w, r, "/account/2fa")
+		redirect(w, r, twoFactorRetryPath)
 		return
 	}
 	if s.tooLong(
@@ -203,7 +220,7 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 		r.FormValue("code"),
 		maxNameLen,
 	) {
-		redirect(w, r, "/account/2fa")
+		redirect(w, r, twoFactorRetryPath)
 		return
 	}
 	user := userFromCtx(r)
@@ -213,24 +230,52 @@ func (s *Server) handleTwoFactorConfirm(w http.ResponseWriter, r *http.Request) 
 		redirect(w, r, "/account/2fa")
 		return
 	}
-	if !s.sensitiveAdmit(w, r, user.ID, "/account/2fa") {
+	if !s.sensitiveAdmit(w, r, user.ID, twoFactorRetryPath) {
 		return
 	}
 	// Step-up: enabling a second factor requires re-entering the password, so a
 	// hijacked session can't silently enroll one (SH-02).
 	if _, err := s.store.AuthenticateUser(r.Context(), user.Username, r.FormValue("password")); err != nil {
 		s.setFlash(w, r, "error", "Passwort falsch – Zwei‑Faktor nicht aktiviert.")
-		redirect(w, r, "/account/2fa")
+		redirect(w, r, twoFactorRetryPath)
 		return
 	}
-	if !totp.Validate(secret, r.FormValue("code")) {
+	// The matched step is stored with the factor (AcceptedStep), so the code
+	// typed here is consumed and cannot be replayed at /login/2fa.
+	step, ok := totp.ValidateStep(secret, r.FormValue("code"))
+	if !ok {
 		s.setFlash(w, r, "error", "Code ungültig. Bitte erneut versuchen.")
-		redirect(w, r, "/account/2fa")
+		redirect(w, r, twoFactorRetryPath)
 		return
 	}
 	s.sensitiveReset(r, user.ID)
 	// Issue recovery codes and show them once.
-	s.issueAndShowRecoveryCodes(w, r, secret, "Zwei‑Faktor aktiviert. Bitte die Wiederherstellungscodes jetzt sichern – sie werden nur einmal angezeigt.")
+	s.issueAndShowRecoveryCodes(w, r, &enrollment{secret: secret, step: step}, "Zwei‑Faktor aktiviert. Bitte die Wiederherstellungscodes jetzt sichern – sie werden nur einmal angezeigt.")
+}
+
+// enrollment is a confirmed TOTP seed and the time-step its confirmation code
+// matched.
+type enrollment struct {
+	secret string
+	step   uint64
+}
+
+// verifySecondFactor checks a TOTP code (consuming its time-step, so it cannot
+// be replayed) or, failing that, consumes a matching recovery code. It is the
+// step-up for actions that could otherwise sidestep an enabled second factor.
+func (s *Server) verifySecondFactor(r *http.Request, userID int64, input string) bool {
+	if input == "" || len(input) > maxNameLen {
+		return false
+	}
+	secret, err := s.store.GetTotpSecret(r.Context(), userID)
+	if err != nil {
+		return false
+	}
+	if step, ok := totp.ValidateStep(secret, input); ok {
+		accepted, err := s.store.AcceptTotpStep(r.Context(), userID, step)
+		return err == nil && accepted
+	}
+	return auth.LooksLikeRecoveryCode(input) && s.consumeRecovery(r, userID, input)
 }
 
 // handleRecoveryRegenerate creates a fresh set of recovery codes (invalidating
@@ -258,20 +303,22 @@ func (s *Server) handleRecoveryRegenerate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.sensitiveReset(r, user.ID)
-	s.issueAndShowRecoveryCodes(w, r, "", "Neue Wiederherstellungscodes erstellt. Alte Codes sind ungültig. Bitte jetzt sichern.")
+	s.issueAndShowRecoveryCodes(w, r, nil, "Neue Wiederherstellungscodes erstellt. Alte Codes sind ungültig. Bitte jetzt sichern.")
 }
 
 // issueAndShowRecoveryCodes generates, stores and then renders a fresh set of
-// recovery codes exactly once.
-func (s *Server) issueAndShowRecoveryCodes(w http.ResponseWriter, r *http.Request, enableSecret, notice string) {
+// recovery codes exactly once. A non-nil enroll also enables that factor.
+func (s *Server) issueAndShowRecoveryCodes(w http.ResponseWriter, r *http.Request, enroll *enrollment, notice string) {
 	plain, hashes, err := auth.GenerateRecoveryCodes(recoveryCodeCount)
 	if err != nil {
 		s.serverError(w, "2fa: generate recovery codes", err)
 		return
 	}
 	userID := userFromCtx(r).ID
-	if enableSecret != "" {
-		err = s.store.ConfigureTwoFactor(r.Context(), store.TwoFactorChange{UserID: userID, Enabled: true, Secret: enableSecret, RecoveryHashes: hashes})
+	if enroll != nil {
+		err = s.store.ConfigureTwoFactor(r.Context(), store.TwoFactorChange{
+			UserID: userID, Enabled: true, Secret: enroll.secret, RecoveryHashes: hashes, AcceptedStep: enroll.step,
+		})
 	} else {
 		err = s.store.ReplaceRecoveryCodes(r.Context(), userID, hashes)
 	}
@@ -300,9 +347,17 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 	if !s.sensitiveAdmit(w, r, user.ID, "/account/2fa") {
 		return
 	}
-	// Require the current password to disable 2FA.
+	// Require the current password AND the second factor itself to disable 2FA:
+	// with the password alone, a hijacked session plus a phished password could
+	// strip the factor that exists to stop exactly that.
 	if _, err := s.store.AuthenticateUser(r.Context(), user.Username, r.FormValue("password")); err != nil {
-		s.setFlash(w, r, "error", "Passwort falsch – 2FA nicht deaktiviert.")
+		s.setFlash(w, r, "error", "Passwort oder Code falsch – 2FA nicht deaktiviert.")
+		redirect(w, r, "/account/2fa")
+		return
+	}
+	if user.TotpEnabled && !s.verifySecondFactor(r, user.ID, r.FormValue("code")) {
+		s.audit(r, "2fa_disable_denied", "user", user.ID, "Zwei-Faktor-Code falsch")
+		s.setFlash(w, r, "error", "Passwort oder Code falsch – 2FA nicht deaktiviert.")
 		redirect(w, r, "/account/2fa")
 		return
 	}

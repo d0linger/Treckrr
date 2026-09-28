@@ -503,10 +503,11 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		user := s.currentUser(r)
 		if user == nil {
+			s.expireStaleSession(w, r)
 			// An offline replay is a background fetch, not a navigation: answer 401
 			// so the client keeps the booking queued and retries after the next
 			// login, instead of following a redirect it would read as success.
-			if r.Header.Get("X-Offline-Replay") == "1" {
+			if isOfflineReplay(r) {
 				http.Error(w, "Anmeldung erforderlich", http.StatusUnauthorized)
 				return
 			}
@@ -516,11 +517,21 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 		s.refreshSessionCookie(w, r)
 		// Force a password change before anything else (except the change page).
 		if user.MustChangePassword && r.URL.Path != "/account/password" {
+			if isOfflineReplay(r) {
+				http.Error(w, mustChangePasswordReplayMsg, http.StatusConflict)
+				return
+			}
 			http.Redirect(w, r, "/account/password", http.StatusSeeOther)
 			return
 		}
 		// Viewers may not mutate data, except managing their own account.
 		if r.Method == http.MethodPost && !user.CanWrite() && !isSelfServicePath(r.URL.Path) {
+			// A replay would read the redirect as neither success nor rejection and
+			// re-send the item on every page load; a 403 lets it surface instead.
+			if isOfflineReplay(r) {
+				http.Error(w, readOnlyReplayMsg, http.StatusForbidden)
+				return
+			}
 			s.setFlash(w, r, "error", "Nur-Lese-Konto: Änderungen sind nicht möglich.")
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
@@ -529,6 +540,20 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 		ctx = store.WithAuditActor(ctx, store.AuditActor{UserID: &user.ID, Username: user.Username, IP: s.clientIP(r)})
 		h(w, r.WithContext(ctx))
 	})
+}
+
+// Offline-replay answers for the auth branches that would otherwise redirect.
+// The client shows them to the user, so they are phrased for the user.
+const (
+	readOnlyReplayMsg           = "Nur-Lese-Konto: Änderungen sind nicht möglich. Die gespeicherte Buchung wurde nicht übernommen."
+	mustChangePasswordReplayMsg = "Passwortänderung erforderlich: Bitte zuerst das Passwort ändern, danach werden gespeicherte Buchungen erneut gesendet." // #nosec G101 -- user-facing message, not a credential
+)
+
+// isOfflineReplay reports whether the request is a background replay of a
+// queued offline submission (offline.js), which must get a status code it can
+// act on rather than a redirect.
+func isOfflineReplay(r *http.Request) bool {
+	return r.Header.Get("X-Offline-Replay") == "1"
 }
 
 // isSelfServicePath allows viewers to POST to their own account management.
@@ -542,6 +567,11 @@ func (s *Server) admin(h http.HandlerFunc) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		user := s.currentUser(r)
 		if user == nil {
+			s.expireStaleSession(w, r)
+			if isOfflineReplay(r) {
+				http.Error(w, "Anmeldung erforderlich", http.StatusUnauthorized)
+				return
+			}
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
@@ -552,6 +582,10 @@ func (s *Server) admin(h http.HandlerFunc) http.Handler {
 		// Force a pending password change before any admin action (mirrors auth()).
 		// No /admin route is the change-password page, so redirect unconditionally.
 		if user.MustChangePassword {
+			if isOfflineReplay(r) {
+				http.Error(w, mustChangePasswordReplayMsg, http.StatusConflict)
+				return
+			}
 			http.Redirect(w, r, "/account/password", http.StatusSeeOther)
 			return
 		}
@@ -594,18 +628,22 @@ func (s *Server) cookie(r *http.Request, base string) (*http.Cookie, error) {
 func (s *Server) currentUser(r *http.Request) *models.User {
 	if cached, ok := r.Context().Value(userCacheKey).(*userCache); ok {
 		if !cached.done {
-			cached.user, cached.done = s.resolveUser(r), true
+			cached.user, cached.stale = s.resolveUser(r)
+			cached.done = true
 		}
 		return cached.user
 	}
-	return s.resolveUser(r)
+	user, _ := s.resolveUser(r)
+	return user
 }
 
 // userCache memoizes one session resolution for the lifetime of a request. A nil
 // user is cached too (done), so an anonymous request doesn't re-query either.
+// stale records that the cookie was present but positively unknown to the store.
 type userCache struct {
-	user *models.User
-	done bool
+	user  *models.User
+	stale bool
+	done  bool
 }
 
 const userCacheKey ctxKey = "usercache"
@@ -617,16 +655,37 @@ func withUserCache(r *http.Request) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), userCacheKey, &userCache{}))
 }
 
-func (s *Server) resolveUser(r *http.Request) *models.User {
+// resolveUser resolves the session cookie to its user. stale reports a cookie
+// the store positively no longer honors (revoked, expired, user disabled) — as
+// opposed to a lookup that failed transiently, which must not cost the user a
+// still-valid cookie.
+func (s *Server) resolveUser(r *http.Request) (user *models.User, stale bool) {
 	c, err := s.cookie(r, sessionCookie)
 	if err != nil || c.Value == "" {
-		return nil
+		return nil, false
 	}
-	user, err := s.store.UserFromSession(r.Context(), c.Value, sessionTTL, sessionAbsoluteTTL)
+	user, err = s.store.UserFromSession(r.Context(), c.Value, sessionTTL, sessionAbsoluteTTL)
 	if err != nil {
-		return nil
+		return nil, sessionGone(err)
 	}
-	return user
+	return user, false
+}
+
+// expireStaleSession deletes a session cookie whose server-side session is
+// gone. Nothing else ever cleared it: after a password change elsewhere, a
+// revocation, an admin reset or the absolute TTL, the browser kept sending a
+// dead cookie for up to 30 days, and every login page rendered for it carried
+// a session-derived CSRF token that no longer matched anything.
+func (s *Server) expireStaleSession(w http.ResponseWriter, r *http.Request) {
+	stale := false
+	if cached, ok := r.Context().Value(userCacheKey).(*userCache); ok && cached.done {
+		stale = cached.stale
+	} else {
+		_, stale = s.resolveUser(r)
+	}
+	if stale {
+		s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
+	}
 }
 
 // refreshSessionCookie re-issues the session cookie with a fresh MaxAge so an

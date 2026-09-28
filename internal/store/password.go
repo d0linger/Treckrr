@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -79,6 +80,12 @@ func (s *Store) ChangePassword(ctx context.Context, change PasswordChange) (stri
 
 // ResetPassword applies an administrator's password reset and session revocation
 // together; a failure to record the audit also rolls back the credential change.
+//
+// The user's passkeys are revoked too. A reset is what an admin reaches for
+// when an account is compromised, and a passkey the attacker enrolled would
+// otherwise survive it and log straight back in — passkey login never asks for
+// the password or TOTP. The user's own password change (ChangePassword) keeps
+// them: that user proved the old password and is still signed in to re-check.
 func (s *Store) ResetPassword(ctx context.Context, userID int64, password string, mustChange bool) error {
 	hash, err := auth.HashPassword(password)
 	if err != nil {
@@ -103,8 +110,31 @@ func (s *Store) ResetPassword(ctx context.Context, userID int64, password string
 	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=$1`, userID); err != nil {
 		return err
 	}
-	if err := addAuditTx(ctx, tx, "password_reset", "user", strconv.FormatInt(userID, 10), "durch Admin; Sitzungen beendet"); err != nil {
+	passkeys, err := revokePasskeysTx(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+	if err := addAuditTx(ctx, tx, "password_reset", "user", strconv.FormatInt(userID, 10),
+		"durch Admin; Sitzungen beendet"+passkeyRevocationNote(passkeys)); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// revokePasskeysTx deletes every passkey of the user inside tx and returns how
+// many there were.
+func revokePasskeysTx(ctx context.Context, tx *sql.Tx, userID int64) (int64, error) {
+	res, err := tx.ExecContext(ctx, `DELETE FROM webauthn_credentials WHERE user_id=$1`, userID)
+	if err != nil {
+		return 0, fmt.Errorf("revoke passkeys: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// passkeyRevocationNote is the audit-detail suffix naming revoked passkeys.
+func passkeyRevocationNote(n int64) string {
+	if n == 0 {
+		return ""
+	}
+	return "; " + strconv.FormatInt(n, 10) + " Passkey(s) widerrufen"
 }

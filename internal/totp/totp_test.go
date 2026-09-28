@@ -23,6 +23,23 @@ func TestValidateEmptySecretFailsClosed(t *testing.T) {
 	}
 }
 
+// TestCodeAtMatchesValidateStep pins CodeAt to the step ValidateStep reports,
+// so tests that compute codes through it exercise the real verifier.
+func TestCodeAtMatchesValidateStep(t *testing.T) {
+	secret, err := GenerateSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, step, err := CodeAt(secret, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := ValidateStep(secret, c)
+	if !ok || got != step {
+		t.Fatalf("ValidateStep(CodeAt) = %d/%v, want step %d", got, ok, step)
+	}
+}
+
 // TestValidateRoundTrip sanity-checks that a real secret validates its own
 // current code.
 func TestValidateRoundTrip(t *testing.T) {
