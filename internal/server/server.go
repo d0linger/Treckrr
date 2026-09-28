@@ -425,7 +425,12 @@ const maxRequestBody = 1 << 20 // 1 MiB
 // can be restored either way: `treckrr restore <file>` reads from BACKUP_DIR and
 // never passes through this HTTP path, but defaults to the same archive cap.
 // Larger offline restores require BACKUP_CLI_MAX_BYTES and provisioned memory.
-const maxBackupUpload = 128 << 20 // 128 MiB
+//
+// The 128 MiB are the ceiling, not a constant: backup.OnlineBudget lowers the
+// allowance in a container started with a smaller memory limit (same 1:6 ratio
+// as 128 MiB : 768 MiB), so an upload the container cannot hold is refused
+// up front instead of OOM-killing the app.
+func maxBackupUpload() int64 { return backup.OnlineBudget() }
 
 // limitBody wraps the request body in an http.MaxBytesReader so a client cannot
 // stream an unbounded payload into ParseForm (and onward into bcrypt, decoding,
@@ -460,7 +465,7 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 			limit := int64(maxRequestBody)
 			// Restore uploads a full encrypted dump — exempt those exact routes.
 			if isBackupUploadPath(r.URL.Path) {
-				// The 128 MiB allowance is for authenticated admins only. Resolve the
+				// The restore allowance (up to 128 MiB) is for authenticated admins only. Resolve the
 				// session here — outermost, before the large body is read and before
 				// CSRF's FormValue would parse it — and reject anyone else, so an
 				// unauthenticated client can't drive a memory-exhaustion parse (T-02).
@@ -468,7 +473,7 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 					http.Error(w, "Zugriff verweigert", http.StatusForbidden)
 					return
 				}
-				limit = maxBackupUpload
+				limit = maxBackupUpload()
 			} else if isPhotoUploadPath(r.URL.Path) {
 				// A phone photo exceeds 1 MiB; allow more, but only for an
 				// authenticated user (no pre-auth large-body parse).

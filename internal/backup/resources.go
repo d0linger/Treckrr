@@ -97,7 +97,7 @@ func (s *Service) maxBytes() int64 {
 	if s.opt.MaxBytes > 0 {
 		return s.opt.MaxBytes
 	}
-	return maxS3ObjectBytes
+	return OnlineBudget()
 }
 
 // readArchive reads at most one configured archive budget plus a detection byte.
