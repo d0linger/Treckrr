@@ -396,6 +396,25 @@
 	 * error page with the booking lost. The retry keys make a queued copy of a POST
 	 * that did reach the server harmless: the replay deduplicates it.
 	 */
+	/**
+	 * Replaces the page with a server response the way a native POST would show
+	 * it. The server's error pages are standalone documents without scripts, so
+	 * nothing re-runs; a plain-text body (e.g. the CSRF refusal) is inserted as
+	 * text, never parsed as markup.
+	 */
+	function showResponse(body, type) {
+		if (/html/i.test(type)) {
+			document.open();
+			document.write(body);
+			document.close();
+			return;
+		}
+		document.open();
+		document.write('<!doctype html><html lang="de"><meta charset="utf-8"><title>Treckrr</title><pre></pre></html>');
+		document.close();
+		document.querySelector("pre").textContent = body;
+	}
+
 	function sendOnline(f, path) {
 		if (path === "/entries/quick") stampKeys();
 		var body = new URLSearchParams();
@@ -409,10 +428,14 @@
 			// flash cookie the redirect has already set.
 			if (r.type === "opaqueredirect") { window.location.assign(accountURL(f)); return; }
 			if (r.status === 502 || r.status === 503 || r.status === 504) throw new Error("gateway " + r.status);
-			// Anything else is a page of its own (an error page). Re-send natively so
-			// the browser shows exactly what the classic submit showed; the retry keys
-			// make the second POST a no-op for whatever the first one stored.
-			HTMLFormElement.prototype.submit.call(f);
+			// Anything else is a page of its own: the server answers every booking
+			// outcome with a 303, so this is an error page (400, 403, 413, 500).
+			// Show the response that already arrived instead of re-sending the form:
+			// a second POST doubled every failing request and broke the "submitted
+			// exactly once" contract of the booking form.
+			return r.text().then(function (body) {
+				showResponse(body, r.headers.get("Content-Type") || "");
+			});
 		}).catch(function () {
 			return capture(f, path, "Keine stabile Verbindung – offline gespeichert, wird bei Verbindung gesendet.");
 		});
