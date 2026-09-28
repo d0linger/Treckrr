@@ -914,35 +914,27 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 	if entry.Unit == models.UnitMannstunde && entry.PersonID == nil {
 		entry.PersonID = existing.PersonID
 	}
-	if err := s.store.UpdateEntry(r.Context(), entry, machineIDs); err != nil {
+	// Linked pair: mirror the edited hours onto the partner when the edit form's
+	// checkbox asked for it — machine and Mannstunden of one Einsatz share the
+	// same hours, each priced at its own frozen rate. Both halves are written in
+	// one locked transaction, so an invoice can never freeze a half-synced pair.
+	pair, err := s.store.UpdateEntryWithPartner(r.Context(), entry, machineIDs, r.FormValue("sync_pair") == "1")
+	if errors.Is(err, store.ErrPairHoursPrecision) {
+		s.setFlash(w, r, "error", "Zum Angleichen der verknüpften Maschine sind höchstens drei Nachkommastellen und weniger als 10 Millionen Stunden möglich. Beide Buchungen bleiben unverändert.")
+		redirect(w, r, "/entries/"+itoa64(id)+"/edit")
+		return
+	}
+	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	s.audit(r, "update", "entry", id, s.neighborName(r, existing.NeighborID)+" · "+entryUpdateDetail(existing, entry))
-	// Linked pair: mirror the edited hours onto the partner when the edit form's
-	// checkbox asked for it — machine and Mannstunden of one Einsatz share the
-	// same hours, each priced at its own frozen rate.
-	if r.FormValue("sync_pair") == "1" {
-		hours := entry.Hours
-		if entry.Unit != "" && entry.Unit != "h" {
-			hours = entry.Quantity
-		}
-		if pid, err := s.store.LinkedPartnerID(r.Context(), id); err != nil {
-			s.serverError(w, r.URL.Path, err)
-			return
-		} else if pid != 0 && hours.IsPositive() {
-			cost, err := s.store.SyncPairHours(r.Context(), pid, hours)
-			if err != nil {
-				s.setFlash(w, r, "error", "Buchung aktualisiert, aber die verknüpfte Buchung konnte nicht angepasst werden.")
-				redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
-				return
-			}
-			s.audit(r, "update", "entry", pid, fmt.Sprintf("%s · verknüpft angeglichen: %s h, %s €",
-				s.neighborName(r, existing.NeighborID), hours.String(), cost.StringFixed(2)))
-			s.setFlash(w, r, "success", "Buchung und verknüpfte Buchung aktualisiert.")
-			redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
-			return
-		}
+	if pair.PartnerID != 0 {
+		s.audit(r, "update", "entry", pair.PartnerID, fmt.Sprintf("%s · verknüpft angeglichen: %s h, %s €",
+			s.neighborName(r, existing.NeighborID), pair.Hours.String(), pair.Cost.StringFixed(2)))
+		s.setFlash(w, r, "success", "Buchung und verknüpfte Buchung aktualisiert.")
+		redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
+		return
 	}
 	s.setFlash(w, r, "success", "Buchung aktualisiert.")
 	redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
@@ -1028,6 +1020,9 @@ func ledgerFormValues(r *http.Request) (amount decimal.Decimal, description stri
 	amount = formDecimal(r, "amount").Abs()
 	if !amount.IsPositive() {
 		return amount, "", date, "Bitte einen Betrag größer 0 angeben."
+	}
+	if models.HasSubCent(amount) {
+		return amount, "", date, msgMoneyCents
 	}
 	if r.FormValue("direction") == "credit" {
 		amount = amount.Neg() // I owe the neighbor → reduces the balance
@@ -1221,6 +1216,13 @@ func (s *Server) handleLedgerUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
 		return
 	}
+	// A carry-forward side only ever changes together with its counterpart
+	// (void or undo the whole transfer); editing one side broke the zero sum.
+	if existing.TransferID != "" {
+		s.setFlash(w, r, "error", msgLedgerTransferEdit)
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
 	if existing.Booking != nil {
 		if trimmed(r, "booking_form_version") == "2" {
 			s.updateBookingLedgerV2(w, r, &existing, yearID, neighborID)
@@ -1258,7 +1260,9 @@ func (s *Server) handleLedgerUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	if err := s.store.UpdateNeighborLedger(r.Context(), id, amount, description, date); err != nil {
+	if err := s.store.UpdateNeighborLedger(r.Context(), id, amount, description, date); errors.Is(err, store.ErrLedgerTransfer) {
+		s.setFlash(w, r, "error", msgLedgerTransferEdit)
+	} else if err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	} else {
 		s.setFlash(w, r, "success", "Position aktualisiert.")
@@ -1308,7 +1312,9 @@ func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	if err := s.store.SetLedgerVoided(r.Context(), id, void, reason); err != nil {
+	if err := s.store.SetLedgerVoided(r.Context(), id, void, reason); errors.Is(err, store.ErrLedgerTransfer) {
+		s.setFlash(w, r, "error", msgLedgerTransferEdit)
+	} else if err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if void {
 		s.setFlash(w, r, "success", "Position storniert.")
@@ -1347,7 +1353,9 @@ func (s *Server) handleLedgerDelete(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	if err := s.store.DeleteNeighborLedger(r.Context(), id); err != nil {
+	if err := s.store.DeleteNeighborLedger(r.Context(), id); errors.Is(err, store.ErrLedgerTransfer) {
+		s.setFlash(w, r, "error", msgLedgerTransferEdit)
+	} else if err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
 		s.setFlash(w, r, "success", "Position entfernt.")

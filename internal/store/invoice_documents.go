@@ -112,25 +112,76 @@ func (s *Store) StornoInvoice(ctx context.Context, yearID, neighborID int64, rea
 	if err != nil {
 		return models.Invoice{}, err
 	}
-	sv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+"-S", "storno", &orig.ID, time.Now(), reverseContent(content, orig.Number, reason))
+	now := time.Now()
+	// A full Storno reverses the whole invoice, so its issued credit notes go
+	// with it — never leave active Gutschriften pointing at a canceled original.
+	// Each one gets its OWN reversing document first (<credit>-S, dated now):
+	// flipping them to canceled without one silently removed an already
+	// declared § 16 correction from its original period and left the neighbor
+	// holding documents that no longer add up to zero.
+	credits, err := attachedActiveCredits(ctx, tx, orig.ID)
+	if err != nil {
+		return models.Invoice{}, err
+	}
+	for _, credit := range credits {
+		if _, err := stornoDocumentTx(ctx, tx, credit, reason, now); err != nil {
+			return models.Invoice{}, err
+		}
+	}
+	sv, err := insertInvoiceDoc(ctx, tx, yearID, neighborID, orig.Number+"-S", "storno", &orig.ID, now, reverseContent(content, orig.Number, reason))
 	if err != nil {
 		return models.Invoice{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE invoices SET status='canceled' WHERE id=$1`, orig.ID); err != nil {
 		return models.Invoice{}, err
 	}
-	// A full Storno reverses the whole invoice, so its issued credit notes go with
-	// it — never leave active Gutschriften pointing at a canceled original.
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE invoices SET status='canceled'
-		  WHERE references_invoice_id=$1 AND kind='gutschrift' AND status='issued'`,
-		orig.ID); err != nil {
-		return models.Invoice{}, err
-	}
 	if err := addInvoiceAudit(ctx, tx, "invoice_storno", sv); err != nil {
 		return models.Invoice{}, err
 	}
 	return sv, tx.Commit()
+}
+
+// attachedActiveCredits returns the issued credit notes attached to an invoice,
+// locked, in issue order. The caller holds the account lock.
+func attachedActiveCredits(ctx context.Context, tx *sql.Tx, invoiceID int64) ([]models.Invoice, error) {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT `+invoiceCols+` FROM invoices
+		  WHERE references_invoice_id=$1 AND kind='gutschrift' AND status='issued'
+		  ORDER BY id FOR UPDATE`, invoiceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.Invoice
+	for rows.Next() {
+		iv, err := scanInvoice(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, iv)
+	}
+	return out, rows.Err()
+}
+
+// stornoDocumentTx issues the reversing document (<number>-S) for one issued
+// non-invoice document, marks the original canceled and audits the storno. The
+// caller holds the account lock and the original's row lock.
+func stornoDocumentTx(ctx context.Context, tx *sql.Tx, orig models.Invoice, reason string, on time.Time) (models.Invoice, error) {
+	if orig.Content == nil {
+		return models.Invoice{}, fmt.Errorf("storno %s: kein Snapshot vorhanden", orig.Number)
+	}
+	sv, err := insertInvoiceDoc(ctx, tx, orig.BillingYearID, orig.NeighborID, orig.Number+"-S", "storno",
+		&orig.ID, on, reverseContent(*orig.Content, orig.Number, reason))
+	if err != nil {
+		return models.Invoice{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE invoices SET status='canceled' WHERE id=$1`, orig.ID); err != nil {
+		return models.Invoice{}, err
+	}
+	if err := addInvoiceAudit(ctx, tx, "document_storno", sv); err != nil {
+		return models.Invoice{}, err
+	}
+	return sv, nil
 }
 
 // GutschriftInvoice issues a credit note (kind='gutschrift', number <orig>-G[n])
@@ -141,6 +192,9 @@ func (s *Store) StornoInvoice(ctx context.Context, yearID, neighborID int64, rea
 // neighbor remains locked and the Gutschrift only lowers what is owed. Amounts are
 // stored negative. Returns ErrNotFound if there is no active invoice.
 func (s *Store) GutschriftInvoice(ctx context.Context, yearID, neighborID int64, grossReduction decimal.Decimal, note string) (models.Invoice, error) {
+	// Whole cents: invoices.gross is NUMERIC(14,2), so an unrounded amount was
+	// hashed as -10.005 while the row stored -10.01.
+	grossReduction = models.RoundMoney(grossReduction)
 	if !grossReduction.IsPositive() {
 		return models.Invoice{}, fmt.Errorf("gutschrift: Betrag muss größer 0 sein")
 	}
@@ -170,24 +224,49 @@ func (s *Store) GutschriftInvoice(ctx context.Context, yearID, neighborID int64,
 	if err != nil {
 		return models.Invoice{}, err
 	}
+	if err := checkCreditCap(ctx, tx, yearID, neighborID, base.Gross, grossReduction); err != nil {
+		return models.Invoice{}, err
+	}
+	gv, err := issueGutschriftTx(ctx, tx, orig, base, grossReduction, note)
+	if err != nil {
+		return models.Invoice{}, err
+	}
+	return gv, tx.Commit()
+}
 
-	// A Gutschrift may not exceed the invoice's remaining (uncredited) gross.
-	// Counted over ALL issued credit notes of the neighbor+year, not just the
-	// ones attached to this invoice: free Gutschriften (references NULL) reduce
-	// InvoiceRemaining exactly the same way, and ignoring them here allowed
-	// total credits above the invoice gross — a phantom Guthaben the payout
-	// button would have paid out in cash (see ErrGutschriftTooLarge).
+// checkCreditCap refuses a credit note that would push the neighbor+year's
+// issued credits above capGross. Counted over ALL issued credit notes of the
+// neighbor+year, not just the ones attached to one invoice: free Gutschriften
+// (references NULL) reduce InvoiceRemaining exactly the same way, and ignoring
+// them allowed total credits above the invoice gross — a phantom Guthaben the
+// payout button would have paid out in cash (see ErrGutschriftTooLarge). The
+// caller holds the account lock.
+func checkCreditCap(ctx context.Context, tx *sql.Tx, yearID, neighborID int64, capGross, gross decimal.Decimal) error {
 	var creditedGross decimal.Decimal
 	if err := tx.QueryRowContext(ctx,
 		`SELECT COALESCE(-SUM(gross), 0) FROM invoices
 		  WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='gutschrift' AND status='issued'`,
 		yearID, neighborID).Scan(&creditedGross); err != nil {
-		return models.Invoice{}, err
+		return err
 	}
-	if grossReduction.GreaterThan(base.Gross.Sub(creditedGross)) {
-		return models.Invoice{}, ErrGutschriftTooLarge
+	if gross.GreaterThan(capGross.Sub(creditedGross)) {
+		return ErrGutschriftTooLarge
 	}
+	return nil
+}
 
+// issueGutschriftTx writes an attached credit note against orig (whose frozen
+// or rebuilt content is base) and audits it. The caller holds the account lock
+// and has already checked the cap.
+func issueGutschriftTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	orig models.Invoice,
+	base models.InvoiceContent,
+	grossReduction decimal.Decimal,
+	note string,
+) (models.Invoice, error) {
+	yearID, neighborID := orig.BillingYearID, orig.NeighborID
 	// Split the gross reduction into net + VAT at the invoice's rate, keeping the
 	// gross exact (vat = gross − net).
 	netRed := grossReduction
@@ -229,7 +308,7 @@ func (s *Store) GutschriftInvoice(ctx context.Context, yearID, neighborID int64,
 	if err := addInvoiceAudit(ctx, tx, "invoice_gutschrift", gv); err != nil {
 		return models.Invoice{}, err
 	}
-	return gv, tx.Commit()
+	return gv, nil
 }
 
 // contentOrBuild returns the invoice's frozen content, or — for a legacy row whose

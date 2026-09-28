@@ -302,10 +302,17 @@ func (s *Server) handleFreeGutschrift(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	amount := formDecimal(r, "amount").Abs()
+	if models.HasSubCent(amount) {
+		s.setFlash(w, r, "error", msgMoneyCents)
+		redirect(w, r, back)
+		return
+	}
 	gv, err := s.store.FreeGutschrift(r.Context(), yearID, neighborID, year.Year, amount, note)
 	switch {
 	case errors.Is(err, store.ErrAmountRequired):
 		s.setFlash(w, r, "error", "Bitte einen Betrag größer 0 eingeben.")
+	case errors.Is(err, store.ErrGutschriftExceedsBookings):
+		s.setFlash(w, r, "error", "Die Gutschrift übersteigt den Betrag, den die Rechnung derzeit hätte (erfasste Leistungen brutto abzüglich bereits erteilter Gutschriften). Ohne Rechnung ist keine höhere Gutschrift möglich.")
 	case errors.Is(err, store.ErrGutschriftTooLarge):
 		s.setFlash(w, r, "error", "Gutschrift übersteigt den noch nicht gutgeschriebenen Rechnungsbetrag.")
 	case err != nil:

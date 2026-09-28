@@ -82,8 +82,8 @@ func TestCreditReversalRevenueIntegration(t *testing.T) {
 				}
 			}
 			if attached {
-				// A still-issued credit canceled by the full invoice cascade must
-				// drop out; the already reversed credit must remain with its pair.
+				// A still-issued credit is reversed by its own storno in the full
+				// invoice cascade; both credits remain in revenue with their pairs.
 				if _, err := st.GutschriftInvoice(ctx, yearID, neighborID, dec("10"), "Cascade credit"); err != nil {
 					t.Fatal(err)
 				}

@@ -1094,9 +1094,43 @@ func (s *Server) handleInvoiceStorno(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.setFlash(w, r, "error", "Storno fehlgeschlagen.")
 	default:
-		s.setFlash(w, r, "success", "Rechnung storniert ("+sv.Number+"). Die Buchungen sind wieder bearbeitbar.")
+		// Attached credit notes were reversed by their own storno documents in
+		// the same transaction; name them so the operator knows what to hand over.
+		msg := "Rechnung storniert (" + sv.Number + ")."
+		if reversed := s.reversedCreditNumbers(r, yearID, neighborID, sv); len(reversed) > 0 {
+			msg += " Gutschrift-Stornos: " + strings.Join(reversed, ", ") + "."
+		}
+		s.setFlash(w, r, "success", msg+" Die Buchungen sind wieder bearbeitbar.")
 	}
 	redirect(w, r, back)
+}
+
+// reversedCreditNumbers names the storno documents issued today for credit
+// notes attached to the invoice that invoiceStorno reverses — the extra
+// documents StornoInvoice writes in the same transaction. Best-effort: it only
+// feeds the success message.
+func (s *Server) reversedCreditNumbers(r *http.Request, yearID, neighborID int64, invoiceStorno models.Invoice) []string {
+	if invoiceStorno.ReferencesInvoiceID == nil {
+		return nil
+	}
+	docs, err := s.store.ListInvoiceDocuments(r.Context(), yearID, neighborID)
+	if err != nil {
+		return nil
+	}
+	credits := map[int64]bool{}
+	for _, d := range docs {
+		if d.Kind == "gutschrift" && d.ReferencesInvoiceID != nil && *d.ReferencesInvoiceID == *invoiceStorno.ReferencesInvoiceID {
+			credits[d.ID] = true
+		}
+	}
+	var out []string
+	for _, d := range docs {
+		if d.Kind == "storno" && d.ReferencesInvoiceID != nil && credits[*d.ReferencesInvoiceID] &&
+			d.IssuedOn.Equal(invoiceStorno.IssuedOn) {
+			out = append(out, d.Number)
+		}
+	}
+	return out
 }
 
 // handleInvoiceGutschrift issues a credit note (§ 16 UStG Entgeltminderung, e.g. a
@@ -1131,7 +1165,13 @@ func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request)
 		redirect(w, r, back)
 		return
 	}
-	gv, err := s.store.GutschriftInvoice(r.Context(), yearID, neighborID, formDecimal(r, "amount").Abs(), note)
+	amount := formDecimal(r, "amount").Abs()
+	if models.HasSubCent(amount) {
+		s.setFlash(w, r, "error", msgMoneyCents)
+		redirect(w, r, back)
+		return
+	}
+	gv, err := s.store.GutschriftInvoice(r.Context(), yearID, neighborID, amount, note)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		s.setFlash(w, r, "error", "Keine aktive Rechnung für eine Gutschrift.")

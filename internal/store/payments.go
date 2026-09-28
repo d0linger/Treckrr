@@ -19,32 +19,116 @@ import (
 // It is allowed regardless of the year's status (the payment side is decoupled
 // from booking lock).
 func (s *Store) AddPayment(ctx context.Context, yearID, neighborID int64, amount decimal.Decimal, paidOn time.Time, note, method string) error {
+	_, err := s.RecordPayment(ctx, PaymentInput{
+		YearID: yearID, NeighborID: neighborID, Amount: amount, PaidOn: paidOn, Note: note, Method: method,
+	})
+	return err
+}
+
+// PaymentInput is one payment as the form submits it, optionally with a Skonto
+// percentage that becomes a § 16 credit note on the active invoice.
+type PaymentInput struct {
+	YearID, NeighborID int64
+	Amount             decimal.Decimal
+	PaidOn             time.Time
+	Note, Method       string
+	// SkontoPct is a percentage of the active invoice's frozen gross; zero means
+	// no Skonto. Ignored when no invoice (or no invoice snapshot) exists.
+	SkontoPct decimal.Decimal
+	// IdempotencyKey identifies one rendered form. A resubmission with the same
+	// key and the same values returns the stored payment instead of a second one.
+	IdempotencyKey string
+}
+
+// PaymentResult reports what RecordPayment stored.
+type PaymentResult struct {
+	PaymentID int64
+	// Duplicate is true when the key had already been recorded with identical
+	// values: nothing new was written.
+	Duplicate bool
+	// Skonto is the credit note issued together with the payment, if any.
+	Skonto *models.Invoice
+}
+
+var (
+	// ErrPaymentAmount rejects a zero or negative payment amount.
+	ErrPaymentAmount = errors.New("payment amount must be greater than zero")
+	// ErrSkontoYearCompleted refuses a Skonto in a completed year BEFORE the
+	// payment is recorded: the credit note is a tax document and completed
+	// years are locked for those, while the payment alone would still be valid.
+	ErrSkontoYearCompleted = errors.New("skonto credit note needs an open year")
+)
+
+// formKeyLock namespaces payment and installment form keys in the shared
+// transaction advisory-lock space used by booking replays.
+func formKeyLock(kind, key string) string {
+	if key == "" {
+		return ""
+	}
+	return kind + ":" + key
+}
+
+// RecordPayment stores a payment and, when requested, its Skonto credit note in
+// ONE transaction under the account lock. Previously the payment committed first
+// and the credit note was attempted afterwards, so a refused Skonto (completed
+// year, cap exceeded) left a recorded payment without its credit. Every Skonto
+// precondition is now checked before anything is written.
+func (s *Store) RecordPayment(ctx context.Context, in PaymentInput) (PaymentResult, error) {
+	amount := models.RoundMoney(in.Amount)
+	if !amount.IsPositive() {
+		return PaymentResult{}, ErrPaymentAmount
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return PaymentResult{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	ok, err := lockAccountBoundary(ctx, tx, yearID, neighborID, false, false)
+	if err := lockBookingKeys(ctx, tx, formKeyLock("payment", in.IdempotencyKey)); err != nil {
+		return PaymentResult{}, err
+	}
+	if in.IdempotencyKey != "" {
+		var id int64
+		var same bool
+		err := tx.QueryRowContext(ctx, `
+			SELECT id, billing_year_id=$2 AND neighbor_id=$3 AND amount=$4 AND paid_on=$5::date
+			       AND note=$6 AND method=$7
+			  FROM payments WHERE idempotency_key=$1`,
+			in.IdempotencyKey, in.YearID, in.NeighborID, amount, in.PaidOn, in.Note, in.Method).Scan(&id, &same)
+		switch {
+		case err == nil && same:
+			return PaymentResult{PaymentID: id, Duplicate: true}, tx.Commit()
+		case err == nil:
+			return PaymentResult{}, ErrIdempotencyConflict
+		case !errors.Is(err, sql.ErrNoRows):
+			return PaymentResult{}, err
+		}
+	}
+	ok, err := lockAccountBoundary(ctx, tx, in.YearID, in.NeighborID, false, false)
 	if err != nil {
-		return err
+		return PaymentResult{}, err
 	}
 	if !ok {
-		return ErrNotFound
+		return PaymentResult{}, ErrNotFound
+	}
+	credit, err := prepareSkonto(ctx, tx, in.YearID, in.NeighborID, in.SkontoPct)
+	if err != nil {
+		return PaymentResult{}, err
 	}
 	// Linked to the ACTIVE invoice at recording time, forward-only: after a
 	// storno + re-issue the attribution used to be guesswork. A scalar subquery
 	// keeps this a single statement — no invoice means NULL, exactly as before.
 	var id int64
 	err = tx.QueryRowContext(ctx,
-		`INSERT INTO payments (billing_year_id, neighbor_id, amount, paid_on, note, method, invoice_id)
+		`INSERT INTO payments (billing_year_id, neighbor_id, amount, paid_on, note, method, invoice_id, idempotency_key)
 		 VALUES ($1,$2,$3,$4,$5,$6,
 		         (SELECT id FROM invoices
 		           WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='invoice' AND status='issued'
-		           ORDER BY id DESC LIMIT 1))
+		           ORDER BY id DESC LIMIT 1),
+		         $7)
 		 RETURNING id`,
-		yearID, neighborID, amount, paidOn, note, method).Scan(&id)
+		in.YearID, in.NeighborID, amount, in.PaidOn, in.Note, in.Method, nullStr(in.IdempotencyKey)).Scan(&id)
 	if err != nil {
-		return err
+		return PaymentResult{}, err
 	}
 	if err := addAuditTx(
 		ctx,
@@ -52,11 +136,65 @@ func (s *Store) AddPayment(ctx context.Context, yearID, neighborID int64, amount
 		"payment_add",
 		"payment",
 		strconv.FormatInt(id, 10),
-		paymentAuditState(amount, paidOn, method),
+		paymentAuditState(amount, in.PaidOn, in.Method),
 	); err != nil {
-		return err
+		return PaymentResult{}, err
 	}
-	return tx.Commit()
+	result := PaymentResult{PaymentID: id}
+	if credit != nil {
+		gv, err := issueGutschriftTx(ctx, tx, credit.orig, credit.base, credit.gross, "Skonto "+in.SkontoPct.String()+" %")
+		if err != nil {
+			return PaymentResult{}, err
+		}
+		result.Skonto = &gv
+	}
+	return result, tx.Commit()
+}
+
+// skontoCredit is a validated Skonto credit note waiting to be issued.
+type skontoCredit struct {
+	orig  models.Invoice
+	base  models.InvoiceContent
+	gross decimal.Decimal
+}
+
+// prepareSkonto validates a requested Skonto against the locked account and
+// returns what to issue, or nil when there is nothing to credit (no Skonto, no
+// active invoice, a legacy invoice without snapshot, or a zero amount). The
+// caller holds the account lock.
+func prepareSkonto(ctx context.Context, tx *sql.Tx, yearID, neighborID int64, pct decimal.Decimal) (*skontoCredit, error) {
+	if !pct.IsPositive() {
+		return nil, nil
+	}
+	orig, err := scanInvoice(tx.QueryRowContext(ctx,
+		`SELECT `+invoiceCols+` FROM invoices
+		  WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='invoice' AND status='issued' FOR UPDATE`,
+		yearID, neighborID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil // no active invoice: a Skonto has nothing to reduce
+	}
+	if err != nil {
+		return nil, err
+	}
+	if orig.Content == nil {
+		return nil, nil
+	}
+	gross := models.RoundMoney(orig.Content.Gross.Mul(pct).Div(decimal.NewFromInt(100)))
+	if !gross.IsPositive() {
+		return nil, nil
+	}
+	var status string
+	if err := tx.QueryRowContext(ctx,
+		`SELECT status FROM billing_years WHERE id=$1`, yearID).Scan(&status); err != nil {
+		return nil, err
+	}
+	if status == "completed" {
+		return nil, ErrSkontoYearCompleted
+	}
+	if err := checkCreditCap(ctx, tx, yearID, neighborID, orig.Content.Gross, gross); err != nil {
+		return nil, err
+	}
+	return &skontoCredit{orig: orig, base: *orig.Content, gross: gross}, nil
 }
 
 // UpdatePayment corrects a payment's amount, date, note and method in place —
@@ -66,6 +204,10 @@ func (s *Store) AddPayment(ctx context.Context, yearID, neighborID int64, amount
 // payments, and GetPayment (by id) still returns them, so a caller that only
 // checked the error would audit and report a change that never happened.
 func (s *Store) UpdatePayment(ctx context.Context, id int64, amount decimal.Decimal, paidOn time.Time, note, method string) (bool, error) {
+	amount = models.RoundMoney(amount)
+	if !amount.IsPositive() {
+		return false, ErrPaymentAmount
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -205,9 +347,8 @@ func (s *Store) GetPayment(ctx context.Context, id int64) (models.Payment, error
 	return p, err
 }
 
-// CountPaymentsForNeighborYear returns how many payments a neighbor has in a
-// year — used to block removing the neighbor from the year while payments exist
-// (which would orphan the rows and silently drop the year's paid total).
+// CountPaymentsForNeighborYear returns how many active payments a neighbor has in a
+// year. (Removal from the year is guarded by RemoveNeighborFromYear itself.)
 func (s *Store) CountPaymentsForNeighborYear(ctx context.Context, yearID, neighborID int64) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,
@@ -308,51 +449,6 @@ func (s *Store) BillingYearIDForYear(ctx context.Context, year int) (int64, erro
 		return 0, ErrNotFound
 	}
 	return id, err
-}
-
-// CarryForward moves an open balance from one year to the next in a single
-// transaction: a −amount transfer-out ledger posting settles the source year
-// (its remaining goes to 0) and a +amount opening posting seeds the target year.
-// Bypasses the completed-year gate deliberately — this is a settlement action.
-func (s *Store) CarryForward(ctx context.Context, neighborID, fromYearID, toYearID int64, amount decimal.Decimal, when time.Time, fromDesc, toDesc string) error {
-	tid, err := randToken()
-	if err != nil {
-		return err
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	if err := lockSettlementAccounts(
-		ctx,
-		tx,
-		accountKey{yearID: fromYearID, neighborID: neighborID},
-		accountKey{yearID: toYearID, neighborID: neighborID},
-	); err != nil {
-		return err
-	}
-	// Both sides share transfer_id so the pair reverses atomically (see
-	// DeleteLedgerTransfer / SetLedgerVoidedTransfer).
-	const ins = `INSERT INTO neighbor_ledger (billing_year_id, neighbor_id, amount, description, posting_date, transfer_id)
-	             VALUES ($1,$2,$3,$4,$5,$6)`
-	if _, err := tx.ExecContext(ctx, ins, fromYearID, neighborID, amount.Neg(), fromDesc, when, tid); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, ins, toYearID, neighborID, amount, toDesc, when, tid); err != nil {
-		return err
-	}
-	if err := addAuditTx(
-		ctx,
-		tx,
-		"carry_forward",
-		"ledger_transfer",
-		tid,
-		fmt.Sprintf("amount=%s; from_year_id=%d; to_year_id=%d", amount.StringFixed(2), fromYearID, toYearID),
-	); err != nil {
-		return err
-	}
-	return tx.Commit()
 }
 
 // randToken returns a random 128-bit hex id (used to link transfer postings).

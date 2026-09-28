@@ -19,23 +19,66 @@ import (
 
 // AddInstallment records one agreed installment.
 func (s *Store) AddInstallment(ctx context.Context, yearID, neighborID int64, amount decimal.Decimal, dueOn time.Time, note string) (int64, error) {
+	id, _, err := s.AddInstallmentOnce(ctx, yearID, neighborID, amount, dueOn, note, "")
+	return id, err
+}
+
+// AddInstallmentOnce records one agreed installment for a rendered form. A
+// resubmission with the same key and values returns the stored row with
+// duplicate=true instead of planning the rate twice; the same key with other
+// values is ErrIdempotencyConflict. The row is written under the account lock,
+// so it serializes with removing the neighbor from the year.
+func (s *Store) AddInstallmentOnce(
+	ctx context.Context,
+	yearID, neighborID int64,
+	amount decimal.Decimal,
+	dueOn time.Time,
+	note, idempotencyKey string,
+) (id int64, duplicate bool, err error) {
+	amount = models.RoundMoney(amount)
+	if !amount.IsPositive() {
+		return 0, false, ErrAmountRequired
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
-	if err := lockPersonalDataNeighbor(ctx, tx, neighborID); err != nil {
-		return 0, err
+	if err := lockBookingKeys(ctx, tx, formKeyLock("installment", idempotencyKey)); err != nil {
+		return 0, false, err
 	}
-	var id int64
-	err = tx.QueryRowContext(ctx,
-		`INSERT INTO payment_plans (billing_year_id, neighbor_id, due_on, amount, note)
-		 VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		yearID, neighborID, dueOn, amount, note).Scan(&id)
+	if idempotencyKey != "" {
+		var same bool
+		err := tx.QueryRowContext(ctx, `
+			SELECT id, billing_year_id=$2 AND neighbor_id=$3 AND amount=$4 AND due_on=$5::date AND note=$6
+			  FROM payment_plans WHERE idempotency_key=$1`,
+			idempotencyKey, yearID, neighborID, amount, dueOn, note).Scan(&id, &same)
+		switch {
+		case err == nil && same:
+			return id, true, tx.Commit()
+		case err == nil:
+			return 0, false, ErrIdempotencyConflict
+		case !errors.Is(err, sql.ErrNoRows):
+			return 0, false, err
+		}
+	}
+	// Payment-side rule: planning is allowed after completion, never for an
+	// erased neighbor, and only for an existing membership.
+	ok, err := lockAccountBoundary(ctx, tx, yearID, neighborID, false, false)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
-	return id, tx.Commit()
+	if !ok {
+		return 0, false, ErrNotFound
+	}
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO payment_plans (billing_year_id, neighbor_id, due_on, amount, note, idempotency_key)
+		 VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+		yearID, neighborID, dueOn, amount, note, nullStr(idempotencyKey)).Scan(&id)
+	if err != nil {
+		return 0, false, err
+	}
+	return id, false, tx.Commit()
 }
 
 // DeleteInstallment removes one installment and returns the deleted row, so the

@@ -244,17 +244,23 @@ func TestRecurringAndReplayRespectInvoiceFreeze(t *testing.T) {
 			t.Fatalf("load recurring: %v", err)
 		}
 		issueFixtureInvoice(t, st, yearID, neighborID)
+		// The issued invoice is the rule's waiting state, not a failed tick:
+		// nothing is booked, nothing advances, and the reason is recorded.
 		created, err := st.RunDueRecurring(ctx)
-		if !errors.Is(err, store.ErrInvoiceLocked) || created != 0 {
-			t.Fatalf("due recurrence: created=%d err=%v, want 0/ErrInvoiceLocked", created, err)
+		if err != nil || created != 0 {
+			t.Fatalf("due recurrence: created=%d err=%v, want 0/nil (waiting)", created, err)
 		}
 		var after time.Time
+		var lastError string
 		if err := pool.QueryRowContext(ctx,
-			`SELECT next_run FROM recurring_entries WHERE id=$1`, ruleID).Scan(&after); err != nil {
+			`SELECT next_run, last_error FROM recurring_entries WHERE id=$1`, ruleID).Scan(&after, &lastError); err != nil {
 			t.Fatalf("reload recurring: %v", err)
 		}
 		if !after.Equal(before) {
 			t.Fatalf("blocked occurrence advanced from %v to %v", before, after)
+		}
+		if !strings.Contains(lastError, "Rechnung") {
+			t.Fatalf("waiting rule records last_error %q, want the invoice reason", lastError)
 		}
 	})
 

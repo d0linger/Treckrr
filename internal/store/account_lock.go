@@ -21,6 +21,10 @@ var (
 	ErrNeighborAnonymized = errors.New("neighbor is anonymized")
 	// ErrIdempotencyConflict means a replay key belongs to another account.
 	ErrIdempotencyConflict = errors.New("idempotency key belongs to another account")
+	// ErrCarryTargetCompleted refuses a carry-forward into a completed year:
+	// the source may be settled after completion, but a closed year must not
+	// receive a new opening posting behind its back.
+	ErrCarryTargetCompleted = errors.New("carry-forward target year is completed")
 )
 
 // The payable balance for one neighbor in one year, as a single statement so it
@@ -28,8 +32,12 @@ var (
 // invoice is issued its frozen gross replaces the live booking net. Active credit
 // notes and ledger postings then adjust that liability and payments reduce it.
 // Before issuance, the live booking net is the deliberate fallback.
+//
+// The result is rounded to whole cents (models.BalanceState is the Go twin):
+// settle, carry and payout write exactly this figure, and money rows must be
+// whole cents, so a sub-cent legacy booking cost can never leak into a posting.
 const remainingSQL = `
-	SELECT COALESCE(
+	SELECT ROUND(COALESCE(
 	         (SELECT gross FROM invoices
 	           WHERE billing_year_id=$1 AND neighbor_id=$2
 	             AND kind='invoice' AND status='issued'),
@@ -42,7 +50,7 @@ const remainingSQL = `
 	     + (SELECT COALESCE(SUM(amount),0) FROM neighbor_ledger
 	         WHERE billing_year_id=$1 AND neighbor_id=$2 AND NOT voided)
 	     - (SELECT COALESCE(SUM(amount),0) FROM payments
-	         WHERE billing_year_id=$1 AND neighbor_id=$2 AND deleted_at IS NULL)`
+	         WHERE billing_year_id=$1 AND neighbor_id=$2 AND deleted_at IS NULL), 2)`
 
 // lockAccount takes a row lock on the membership row for (year, neighbor) and
 // reports whether that account exists at all.
@@ -379,6 +387,15 @@ func (s *Store) CarryForwardRemaining(ctx context.Context, neighborID, fromYearI
 		accountKey{yearID: toYearID, neighborID: neighborID},
 	); err != nil {
 		return decimal.Zero, err
+	}
+	// Both year rows are locked above, so this status cannot change under us.
+	var targetStatus string
+	if err := tx.QueryRowContext(ctx,
+		`SELECT status FROM billing_years WHERE id=$1`, toYearID).Scan(&targetStatus); err != nil {
+		return decimal.Zero, err
+	}
+	if targetStatus == "completed" {
+		return decimal.Zero, ErrCarryTargetCompleted
 	}
 	remaining, err := remainingLocked(ctx, tx, fromYearID, neighborID)
 	if err != nil {

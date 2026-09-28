@@ -359,8 +359,17 @@
 				<button type="submit" class="btn btn--primary">Gutschrift erstellen</button>
 				<p class="muted small">Ein Teilbetrag mindert das Entgelt anteilig — die Rechnung bleibt gültig. Nur der volle Widerruf braucht ein Storno.</p>
 			</form>
+			{{/* A full storno also reverses every active credit note attached to
+			     the invoice, each with its own storno document (<Nr.>-S). Name them
+			     before the operator confirms. */}}
+			{{$inv := .Invoice}}
+			{{$credits := ""}}
+			{{range .Documents}}{{if and (.ActiveCreditFor $inv.ID) .Content}}{{$credits = printf "%s%s%s (%s)" $credits (and $credits ", ") .Number (money .Content.Gross)}}{{end}}{{end}}
+			{{if $credits}}
+			<p class="muted small">Beim Storno der Rechnung werden auch diese Gutschriften mit eigenem Storno-Beleg aufgehoben: {{$credits}}.</p>
+			{{end}}
 			<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/storno"
-				data-confirm-danger data-confirm="Rechnung {{.Invoice.Number}} stornieren? Es wird ein Storno-Beleg erstellt und die Buchungen werden wieder freigegeben."
+				data-confirm-danger data-confirm="Rechnung {{.Invoice.Number}} stornieren? Es wird ein Storno-Beleg erstellt und die Buchungen werden wieder freigegeben.{{if $credits}} Zusätzlich werden die Gutschriften {{$credits}} mit je einem eigenen Storno-Beleg aufgehoben.{{end}}"
 				data-confirm-reason="Storno-Grund (optional, protokolliert)">
 				<input type="hidden" name="year_id" value="{{.Year.ID}}">
 				<input type="hidden" name="reason" value="">

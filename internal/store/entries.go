@@ -523,6 +523,16 @@ func (s *Store) SyncPairHours(ctx context.Context, partnerID int64, hours decima
 	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
 		return decimal.Zero, err
 	}
+	cost, err := syncPairHoursTx(ctx, tx, partnerID, hours)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	return cost, tx.Commit()
+}
+
+// syncPairHoursTx is SyncPairHours inside a transaction that already holds the
+// partner's account lock.
+func syncPairHoursTx(ctx context.Context, tx *sql.Tx, partnerID int64, hours decimal.Decimal) (decimal.Decimal, error) {
 	var unit string
 	if err := tx.QueryRowContext(ctx, `SELECT unit FROM entries WHERE id=$1 FOR UPDATE`, partnerID).Scan(&unit); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -534,7 +544,7 @@ func (s *Store) SyncPairHours(ctx context.Context, partnerID int64, hours decima
 		return decimal.Zero, ErrPairHoursPrecision
 	}
 	var cost decimal.Decimal
-	err = tx.QueryRowContext(ctx, `
+	err := tx.QueryRowContext(ctx, `
 		UPDATE entries SET
 		  hours    = CASE WHEN unit = 'h' THEN $2::numeric ELSE hours END,
 		  quantity = $2::numeric,
@@ -544,10 +554,67 @@ func (s *Store) SyncPairHours(ctx context.Context, partnerID int64, hours decima
 	if errors.Is(err, sql.ErrNoRows) {
 		return decimal.Zero, ErrNotFound
 	}
+	return cost, err
+}
+
+// PairSync reports the partner half UpdateEntryWithPartner adjusted.
+type PairSync struct {
+	PartnerID int64           // 0 when there was nothing to mirror
+	Hours     decimal.Decimal // the hours mirrored onto the partner
+	Cost      decimal.Decimal // the partner's recomputed cost
+}
+
+// UpdateEntryWithPartner saves an edited booking and, when syncPair is set,
+// mirrors its hours onto the linked partner — in ONE transaction under the
+// account lock. As two separate transactions an invoice issued between them
+// froze a pair whose machine and Mannstunden hours disagreed; now either both
+// halves change or neither does (ErrPairHoursPrecision leaves both untouched).
+// The partner is re-resolved under the lock, and one on another account is
+// never touched.
+func (s *Store) UpdateEntryWithPartner(ctx context.Context, e *models.Entry, machineIDs []int64, syncPair bool) (PairSync, error) {
+	ensureUnit(e)
+	yearID, neighborID, err := s.entryAccount(ctx, e.ID)
 	if err != nil {
-		return decimal.Zero, err
+		return PairSync{}, err
 	}
-	return cost, tx.Commit()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return PairSync{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
+		return PairSync{}, err
+	}
+	if err := updateEntryTx(ctx, tx, e, machineIDs); err != nil {
+		return PairSync{}, err
+	}
+	var sync PairSync
+	if syncPair {
+		hours := e.Hours
+		if e.Unit != "" && e.Unit != "h" {
+			hours = e.Quantity
+		}
+		var partner sql.NullInt64
+		// Same preference as LinkedPartnerID (the forward link first), limited
+		// to this account.
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COALESCE(
+			  (SELECT p.id FROM entries src JOIN entries p ON p.id = src.linked_entry_id
+			    WHERE src.id=$1 AND p.billing_year_id=$2 AND p.neighbor_id=$3),
+			  (SELECT id FROM entries
+			    WHERE linked_entry_id=$1 AND billing_year_id=$2 AND neighbor_id=$3
+			    ORDER BY id LIMIT 1))`, e.ID, yearID, neighborID).Scan(&partner); err != nil {
+			return PairSync{}, err
+		}
+		if partner.Valid && hours.IsPositive() {
+			cost, err := syncPairHoursTx(ctx, tx, partner.Int64, hours)
+			if err != nil {
+				return PairSync{}, err
+			}
+			sync = PairSync{PartnerID: partner.Int64, Hours: hours, Cost: cost}
+		}
+	}
+	return sync, tx.Commit()
 }
 
 // DeleteEntry removes an entry.
@@ -837,10 +904,10 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 		); err != nil {
 			return nil, err
 		}
-		r.Remaining = r.Payable.Sub(r.PaidAmount)
+		r.Remaining = models.RoundMoney(r.Payable.Sub(r.PaidAmount))
 		// A negative rest is money I owe the neighbor, not a settled account.
-		r.Paid = r.Remaining.IsZero()
-		r.Credit = r.Remaining.IsNegative()
+		// Judged at cent precision, like the dunning list and the checklist.
+		r.Paid, r.Credit = models.BalanceState(r.Remaining)
 		out = append(out, r)
 	}
 	return out, rows.Err()

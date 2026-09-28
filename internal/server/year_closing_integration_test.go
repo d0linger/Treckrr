@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/shopspring/decimal"
 )
 
 // The pre-close checklist and the closing effect (Ausbaukarte 59/60): what the
@@ -142,13 +144,16 @@ func TestYearClosingIntegration(t *testing.T) {
 		t.Error("neighbor history does not show the positive remaining credit")
 	}
 
+	// Paying out a Guthaben is a settlement, allowed after completion like
+	// "Rest als bezahlt" and the carry-forward (LED-08): the dashboard asks for
+	// exactly this on completed years.
 	ledgerBefore, _ := e.st.NeighborLedgerSum(e.ctx, yid, nid)
 	if body := e.post(fmt.Sprintf("/neighbors/%d/credit-payout", nid),
-		url.Values{"year_id": {itoa64(yid)}}); !strings.Contains(body, "abgeschlossen") {
-		t.Errorf("credit payout did not report the closed year")
+		url.Values{"year_id": {itoa64(yid)}}); !strings.Contains(body, "als ausbezahlt verbucht") {
+		t.Errorf("credit payout in the closed year was not booked")
 	}
-	if after, _ := e.st.NeighborLedgerSum(e.ctx, yid, nid); !after.Equal(ledgerBefore) {
-		t.Errorf("credit payout wrote to the ledger of a closed year (%s -> %s)", ledgerBefore, after)
+	if after, _ := e.st.NeighborLedgerSum(e.ctx, yid, nid); !after.Equal(ledgerBefore.Add(decimal.NewFromInt(5))) {
+		t.Errorf("credit payout in the closed year: ledger %s -> %s, want +5", ledgerBefore, after)
 	}
 
 	// Reopening without a reason is refused; with one it works and is recorded.

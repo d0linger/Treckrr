@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
 )
 
@@ -104,7 +106,8 @@ func (s *Store) CreateRecurring(ctx context.Context, sourceEntryID, neighborID i
 func (s *Store) ListRecurring(ctx context.Context) ([]models.RecurringEntry, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT re.id, re.neighbor_id, n.name, re.template, re.interval_kind,
-		        re.next_run, re.active, re.created_at, re.last_run_at
+		        re.next_run, re.active, re.created_at, re.last_run_at,
+		        re.last_error, re.last_error_at
 		   FROM recurring_entries re JOIN neighbors n ON n.id = re.neighbor_id
 		  ORDER BY re.active DESC, re.next_run`)
 	if err != nil {
@@ -115,10 +118,13 @@ func (s *Store) ListRecurring(ctx context.Context) ([]models.RecurringEntry, err
 	for rows.Next() {
 		var r models.RecurringEntry
 		var blob []byte
-		var last sql.NullTime
+		var last, errAt sql.NullTime
 		if err := rows.Scan(&r.ID, &r.NeighborID, &r.NeighborName, &blob, &r.IntervalKind,
-			&r.NextRun, &r.Active, &r.CreatedAt, &last); err != nil {
+			&r.NextRun, &r.Active, &r.CreatedAt, &last, &r.LastError, &errAt); err != nil {
 			return nil, err
+		}
+		if errAt.Valid {
+			r.LastErrorAt = &errAt.Time
 		}
 		if err := json.Unmarshal(blob, &r.Template); err != nil {
 			return nil, err
@@ -193,12 +199,20 @@ func (s *Store) neighborYearForDate(ctx context.Context, neighborID int64, d tim
 // idempotency_key "recur:<rule>:<date>", so a restart or overlapping tick never
 // double-books. A per-rule cap bounds catch-up after downtime. Returns the number
 // of occurrences with a new booking, including a restored companion alone.
+//
+// Rules are independent: one rule that cannot book (its neighbor's invoice is
+// issued, the neighbor was erased, a key collides) waits WITHOUT advancing and
+// records why in last_error, while every other rule still runs. Only
+// infrastructure errors are returned — joined, after all rules had their turn.
 func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()) // local midnight, not UTC
+	// Deterministic order: the oldest due work first, then by id. Without it an
+	// arbitrary subset of rules could be starved behind a failing one.
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, neighbor_id, template, interval_kind, next_run
-		   FROM recurring_entries WHERE active AND next_run <= $1::date`, today.Format("2006-01-02"))
+		   FROM recurring_entries WHERE active AND next_run <= $1::date
+		  ORDER BY next_run, id`, today.Format("2006-01-02"))
 	if err != nil {
 		return 0, err
 	}
@@ -233,56 +247,134 @@ func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 	}
 
 	created := 0
+	var errs []error
 	for _, d := range list {
-		next := d.next
-		var lastRun *time.Time
-		// Resolved once per rule, not per occurrence: a catch-up run materializes
-		// up to 60 of them and the answer is the same for all.
-		companions, personID, lerr := s.recurringPeople(ctx, d.tmpl, d.id)
-		if lerr != nil {
-			return created, lerr
-		}
-		for i := 0; i < 60 && !next.After(today); i++ { // cap catch-up per rule per tick
-			yid, ok, yerr := s.neighborYearForDate(ctx, d.neighborID, next)
-			if yerr != nil {
-				return created, yerr
-			}
-			if !ok {
-				// No open year for this date yet. Stop WITHOUT advancing so the
-				// occurrence is retried once that year opens, instead of being
-				// skipped past forever (which would silently drop the booking).
-				slog.Warn("recurring booking waiting: no open year", "rule", d.id, "neighbor", d.neighborID, "date", next.Format("2006-01-02"))
-				break
-			}
-			id, cerr := s.materializeRecurring(ctx, recurringOccurrence{
-				Template: d.tmpl, RuleID: d.id, YearID: yid, NeighborID: d.neighborID,
-				Date: next, Companions: companions, PersonID: personID,
-			})
-			if cerr != nil {
-				return created, cerr
-			}
-			if id != 0 {
-				created++
-			}
-			ran := next
-			lastRun = &ran
-			next = advanceDate(next, d.kind)
-		}
-		// Always persist next_run (unchanged if we're waiting); touch last_run_at
-		// only when an occurrence actually ran.
-		if lastRun != nil {
-			if _, err := s.db.ExecContext(ctx,
-				`UPDATE recurring_entries SET next_run=$1, last_run_at=$2 WHERE id=$3`, next, *lastRun, d.id); err != nil {
-				return created, err
-			}
-		} else if !next.Equal(d.next) {
-			if _, err := s.db.ExecContext(ctx,
-				`UPDATE recurring_entries SET next_run=$1 WHERE id=$2`, next, d.id); err != nil {
-				return created, err
-			}
+		n, err := s.runDueRule(ctx, d.id, d.neighborID, d.tmpl, d.kind, d.next, today)
+		created += n
+		if err != nil {
+			// Infrastructure failure for THIS rule: keep going so one rule can
+			// never starve the others; the tick still reports it.
+			slog.Error("recurring rule failed", "rule", d.id, "neighbor", d.neighborID, "err", err)
+			errs = append(errs, fmt.Errorf("recurring rule %d: %w", d.id, err))
 		}
 	}
-	return created, nil
+	return created, errors.Join(errs...)
+}
+
+// recurringBlockedMetric counts occurrences that had to wait on a business
+// condition (the rule's waiting state, not a failed tick).
+const recurringBlockedMetric = "treckrr_recurring_rules_blocked_total"
+
+// recurringWaitReason classifies an occurrence error as the rule's waiting
+// state: a condition of the target account that the operator resolves (storno,
+// reopen, add the neighbor again), not an infrastructure failure. The text is
+// shown on the Serien page.
+func recurringWaitReason(err error) (string, bool) {
+	switch {
+	case errors.Is(err, ErrInvoiceLocked):
+		return "Rechnung ist festgeschrieben – Buchung wartet, bis die Rechnung storniert ist.", true
+	case errors.Is(err, ErrNeighborAnonymized):
+		return "Nachbar wurde anonymisiert – es werden keine Buchungen mehr erzeugt.", true
+	case errors.Is(err, ErrIdempotencyConflict):
+		return "Buchungskennung ist bereits anderweitig vergeben – bitte Serie prüfen.", true
+	case errors.Is(err, ErrYearCompleted):
+		return "Abrechnungsjahr ist abgeschlossen – Buchung wartet.", true
+	case errors.Is(err, ErrNotFound):
+		return "Nachbar ist im Abrechnungsjahr nicht (mehr) vorhanden – Buchung wartet.", true
+	case errors.Is(err, ErrSourceCompanionUnavailable), errors.Is(err, ErrBookingKindLocked):
+		return "Vorlage passt nicht mehr zu den Stammdaten – bitte Serie prüfen.", true
+	}
+	return "", false
+}
+
+// runDueRule materializes the due occurrences of ONE rule and persists its
+// progress. A business condition stops the rule where it is (next_run is not
+// advanced, so the occurrence is retried) and is recorded in last_error; the
+// returned error is reserved for infrastructure failures.
+func (s *Store) runDueRule(
+	ctx context.Context,
+	ruleID, neighborID int64,
+	tmpl models.RecurTemplate,
+	kind string,
+	start, today time.Time,
+) (int, error) {
+	created := 0
+	next := start
+	var lastRun *time.Time
+	waitReason := ""
+	// Resolved once per rule, not per occurrence: a catch-up run materializes
+	// up to 60 of them and the answer is the same for all.
+	companions, personID, err := s.recurringPeople(ctx, tmpl, ruleID)
+	if err != nil {
+		return 0, err
+	}
+	var runErr error
+	for i := 0; i < 60 && !next.After(today); i++ { // cap catch-up per rule per tick
+		yid, ok, yerr := s.neighborYearForDate(ctx, neighborID, next)
+		if yerr != nil {
+			runErr = yerr
+			break
+		}
+		if !ok {
+			// No open year for this date yet. Stop WITHOUT advancing so the
+			// occurrence is retried once that year opens, instead of being
+			// skipped past forever (which would silently drop the booking).
+			slog.Warn("recurring booking waiting: no open year", "rule", ruleID, "neighbor", neighborID, "date", next.Format("2006-01-02"))
+			waitReason = "Kein offenes Abrechnungsjahr für " + next.Format("02.01.2006") + " – Buchung wartet."
+			break
+		}
+		id, cerr := s.materializeRecurring(ctx, recurringOccurrence{
+			Template: tmpl, RuleID: ruleID, YearID: yid, NeighborID: neighborID,
+			Date: next, Companions: companions, PersonID: personID,
+		})
+		if cerr != nil {
+			if reason, waiting := recurringWaitReason(cerr); waiting {
+				metrics.Inc(recurringBlockedMetric)
+				slog.Warn("recurring booking waiting", "rule", ruleID, "neighbor", neighborID,
+					"date", next.Format("2006-01-02"), "reason", cerr)
+				waitReason = reason
+			} else {
+				runErr = cerr
+			}
+			break
+		}
+		if id != 0 {
+			created++
+		}
+		ran := next
+		lastRun = &ran
+		next = advanceDate(next, kind)
+	}
+	// Always persist progress, even when a later occurrence failed: the ones
+	// before it are booked and must not be retried under a new date. next_run
+	// stays unchanged while waiting; last_run_at moves only when an occurrence
+	// ran; last_error shows the current waiting state and clears once it runs.
+	if err := s.saveRuleProgress(ctx, ruleID, next, lastRun, waitReason, runErr == nil); err != nil {
+		return created, errors.Join(runErr, err)
+	}
+	return created, runErr
+}
+
+// saveRuleProgress writes next_run/last_run_at when an occurrence ran and, when
+// the rule's outcome is known, its waiting reason (” clears it).
+func (s *Store) saveRuleProgress(ctx context.Context, ruleID int64, next time.Time, lastRun *time.Time, waitReason string, outcomeKnown bool) error {
+	if lastRun != nil {
+		if _, err := s.db.ExecContext(ctx,
+			`UPDATE recurring_entries SET next_run=$1, last_run_at=$2 WHERE id=$3`, next, *lastRun, ruleID); err != nil {
+			return err
+		}
+	}
+	if !outcomeKnown {
+		return nil // an infrastructure failure says nothing about the rule itself
+	}
+	// Written only when the reason changes, so last_error_at tells since when
+	// the rule has been waiting for the same thing.
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE recurring_entries
+		   SET last_error = $1::text,
+		       last_error_at = CASE WHEN $1::text = '' THEN NULL ELSE now() END
+		 WHERE id = $2 AND last_error IS DISTINCT FROM $1::text`, waitReason, ruleID)
+	return err
 }
 
 // entryFromTemplate rebuilds an Entry from a recurring template (cost recomputed by

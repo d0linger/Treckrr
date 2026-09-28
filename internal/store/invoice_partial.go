@@ -23,6 +23,11 @@ import (
 // ErrAmountRequired rejects a zero or negative document amount.
 var ErrAmountRequired = errors.New("amount must be greater than zero")
 
+// ErrGutschriftExceedsBookings is the pre-invoice form of ErrGutschriftTooLarge
+// (errors.Is matches both): a free credit note larger than the gross the
+// invoice would have if it were issued now, less the credits already issued.
+var ErrGutschriftExceedsBookings = fmt.Errorf("%w: exceeds the uninvoiced bookings", ErrGutschriftTooLarge)
+
 // docSeqNumber allocates the next per-year sequence for a document class whose
 // number is <prefix><year>-<letter><nnn> (A = Anzahlung, G = freie Gutschrift).
 // Must be called inside the transaction that already holds the year's advisory
@@ -92,6 +97,7 @@ func creditContent(company models.Company, neighbor *models.Neighbor, gross deci
 // issued gutschrift of the neighbor+year), and like the attached one it does
 // not post to the neighbor ledger — that would double-count the same reduction.
 func (s *Store) FreeGutschrift(ctx context.Context, yearID, neighborID int64, year int, gross decimal.Decimal, note string) (models.Invoice, error) {
+	gross = models.RoundMoney(gross)
 	if !gross.IsPositive() {
 		return models.Invoice{}, ErrAmountRequired
 	}
@@ -125,9 +131,14 @@ func (s *Store) FreeGutschrift(ctx context.Context, yearID, neighborID int64, ye
 	}
 	// Same cap as the attached credit note (see ErrGutschriftTooLarge): while an
 	// issued invoice exists, the neighbor+year's credits — attached and free
-	// together — must not exceed its gross. Without an invoice there is nothing
-	// to cap against yet; IssueInvoice then refuses to issue below what was
-	// already credited, which closes the loop from the other side.
+	// together — must not exceed its gross.
+	//
+	// Before any invoice exists the cap is the gross the invoice WOULD have if it
+	// were issued now — the same content IssueInvoice freezes, built inside this
+	// locked transaction. Without that cap an uncapped pre-invoice credit made the
+	// balance negative, and payout or carry-forward then moved a Guthaben no
+	// payment ever backed; the IssueInvoice refusal only helped if an invoice was
+	// ever issued.
 	var invGross decimal.Decimal
 	err = tx.QueryRowContext(ctx,
 		`SELECT gross FROM invoices
@@ -135,19 +146,21 @@ func (s *Store) FreeGutschrift(ctx context.Context, yearID, neighborID int64, ye
 		yearID, neighborID).Scan(&invGross)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		// pre-invoice credit — allowed, bounded at issue time
+		wouldBe, err := s.buildInvoiceContentTx(ctx, tx, yearID, neighborID)
+		if err != nil {
+			return models.Invoice{}, err
+		}
+		if err := checkCreditCap(ctx, tx, yearID, neighborID, wouldBe.Gross, gross); err != nil {
+			if errors.Is(err, ErrGutschriftTooLarge) {
+				return models.Invoice{}, ErrGutschriftExceedsBookings
+			}
+			return models.Invoice{}, err
+		}
 	case err != nil:
 		return models.Invoice{}, err
 	default:
-		var credited decimal.Decimal
-		if err := tx.QueryRowContext(ctx,
-			`SELECT COALESCE(-SUM(gross), 0) FROM invoices
-			  WHERE billing_year_id=$1 AND neighbor_id=$2 AND kind='gutschrift' AND status='issued'`,
-			yearID, neighborID).Scan(&credited); err != nil {
+		if err := checkCreditCap(ctx, tx, yearID, neighborID, invGross, gross); err != nil {
 			return models.Invoice{}, err
-		}
-		if gross.GreaterThan(invGross.Sub(credited)) {
-			return models.Invoice{}, ErrGutschriftTooLarge
 		}
 	}
 	number, err := docSeqNumber(ctx, tx, yearID, year, "G")
@@ -177,6 +190,7 @@ func (s *Store) FreeGutschrift(ctx context.Context, yearID, neighborID int64, ye
 // full amount, the journal counts it once, and InvoiceRemaining stays correct
 // because the payment against the Abschlag is an ordinary recorded payment.
 func (s *Store) CreateAnzahlung(ctx context.Context, yearID, neighborID int64, year int, gross decimal.Decimal, label string, dueOn time.Time) (models.Invoice, error) {
+	gross = models.RoundMoney(gross) // invoices.gross is whole cents; hash what is stored
 	if !gross.IsPositive() {
 		return models.Invoice{}, ErrAmountRequired
 	}
@@ -268,18 +282,8 @@ func (s *Store) StornoDocument(ctx context.Context, id int64, reason string) (mo
 	if err != nil {
 		return models.Invoice{}, err
 	}
-	if orig.Content == nil {
-		return models.Invoice{}, fmt.Errorf("storno: kein Snapshot vorhanden")
-	}
-	sv, err := insertInvoiceDoc(ctx, tx, orig.BillingYearID, orig.NeighborID, orig.Number+"-S", "storno",
-		&orig.ID, time.Now(), reverseContent(*orig.Content, orig.Number, reason))
+	sv, err := stornoDocumentTx(ctx, tx, orig, reason, time.Now())
 	if err != nil {
-		return models.Invoice{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE invoices SET status='canceled' WHERE id=$1`, orig.ID); err != nil {
-		return models.Invoice{}, err
-	}
-	if err := addInvoiceAudit(ctx, tx, "document_storno", sv); err != nil {
 		return models.Invoice{}, err
 	}
 	return sv, tx.Commit()
