@@ -230,6 +230,10 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "Ungültige Anfrage.", http.StatusBadRequest)
 		return
 	}
+	if len(body.Password) > 72 {
+		http.Error(w, "Passwort darf höchstens 72 Byte lang sein.", http.StatusBadRequest)
+		return
+	}
 	// This is a password-verification endpoint like the 2FA and change-password
 	// steps, and it must be throttled like them: unbounded, a hijacked session
 	// could brute-force the account password here (and drive one bcrypt hash per

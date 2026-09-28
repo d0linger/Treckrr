@@ -82,6 +82,23 @@ func TestLogin2FACodeLimit(t *testing.T) {
 	}
 }
 
+// TestPasskeyRegisterBeginPasswordLimit verifies that handlePasskeyRegisterBegin
+// rejects passwords over 72 bytes with HTTP 400 Bad Request before store or rate limit calls.
+func TestPasskeyRegisterBeginPasswordLimit(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	reqBody := fmt.Sprintf(`{"password":%q}`, strings.Repeat("a", 73))
+	req := httptest.NewRequest(http.MethodPost, "/account/passkeys/register/begin", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	s.handlePasskeyRegisterBegin(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+	if got := strings.TrimSpace(rr.Body.String()); !strings.Contains(got, "Passwort darf höchstens 72 Byte lang sein.") {
+		t.Fatalf("body = %q, want error message about password length limit", got)
+	}
+}
+
 // TestStepUpInputLimits checks that oversized credentials never reach the
 // database or consume an admission attempt, including multibyte passwords.
 func TestStepUpInputLimits(t *testing.T) {
