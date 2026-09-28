@@ -128,7 +128,7 @@ func TestInvoiceStornoNamesCreditsIntegration(t *testing.T) {
 		"gespann_id": {itoa64(e.gespannID)}, "entry_date": {"2026-05-01"},
 		"hours": {"2"}, "unit": {"h"},
 	})
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{"year_id": {itoa64(yid)}})
+	e.postIssue(nid, url.Values{"year_id": {itoa64(yid)}})
 	e.post(fmt.Sprintf("/neighbors/%d/invoice/gutschrift", nid), url.Values{
 		"year_id": {itoa64(yid)}, "amount": {"5"}, "note": {"Nachlass"},
 	})

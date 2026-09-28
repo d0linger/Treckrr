@@ -6,7 +6,7 @@ ALTER TABLE backup_scheduler_state
     ADD COLUMN IF NOT EXISTS volume_attempt_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS s3_attempt_at TIMESTAMPTZ;
 
--- Validate the widened outbox status check from 0064 in its own transaction.
+-- Validate the widened outbox status check from 0063 in its own transaction.
 -- It is a strict superset of the previous constraint, which every existing row
 -- already satisfied, so this cannot fail on existing data.
 ALTER TABLE mail_outbox

@@ -651,6 +651,12 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 			if !ok {
 				continue
 			}
+			// The row list was read before the loop; a payment booked meanwhile
+			// can settle the account, and a settled account gets no reminder.
+			if !v.Open.IsPositive() {
+				skipped++
+				continue
+			}
 			if strings.TrimSpace(v.Neighbor.Email) == "" {
 				skipped++
 				continue

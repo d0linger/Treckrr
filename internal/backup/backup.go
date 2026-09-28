@@ -777,7 +777,7 @@ func (s *Service) readStatus() Status {
 		return st
 	}
 	// StatusFile is operator-configured deployment config, not user input.
-	b, err := os.ReadFile(s.opt.StatusFile) // #nosec G304
+	b, err := os.ReadFile(s.opt.StatusFile) // #nosec G304 G703 -- operator-configured status file path
 	if err != nil {
 		return st
 	}
@@ -1997,20 +1997,20 @@ func writeFileAtomic(path string, data []byte) error {
 	tmp := f.Name()
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
-		_ = os.Remove(tmp)
+		_ = os.Remove(tmp) // #nosec G703 -- temp name from os.CreateTemp in the target dir
 		return err
 	}
 	if err := f.Sync(); err != nil { // flush to disk before the rename
 		_ = f.Close()
-		_ = os.Remove(tmp)
+		_ = os.Remove(tmp) // #nosec G703 -- temp name from os.CreateTemp in the target dir
 		return err
 	}
 	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
+		_ = os.Remove(tmp) // #nosec G703 -- temp name from os.CreateTemp in the target dir
 		return err
 	}
 	if err := durableRename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+		_ = os.Remove(tmp) // #nosec G703 -- temp name from os.CreateTemp in the target dir
 		return err
 	}
 	return nil

@@ -17,7 +17,7 @@ ALTER TABLE mail_outbox
 -- Widen the state machine. The new set is a superset of the old one, so every
 -- existing row already satisfies it; NOT VALID skips the full-table scan under
 -- this transaction's DDL lock and still checks every new write immediately.
--- Migration 0065 validates historical rows after this lock is released.
+-- Migration 0064 validates historical rows after this lock is released.
 ALTER TABLE mail_outbox
     DROP CONSTRAINT mail_outbox_status_chk,
     ADD CONSTRAINT mail_outbox_status_chk

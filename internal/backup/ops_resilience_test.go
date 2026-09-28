@@ -25,7 +25,7 @@ func TestFilenameIsUTCAndOrdersAcrossDST(t *testing.T) {
 	first := time.Date(2026, 10, 25, 0, 30, 0, 0, time.UTC).In(vienna)  // 02:30 CEST
 	second := time.Date(2026, 10, 25, 1, 30, 0, 0, time.UTC).In(vienna) // 02:30 CET
 	a, b := Filename(first), Filename(second)
-	if a != "treckrr-2026-10-25-003000.000000000Z.dump.enc" || !(b > a) {
+	if a != "treckrr-2026-10-25-003000.000000000Z.dump.enc" || b <= a {
 		t.Fatalf("names %q, %q", a, b)
 	}
 	if !validName(a) {
