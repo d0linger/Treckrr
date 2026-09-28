@@ -27,6 +27,26 @@ func TestBudgetForLimitOnlyLowers(t *testing.T) {
 	}
 }
 
+// TestGoMemoryLimitForCgroup verifies that container sizing can only lower the
+// runtime limit and leaves unknown limits or stricter operator settings alone.
+func TestGoMemoryLimitForCgroup(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		limit, current int64
+		want           int64
+	}{
+		{"unknown limit", 0, 512 << 20, 512 << 20},
+		{"shipped 768 MiB", 768 << 20, 1 << 40, 512 << 20},
+		{"smaller 512 MiB container", 512 << 20, 1 << 40, (512 << 20) / 3 * 2},
+		{"smaller explicit limit wins", 768 << 20, 256 << 20, 256 << 20},
+	} {
+		if got := goMemoryLimitForCgroup(tc.limit, tc.current); got != tc.want {
+			t.Errorf("%s: goMemoryLimitForCgroup(%d, %d) = %d, want %d",
+				tc.name, tc.limit, tc.current, got, tc.want)
+		}
+	}
+}
+
 // TestReadMemoryLimitFormats covers cgroup v2 ("max" / bytes) and v1 (a huge
 // number for "unlimited"), plus the missing-file fallback to the next path.
 func TestReadMemoryLimitFormats(t *testing.T) {

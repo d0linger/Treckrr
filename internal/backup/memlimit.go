@@ -3,6 +3,7 @@ package backup
 import (
 	"log/slog"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,6 +46,33 @@ var onlineBudget = sync.OnceValue(func() int64 {
 // OnlineBudget is the in-memory archive allowance of the running server, shared
 // by scheduled backups, restores and the restore upload limit.
 func OnlineBudget() int64 { return onlineBudget() }
+
+// ClampGoMemLimit lowers the runtime soft heap limit to two thirds of the
+// container limit. An explicit smaller GOMEMLIMIT remains authoritative.
+func ClampGoMemLimit() {
+	limit := readMemoryLimit(cgroupLimitFiles...)
+	current := debug.SetMemoryLimit(-1)
+	want := goMemoryLimitForCgroup(limit, current)
+	if want >= current {
+		return
+	}
+	debug.SetMemoryLimit(want)
+	slog.Info("backup: Go heap limit lowered to fit the container memory limit",
+		"limit_bytes", limit, "gomemlimit_bytes", want)
+}
+
+// goMemoryLimitForCgroup returns the lower of the current runtime limit and
+// two thirds of a known cgroup limit.
+func goMemoryLimitForCgroup(limit, current int64) int64 {
+	if limit <= 0 {
+		return current
+	}
+	want := limit / 3 * 2
+	if want <= 0 || current <= want {
+		return current
+	}
+	return want
+}
 
 // budgetForLimit maps a container memory limit to the archive budget. A limit of
 // zero means "unknown or unlimited" and keeps the default.

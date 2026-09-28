@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -91,10 +92,10 @@ func TestGoBackgroundRunsDetachedAndIsDrained(t *testing.T) {
 	if err := <-finished; !errors.Is(err, context.Canceled) {
 		t.Fatalf("async work not canceled by shutdown: %v", err)
 	}
-	ran := false
-	s.goBackground(t.Context(), time.Minute, func(context.Context) { ran = true })
+	var ran atomic.Bool
+	s.goBackground(t.Context(), time.Minute, func(context.Context) { ran.Store(true) })
 	time.Sleep(10 * time.Millisecond)
-	if ran {
+	if ran.Load() {
 		t.Fatal("async work started after shutdown began")
 	}
 }

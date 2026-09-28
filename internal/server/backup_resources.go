@@ -39,6 +39,9 @@ func (s *Server) Background(ctx context.Context, work func()) {
 // takes the exclusive database lease.
 func (s *Server) BackgroundTask(ctx context.Context, work func(context.Context)) {
 	if ctx.Err() != nil || s.maintenanceActive() || s.draining.Load() {
+		if s.draining.Load() {
+			slog.Warn("background task rejected because shutdown is in progress")
+		}
 		return
 	}
 	taskCtx, cancel := context.WithCancel(ctx)
@@ -46,8 +49,12 @@ func (s *Server) BackgroundTask(ctx context.Context, work func(context.Context))
 
 	s.backgroundMu.Lock()
 	if s.maintenanceActive() || s.draining.Load() {
+		draining := s.draining.Load()
 		s.backgroundMu.Unlock()
 		cancel()
+		if draining {
+			slog.Warn("background task rejected because shutdown is in progress")
+		}
 		return
 	}
 	if s.backgroundTasks == nil {
@@ -125,6 +132,9 @@ func (s *Server) WaitBackground(ctx context.Context) error {
 // and shutdown cancel and wait for it like any other task.
 func (s *Server) goBackground(ctx context.Context, timeout time.Duration, work func(context.Context)) {
 	if s.maintenanceActive() || s.draining.Load() {
+		if s.draining.Load() {
+			slog.Warn("background task rejected because shutdown is in progress")
+		}
 		return
 	}
 	taskCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)

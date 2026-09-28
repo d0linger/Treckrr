@@ -33,9 +33,10 @@ func addYearNeighbor(t *testing.T, st *store.Store, pool *sql.DB, yearID int64, 
 	return id
 }
 
-func flatEntry(yearID, neighborID int64, cost string) *models.Entry {
+// flatEntry builds a fixed-price fixture entry in the supplied billing year.
+func flatEntry(yearID, neighborID int64, year int, cost string) *models.Entry {
 	return &models.Entry{
-		NeighborID: neighborID, BillingYearID: yearID, Date: day(2026, 5, 11),
+		NeighborID: neighborID, BillingYearID: yearID, Date: day(year, 5, 11),
 		TaskLabel: "Review flat", Unit: "Pauschale",
 		Quantity: decimal.NewFromInt(1), UnitPrice: dec(cost), Cost: dec(cost),
 	}
@@ -43,10 +44,12 @@ func flatEntry(yearID, neighborID int64, cost string) *models.Entry {
 
 // LED-01: one rule blocked by an issued invoice must not starve the others.
 func TestRunDueRecurringIsolatesBlockedRuleIntegration(t *testing.T) {
-	st, pool, yearID, blockedNeighbor, blockedSource := invoiceFixture(t, false)
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	st, pool, yearID, blockedNeighbor, blockedSource := invoiceFixtureYear(t, false, today.Year())
 	ctx := context.Background()
 	freeNeighbor := addYearNeighbor(t, st, pool, yearID, "Recurring free neighbor")
-	freeSource, err := st.CreateEntry(ctx, flatEntry(yearID, freeNeighbor, "40"), nil)
+	freeSource, err := st.CreateEntry(ctx, flatEntry(yearID, freeNeighbor, today.Year(), "40"), nil)
 	if err != nil {
 		t.Fatalf("free source: %v", err)
 	}
@@ -56,11 +59,6 @@ func TestRunDueRecurringIsolatesBlockedRuleIntegration(t *testing.T) {
 	}
 	// Both rules are due exactly once today; the blocked rule has the lower id
 	// and is processed first (ORDER BY next_run, id).
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	if today.Year() != 2026 {
-		t.Skip("fixture billing year is 2026")
-	}
 	blockedStart, freeStart := today, today
 	const ymd = "2006-01-02"
 	if err := st.CreateRecurring(ctx, blockedSource, blockedNeighbor, tmpl, "monthly", blockedStart); err != nil {
@@ -69,7 +67,7 @@ func TestRunDueRecurringIsolatesBlockedRuleIntegration(t *testing.T) {
 	if err := st.CreateRecurring(ctx, freeSource, freeNeighbor, tmpl, "monthly", freeStart); err != nil {
 		t.Fatalf("free rule: %v", err)
 	}
-	issueFixtureInvoice(t, st, yearID, blockedNeighbor)
+	issueFixtureInvoiceYear(t, st, yearID, blockedNeighbor, today.Year())
 
 	created, err := st.RunDueRecurring(ctx)
 	if err != nil || created != 1 {

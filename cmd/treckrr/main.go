@@ -44,8 +44,11 @@ func auditRetentionCutoffs(now time.Time) (short, long time.Time) {
 		time.Date(now.Year()-auditRetentionLongYears, time.January, 1, 0, 0, 0, 0, now.Location())
 }
 
+// main configures process-wide runtime limits and dispatches the server or a
+// maintenance subcommand.
 func main() {
 	setupLogging()
+	backup.ClampGoMemLimit()
 
 	// Subcommands (e.g. `treckrr restore <file>`); no args runs the web server.
 	if len(os.Args) > 1 {

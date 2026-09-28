@@ -68,15 +68,21 @@ func scratchStore(t *testing.T) (*store.Store, *sql.DB) {
 	return store.New(pool, "test-encryption-secret"), pool
 }
 
+// scratchBookingFixture creates the standard fixed-year booking fixture.
 func scratchBookingFixture(t *testing.T) (*store.Store, *sql.DB, int64, int64) {
+	return scratchBookingFixtureYear(t, 2026)
+}
+
+// scratchBookingFixtureYear creates a booking fixture for the supplied year.
+func scratchBookingFixtureYear(t *testing.T, year int) (*store.Store, *sql.DB, int64, int64) {
 	t.Helper()
 	st, pool := scratchStore(t)
 	ctx := context.Background()
-	baseID, err := st.CreateEmptyBase(ctx, 2026, "Review fixture")
+	baseID, err := st.CreateEmptyBase(ctx, year, "Review fixture")
 	if err != nil {
 		t.Fatal(err)
 	}
-	yearID, err := st.CreateBillingYear(ctx, 2026, baseID, "Review fixture")
+	yearID, err := st.CreateBillingYear(ctx, year, baseID, "Review fixture")
 	if err != nil {
 		t.Fatal(err)
 	}
