@@ -36,4 +36,5 @@ node_modules/
 
 # Local visual comparisons, test fixtures and screenshots are not application code.
 /tmp/
+/.tmp/
 /temp/

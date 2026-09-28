@@ -330,9 +330,19 @@ type Service struct {
 	volRetryAt time.Time     // earliest next volume attempt after a failure (tick goroutine only)
 	s3RetryAt  time.Time     // earliest next S3 attempt after a failure (tick goroutine only)
 
-	s3mu    sync.Mutex    // guards the cached S3 client
-	s3cl    *minio.Client // one client (and HTTP transport) reused across S3 calls
-	s3clKey [32]byte      // digest of the settings s3cl was built from
+	s3mu     sync.Mutex    // guards the cached S3 client
+	s3cl     *minio.Client // one client (and HTTP transport) reused across S3 calls
+	s3clOpts s3ClientOptions
+}
+
+// s3ClientOptions is the comparable subset of S3 settings used to build a
+// client. Keeping the values directly avoids misclassifying a cache identity as
+// password hashing while still rebuilding when credentials rotate.
+type s3ClientOptions struct {
+	Endpoint  string
+	AccessKey string
+	SecretKey string
+	UseSSL    bool
 }
 
 // statusRetryBackoff is how long the scheduler waits before retrying a failed
@@ -1594,12 +1604,15 @@ func (s *Service) S3Enabled() bool { return s.opt.S3.enabled() }
 // client is rebuilt only when the connection settings change.
 func (s *Service) s3Client() (*minio.Client, error) {
 	o := s.opt.S3
-	key := sha256.Sum256([]byte(strings.Join([]string{
-		o.Endpoint, o.AccessKey, o.SecretKey, strconv.FormatBool(o.UseSSL),
-	}, "\x00")))
+	clientOpts := s3ClientOptions{
+		Endpoint:  o.Endpoint,
+		AccessKey: o.AccessKey,
+		SecretKey: o.SecretKey,
+		UseSSL:    o.UseSSL,
+	}
 	s.s3mu.Lock()
 	defer s.s3mu.Unlock()
-	if s.s3cl != nil && s.s3clKey == key {
+	if s.s3cl != nil && s.s3clOpts == clientOpts {
 		return s.s3cl, nil
 	}
 	cl, err := minio.New(o.Endpoint, &minio.Options{
@@ -1609,7 +1622,7 @@ func (s *Service) s3Client() (*minio.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.s3cl, s.s3clKey = cl, key
+	s.s3cl, s.s3clOpts = cl, clientOpts
 	return cl, nil
 }
 

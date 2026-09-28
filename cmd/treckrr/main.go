@@ -533,16 +533,25 @@ func runRestore(parent context.Context, args []string) error {
 	if err := bk.Restore(ctx, file, cfg.DatabaseURL); err != nil {
 		return err
 	}
+	reconcileCtx, cancelReconcile := restoreReconcileContext(ctx)
+	defer cancelReconcile()
 	st := store.New(pool, cfg.EncryptionSecret)
-	if err := st.ReconcileAfterRestore(ctx); err != nil {
+	if err := st.ReconcileAfterRestore(reconcileCtx); err != nil {
 		return fmt.Errorf("restore completed but reconciliation failed; keep the app stopped: %w", err)
 	}
 	slog.Info("restore complete", "file", file)
-	if held, err := st.HeldMailCount(ctx); err == nil && held > 0 {
+	if held, err := st.HeldMailCount(reconcileCtx); err == nil && held > 0 {
 		slog.Warn("restored outbox mail is held; release or discard it on the admin backup page",
 			"held", held)
 	}
 	return nil
+}
+
+// restoreReconcileContext gives committed restore state a bounded settlement
+// window even when the signal-aware restore context is canceled immediately
+// after pg_restore succeeds.
+func restoreReconcileContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
 }
 
 // readLine reads one line from r, giving up when ctx ends (for example on

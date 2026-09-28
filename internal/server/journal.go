@@ -372,6 +372,11 @@ func (s *Server) handleAnzahlungCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	amount := formDecimal(r, "amount").Abs()
+	if models.HasSubCent(amount) {
+		s.setFlash(w, r, "error", msgMoneyCents)
+		redirect(w, r, back)
+		return
+	}
 	av, err := s.store.CreateAnzahlung(r.Context(), yearID, neighborID, year.Year,
 		amount, label, parsePaidOn(r.FormValue("due_on")))
 	switch {

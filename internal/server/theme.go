@@ -62,7 +62,9 @@ func safeReturnPath(r *http.Request, fallback string) string {
 	// Emit the ESCAPED path, never the decoded one, so nothing the Referer
 	// percent-encoded reaches the Location header raw.
 	target := u.EscapedPath()
-	if !strings.HasPrefix(target, "/") || strings.HasPrefix(target, "//") || strings.Contains(target, "\\") {
+	if len(target) == 0 || target[0] != '/' ||
+		(len(target) > 1 && (target[1] == '/' || target[1] == '\\')) ||
+		strings.Contains(target[1:], "\\") {
 		return fallback
 	}
 	if u.RawQuery != "" {

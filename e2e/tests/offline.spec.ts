@@ -357,12 +357,16 @@ test("other owners and unstamped legacy items remain quarantined", async ({ page
   await expect.poll(async () => (await queue(page)).length).toBe(1);
   const item = (await queue(page))[0];
   await page.evaluate(async item => {
+    const old = Date.now() - 31 * 24 * 60 * 60 * 1000;
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open("treckrr-offline", 1);
       request.onsuccess = () => {
         const db = request.result;
         const tx = db.transaction("queue", "readwrite");
-        tx.objectStore("queue").put({ ...item, id: "foreign", user: "8", rejection: { status: 422, message: "Private Fremdbuchung" } });
+        tx.objectStore("queue").put({
+          ...item, id: "foreign", user: "8", created: old, ownerSeen: old, quarantinedAt: old,
+          rejection: { status: 422, message: "Private Fremdbuchung" },
+        });
         tx.objectStore("queue").put({ ...item, id: "legacy", user: undefined });
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = () => { db.close(); reject(tx.error); };
@@ -375,9 +379,8 @@ test("other owners and unstamped legacy items remain quarantined", async ({ page
   await expect(page.locator("[data-offline-list]")).not.toContainText("Private Fremdbuchung");
   await context.setOffline(false);
   await expect.poll(() => posts).toBe(1);
+  await page.reload();
   await expect.poll(async () => (await queue(page)).length).toBe(2);
-  await page.locator("[data-offline-flush]").click();
-  await expect(page.locator("[data-offline-list]")).toContainText("Nichts in der Warteschlange");
   expect(posts).toBe(1);
   expect((await queue(page)).map(item => item.id).sort()).toEqual(["foreign", "legacy"]);
 });

@@ -31,6 +31,9 @@ func TestRestoreHoldsRestoredOutboxMailIntegration(t *testing.T) {
 	pending := seedOutbox(t, st, "pending@example.invalid", "pending")
 	sending := seedOutbox(t, st, "sending@example.invalid", "sending")
 	sent := seedOutbox(t, st, "sent@example.invalid", "sent")
+	if _, err := pool.ExecContext(ctx, `UPDATE mail_outbox SET attempts=6 WHERE id=$1`, pending); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.ExecContext(ctx, `UPDATE mail_outbox SET status='sending', claimed_at=now() WHERE id=$1`, sending); err != nil {
 		t.Fatal(err)
 	}
@@ -82,8 +85,12 @@ func TestRestoreHoldsRestoredOutboxMailIntegration(t *testing.T) {
 	if err != nil || len(held) != 2 || held[0].ID != pending {
 		t.Fatalf("held list = %+v, %v", held, err)
 	}
-	if _, err := st.ReleaseHeldMail(ctx, pending); err != nil {
+	released, err := st.ReleaseHeldMail(ctx, pending)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if released.Attempts != 0 {
+		t.Fatalf("released mail retained %d attempts, want 0", released.Attempts)
 	}
 	if _, err := st.DiscardHeldMail(ctx, sending); err != nil {
 		t.Fatal(err)
@@ -115,6 +122,7 @@ func TestStaleClaimBeforeDataIsRetriedIntegration(t *testing.T) {
 	claimed := seedOutbox(t, st, "claimed@example.invalid", "claimed")
 	data := seedOutbox(t, st, "data@example.invalid", "data")
 	legacy := seedOutbox(t, st, "legacy@example.invalid", "legacy")
+	exhausted := seedOutbox(t, st, "exhausted@example.invalid", "exhausted")
 	for id, phase := range map[int64]any{claimed: "claimed", data: "data", legacy: nil} {
 		if _, err := pool.ExecContext(ctx, `
 			UPDATE mail_outbox
@@ -123,6 +131,13 @@ func TestStaleClaimBeforeDataIsRetriedIntegration(t *testing.T) {
 			 WHERE id=$1`, id, phase); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err := pool.ExecContext(ctx, `
+		UPDATE mail_outbox
+		   SET status='sending', attempts=100, delivery_phase='claimed',
+		       claimed_at=now() - interval '10 minutes'
+		 WHERE id=$1`, exhausted); err != nil {
+		t.Fatal(err)
 	}
 	var sentTo []string
 	delivered, _, err := st.ProcessMailOutbox(ctx, func(_ context.Context, _, to, _, _, _, _ string, _ []byte) error {
@@ -135,7 +150,9 @@ func TestStaleClaimBeforeDataIsRetriedIntegration(t *testing.T) {
 	if delivered != 1 || len(sentTo) != 1 || sentTo[0] != "claimed@example.invalid" {
 		t.Fatalf("delivered=%d to=%v", delivered, sentTo)
 	}
-	for id, want := range map[int64]string{claimed: "sent", data: "ambiguous", legacy: "ambiguous"} {
+	for id, want := range map[int64]string{
+		claimed: "sent", data: "ambiguous", legacy: "ambiguous", exhausted: "failed",
+	} {
 		var got string
 		if err := pool.QueryRowContext(ctx, `SELECT status FROM mail_outbox WHERE id=$1`, id).Scan(&got); err != nil {
 			t.Fatal(err)
@@ -143,6 +160,15 @@ func TestStaleClaimBeforeDataIsRetriedIntegration(t *testing.T) {
 		if got != want {
 			t.Errorf("intent %d status=%s, want %s", id, got, want)
 		}
+	}
+	var failedAudits int
+	if err := pool.QueryRowContext(ctx, `
+		SELECT count(*) FROM audit_log
+		 WHERE action='mail_retry_failed' AND entity_id='it:hold:exhausted@example.invalid'`).Scan(&failedAudits); err != nil {
+		t.Fatal(err)
+	}
+	if failedAudits != 1 {
+		t.Fatalf("stale exhausted mail audit count = %d, want 1", failedAudits)
 	}
 }
 

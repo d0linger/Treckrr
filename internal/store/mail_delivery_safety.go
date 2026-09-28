@@ -90,14 +90,46 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 	// are exhausted). Anything else, including claims taken by older binaries
 	// without a phase marker, may have been delivered and is never retried.
 	staleAfter := (2 * perMailBudget).Seconds()
-	if _, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, `
 		UPDATE mail_outbox
 		   SET status=CASE WHEN attempts >= $2 THEN 'failed' ELSE 'pending' END,
 		       terminal_at=CASE WHEN attempts >= $2 THEN now() END,
 		       claimed_at=NULL, delivery_phase=NULL, next_attempt_at=now(),
 		       last_error='worker stopped before SMTP DATA'
 		 WHERE status='sending' AND delivery_phase='claimed'
-		   AND claimed_at < now() - make_interval(secs => $1)`, staleAfter, outboxMaxAttempts); err != nil {
+		   AND claimed_at < now() - make_interval(secs => $1)
+		 RETURNING `+outboxSelectColumns, staleAfter, outboxMaxAttempts)
+	if err != nil {
+		return 0, 0, err
+	}
+	var staleFailed []OutboxMail
+	for rows.Next() {
+		m, scanErr := scanOutboxMail(rows)
+		if scanErr != nil {
+			_ = rows.Close()
+			return 0, 0, scanErr
+		}
+		if m.Status == MailStatusFailed {
+			staleFailed = append(staleFailed, m)
+		}
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, 0, err
+	}
+	for _, m := range staleFailed {
+		if err := addMailAuditTx(ctx, tx, "mail_retry_failed", m, fmt.Sprintf(
+			"%s endgültig NICHT zugestellt an %s (%d Versuche): worker stopped before SMTP DATA",
+			m.Subject, m.Recipient, m.Attempts)); err != nil {
+			return 0, 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return 0, 0, err
 	}
 	if _, err := s.db.ExecContext(ctx, `
@@ -107,7 +139,7 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 		 WHERE status='sending' AND claimed_at < now() - make_interval(secs => $1)`, staleAfter); err != nil {
 		return 0, 0, err
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err = s.db.QueryContext(ctx, `
 		SELECT `+outboxSelectColumns+`
 		  FROM mail_outbox
 		 WHERE status='pending' AND next_attempt_at <= now()

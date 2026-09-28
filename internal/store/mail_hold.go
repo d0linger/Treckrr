@@ -97,7 +97,7 @@ func (s *Store) ListHeldMail(ctx context.Context, limit int) ([]HeldMail, error)
 func (s *Store) ReleaseHeldMail(ctx context.Context, id int64) (HeldMail, error) {
 	return s.settleHeldMail(ctx, id, `
 		UPDATE mail_outbox
-		   SET status='pending', held_at=NULL, next_attempt_at=now(), last_error=''
+		   SET status='pending', attempts=0, held_at=NULL, next_attempt_at=now(), last_error=''
 		 WHERE id=$1 AND status='held'
 		 RETURNING id, kind, recipient, subject, attempts, created_at, now(), last_error`,
 		"mail_held_released", "zur Zustellung freigegeben")

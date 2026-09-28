@@ -208,9 +208,12 @@ Persist these two named volumes:
 | Volume | Contents |
 | --- | --- |
 | `pgdata` | PostgreSQL data directory — all business data |
-| `backups` | Encrypted dumps and `status.json` |
+| `backups` | Encrypted dumps, `status.json`, and private plaintext scratch files while a backup or restore is running |
 
-Backups next to the database are not backups: set the **S3_\*** variables, or sync the `backups` volume to another machine.
+Backups next to the database are not backups: set the **S3_\*** variables, or copy
+only `treckrr-*.dump.enc` (and, if useful, `status.json`) to another machine.
+Do not mirror the volume wholesale: `.treckrr-plain-*.tmp` files are private but
+temporarily contain plaintext database archives during backup and restore work.
 
 **Restore** is available to administrators in the Backup panel and as an offline
 CLI command. Both require typed confirmation. For the CLI, stop **all** app

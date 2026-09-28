@@ -16,7 +16,7 @@
 	// 403/409/redirect answers are not validation failures, but they do not heal
 	// on their own either (read-only account, forced password change).
 	var SOFT_FAILURE_LIMIT = 3;
-	var DAY = 24 * 60 * 60 * 1000, QUARANTINE_DAYS = 30;
+	var DAY = 24 * 60 * 60 * 1000;
 
 	function open() {
 		return new Promise(function (res, rej) {
@@ -187,10 +187,10 @@
 	}
 
 	/**
-	 * Retention for a shared device: an item whose owner has not used this browser
-	 * for QUARANTINE_DAYS (and an unowned legacy item that long after it was first
-	 * seen) is deleted. The current user's own items are never expired — they are
-	 * visible in the queue panel and only the user discards them.
+	 * On a shared device, foreign and unowned legacy items remain quarantined
+	 * until their owner returns or deliberately exports/discards them. Automatic
+	 * deletion would contradict the logout promise that retained bookings can be
+	 * sent after their owner signs in again.
 	 */
 	function maintain() {
 		var me = currentUser(), now = Date.now();
@@ -205,9 +205,7 @@
 					if (item.user === me) {
 						if (!item.ownerSeen || now - item.ownerSeen > DAY) { item.ownerSeen = now; cur.update(item); }
 					} else {
-						var since = item.ownerSeen || item.created || item.quarantinedAt;
-						if (!since) { item.quarantinedAt = now; cur.update(item); }
-						else if (now - since > QUARANTINE_DAYS * DAY) cur.delete();
+						if (!item.quarantinedAt) { item.quarantinedAt = now; cur.update(item); }
 					}
 					cur.continue();
 				};

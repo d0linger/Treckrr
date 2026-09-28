@@ -409,7 +409,10 @@ func TestS3ListNarrowsEveryNamespace(t *testing.T) {
 // TestS3ClientIsReused verifies one client serves repeated calls and a
 // settings change builds a new one.
 func TestS3ClientIsReused(t *testing.T) {
-	s := New(Options{S3: S3Options{Endpoint: "127.0.0.1:9", Bucket: "b", Prefix: "p/"}}, nil)
+	s := New(Options{S3: S3Options{
+		Endpoint: "127.0.0.1:9", Bucket: "b", Prefix: "p/",
+		AccessKey: "access", SecretKey: "secret-a",
+	}}, nil)
 	a, err := s.s3Client()
 	if err != nil {
 		t.Fatal(err)
@@ -418,10 +421,15 @@ func TestS3ClientIsReused(t *testing.T) {
 	if err != nil || a != b {
 		t.Fatalf("client rebuilt: %p %p %v", a, b, err)
 	}
-	s.opt.S3.Endpoint = "127.0.0.1:10"
+	s.opt.S3.SecretKey = "secret-b"
 	c, err := s.s3Client()
 	if err != nil || c == a {
-		t.Fatalf("settings change reused the old client: %v", err)
+		t.Fatalf("credential change reused the old client: %v", err)
+	}
+	s.opt.S3.Endpoint = "127.0.0.1:10"
+	d, err := s.s3Client()
+	if err != nil || d == c {
+		t.Fatalf("endpoint change reused the old client: %v", err)
 	}
 }
 

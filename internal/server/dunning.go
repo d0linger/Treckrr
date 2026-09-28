@@ -631,7 +631,7 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 	bctx, cancelBatch := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Minute)
 	defer cancelBatch()
 
-	var sent, alreadySent, queued, ambiguous, held, skipped, failed int
+	var sent, alreadySent, queued, ambiguous, held, settled, skipped, failed int
 	ran := false
 	s.BackgroundTask(bctx, func(taskCtx context.Context) {
 		ran = true
@@ -654,7 +654,7 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 			// The row list was read before the loop; a payment booked meanwhile
 			// can settle the account, and a settled account gets no reminder.
 			if !v.Open.IsPositive() {
-				skipped++
+				settled++
 				continue
 			}
 			if strings.TrimSpace(v.Neighbor.Email) == "" {
@@ -699,6 +699,9 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 	}
 	if held > 0 {
 		msg += fmt.Sprintf(", %d nach einer Wiederherstellung angehalten (unter Backup freigeben oder verwerfen)", held)
+	}
+	if settled > 0 {
+		msg += fmt.Sprintf(", %d inzwischen ausgeglichen", settled)
 	}
 	if failed > 0 {
 		msg += fmt.Sprintf(", %d fehlgeschlagen (bitte prüfen und nur betroffene Nachbarn erneut senden)", failed)

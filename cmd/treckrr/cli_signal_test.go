@@ -27,3 +27,22 @@ func TestReadLineHonorsCancellation(t *testing.T) {
 		t.Fatalf("blocked prompt err = %v", err)
 	}
 }
+
+// TestRestoreReconcileContextOutlivesSignalCancel verifies a committed restore
+// still gets its bounded reconciliation window after the CLI signal context ends.
+func TestRestoreReconcileContextOutlivesSignalCancel(t *testing.T) {
+	parent, cancelParent := context.WithCancel(context.Background())
+	cancelParent()
+
+	ctx, cancel := restoreReconcileContext(parent)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+		t.Fatalf("reconciliation context inherited cancellation: %v", ctx.Err())
+	default:
+	}
+	deadline, ok := ctx.Deadline()
+	if !ok || time.Until(deadline) <= 0 || time.Until(deadline) > 2*time.Minute {
+		t.Fatalf("reconciliation deadline = %v, ok=%v", deadline, ok)
+	}
+}
