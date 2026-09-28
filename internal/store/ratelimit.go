@@ -62,6 +62,14 @@ func (s *Store) RateLimitReset(ctx context.Context, key string) error {
 	return err
 }
 
+// RateLimitRefund gives back one attempt on key — the reservation a successful
+// attempt took through RateLimitAdmit — without touching earlier failures.
+func (s *Store) RateLimitRefund(ctx context.Context, key string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE login_attempts SET fails = GREATEST(fails - 1, 0), updated_at = now() WHERE key = $1`, key)
+	return err
+}
+
 // PurgeStaleRateLimits removes counters not touched for a day, keeping the
 // table small. Called alongside session purging.
 func (s *Store) PurgeStaleRateLimits(ctx context.Context) error {

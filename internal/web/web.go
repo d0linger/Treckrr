@@ -3,6 +3,7 @@
 package web
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
@@ -128,6 +129,10 @@ func funcMap() template.FuncMap {
 			return t.Format("2006-01-02")
 		},
 		"dict": dict,
+		// formKey renders a fresh random idempotency key per form render: a
+		// resubmitted form (lost redirect, browser retry) carries the same key
+		// and the server returns the stored row instead of booking twice.
+		"formKey": formKey,
 		// pct returns |v|/max as a percentage string (clamped 0–100) for an SVG
 		// width/x attribute — CSP-safe (a presentation attribute, not inline style).
 		"pct": func(v, max decimal.Decimal) string {
@@ -234,6 +239,15 @@ func formatDecimal(v decimal.Decimal, decimals int32) string {
 		out = "-" + out
 	}
 	return out
+}
+
+// formKey returns 128 random bits as hex, one per rendered form (see funcMap).
+func formKey() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
 }
 
 func dict(values ...any) (map[string]any, error) {

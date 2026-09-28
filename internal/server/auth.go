@@ -36,17 +36,30 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/")
 		return
 	}
+	// A session cookie that no longer resolves is dead weight at best; drop it
+	// so the browser stops presenting it.
+	s.expireStaleSession(w, r)
 	// "Abbrechen" from the 2FA step clears the pending state.
 	if r.URL.Query().Get("cancel") == "1" {
 		s.clearPending2FA(w, r)
 		redirect(w, r, "/login")
 		return
 	}
-	data := pageData{"Title": "Anmelden", "Theme": s.themeFromCookie(r), "CSRF": s.loginCSRFToken(w, r)}
+	// Both forms on this page embed their own purpose-bound token, so the
+	// generic session-token injection is switched off here.
+	data := pageData{
+		"Title": "Anmelden", "Theme": s.themeFromCookie(r), "CSRF": s.loginCSRFToken(w, r),
+		skipCSRFInjectKey: true,
+	}
 	// If a valid pending-2FA cookie is present, show the second step instead.
-	if c, err := s.cookie(r, pending2FACookie); err == nil {
-		if _, ok := s.verifyPending2FA(c.Value); ok {
+	if c, err := s.cookie(r, pending2FACookie); err == nil && c.Value != "" {
+		if _, ok := s.verifyPending2FA(r.Context(), c.Value); ok {
 			data["ShowTotp"] = true
+			data["TwoFactorCSRF"] = s.pending2FACSRFToken(c.Value)
+		} else {
+			// Expired, forged or invalidated by a credential change: drop it so
+			// the password step starts clean.
+			s.clearPending2FA(w, r)
 		}
 	}
 	if msg, kind, _ := s.readFlash(w, r); msg != "" {
@@ -74,7 +87,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
-	rlKey := s.clientIP(r)
+	rlKey := s.limiterIP(r)
 
 	// Only apply the account-scoped limiter to plausibly-real usernames: an
 	// over-long value can never match an account (AuthenticateUser rejects it),
@@ -117,7 +130,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	s.logins.reset(r.Context(), rlKey)
+	// Give back only this attempt's reservation. The per-IP bucket is shared by
+	// every account behind that address, so wiping it on success let anyone with
+	// a working login spray guesses at other accounts without limit: four misses,
+	// one login to their own account, repeat.
+	s.logins.refund(r.Context(), rlKey)
 	if accountLimited {
 		s.logins.accountReset(r.Context(), username)
 	}
@@ -129,9 +146,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if s.sensitiveBlocked(w, r, user.ID, "/login") {
 			return
 		}
+		binding, err := s.store.PendingTwoFactorBinding(r.Context(), user.ID)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
 		s.setCookie(w, r, &http.Cookie{
 			Name:     pending2FACookie,
-			Value:    s.signPending2FA(user.ID),
+			Value:    s.signPending2FA(user.ID, binding),
 			MaxAge:   int(pending2FATTL.Seconds()),
 			SameSite: http.SameSiteStrictMode, // Hardened to Strict for short-lived login flow
 		})
@@ -149,15 +171,16 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, err := s.cookie(r, pending2FACookie)
-	if err != nil {
+	if err != nil || c.Value == "" {
 		s.setFlash(w, r, "error", "Anmeldung abgelaufen. Bitte erneut anmelden.")
 		redirect(w, r, "/login")
 		return
 	}
-	userID, ok := s.verifyPending2FA(c.Value)
-	if !ok {
-		s.clearPending2FA(w, r)
-		s.setFlash(w, r, "error", "Anmeldung abgelaufen. Bitte erneut anmelden.")
+	// This path is exempt from the generic csrf middleware (preSessionAuthPaths);
+	// its token is bound to the pending-2FA cookie instead of a session.
+	if !s.verifyPending2FACSRF(r, c.Value) {
+		metrics.Inc(metrics.CSRFRejected)
+		s.setFlash(w, r, "error", "Sicherheits-Token abgelaufen. Bitte erneut versuchen.")
 		redirect(w, r, "/login")
 		return
 	}
@@ -168,12 +191,19 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
+	userID, ok := s.verifyPending2FA(r.Context(), c.Value)
+	if !ok {
+		s.clearPending2FA(w, r)
+		s.setFlash(w, r, "error", "Anmeldung abgelaufen. Bitte erneut anmelden.")
+		redirect(w, r, "/login")
+		return
+	}
 	// Mitigation: Enforce per-user rate limiting on the 2FA step to protect
 	// against distributed brute-force attacks on the 6-digit TOTP code.
 	if !s.sensitiveAdmit(w, r, userID, "/login") {
 		return
 	}
-	rlKey := s.clientIP(r)
+	rlKey := s.limiterIP(r)
 	allowed, failed := s.admitVerification(w, r, rlKey, loginMaxFails, loginWindow)
 	if failed {
 		return
@@ -216,9 +246,15 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login") // pending cookie stays -> 2FA step shown again
 		return
 	}
-	s.logins.reset(r.Context(), rlKey)
+	s.logins.refund(r.Context(), rlKey) // this attempt only; see handleLogin
 	s.sensitiveReset(r, userID)
 	s.establishSession(w, r, user)
+}
+
+// sessionGone reports whether a session lookup failed because the session no
+// longer exists, as opposed to a transient store error.
+func sessionGone(err error) bool {
+	return errors.Is(err, store.ErrNotFound)
 }
 
 // consumeRecovery reports whether the input matches (and consumes) an unused
@@ -256,21 +292,46 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 
 // ---- Signed pending-2FA token (survives step 1 -> step 2, no DB state) ----
 
-func (s *Server) signPending2FA(userID int64) string {
-	// The "2fa:" prefix binds the HMAC to this context, so a pending-2FA token
-	// can never be replayed as another value signed with the same secret
-	// (mirrors the "csrf:" prefix in csrf.go).
+// signPending2FA issues the pending-2FA token for userID. binding is the
+// digest of the account's credential state at issue time
+// (store.PendingTwoFactorBinding); it enters the MAC but not the visible
+// payload. Any later change to that state — a completed second step (which
+// advances totp_last_step or consumes a recovery code), a password change, an
+// admin reset — therefore invalidates every outstanding token, so a copied
+// cookie can no longer skip the password step repeatedly for its whole TTL.
+func (s *Server) signPending2FA(userID int64, binding []byte) string {
 	payload := fmt.Sprintf("2fa:%d|%d", userID, time.Now().Add(pending2FATTL).Unix())
+	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." +
+		hex.EncodeToString(s.pending2FAMAC(payload, binding))
+}
+
+// pending2FAMAC signs a pending-2FA payload together with its binding. The
+// "2fa:" payload prefix binds the HMAC to this context, so the token can never
+// be replayed as another value signed with the same secret (mirrors the "csrf:"
+// prefix in csrf.go).
+func (s *Server) pending2FAMAC(payload string, binding []byte) []byte {
 	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
 	mac.Write([]byte(payload))
-	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + hex.EncodeToString(mac.Sum(nil))
+	mac.Write([]byte{0})
+	mac.Write(binding)
+	return mac.Sum(nil)
 }
 
 // maxPending2FATokenLen bounds the raw pending-2FA cookie input so an oversized
 // payload cannot drive unnecessary string or base64 decoding allocations (DoS defense).
 const maxPending2FATokenLen = 200
 
-func (s *Server) verifyPending2FA(value string) (int64, bool) {
+// verifyPending2FA checks a pending-2FA token against the account's current
+// credential state and returns the user it was issued for.
+func (s *Server) verifyPending2FA(ctx context.Context, value string) (int64, bool) {
+	return s.verifyPending2FAWith(value, func(userID int64) ([]byte, error) {
+		return s.store.PendingTwoFactorBinding(ctx, userID)
+	})
+}
+
+// verifyPending2FAWith is verifyPending2FA with the binding lookup injected. The
+// cheap structural and expiry checks run before the lookup.
+func (s *Server) verifyPending2FAWith(value string, binding func(int64) ([]byte, error)) (int64, bool) {
 	if len(value) > maxPending2FATokenLen {
 		return 0, false
 	}
@@ -282,16 +343,18 @@ func (s *Server) verifyPending2FA(value string) (int64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
-	mac.Write(raw)
-	if !hmac.Equal([]byte(hex.EncodeToString(mac.Sum(nil))), []byte(parts[1])) {
-		return 0, false
-	}
 	var uid, exp int64
 	if _, err := fmt.Sscanf(string(raw), "2fa:%d|%d", &uid, &exp); err != nil {
 		return 0, false
 	}
 	if time.Now().Unix() > exp {
+		return 0, false
+	}
+	b, err := binding(uid)
+	if err != nil {
+		return 0, false
+	}
+	if !hmac.Equal([]byte(hex.EncodeToString(s.pending2FAMAC(string(raw), b))), []byte(parts[1])) {
 		return 0, false
 	}
 	return uid, true
@@ -313,10 +376,18 @@ func (s *Server) clearTransitionalAuthCookies(w http.ResponseWriter, r *http.Req
 // transactionally before expiring browser state. A database failure preserves
 // the session cookie so the user can retry revocation.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	// Once browser state is expired, the browser also drops its HTTP cache for
+	// this origin. Deliberately only "cache", never "storage": storage would also
+	// wipe the origin-wide offline queue in IndexedDB, including other users'
+	// unsent bookings on a shared device, and the service worker. The queue is
+	// handled client-side before this POST instead (offline.js offers to keep, or
+	// to export and delete, the current user's items; quarantined items expire).
+	clearSiteData := func() { w.Header().Set("Clear-Site-Data", `"cache"`) }
 	c, err := s.cookie(r, sessionCookie)
 	if err != nil || c.Value == "" {
 		s.clearTransitionalAuthCookies(w, r)
 		s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
+		clearSiteData()
 		redirect(w, r, "/login")
 		return
 	}
@@ -335,6 +406,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// browser state is safe even though there is no new success event to audit.
 	s.clearTransitionalAuthCookies(w, r)
 	s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
+	clearSiteData()
 	redirect(w, r, "/login")
 }
 

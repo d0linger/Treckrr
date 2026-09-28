@@ -34,10 +34,17 @@ func (s *Store) AddLedgerPhoto(ctx context.Context, ledgerID int64, image []byte
 	if err := lockLedgerPhotoBooking(ctx, tx, ledgerID); err != nil {
 		return 0, err
 	}
+	// Same per-booking de-duplication as AddEntryPhoto (ErrDuplicatePhoto).
 	var id int64
 	err = tx.QueryRowContext(ctx,
-		`INSERT INTO ledger_photos (ledger_id,image,content_type) VALUES ($1,$2,$3) RETURNING id`,
+		`INSERT INTO ledger_photos (ledger_id,image,content_type)
+		 SELECT $1::bigint, $2::bytea, $3::text
+		  WHERE NOT EXISTS (SELECT 1 FROM ledger_photos WHERE ledger_id=$1 AND image=$2)
+		 RETURNING id`,
 		ledgerID, image, contentType).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrDuplicatePhoto
+	}
 	if err != nil {
 		return 0, err
 	}

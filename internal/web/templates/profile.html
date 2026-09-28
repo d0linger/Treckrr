@@ -63,6 +63,9 @@
 						data-confirm-danger data-confirm="Zwei‑Faktor wirklich deaktivieren?">
 						<label class="field"><span>Passwort bestätigen</span>
 							<input class="input" type="password" name="password" autocomplete="current-password" required></label>
+						<label class="field"><span>Zwei‑Faktor‑Code</span>
+							<input class="input" type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+								placeholder="Code aus der App oder Backup‑Code" required></label>
 						<button class="btn btn--danger btn--sm" type="submit">2FA deaktivieren</button>
 					</form>
 				</div>
@@ -99,6 +102,11 @@
 		<label class="field"><span>Passwort zur Bestätigung</span>
 			<input class="input" id="passkey-password" type="password" autocomplete="current-password"
 				placeholder="Aktuelles Passwort"></label>
+		{{if .User.TotpEnabled}}
+		<label class="field"><span>Zwei‑Faktor‑Code</span>
+			<input class="input" id="passkey-code" type="text" inputmode="numeric" autocomplete="one-time-code"
+				placeholder="Code aus der App oder Backup‑Code"></label>
+		{{end}}
 		<button id="passkey-register" type="button" class="btn btn--primary btn--block card-cta">{{template "ic-plus"}} Passkey hinzufügen</button>
 		</details>
 	</div>

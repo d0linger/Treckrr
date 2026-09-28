@@ -184,6 +184,10 @@ type RecurringEntry struct {
 	Active       bool
 	CreatedAt    time.Time
 	LastRunAt    *time.Time
+	// LastError is why the rule is currently waiting ('' when it last ran
+	// cleanly), LastErrorAt since when.
+	LastError   string
+	LastErrorAt *time.Time
 }
 
 // BelegSend records that a neighbor's Beleg was sent/handed over in a year.

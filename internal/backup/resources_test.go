@@ -79,7 +79,7 @@ func TestS3LegacyPrefixRemainsReadable(t *testing.T) {
 			prefix := r.URL.Query().Get("prefix")
 			listed = append(listed, prefix)
 			fmt.Fprint(w, `<ListBucketResult><Name>test</Name><IsTruncated>false</IsTruncated>`)
-			if prefix == "site-a" {
+			if prefix == "site-atreckrr-" {
 				fmt.Fprintf(w, `<Contents><Key>site-a%s</Key><Size>%d</Size><LastModified>2026-09-24T12:00:00Z</LastModified></Contents>`, name, len(body))
 			}
 			fmt.Fprint(w, `</ListBucketResult>`)
@@ -104,7 +104,7 @@ func TestS3LegacyPrefixRemainsReadable(t *testing.T) {
 	if err != nil || owned {
 		t.Fatalf("legacy object ownership: owned=%v err=%v", owned, err)
 	}
-	if strings.Join(listed, ",") != "site-a/,site-a" {
+	if strings.Join(listed, ",") != "site-a/treckrr-,site-atreckrr-" {
 		t.Fatalf("listed prefixes = %v", listed)
 	}
 }
@@ -257,7 +257,7 @@ func TestS3OversizedObjectsRejectedBeforeGet(t *testing.T) {
 	}))
 	defer ts.Close()
 	s := New(Options{MaxBytes: 8, S3: S3Options{Endpoint: strings.TrimPrefix(ts.URL, "http://"), Bucket: "test", AccessKey: "test", SecretKey: "test", Prefix: "site-a/"}}, nil)
-	if err := s.verifyS3Object(t.Context(), "treckrr-test.dump.enc", 9); err == nil {
+	if err := s.verifyS3Object(t.Context(), "treckrr-test.dump.enc", 9, [32]byte{}); err == nil {
 		t.Fatal("oversized verify accepted")
 	}
 	if _, err := s.S3Get(t.Context(), "treckrr-test.dump.enc"); err == nil {

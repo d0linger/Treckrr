@@ -391,9 +391,19 @@ func TestCreditCapAllCreditsIntegration(t *testing.T) {
 
 	t.Run("issue refused below already-credited total", func(t *testing.T) {
 		yearID, nid := setup(t, 2104, "Kappe Nachbar 2104")
-		// Free credit larger than the year's worth of bookings (218.00).
-		if _, err := st.FreeGutschrift(ctx, yearID, nid, 2104, dec("500"), "Kulanz"); err != nil {
+		// A free credit above the would-be invoice (218.00) is refused up front
+		// now (LED-03) …
+		if _, err := st.FreeGutschrift(ctx, yearID, nid, 2104, dec("500"), "Kulanz"); !errors.Is(err, store.ErrGutschriftExceedsBookings) {
+			t.Fatalf("oversized pre-invoice credit: got %v, want ErrGutschriftExceedsBookings", err)
+		}
+		// … but bookings can still shrink below an allowed credit afterwards;
+		// IssueInvoice keeps refusing to be born below what was credited.
+		if _, err := st.FreeGutschrift(ctx, yearID, nid, 2104, dec("200"), "Kulanz"); err != nil {
 			t.Fatalf("free gutschrift: %v", err)
+		}
+		if _, err := pool.ExecContext(ctx,
+			`UPDATE entries SET cost=100, hours=2.5 WHERE billing_year_id=$1 AND neighbor_id=$2`, yearID, nid); err != nil {
+			t.Fatalf("shrink booking: %v", err)
 		}
 		if _, err := st.IssueInvoice(ctx, yearID, nid, 2104, time.Time{}); !errors.Is(err, store.ErrGutschriftTooLarge) {
 			t.Fatalf("issue below credits: got %v, want ErrGutschriftTooLarge", err)

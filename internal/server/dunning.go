@@ -37,6 +37,36 @@ func dunningStage(stage int) (title, intro string) {
 	}
 }
 
+// validDunningStage reports the stages the app can print and record:
+// 0 = Zahlungserinnerung, 1/2 = Mahnungen — the range dunning_notices' CHECK
+// constraint allows.
+func validDunningStage(stage int) bool { return stage >= 0 && stage <= 2 }
+
+// dunningStageParam reads the "stufe" parameter. Absent means the reminder
+// (stage 0), as the links always did; anything else must be exactly 0, 1 or 2.
+// An out-of-range stage used to print the reminder text and send it, after
+// which recording it in the history failed on the CHECK constraint — the
+// neighbor got a letter the app then listed nowhere.
+func dunningStageParam(r *http.Request) (int, bool) {
+	raw := strings.TrimSpace(r.FormValue("stufe"))
+	if raw == "" {
+		return 0, true
+	}
+	stage, err := strconv.Atoi(raw)
+	if err != nil || !validDunningStage(stage) {
+		return 0, false
+	}
+	return stage, true
+}
+
+// msgInvalidDunningStage is the 400 text for a stage outside 0-2.
+const msgInvalidDunningStage = "Ungültige Mahnstufe — erlaubt sind nur Zahlungserinnerung, 1. und 2. Mahnung."
+
+// noOpenAmountMsg explains why a reminder for a settled account is refused.
+func noOpenAmountMsg(name string) string {
+	return "Für " + name + " ist kein Betrag offen — es wird keine Mahnung versendet oder vermerkt."
+}
+
 // handleMahnwesen renders the dunning list: neighbors in the selected billing
 // year whose issued invoice is unpaid and past due (issue date + payment term).
 func (s *Server) handleMahnwesen(w http.ResponseWriter, r *http.Request) {
@@ -159,6 +189,11 @@ func (s *Server) buildMahnungData(r *http.Request, neighborID, yearID int64, sta
 // year already in hand — the batch run resolves 30 neighbors and refetched the
 // same two rows 30 times each before this split.
 func (s *Server) buildMahnungDataWith(r *http.Request, neighborID int64, stage int, company models.Company, year *models.BillingYear) (*mahnungView, bool, error) {
+	// Backstop for the handlers' own dunningStageParam check: a stage the
+	// dunning history cannot store must never reach a letter or a send.
+	if !validDunningStage(stage) {
+		return nil, false, fmt.Errorf("invalid dunning stage %d", stage)
+	}
 	yearID := year.ID
 	neighbor, err := s.store.GetNeighbor(r.Context(), neighborID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -230,9 +265,14 @@ func (s *Server) handleNeighborMahnung(w http.ResponseWriter, r *http.Request) {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
-	// formInt parses via strconv.Atoi (no lossy int64->int narrowing); unknown
-	// values fall through dunningStage's default (Zahlungserinnerung).
-	v, ok, err := s.buildMahnungData(r, neighborID, yearID, formInt(r, "stufe"))
+	// The page echoes the stage into the PDF, QR and e-mail links, so an
+	// out-of-range value is refused here rather than printed as a reminder.
+	stage, ok := dunningStageParam(r)
+	if !ok {
+		s.badRequest(w, msgInvalidDunningStage)
+		return
+	}
+	v, ok, err := s.buildMahnungData(r, neighborID, yearID, stage)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -283,7 +323,12 @@ func (s *Server) handleMahnungPDF(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
-	v, ok, err := s.buildMahnungData(r, neighborID, formInt64(r, "year"), formInt(r, "stufe"))
+	stage, ok := dunningStageParam(r)
+	if !ok {
+		s.badRequest(w, msgInvalidDunningStage)
+		return
+	}
+	v, ok, err := s.buildMahnungData(r, neighborID, formInt64(r, "year"), stage)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
@@ -311,14 +356,24 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	yearID := formInt64(r, "year")
-	back := fmt.Sprintf("/neighbors/%d/mahnung?year=%d&stufe=%d", neighborID, yearID, formInt(r, "stufe"))
-	v, ok, err := s.buildMahnungData(r, neighborID, yearID, formInt(r, "stufe"))
+	stage, ok := dunningStageParam(r)
+	if !ok {
+		s.badRequest(w, msgInvalidDunningStage)
+		return
+	}
+	back := fmt.Sprintf("/neighbors/%d/mahnung?year=%d&stufe=%d", neighborID, yearID, stage)
+	v, ok, err := s.buildMahnungData(r, neighborID, yearID, stage)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	if !ok {
 		s.notFound(w, r)
+		return
+	}
+	if !v.Open.IsPositive() {
+		s.setFlash(w, r, "error", noOpenAmountMsg(v.Neighbor.Name))
+		redirect(w, r, back)
 		return
 	}
 	if !s.cfg.MailEnabled() {
@@ -331,6 +386,9 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
+	// PDF render, the intent write and one bounded SMTP attempt must all fit
+	// before the redirect; the global 30s WriteTimeout is shorter than that.
+	extendWriteDeadline(w, 2*store.MailDeliveryBudget)
 	status, err := s.deliverMahnung(r.Context(), v, true)
 	if err != nil {
 		slog.Error("mahnung email intent failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
@@ -347,6 +405,8 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 		s.setFlash(w, r, "error", "Versand fehlgeschlagen — zur automatischen Wiederholung eingeplant.")
 	case "ambiguous":
 		s.setFlash(w, r, "error", "Zustellung unklar — keine automatische Wiederholung. Bitte Empfänger und Audit-Log prüfen.")
+	case "held":
+		s.setFlash(w, r, "error", heldMailFlash)
 	default:
 		s.setFlash(w, r, "error", "Versand endgültig fehlgeschlagen. Bitte im Audit-Log prüfen.")
 	}
@@ -357,7 +417,9 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 // attempts only a newly-created row. The store settles delivery history and
 // outbox state in one transaction; ambiguous SMTP outcomes are never retried.
 // explicitResend is reserved for a single-recipient POST; a batch can never
-// reopen a terminal failed or ambiguous outcome by being submitted twice.
+// reopen a terminal failed or ambiguous outcome by being submitted twice. It
+// also marks the single-send request path, whose CC copy is sent
+// asynchronously; the batch sends its copies in line with its own deadline.
 func (s *Server) deliverMahnung(ctx context.Context, v *mahnungView, explicitResend bool) (string, error) {
 	blob, err := v.toPDF()
 	if err != nil {
@@ -394,10 +456,16 @@ func (s *Server) deliverMahnung(ctx context.Context, v *mahnungView, explicitRes
 	switch status {
 	case store.MailStatusSent:
 		if created {
-			s.sendMailCopy(ctx, v.Company, subject, body, []mail.Attachment{att})
+			if explicitResend {
+				s.sendMailCopyAsync(ctx, v.Company, subject, body, []mail.Attachment{att})
+			} else {
+				s.sendMailCopy(ctx, v.Company, subject, body, []mail.Attachment{att})
+			}
 			return "sent", nil
 		}
 		return "alreadySent", nil
+	case store.MailStatusHeld:
+		return "held", nil
 	case store.MailStatusPending, store.MailStatusSending:
 		metrics.Inc(metrics.MailFailed)
 		return "queued", nil
@@ -426,6 +494,11 @@ func (s *Server) handleMahnungEpcQR(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Ungültige Anfrage", http.StatusBadRequest)
 		return
 	}
+	stage, ok := dunningStageParam(r)
+	if !ok {
+		http.Error(w, msgInvalidDunningStage, http.StatusBadRequest)
+		return
+	}
 	company, err := s.store.GetCompany(r.Context())
 	if err != nil || strings.TrimSpace(company.IBAN) == "" {
 		s.notFound(w, r)
@@ -449,7 +522,7 @@ func (s *Server) handleMahnungEpcQR(w http.ResponseWriter, r *http.Request) {
 	}
 	// Same stage → same fee as buildMahnungData; stage 0 (Erinnerung) never charges.
 	total := open
-	switch formInt(r, "stufe") {
+	switch stage {
 	case 1:
 		total = total.Add(company.DunningFee1)
 	case 2:
@@ -480,13 +553,23 @@ func (s *Server) handleMahnungMarkSent(w http.ResponseWriter, r *http.Request) {
 	}
 	yearID := formInt64(r, "year")
 	back := fmt.Sprintf("/mahnwesen?year=%d", yearID)
-	v, ok, err := s.buildMahnungData(r, neighborID, yearID, formInt(r, "stufe"))
+	stage, ok := dunningStageParam(r)
+	if !ok {
+		s.badRequest(w, msgInvalidDunningStage)
+		return
+	}
+	v, ok, err := s.buildMahnungData(r, neighborID, yearID, stage)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	if !ok {
 		s.notFound(w, r)
+		return
+	}
+	if !v.Open.IsPositive() {
+		s.setFlash(w, r, "error", noOpenAmountMsg(v.Neighbor.Name))
+		redirect(w, r, back)
 		return
 	}
 	if err := s.store.RecordDunningNotice(r.Context(), store.DunningNotice{
@@ -513,7 +596,11 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	yearID := formInt64(r, "year")
-	stage := formInt(r, "stufe")
+	stage, ok := dunningStageParam(r)
+	if !ok {
+		s.badRequest(w, msgInvalidDunningStage)
+		return
+	}
 	back := fmt.Sprintf("/mahnwesen?year=%d", yearID)
 	if !s.cfg.MailEnabled() {
 		s.setFlash(w, r, "error", "E-Mail-Versand ist nicht konfiguriert (SMTP_HOST/SMTP_FROM).")
@@ -544,7 +631,7 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 	bctx, cancelBatch := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Minute)
 	defer cancelBatch()
 
-	var sent, alreadySent, queued, ambiguous, skipped, failed int
+	var sent, alreadySent, queued, ambiguous, held, settled, skipped, failed int
 	ran := false
 	s.BackgroundTask(bctx, func(taskCtx context.Context) {
 		ran = true
@@ -562,6 +649,12 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 				continue
 			}
 			if !ok {
+				continue
+			}
+			// The row list was read before the loop; a payment booked meanwhile
+			// can settle the account, and a settled account gets no reminder.
+			if !v.Open.IsPositive() {
+				settled++
 				continue
 			}
 			if strings.TrimSpace(v.Neighbor.Email) == "" {
@@ -583,6 +676,8 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 				queued++
 			case "ambiguous":
 				ambiguous++
+			case "held":
+				held++
 			default:
 				failed++
 			}
@@ -602,6 +697,12 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 	if ambiguous > 0 {
 		msg += fmt.Sprintf(", %d mit unklarem Zustellstatus (manuell prüfen)", ambiguous)
 	}
+	if held > 0 {
+		msg += fmt.Sprintf(", %d nach einer Wiederherstellung angehalten (unter Backup freigeben oder verwerfen)", held)
+	}
+	if settled > 0 {
+		msg += fmt.Sprintf(", %d inzwischen ausgeglichen", settled)
+	}
 	if failed > 0 {
 		msg += fmt.Sprintf(", %d fehlgeschlagen (bitte prüfen und nur betroffene Nachbarn erneut senden)", failed)
 	}
@@ -609,7 +710,7 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 		msg += fmt.Sprintf(", %d ohne E-Mail-Adresse übersprungen", skipped)
 	}
 	kind := "success"
-	if failed > 0 || ambiguous > 0 {
+	if failed > 0 || ambiguous > 0 || held > 0 {
 		kind = "error"
 	}
 	s.setFlash(w, r, kind, msg+".")

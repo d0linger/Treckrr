@@ -57,6 +57,29 @@ func Ambiguous(err error) error {
 	return &AmbiguousDeliveryError{err: err}
 }
 
+type dataStartHookKey struct{}
+
+// WithDataStartHook returns a context whose sends call hook immediately before
+// the SMTP DATA command. Everything before DATA cannot deliver the message, so
+// a durable outbox can record "DATA started" here and keep a claim that died
+// earlier safely retryable. When hook fails, the send is aborted before DATA
+// and a non-ambiguous error is returned.
+func WithDataStartHook(ctx context.Context, hook func(context.Context) error) context.Context {
+	return context.WithValue(ctx, dataStartHookKey{}, hook)
+}
+
+// runDataStartHook invokes a hook registered with WithDataStartHook, if any.
+func runDataStartHook(ctx context.Context) error {
+	hook, _ := ctx.Value(dataStartHookKey{}).(func(context.Context) error)
+	if hook == nil {
+		return nil
+	}
+	if err := hook(ctx); err != nil {
+		return fmt.Errorf("SMTP-Datenphase nicht freigegeben: %w", err)
+	}
+	return nil
+}
+
 // StableMessageID returns the RFC 5322 Message-ID for one logical delivery.
 // It deliberately excludes timestamps and MIME boundaries so every retry of
 // the same content carries the same identity for downstream deduplication.
@@ -180,6 +203,9 @@ func SendWithMessageID(ctx context.Context, cfg *config.Config, to, subject, bod
 		return err
 	}
 	if err := c.Rcpt(to); err != nil {
+		return err
+	}
+	if err := runDataStartHook(ctx); err != nil {
 		return err
 	}
 	wc, err := c.Data()

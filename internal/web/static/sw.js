@@ -2,7 +2,11 @@
 // __CACHE_VERSION__ is replaced at serve time with the asset content hash, so a
 // new build produces a new cache name and evicts the previous one on activate.
 const CACHE = "treckrr-__CACHE_VERSION__";
-const SHELL = [
+const VERSION = "__CACHE_VERSION__";
+// Pages reference scripts and styles as ?v=<asset hash>; precaching the same
+// URLs is what makes the cached shell usable offline. Icons and the manifest are
+// referenced without a version and stay unversioned here.
+const VERSIONED = [
 	"/static/css/app.css",
 	"/static/js/app.js",
 	"/static/js/form-ux.js",
@@ -11,16 +15,37 @@ const SHELL = [
 	"/static/js/ledger-booking.js",
 	"/static/js/offline.js",
 	"/static/js/capture.js",
+	"/static/js/app-bg.js",
+	"/static/icons/favicon.svg"
+].map((path) => path + "?v=" + VERSION);
+const SHELL = VERSIONED.concat([
 	"/static/icons/favicon.svg",
 	"/static/icons/icon-192.png",
 	"/static/icons/icon-512.png",
 	"/offline",
 	"/manifest.webmanifest"
-];
+]);
+
+// A response may be cached only if it is a success AND, for a versioned asset,
+// really is that version: during a rolling deploy an old instance can answer a
+// ?v=<new> request with its old bytes. The static server names the version it
+// served in X-Treckrr-Asset-Version; a mismatch is served but never stored.
+function cacheable(url, res) {
+	if (!res || !res.ok) return false;
+	const want = new URL(url, self.location.origin).searchParams.get("v");
+	return !want || res.headers.get("X-Treckrr-Asset-Version") === want;
+}
 
 self.addEventListener("install", (event) => {
 	event.waitUntil(
-		caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting())
+		caches.open(CACHE).then((cache) => Promise.all(SHELL.map((url) =>
+			fetch(url, { cache: "reload", credentials: "same-origin" }).then((res) => {
+				// Fail the install rather than pin a stale or broken shell; the
+				// browser retries the installation on a later navigation.
+				if (!cacheable(url, res)) throw new Error("precache " + url + ": " + res.status);
+				return cache.put(url, res);
+			})
+		))).then(() => self.skipWaiting())
 	);
 });
 
@@ -45,8 +70,10 @@ self.addEventListener("fetch", (event) => {
 		event.respondWith(
 			caches.match(req).then((hit) => {
 				const fetching = fetch(req).then((res) => {
-					const copy = res.clone();
-					caches.open(CACHE).then((c) => c.put(req, copy));
+					if (cacheable(req.url, res)) {
+						const copy = res.clone();
+						caches.open(CACHE).then((c) => c.put(req, copy));
+					}
 					return res;
 				}).catch(() => hit);
 				return hit || fetching;

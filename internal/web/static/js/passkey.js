@@ -86,16 +86,28 @@
 
 	async function register(btn) {
 		if (!supported()) { alert("Dieser Browser unterstützt keine Passkeys."); return; }
-		// Step-up (SH-02): confirm the current password before enrolling a passkey.
+		// Step-up (SH-02): confirm the current password — and, when 2FA is on, the
+		// second factor (the field only exists then) — before enrolling a passkey.
 		var pwEl = document.getElementById("passkey-password");
 		var password = pwEl ? pwEl.value : "";
 		if (!password) { alert("Bitte zur Bestätigung das Passwort eingeben."); if (pwEl) pwEl.focus(); return; }
+		var codeEl = document.getElementById("passkey-code");
+		var code = codeEl ? codeEl.value.trim() : "";
+		if (codeEl && !code) { alert("Bitte den Zwei‑Faktor‑Code eingeben."); codeEl.focus(); return; }
 		btn.disabled = true;
 		try {
-			var begin = await postJSON("/account/passkeys/register/begin", { password: password }, true);
-			if (begin.status === 403) { alert("Passwort falsch – Passkey nicht hinzugefügt."); return; }
+			var begin = await postJSON("/account/passkeys/register/begin", { password: password, code: code }, true);
+			if (begin.status === 403) {
+				// A used TOTP code is consumed server-side, so clear it either way.
+				if (codeEl) codeEl.value = "";
+				var msg = "";
+				try { msg = (await begin.text()).trim(); } catch (_) { /* fall back below */ }
+				alert(msg || "Passwort falsch – Passkey nicht hinzugefügt.");
+				return;
+			}
 			if (!begin.ok) throw new Error("begin");
 			if (pwEl) pwEl.value = "";
+			if (codeEl) codeEl.value = "";
 			var opts = await begin.json();
 			var cred = await navigator.credentials.create({ publicKey: prepCreate(opts) });
 			var finish = await postJSON("/account/passkeys/register/finish", encodeAttestation(cred), true);

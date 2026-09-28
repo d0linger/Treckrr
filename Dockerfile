@@ -64,6 +64,10 @@ RUN apk upgrade --no-cache \
 	&& apk add --no-cache ca-certificates tzdata wget postgresql16-client \
 	&& adduser -D -u 10001 treckrr
 ENV TZ=Europe/Vienna
+# The shipped 768 MiB profile starts with a 512 MiB Go heap ceiling, leaving
+# room for pg_dump/pg_restore and /tmp. At startup Treckrr lowers this value for
+# smaller cgroups; a stricter operator-set GOMEMLIMIT remains authoritative.
+ENV GOMEMLIMIT=512MiB
 
 # Provision the backup dir owned by the non-root app user. A named volume
 # mounted here inherits this ownership on first creation, so uid 10001 can

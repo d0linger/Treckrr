@@ -139,8 +139,14 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 		return
 	}
 	// Inject a hidden CSRF token into every POST form of the rendered page so
-	// templates stay token-agnostic; validated by the csrf middleware.
-	out := injectCSRFField(buf.Bytes(), s.csrfToken(r))
+	// templates stay token-agnostic; validated by the csrf middleware. Pages
+	// whose forms carry their own purpose-bound token (the login page) opt out,
+	// so a session token derived from a stale cookie is never stamped next to it.
+	token := s.csrfToken(r)
+	if skip, _ := data[skipCSRFInjectKey].(bool); skip {
+		token = ""
+	}
+	out := injectCSRFField(buf.Bytes(), token)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write(out)
 }

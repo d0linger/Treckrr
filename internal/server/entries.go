@@ -503,6 +503,28 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, redirectTo)
 	}
+	idempotencyKey := trimmed(r, "idempotency_key") // set only for offline replays
+	if s.tooLong(w, r, "Idempotency-Key", idempotencyKey, maxNameLen) {
+		reject(http.StatusUnprocessableEntity, "Idempotency-Key darf höchstens 100 Zeichen lang sein.", neighborURL(neighborID, yearID))
+		return
+	}
+	fingerprint := entryRequestFingerprint(r)
+	// Person alongside the rig: only an hour booking books the helper's
+	// Mannstunden as a linked companion under a derived key (see below).
+	unit := trimmed(r, "unit")
+	withCompanion := formInt64(r, "person_id") != 0 && trimmed(r, "booking_kind") != "labor" && (unit == "" || unit == "h")
+	// A retry of a stored booking is answered before the year, membership,
+	// invoice and catalog checks: a year closed or an invoice issued after a lost
+	// answer must not report a saved booking as rejected.
+	if idempotencyKey != "" {
+		probes := []store.ReplayProbe{{Key: idempotencyKey, Fingerprint: fingerprint}}
+		if withCompanion {
+			probes = append(probes, store.ReplayProbe{Key: models.CompanionKey(idempotencyKey), Fingerprint: fingerprint})
+		}
+		if done, _ := s.probeBookingReplay(w, r, probes); done {
+			return
+		}
+	}
 
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -543,19 +565,23 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	if msg == "" {
+		// The same catalog rule as the unified form: the year's price basis only,
+		// and no deactivated tractor or machine picked by hand for a new booking.
+		msg, err = s.checkBookingCatalog(r, entry, machineIDs, year.Base.ID, entry.GespannID == nil)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+	}
 	if msg != "" {
 		reject(http.StatusUnprocessableEntity, msg, neighborURL(neighborID, yearID))
-		return
-	}
-	idempotencyKey := trimmed(r, "idempotency_key") // set only for offline replays
-	if s.tooLong(w, r, "Idempotency-Key", idempotencyKey, maxNameLen) {
-		reject(http.StatusUnprocessableEntity, "Idempotency-Key darf höchstens 100 Zeichen lang sein.", neighborURL(neighborID, yearID))
 		return
 	}
 	entry.NeighborID = neighborID
 	entry.BillingYearID = year.ID
 	entry.IdempotencyKey = idempotencyKey
-	entry.RequestFingerprint = unifiedRequestFingerprint(r)
+	entry.RequestFingerprint = fingerprint
 
 	// Person alongside the rig (optional): one submit books the machine AND the
 	// helper's Mannstunden as a linked companion entry. Hour bookings only — a
@@ -613,48 +639,46 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The § 132 BAO trail is written in the creating transaction: a crash after
+	// commit can no longer leave a stored booking without it, because the retry
+	// deduplicates and would never audit.
+	nb := s.neighborName(r, neighborID)
+	audit := &store.EntryAudit{}
+	if entry.Unit != "" && entry.Unit != "h" {
+		audit.Detail = fmt.Sprintf("%s · %s, %s %s × %s = %s €",
+			nb, entry.TaskLabel,
+			entry.Quantity.String(), entry.Unit, entry.UnitPrice.StringFixed(2), entry.Cost.StringFixed(2))
+	} else {
+		audit.Detail = fmt.Sprintf("%s · %s, %s h × %s = %s €",
+			nb, entry.TaskLabel,
+			entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2))
+	}
 	var newID, companionID int64
 	if companion != nil {
-		newID, companionID, err = s.store.CreateEntryPair(r.Context(), entry, machineIDs, companion)
+		audit.CompanionDetail = fmt.Sprintf("%s · Mannstunden (verknüpft), %s h × %s = %s €",
+			nb, companion.Quantity.String(), companion.UnitPrice.StringFixed(2), companion.Cost.StringFixed(2))
+		newID, companionID, err = s.store.CreateEntryPairAudited(r.Context(), entry, machineIDs, companion, audit)
 	} else {
-		newID, err = s.store.CreateEntry(r.Context(), entry, machineIDs)
+		newID, err = s.store.CreateEntryAudited(r.Context(), entry, machineIDs, audit)
 	}
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return
 	}
-	if companionID != 0 {
-		s.audit(r, "create", "entry", companionID, fmt.Sprintf("%s · Mannstunden (verknüpft), %s h × %s = %s €",
-			s.neighborName(r, neighborID), companion.Quantity.String(),
-			companion.UnitPrice.StringFixed(2), companion.Cost.StringFixed(2)))
-	}
-	if newID == 0 { // duplicate replay of an offline booking — already recorded
-		if replay {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		s.setFlash(w, r, "success", "Buchung war bereits erfasst.")
-		redirect(w, r, neighborURL(neighborID, yearID))
+	if newID == 0 && companionID == 0 { // duplicate replay of an offline booking — already recorded
+		s.acceptRecordedReplay(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	var detail string
-	if entry.Unit != "" && entry.Unit != "h" {
-		detail = fmt.Sprintf("%s · %s, %s %s × %s = %s €",
-			s.neighborName(r, neighborID), entry.TaskLabel,
-			entry.Quantity.String(), entry.Unit, entry.UnitPrice.StringFixed(2), entry.Cost.StringFixed(2))
-	} else {
-		detail = fmt.Sprintf("%s · %s, %s h × %s = %s €",
-			s.neighborName(r, neighborID), entry.TaskLabel,
-			entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2))
-	}
-	s.audit(r, "create", "entry", newID, detail)
 	if replay {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if companionID != 0 {
+	switch {
+	case newID == 0:
+		s.setFlash(w, r, "success", "Mannstunden zur bereits erfassten Buchung ergänzt.")
+	case companionID != 0:
 		s.setFlash(w, r, "success", "Buchung + Mannstunden gespeichert.")
-	} else {
+	default:
 		s.setFlash(w, r, "success", "Buchung gespeichert.")
 	}
 	redirect(w, r, neighborURL(neighborID, yearID))
@@ -663,8 +687,15 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 // resolveEntryFromForm reads the booking form fields, resolves the tractor,
 // load level and machines (from a fixed gespann or manual selection) and
 // returns a populated Entry (without neighbor/year) plus its machine ids. On
-// validation failure it returns a non-empty German message.
-func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, string) {
+// validation failure it returns a non-empty German message. Only a missing
+// catalog item is a validation failure; any other store error is returned as an
+// error, so the caller answers 500 and an offline replay retries instead of
+// turning a database blip into a permanent rejection.
+func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, string, error) {
+	// A replay may run days after the capture: an empty or malformed date must
+	// be corrected, never silently become the day of the replay.
+	entryDate, dateErr := time.Parse("2006-01-02", trimmed(r, "entry_date"))
+	const invalidDate = "Bitte ein gültiges Datum angeben."
 	// Non-hour unit (ha, Ballen, m³, …): quantity × unit price, no rig required.
 	// Hours stay 0 (they don't count toward TotalHours). Unit "h" (or empty) falls
 	// through to the rig-based hourly path below. "__custom" resolves to the
@@ -673,35 +704,34 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	if unit == "__custom" {
 		unit = trimmed(r, "unit_custom")
 		if unit == "" {
-			return nil, nil, "Bitte eine eigene Einheit angeben."
+			return nil, nil, "Bitte eine eigene Einheit angeben.", nil
 		}
 	}
 	if unit != "" && unit != "h" {
 		if msg := lenError("Einheit", unit, 16); msg != "" {
-			return nil, nil, msg
+			return nil, nil, msg, nil
 		}
 		taskLabel := trimmed(r, "task_label")
 		if taskLabel == "" {
-			return nil, nil, "Bitte eine Tätigkeit angeben."
+			return nil, nil, "Bitte eine Tätigkeit angeben.", nil
 		}
 		if msg := lenError("Tätigkeit", taskLabel, maxNameLen); msg != "" {
-			return nil, nil, msg
+			return nil, nil, msg, nil
 		}
 		quantity := formDecimal(r, "quantity")
 		if !quantity.IsPositive() {
-			return nil, nil, "Menge muss größer als 0 sein."
+			return nil, nil, "Menge muss größer als 0 sein.", nil
 		}
 		unitPrice := formDecimal(r, "unit_price")
 		if !unitPrice.IsPositive() {
-			return nil, nil, "Preis je Einheit muss größer als 0 sein."
+			return nil, nil, "Preis je Einheit muss größer als 0 sein.", nil
 		}
 		note := trimmed(r, "note")
 		if msg := lenError("Notiz", note, maxNoteLen); msg != "" {
-			return nil, nil, msg
+			return nil, nil, msg, nil
 		}
-		entryDate, err := time.Parse("2006-01-02", trimmed(r, "entry_date"))
-		if err != nil {
-			entryDate = time.Now()
+		if dateErr != nil {
+			return nil, nil, invalidDate, nil
 		}
 		return &models.Entry{
 			Date:       entryDate,
@@ -713,12 +743,12 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 			HourlyRate: decimal.Zero,
 			Cost:       calc.Cost(quantity, unitPrice),
 			Note:       note,
-		}, nil, ""
+		}, nil, "", nil
 	}
 
 	machineIDs, ok := formMachineIDs(r)
 	if !ok {
-		return nil, nil, "Zu viele Maschinen auf einmal."
+		return nil, nil, "Zu viele Maschinen auf einmal.", nil
 	}
 	var (
 		gespannID   *int64
@@ -729,14 +759,18 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	if r.FormValue("mode") != "manual" {
 		if gid := formInt64(r, "gespann_id"); gid != 0 {
 			g, err := s.store.GetGespann(r.Context(), gid)
-			if err == nil {
-				gespannID = &g.ID
-				tractorID = g.TractorID
-				loadLevelID = g.LoadLevelID
-				machineIDs = g.MachineIDs
-				if taskLabel == "" {
-					taskLabel = g.Name
-				}
+			if errors.Is(err, store.ErrNotFound) {
+				return nil, nil, "Das gewählte Gespann ist nicht mehr vorhanden — bitte neu wählen.", nil
+			}
+			if err != nil {
+				return nil, nil, "", err
+			}
+			gespannID = &g.ID
+			tractorID = g.TractorID
+			loadLevelID = g.LoadLevelID
+			machineIDs = g.MachineIDs
+			if taskLabel == "" {
+				taskLabel = g.Name
 			}
 		} else {
 			tractorID, loadLevelID = nil, nil
@@ -746,27 +780,33 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	// customer supplies the tractor — but the pair is all-or-nothing, because
 	// TractorRate needs both to produce a number.
 	if (tractorID == nil) != (loadLevelID == nil) {
-		return nil, nil, "Traktor und Belastungsstufe gehören zusammen — bitte beides wählen oder beides leer lassen."
+		return nil, nil, "Traktor und Belastungsstufe gehören zusammen — bitte beides wählen oder beides leer lassen.", nil
 	}
 	if tractorID == nil && len(machineIDs) == 0 {
-		return nil, nil, "Bitte Traktor und Belastungsstufe oder mindestens eine Maschine wählen."
+		return nil, nil, "Bitte Traktor und Belastungsstufe oder mindestens eine Maschine wählen.", nil
 	}
 	var tractor *models.Tractor
 	var load *models.LoadLevel
 	if tractorID != nil {
 		t, err := s.store.GetTractor(r.Context(), *tractorID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil, "Traktor nicht gefunden.", nil
+		}
 		if err != nil {
-			return nil, nil, "Traktor nicht gefunden."
+			return nil, nil, "", err
 		}
 		l, err := s.store.GetLoadLevel(r.Context(), *loadLevelID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil, "Belastungsstufe nicht gefunden.", nil
+		}
 		if err != nil {
-			return nil, nil, "Belastungsstufe nicht gefunden."
+			return nil, nil, "", err
 		}
 		tractor, load = t, l
 	}
 	machines, err := s.store.MachinesByIDs(r.Context(), machineIDs)
 	if err != nil {
-		return nil, nil, "Interner Fehler beim Laden der Maschinen."
+		return nil, nil, "", err
 	}
 	// Every submitted machine id must resolve, tractor or not. The machines-only
 	// case priced at 0,00 € (reproduced: 3 h at 0,0000, "gespeichert"); WITH a
@@ -775,22 +815,21 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	// anyone noticing. A stale form after a machine was deleted is exactly when
 	// the user must be told, not accommodated (Ausbaukarte Nr. 61).
 	if len(machines) != len(machineIDs) {
-		return nil, nil, "Die gewählten Maschinen sind nicht mehr verfügbar — bitte die Seite neu laden."
+		return nil, nil, "Die gewählten Maschinen sind nicht mehr verfügbar — bitte die Seite neu laden.", nil
 	}
 	hours := formDecimal(r, "hours")
 	if !hours.IsPositive() {
-		return nil, nil, "Stunden müssen größer als 0 sein."
+		return nil, nil, "Stunden müssen größer als 0 sein.", nil
 	}
-	entryDate, err := time.Parse("2006-01-02", trimmed(r, "entry_date"))
-	if err != nil {
-		entryDate = time.Now()
+	if dateErr != nil {
+		return nil, nil, invalidDate, nil
 	}
 	if msg := lenError("Tätigkeit", taskLabel, maxNameLen); msg != "" {
-		return nil, nil, msg
+		return nil, nil, msg, nil
 	}
 	note := trimmed(r, "note")
 	if msg := lenError("Notiz", note, maxNoteLen); msg != "" {
-		return nil, nil, msg
+		return nil, nil, msg, nil
 	}
 	rate := calc.GespannRate(tractor, load, machines)
 	names := make([]string, 0, len(machines))
@@ -815,7 +854,7 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 		entry.TractorID, entry.LoadLevelID = &tractor.ID, &load.ID
 		entry.TractorLabel, entry.LoadLabel = tractor.Label(), load.Name
 	}
-	return entry, ids, ""
+	return entry, ids, "", nil
 }
 
 // entryUpdateDetail renders a per-field old→new summary of an edited booking so
@@ -880,6 +919,19 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	if msg == "" {
+		// Edits stay on the year's price basis too, but may keep a tractor or
+		// machine that was deactivated after it was booked (as V2 edits do).
+		year, err := s.store.GetBillingYear(r.Context(), existing.BillingYearID)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+		if msg, err = s.checkBookingCatalog(r, entry, machineIDs, year.Base.ID, false); err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+	}
 	if msg != "" {
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
@@ -914,35 +966,27 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 	if entry.Unit == models.UnitMannstunde && entry.PersonID == nil {
 		entry.PersonID = existing.PersonID
 	}
-	if err := s.store.UpdateEntry(r.Context(), entry, machineIDs); err != nil {
+	// Linked pair: mirror the edited hours onto the partner when the edit form's
+	// checkbox asked for it — machine and Mannstunden of one Einsatz share the
+	// same hours, each priced at its own frozen rate. Both halves are written in
+	// one locked transaction, so an invoice can never freeze a half-synced pair.
+	pair, err := s.store.UpdateEntryWithPartner(r.Context(), entry, machineIDs, r.FormValue("sync_pair") == "1")
+	if errors.Is(err, store.ErrPairHoursPrecision) {
+		s.setFlash(w, r, "error", "Zum Angleichen der verknüpften Maschine sind höchstens drei Nachkommastellen und weniger als 10 Millionen Stunden möglich. Beide Buchungen bleiben unverändert.")
+		redirect(w, r, "/entries/"+itoa64(id)+"/edit")
+		return
+	}
+	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	s.audit(r, "update", "entry", id, s.neighborName(r, existing.NeighborID)+" · "+entryUpdateDetail(existing, entry))
-	// Linked pair: mirror the edited hours onto the partner when the edit form's
-	// checkbox asked for it — machine and Mannstunden of one Einsatz share the
-	// same hours, each priced at its own frozen rate.
-	if r.FormValue("sync_pair") == "1" {
-		hours := entry.Hours
-		if entry.Unit != "" && entry.Unit != "h" {
-			hours = entry.Quantity
-		}
-		if pid, err := s.store.LinkedPartnerID(r.Context(), id); err != nil {
-			s.serverError(w, r.URL.Path, err)
-			return
-		} else if pid != 0 && hours.IsPositive() {
-			cost, err := s.store.SyncPairHours(r.Context(), pid, hours)
-			if err != nil {
-				s.setFlash(w, r, "error", "Buchung aktualisiert, aber die verknüpfte Buchung konnte nicht angepasst werden.")
-				redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
-				return
-			}
-			s.audit(r, "update", "entry", pid, fmt.Sprintf("%s · verknüpft angeglichen: %s h, %s €",
-				s.neighborName(r, existing.NeighborID), hours.String(), cost.StringFixed(2)))
-			s.setFlash(w, r, "success", "Buchung und verknüpfte Buchung aktualisiert.")
-			redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
-			return
-		}
+	if pair.PartnerID != 0 {
+		s.audit(r, "update", "entry", pair.PartnerID, fmt.Sprintf("%s · verknüpft angeglichen: %s h, %s €",
+			s.neighborName(r, existing.NeighborID), pair.Hours.String(), pair.Cost.StringFixed(2)))
+		s.setFlash(w, r, "success", "Buchung und verknüpfte Buchung aktualisiert.")
+		redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
+		return
 	}
 	s.setFlash(w, r, "success", "Buchung aktualisiert.")
 	redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
@@ -1028,6 +1072,9 @@ func ledgerFormValues(r *http.Request) (amount decimal.Decimal, description stri
 	amount = formDecimal(r, "amount").Abs()
 	if !amount.IsPositive() {
 		return amount, "", date, "Bitte einen Betrag größer 0 angeben."
+	}
+	if models.HasSubCent(amount) {
+		return amount, "", date, msgMoneyCents
 	}
 	if r.FormValue("direction") == "credit" {
 		amount = amount.Neg() // I owe the neighbor → reduces the balance
@@ -1221,6 +1268,13 @@ func (s *Server) handleLedgerUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.ledgerYearOpen(w, r, yearID, neighborID) {
 		return
 	}
+	// A carry-forward side only ever changes together with its counterpart
+	// (void or undo the whole transfer); editing one side broke the zero sum.
+	if existing.TransferID != "" {
+		s.setFlash(w, r, "error", msgLedgerTransferEdit)
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
 	if existing.Booking != nil {
 		if trimmed(r, "booking_form_version") == "2" {
 			s.updateBookingLedgerV2(w, r, &existing, yearID, neighborID)
@@ -1258,7 +1312,9 @@ func (s *Server) handleLedgerUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	if err := s.store.UpdateNeighborLedger(r.Context(), id, amount, description, date); err != nil {
+	if err := s.store.UpdateNeighborLedger(r.Context(), id, amount, description, date); errors.Is(err, store.ErrLedgerTransfer) {
+		s.setFlash(w, r, "error", msgLedgerTransferEdit)
+	} else if err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	} else {
 		s.setFlash(w, r, "success", "Position aktualisiert.")
@@ -1308,7 +1364,9 @@ func (s *Server) handleLedgerVoid(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	if err := s.store.SetLedgerVoided(r.Context(), id, void, reason); err != nil {
+	if err := s.store.SetLedgerVoided(r.Context(), id, void, reason); errors.Is(err, store.ErrLedgerTransfer) {
+		s.setFlash(w, r, "error", msgLedgerTransferEdit)
+	} else if err != nil {
 		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
 	} else if void {
 		s.setFlash(w, r, "success", "Position storniert.")
@@ -1347,7 +1405,9 @@ func (s *Server) handleLedgerDelete(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	if err := s.store.DeleteNeighborLedger(r.Context(), id); err != nil {
+	if err := s.store.DeleteNeighborLedger(r.Context(), id); errors.Is(err, store.ErrLedgerTransfer) {
+		s.setFlash(w, r, "error", msgLedgerTransferEdit)
+	} else if err != nil {
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	} else {
 		s.setFlash(w, r, "success", "Position entfernt.")
@@ -1512,6 +1572,31 @@ func (s *Server) handleEntryCopy(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "entry_edit", data)
 }
 
+// quickRow is one filled Schnellerfassung row and its outcome.
+type quickRow struct {
+	index                             int
+	key                               string
+	gespannID, personID               int64
+	hours                             decimal.Decimal
+	date                              time.Time
+	fingerprint, companionFingerprint string
+	// status is "" while pending, else quickSaved, quickInvalid or quickConflict.
+	status, message string
+}
+
+// Per-row outcomes, reported to an offline replay by row key.
+const (
+	quickSaved    = "saved"
+	quickInvalid  = "invalid"
+	quickConflict = "conflict"
+)
+
+// quickRowStatus is the JSON shape of one row's outcome in a replay answer.
+type quickRowStatus struct {
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+}
+
 // handleQuickEntries creates several bookings at once from the quick-entry rows
 // (date, fixed gespann, hours).
 func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
@@ -1527,8 +1612,33 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	// success nor permanent rejection: the batch would sit in the queue forever,
 	// re-POSTed on every page load, with the badge stuck.
 	replay := r.Header.Get("X-Offline-Replay") == "1"
+	var rows []*quickRow
+	// rejectRows answers a replay with the status of every row by key, so the
+	// queue can show which rows are stored and keep those read-only.
+	rejectRows := func(msg string) {
+		if !strings.Contains(r.Header.Get("Accept"), "application/json") {
+			http.Error(w, msg, http.StatusUnprocessableEntity)
+			return
+		}
+		states := map[string]quickRowStatus{}
+		for _, row := range rows {
+			if row.key != "" && row.status != "" {
+				states[row.key] = quickRowStatus{Status: row.status, Message: row.message}
+			}
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_ = json.NewEncoder(w).Encode(struct {
+			Message string                    `json:"message"`
+			Rows    map[string]quickRowStatus `json:"rows"`
+		}{msg, states})
+	}
 	reject := func(status int, msg, redirectTo string) {
 		if replay {
+			if status == http.StatusUnprocessableEntity {
+				rejectRows(msg)
+				return
+			}
 			http.Error(w, msg, status)
 			return
 		}
@@ -1552,202 +1662,171 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 		reject(http.StatusUnprocessableEntity, fmt.Sprintf("Zu viele Zeilen auf einmal (%d). Es können höchstens %d Zeilen gespeichert werden.", n, maxQuickEntries), neighborURL(neighborID, yearID))
 		return
 	}
-	year, err := s.store.GetBillingYear(r.Context(), yearID)
-	if errors.Is(err, store.ErrNotFound) {
-		s.badRequest(w, "Unbekanntes Abrechnungsjahr")
-		return
-	} else if err != nil {
-		s.serverError(w, "quick entries: load year", err)
-		return
-	}
-	if year.Completed() {
-		reject(http.StatusUnprocessableEntity, "Das Abrechnungsjahr ist abgeschlossen.", neighborURL(neighborID, yearID))
-		return
-	}
-	// Inlined rather than routed through a w,r-writing helper (as invoiceLocked
-	// still is elsewhere) so these gates can answer a replay with a status code —
-	// the same reason handleEntryCreate inlines them. The interactive messages and
-	// redirect targets are unchanged.
-	//
-	// The membership check guards against orphan rows: a booking for a neighbor not
-	// in the year is invisible on the (membership-driven) dashboard yet counted by
-	// stats/CSV, skewing the year's totals.
-	if in, err := s.store.NeighborInYear(r.Context(), year.ID, neighborID); err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
-	} else if !in {
-		reject(http.StatusUnprocessableEntity, "Nachbar ist diesem Abrechnungsjahr nicht zugeordnet.", dashboardURL(yearID))
-		return
-	}
-	if iv, err := s.store.GetInvoice(r.Context(), year.ID, neighborID); err == nil {
-		reject(http.StatusUnprocessableEntity, "Rechnung "+iv.Number+" ist festgeschrieben – Buchungen und Verrechnungen für diesen Nachbarn sind gesperrt. Für Korrekturen bitte die Rechnung stornieren.", neighborURL(neighborID, yearID))
-		return
-	} else if !errors.Is(err, store.ErrNotFound) {
-		// A real store failure is transient — 500 so a replay retries instead of
-		// dropping the rows as a permanent 422.
-		s.serverError(w, r.URL.Path, err)
-		return
-	}
 
 	dates := r.Form["q_date"]
 	gespanne := r.Form["q_gespann"]
 	hoursList := r.Form["q_hours"]
 	// Offline replay (Ausbaukarte 100): the client sends one key PER ROW, since
 	// one submit becomes N bookings and a single key would let a replay create
-	// only the first of them. Absent for an online submit, which keeps the
-	// previous behavior exactly.
+	// only the first of them.
 	keys := r.Form["q_key"]
 	// A row may name a helper, exactly like the single booking form's person
 	// select: the row then books the machine AND that helper's Mannstunden as a
 	// linked companion, over the row's own hours. Empty when no helper is
 	// configured — the column is not rendered at all then.
 	personIDs := r.Form["q_person"]
-	created, paired, invalid := 0, 0, 0
-	var createErr error
-	// The same rig repeats across the rows of one submit — that is what quick
-	// entry is FOR — so each distinct Gespann is resolved once (5 queries) and
-	// reused, instead of 5 queries per row (a 100-row submit was ~500 SELECTs).
-	type resolvedRig struct {
-		entry      models.Entry
-		machineIDs []int64
-		ok         bool
-	}
-	rigs := map[int64]resolvedRig{}
-	// Helpers repeat across the rows of one submit for the same reason rigs do
-	// (one person, one afternoon, several fields), so each is resolved once —
-	// including the negative answer, which must not re-query per row either.
-	type resolvedPerson struct {
-		person models.Person
-		ok     bool
-	}
-	persons := map[int64]resolvedPerson{}
-rowLoop:
-	for i := range gespanne {
-		rawGespann := strings.TrimSpace(gespanne[i])
-		gid, _ := strconv.ParseInt(rawGespann, 10, 64)
-		rawHours := ""
-		if i < len(hoursList) {
-			rawHours = strings.TrimSpace(hoursList[i])
+	at := func(list []string, i int) string {
+		if i < len(list) {
+			return strings.TrimSpace(list[i])
 		}
+		return ""
+	}
+	// Parse every row before any store call: validation and the replay check
+	// need nothing but the form.
+	for i := range gespanne {
+		rawGespann, rawHours := at(gespanne, i), at(hoursList, i)
 		if rawGespann == "" && rawHours == "" {
 			continue // an untouched blank row of the fixed table — not an error
 		}
-		hours := parseGermanDecimal(rawHours)
-		if gid == 0 || !hours.IsPositive() {
+		row := &quickRow{index: i}
+		if key := at(keys, i); len(key) <= maxNameLen {
+			row.key = key
+		}
+		row.gespannID, _ = strconv.ParseInt(rawGespann, 10, 64)
+		row.hours = parseGermanDecimal(rawHours)
+		rawPerson := at(personIDs, i)
+		row.personID, _ = strconv.ParseInt(rawPerson, 10, 64)
+		dateStr := at(dates, i)
+		row.fingerprint = quickRowFingerprint(neighborID, yearID, dateStr, rawGespann, rawHours, "")
+		if row.personID != 0 {
+			row.companionFingerprint = quickRowFingerprint(neighborID, yearID, dateStr, rawGespann, rawHours, rawPerson)
+		}
+		var err error
+		row.date, err = time.Parse("2006-01-02", dateStr)
+		switch {
+		case row.gespannID == 0 || !row.hours.IsPositive():
 			// The row WAS filled in but does not parse ("1.234,5", missing rig):
 			// silently dropping it reported "N Buchungen gespeichert" while a
 			// day of work vanished. Count it and say so.
-			invalid++
+			row.status, row.message = quickInvalid, "Gespann und gültige Stunden erforderlich."
+		case err != nil:
+			// A replay may run days later: never book "today" instead.
+			row.status, row.message = quickInvalid, "Bitte ein gültiges Datum angeben."
+		}
+		rows = append(rows, row)
+	}
+
+	// Rows already stored under their key are settled before the year,
+	// membership and invoice gates: an invoice issued or a year closed after a
+	// lost answer must not report a saved batch as rejected. A key that holds
+	// different data is a conflict, never a silent no-op.
+	var probes []store.ReplayProbe
+	var probeRows []*quickRow
+	for _, row := range rows {
+		if row.key == "" {
 			continue
 		}
-		dateStr := ""
-		if i < len(dates) {
-			dateStr = strings.TrimSpace(dates[i])
-		}
-		rig, seen := rigs[gid]
-		if !seen {
-			e, mids, ok := s.buildGespannEntry(r, gid, decimal.NewFromInt(1), "")
-			rig = resolvedRig{machineIDs: mids, ok: ok}
-			if ok {
-				rig.entry = *e
-			}
-			rigs[gid] = rig
-		}
-		if !rig.ok {
-			invalid++
-			continue
-		}
-		entry := rig.entry // copy of the resolved template
-		entry.Hours = hours
-		entry.Cost = calc.Cost(hours, entry.HourlyRate)
-		entry.Quantity, entry.UnitPrice = decimal.Decimal{}, decimal.Decimal{}
-		if d, err := time.Parse("2006-01-02", dateStr); err == nil {
-			entry.Date = d
-		} else {
-			entry.Date = time.Now()
-		}
-		machineIDs := rig.machineIDs
-		entry.NeighborID = neighborID
-		entry.BillingYearID = year.ID
-		if i < len(keys) {
-			key := strings.TrimSpace(keys[i])
-			if len(key) <= maxNameLen {
-				entry.IdempotencyKey = key
-			}
-		}
-		var companion *models.Entry
-		if i < len(personIDs) {
-			if pid, _ := strconv.ParseInt(strings.TrimSpace(personIDs[i]), 10, 64); pid != 0 {
-				p, seen := persons[pid]
-				if !seen {
-					person, perr := s.store.GetPerson(r.Context(), pid)
-					switch {
-					case perr == nil:
-						p = resolvedPerson{person: *person, ok: person.HourlyRate.IsPositive()}
-					case errors.Is(perr, store.ErrNotFound):
-						p = resolvedPerson{}
-					default:
-						// A store failure is transient, not a business rejection —
-						// and it must not skip the audit block below: rows already
-						// committed keep their § 132 trail regardless of where the
-						// batch stopped. Recorded like every other store failure,
-						// so the tail audits first and answers 500 afterwards.
-						createErr = errors.Join(createErr, perr)
-						break rowLoop
-					}
-					persons[pid] = p
-				}
-				if !p.ok {
-					// The row named a helper the master data cannot price (or no
-					// longer knows). Booking only the machine half would report
-					// success while filing the work as unmanned, so the row is
-					// skipped whole and counted like any other invalid row.
-					invalid++
-					continue
-				}
-				personID := p.person.ID
-				companion = &models.Entry{
-					NeighborID: neighborID, BillingYearID: year.ID,
-					Date: entry.Date, TaskLabel: "Mannstunden " + p.person.Name,
-					Unit: unitMannstunde, Quantity: hours, UnitPrice: p.person.HourlyRate,
-					Cost:     hours.Mul(p.person.HourlyRate).Round(2),
-					PersonID: &personID,
-					// Derived from the row's own key, so a replayed row no-ops on
-					// both halves (see models.CompanionKey).
-					IdempotencyKey: models.CompanionKey(entry.IdempotencyKey),
-				}
-			}
-		}
-		var (
-			id   int64
-			cerr error
-		)
-		if companion != nil {
-			var companionID int64
-			id, companionID, cerr = s.store.CreateEntryPair(r.Context(), &entry, machineIDs, companion)
-			if cerr == nil && companionID != 0 {
-				paired++
-			}
-		} else {
-			id, cerr = s.store.CreateEntry(r.Context(), &entry, machineIDs)
-		}
-		switch {
-		case cerr != nil:
-			// Joined, not last-wins: a partly failing batch should log every reason,
-			// not just the reason the final row failed.
-			createErr = errors.Join(createErr, cerr)
-		case id != 0:
-			created++
+		probes = append(probes, store.ReplayProbe{Key: row.key, Fingerprint: row.fingerprint})
+		probeRows = append(probeRows, row)
+		if row.personID != 0 {
+			probes = append(probes, store.ReplayProbe{Key: models.CompanionKey(row.key), Fingerprint: row.companionFingerprint})
+			probeRows = append(probeRows, row)
 		}
 	}
-	// Audit before answering, replay included: a replayed batch is a booking like
-	// any other, and its § 132 BAO trail must not depend on how it reached us.
-	if created > 0 || paired > 0 {
-		detail := fmt.Sprintf("%d Buchungen für %s", created, s.neighborName(r, neighborID))
-		if paired > 0 {
-			detail += fmt.Sprintf(" · %d Mannstunden (verknüpft)", paired)
+	states, err := s.store.ProbeReplay(r.Context(), yearID, neighborID, probes)
+	if err != nil {
+		s.serverError(w, "quick entries: replay check", err)
+		return
+	}
+	recorded := map[*quickRow]bool{}
+	for i, state := range states {
+		row := probeRows[i]
+		switch state {
+		case store.ReplayRecorded:
+			if _, seen := recorded[row]; !seen {
+				recorded[row] = true
+			}
+		case store.ReplayDiffers, store.ReplayLedger, store.ReplayForeign:
+			row.status, row.message = quickConflict, replayConflictMsg
+			recorded[row] = false
+		default:
+			recorded[row] = false
 		}
-		s.audit(r, "quick_create", "entry", 0, detail)
+	}
+	already := 0
+	for row, complete := range recorded {
+		if complete {
+			row.status, row.message = quickSaved, ""
+			already++
+		}
+	}
+	pending := 0
+	for _, row := range rows {
+		if row.status == "" {
+			pending++
+		}
+	}
+
+	created, paired := 0, 0
+	var createErr error
+	if pending > 0 {
+		year, err := s.store.GetBillingYear(r.Context(), yearID)
+		if errors.Is(err, store.ErrNotFound) {
+			s.badRequest(w, "Unbekanntes Abrechnungsjahr")
+			return
+		} else if err != nil {
+			s.serverError(w, "quick entries: load year", err)
+			return
+		}
+		markPending := func(msg string) {
+			for _, row := range rows {
+				if row.status == "" {
+					row.status, row.message = quickInvalid, msg
+				}
+			}
+		}
+		if year.Completed() {
+			markPending("Das Abrechnungsjahr ist abgeschlossen.")
+			reject(http.StatusUnprocessableEntity, "Das Abrechnungsjahr ist abgeschlossen.", neighborURL(neighborID, yearID))
+			return
+		}
+		// Inlined rather than routed through a w,r-writing helper (as invoiceLocked
+		// still is elsewhere) so these gates can answer a replay with a status code —
+		// the same reason handleEntryCreate inlines them. The interactive messages and
+		// redirect targets are unchanged.
+		//
+		// The membership check guards against orphan rows: a booking for a neighbor not
+		// in the year is invisible on the (membership-driven) dashboard yet counted by
+		// stats/CSV, skewing the year's totals.
+		if in, err := s.store.NeighborInYear(r.Context(), year.ID, neighborID); err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		} else if !in {
+			markPending("Nachbar ist diesem Abrechnungsjahr nicht zugeordnet.")
+			reject(http.StatusUnprocessableEntity, "Nachbar ist diesem Abrechnungsjahr nicht zugeordnet.", dashboardURL(yearID))
+			return
+		}
+		if iv, err := s.store.GetInvoice(r.Context(), year.ID, neighborID); err == nil {
+			msg := "Rechnung " + iv.Number + " ist festgeschrieben – Buchungen und Verrechnungen für diesen Nachbarn sind gesperrt. Für Korrekturen bitte die Rechnung stornieren."
+			markPending(msg)
+			reject(http.StatusUnprocessableEntity, msg, neighborURL(neighborID, yearID))
+			return
+		} else if !errors.Is(err, store.ErrNotFound) {
+			// A real store failure is transient — 500 so a replay retries instead of
+			// dropping the rows as a permanent 422.
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+		created, paired, createErr = s.createQuickRows(r, year, neighborID, rows)
+	}
+
+	invalid := 0
+	var reasons []string
+	for _, row := range rows {
+		if row.status == quickInvalid || row.status == quickConflict {
+			invalid++
+			reasons = append(reasons, fmt.Sprintf("Zeile %d: %s", row.index+1, row.message))
+		}
 	}
 	// A store failure is transient, not a business rejection: answer 500 so a
 	// replay retries later. Rows that did save carry their idempotency key, so the
@@ -1762,21 +1841,22 @@ rowLoop:
 	// day of captured work. The saved rows carry idempotency keys, so nothing
 	// duplicates if the operator retries the retained batch with its original keys.
 	if replay {
-		switch {
-		case created == 0 && paired == 0 && invalid == 0:
+		if invalid == 0 {
 			w.WriteHeader(http.StatusNoContent)
-		case invalid > 0:
-			http.Error(w, fmt.Sprintf("%d Buchung(en) + %d Mannstunden gespeichert, %d Zeile(n) ungültig (Gespann und Stunden erforderlich; eine gewählte Person braucht einen Stundensatz).", created, paired, invalid), http.StatusUnprocessableEntity)
-		default:
-			w.WriteHeader(http.StatusNoContent)
+			return
 		}
+		rejectRows(fmt.Sprintf("%d Buchung(en) + %d Mannstunden gespeichert, %d Zeile(n) ungültig (Gespann und Stunden erforderlich; eine gewählte Person braucht einen Stundensatz). %s",
+			created, paired, invalid, strings.Join(reasons, " ")))
 		return
 	}
 	switch {
-	case created == 0 && paired == 0 && invalid == 0:
-		s.setFlash(w, r, "error", "Keine gültigen Zeilen (Gespann und Stunden erforderlich).")
 	case invalid > 0:
-		s.setFlash(w, r, "error", fmt.Sprintf("%d Buchung(en) + %d Mannstunden gespeichert, %d Zeile(n) übersprungen — Gespann und gültige Stunden erforderlich; eine gewählte Person braucht einen Stundensatz.", created, paired, invalid))
+		s.setFlash(w, r, "error", fmt.Sprintf("%d Buchung(en) + %d Mannstunden gespeichert, %d Zeile(n) übersprungen — Gespann und gültige Stunden erforderlich; eine gewählte Person braucht einen Stundensatz. %s",
+			created, paired, invalid, strings.Join(reasons, " ")))
+	case created == 0 && paired == 0 && already > 0:
+		s.setFlash(w, r, "success", "Die Zeilen waren bereits erfasst.")
+	case created == 0 && paired == 0:
+		s.setFlash(w, r, "error", "Keine gültigen Zeilen (Gespann und Stunden erforderlich).")
 	case created == 0 && paired > 0:
 		// The machine halves were already recorded (a re-submit of a row that
 		// carries its key), and only the Mannstunden were new. Saying "keine
@@ -1791,41 +1871,179 @@ rowLoop:
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
 
-// buildGespannEntry resolves a fixed gespann into a snapshotted entry.
-func (s *Server) buildGespannEntry(r *http.Request, gespannID int64, hours decimal.Decimal, dateStr string) (*models.Entry, []int64, bool) {
+// createQuickRows books every pending row. Invalid rows are marked on the row;
+// a store failure stops the batch and is returned (rows already committed keep
+// their audit, which is written in their own transaction).
+func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neighborID int64, rows []*quickRow) (created, paired int, createErr error) {
+	// The same rig repeats across the rows of one submit — that is what quick
+	// entry is FOR — so each distinct Gespann is resolved once (5 queries) and
+	// reused, instead of 5 queries per row (a 100-row submit was ~500 SELECTs).
+	type resolvedRig struct {
+		entry      models.Entry
+		machineIDs []int64
+		msg        string
+	}
+	rigs := map[int64]resolvedRig{}
+	// Helpers repeat across the rows of one submit for the same reason rigs do
+	// (one person, one afternoon, several fields), so each is resolved once —
+	// including the negative answer, which must not re-query per row either.
+	type resolvedPerson struct {
+		person models.Person
+		msg    string
+	}
+	persons := map[int64]resolvedPerson{}
+	nb := s.neighborName(r, neighborID)
+	for _, row := range rows {
+		if row.status != "" {
+			continue
+		}
+		rig, seen := rigs[row.gespannID]
+		if !seen {
+			e, mids, msg, err := s.buildGespannEntry(r, row.gespannID)
+			if err == nil && msg == "" {
+				// The rig must be priced from this year's basis (like the unified
+				// form); a gespann from another Bemessungsgrundlage is refused.
+				msg, err = s.checkBookingCatalog(r, e, mids, year.Base.ID, false)
+			}
+			if err != nil {
+				// A store failure is transient, not a business rejection — and it
+				// must not skip the rows already committed, whose audit is in place.
+				return created, paired, err
+			}
+			rig = resolvedRig{machineIDs: mids, msg: msg}
+			if msg == "" {
+				rig.entry = *e
+			}
+			rigs[row.gespannID] = rig
+		}
+		if rig.msg != "" {
+			row.status, row.message = quickInvalid, rig.msg
+			continue
+		}
+		entry := rig.entry // copy of the resolved template
+		entry.Hours = row.hours
+		entry.Cost = calc.Cost(row.hours, entry.HourlyRate)
+		entry.Quantity, entry.UnitPrice = decimal.Decimal{}, decimal.Decimal{}
+		entry.Date = row.date
+		entry.NeighborID = neighborID
+		entry.BillingYearID = year.ID
+		entry.IdempotencyKey = row.key
+		entry.RequestFingerprint = row.fingerprint
+		audit := &store.EntryAudit{Action: "quick_create", Detail: fmt.Sprintf("%s · Schnellerfassung: %s, %s h × %s = %s €",
+			nb, entry.TaskLabel, entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2))}
+		var companion *models.Entry
+		if row.personID != 0 {
+			p, seen := persons[row.personID]
+			if !seen {
+				person, err := s.store.GetPerson(r.Context(), row.personID)
+				switch {
+				case err == nil && person.HourlyRate.IsPositive():
+					p = resolvedPerson{person: *person}
+				case err == nil:
+					p = resolvedPerson{msg: "Für " + person.Name + " ist kein Stundensatz hinterlegt."}
+				case errors.Is(err, store.ErrNotFound):
+					p = resolvedPerson{msg: "Die gewählte Person ist nicht mehr vorhanden."}
+				default:
+					return created, paired, err
+				}
+				persons[row.personID] = p
+			}
+			if p.msg != "" {
+				// The row named a helper the master data cannot price (or no
+				// longer knows). Booking only the machine half would report
+				// success while filing the work as unmanned, so the row is
+				// skipped whole and counted like any other invalid row.
+				row.status, row.message = quickInvalid, p.msg
+				continue
+			}
+			personID := p.person.ID
+			companion = &models.Entry{
+				NeighborID: neighborID, BillingYearID: year.ID,
+				Date: entry.Date, TaskLabel: "Mannstunden " + p.person.Name,
+				Unit: unitMannstunde, Quantity: row.hours, UnitPrice: p.person.HourlyRate,
+				Cost:     row.hours.Mul(p.person.HourlyRate).Round(2),
+				PersonID: &personID,
+				// Derived from the row's own key, so a replayed row no-ops on
+				// both halves (see models.CompanionKey).
+				IdempotencyKey:     models.CompanionKey(entry.IdempotencyKey),
+				RequestFingerprint: row.companionFingerprint,
+			}
+			audit.CompanionDetail = fmt.Sprintf("%s · Schnellerfassung: Mannstunden (verknüpft), %s h × %s = %s €",
+				nb, companion.Quantity.String(), companion.UnitPrice.StringFixed(2), companion.Cost.StringFixed(2))
+		}
+		var (
+			id, companionID int64
+			err             error
+		)
+		if companion != nil {
+			id, companionID, err = s.store.CreateEntryPairAudited(r.Context(), &entry, rig.machineIDs, companion, audit)
+		} else {
+			id, err = s.store.CreateEntryAudited(r.Context(), &entry, rig.machineIDs, audit)
+		}
+		switch {
+		case errors.Is(err, store.ErrIdempotencyConflict):
+			row.status, row.message = quickConflict, replayConflictMsg
+		case err != nil:
+			// Joined, not last-wins: a partly failing batch should log every reason,
+			// not just the reason the final row failed.
+			createErr = errors.Join(createErr, err)
+		default:
+			row.status = quickSaved
+			if id != 0 {
+				created++
+			}
+			if companionID != 0 {
+				paired++
+			}
+		}
+	}
+	return created, paired, createErr
+}
+
+// buildGespannEntry resolves a fixed gespann into a snapshotted entry template
+// (rate and labels; hours, date and account are set by the caller). A missing
+// or incomplete rig is a validation message; any other store failure is an
+// error, so a replay retries instead of rejecting the rows for good.
+func (s *Server) buildGespannEntry(r *http.Request, gespannID int64) (*models.Entry, []int64, string, error) {
+	const gone = "Das gewählte Gespann ist nicht mehr vorhanden."
 	g, err := s.store.GetGespann(r.Context(), gespannID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil, gone, nil
+	}
+	if err != nil {
+		return nil, nil, "", err
+	}
 	// A machines-only rig is valid; a half-set tractor pair is not (see
 	// calc.GespannRate), and neither is a rig with nothing in it at all.
-	if err != nil || (g.TractorID == nil) != (g.LoadLevelID == nil) {
-		return nil, nil, false
-	}
-	if g.TractorID == nil && len(g.MachineIDs) == 0 {
-		return nil, nil, false
+	if (g.TractorID == nil) != (g.LoadLevelID == nil) || (g.TractorID == nil && len(g.MachineIDs) == 0) {
+		return nil, nil, "Das Gespann „" + g.Name + "“ ist unvollständig — bitte in den Gespannen ergänzen.", nil
 	}
 	var tractor *models.Tractor
 	var load *models.LoadLevel
 	if g.TractorID != nil {
 		tractor, err = s.store.GetTractor(r.Context(), *g.TractorID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil, gone, nil
+		}
 		if err != nil {
-			return nil, nil, false
+			return nil, nil, "", err
 		}
 		load, err = s.store.GetLoadLevel(r.Context(), *g.LoadLevelID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil, gone, nil
+		}
 		if err != nil {
-			return nil, nil, false
+			return nil, nil, "", err
 		}
 	}
 	machines, err := s.store.MachinesByIDs(r.Context(), g.MachineIDs)
 	if err != nil {
-		return nil, nil, false
+		return nil, nil, "", err
 	}
-	// See buildEntryFromForm: every stored machine id must resolve, or the row is
-	// priced without the missing machine's share and quietly underbills.
+	// See resolveEntryFromForm: every stored machine id must resolve, or the row
+	// is priced without the missing machine's share and quietly underbills.
 	if len(machines) != len(g.MachineIDs) {
-		return nil, nil, false
-	}
-	entryDate, err := time.Parse("2006-01-02", dateStr)
-	if err != nil {
-		entryDate = time.Now()
+		return nil, nil, gone, nil
 	}
 	rate := calc.GespannRate(tractor, load, machines)
 	names := make([]string, 0, len(machines))
@@ -1836,19 +2054,16 @@ func (s *Server) buildGespannEntry(r *http.Request, gespannID int64, hours decim
 	}
 	gid := g.ID
 	entry := &models.Entry{
-		Date:          entryDate,
 		TaskLabel:     g.Name,
 		GespannID:     &gid,
 		MachineLabels: strings.Join(names, ", "),
-		Hours:         hours,
 		HourlyRate:    rate,
-		Cost:          calc.Cost(hours, rate),
 	}
 	if tractor != nil && load != nil {
 		entry.TractorID, entry.LoadLevelID = &tractor.ID, &load.ID
 		entry.TractorLabel, entry.LoadLabel = tractor.Label(), load.Name
 	}
-	return entry, ids, true
+	return entry, ids, "", nil
 }
 
 // handleEntryDelete removes a booking only while its year remains open.

@@ -56,8 +56,10 @@ const openAmountJoins = `
 	              GROUP BY billing_year_id, neighbor_id) pay
 	         ON pay.billing_year_id = iv.billing_year_id AND pay.neighbor_id = iv.neighbor_id`
 
-// openAmountExpr is the remaining payable built from those joins.
-const openAmountExpr = `COALESCE(iv.gross, 0) + COALESCE(cr.s, 0) + COALESCE(led.s, 0) - COALESCE(pay.s, 0)`
+// openAmountExpr is the remaining payable built from those joins, at cent
+// precision — the SQL twin of models.BalanceState, so the dunning list, the
+// closing checklist and the Paid flag agree on what is still open.
+const openAmountExpr = `ROUND(COALESCE(iv.gross, 0) + COALESCE(cr.s, 0) + COALESCE(led.s, 0) - COALESCE(pay.s, 0), 2)`
 
 func (s *Store) DunningRows(ctx context.Context, yearID int64, termDays int, asOf time.Time) ([]DunningRow, error) {
 	rows, err := s.db.QueryContext(ctx, `

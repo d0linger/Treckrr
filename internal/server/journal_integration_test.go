@@ -22,7 +22,7 @@ func TestJournalAndArchiveIntegration(t *testing.T) {
 		"hours": {"2"}, "unit": {"h"},
 	})
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{
+	e.postIssue(nid, url.Values{
 		"year_id": {itoa64(yid)}, "issued_on": {yesterday},
 	})
 	iv, err := e.st.GetInvoice(e.ctx, yid, nid)
@@ -50,7 +50,7 @@ func TestJournalAndArchiveIntegration(t *testing.T) {
 		"gespann_id": {itoa64(e.gespannID)}, "entry_date": {"2026-05-21"},
 		"hours": {"1"}, "unit": {"h"},
 	})
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", n2), url.Values{"year_id": {itoa64(yid)}})
+	e.postIssue(n2, url.Values{"year_id": {itoa64(yid)}})
 	iv2, err := e.st.GetInvoice(e.ctx, yid, n2)
 	if err != nil {
 		t.Fatalf("invoice 2: %v", err)
@@ -109,7 +109,7 @@ func TestJournalAndArchiveIntegration(t *testing.T) {
 		"gespann_id": {itoa64(e.gespannID)}, "entry_date": {"2026-05-22"},
 		"hours": {"2"}, "unit": {"h"},
 	})
-	flashPage := e.post(fmt.Sprintf("/neighbors/%d/invoice", n3), url.Values{"year_id": {itoa64(yid)}})
+	flashPage := e.postIssue(n3, url.Values{"year_id": {itoa64(yid)}})
 	if !strings.Contains(flashPage, "Kleinunternehmergrenze") {
 		t.Errorf("issue flash carries no Kleinunternehmer warning although 92 > 50")
 	}

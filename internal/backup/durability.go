@@ -9,7 +9,7 @@ import (
 // durableRename makes the directory-entry change durable before success is
 // reported. Syncing only the file protects its bytes, not the rename itself.
 func durableRename(oldPath, newPath string) error {
-	if err := os.Rename(oldPath, newPath); err != nil {
+	if err := os.Rename(oldPath, newPath); err != nil { // #nosec G703 -- service-owned backup/status paths
 		return err
 	}
 	newDir := filepath.Dir(newPath)

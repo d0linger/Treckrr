@@ -21,7 +21,14 @@ type batchIssueRow struct {
 	AlreadyInvoiced bool
 	Missing         []string // mandatory fields still to fill (blocks issuing)
 	Issuable        bool
+	// ContentHash identifies the invoice content shown in the preview. The form
+	// posts it back per neighbor, and the commit issues only when the content
+	// is still exactly that (store.IssueInvoiceConfirmed).
+	ContentHash string
 }
+
+// batchHashField is the form field carrying one neighbor's previewed content hash.
+func batchHashField(neighborID int64) string { return "hash_" + itoa64(neighborID) }
 
 // batchIssueRows builds the per-neighbor preview for a year: who would get an
 // invoice, who is blocked (missing §11 data) and who already has one. Neighbors
@@ -54,6 +61,7 @@ func (s *Server) batchIssueRows(r *http.Request, yearID int64) ([]batchIssueRow,
 			return nil, 0, err
 		}
 		row.Gross = content.Gross
+		row.ContentHash = content.Hash
 		row.Missing = content.MissingMandatory()
 		row.Issuable = len(row.Missing) == 0
 		if row.Issuable {
@@ -155,13 +163,26 @@ func (s *Server) handleBatchIssueCommit(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Each ticked neighbor is issued only for the content its preview row showed.
+	// A changed one is left alone and named, so the operator re-checks the
+	// fresh preview; the others still go through.
 	issued, skipped := 0, 0
+	var changed []string
 	for _, row := range rows {
 		if !row.Issuable || row.AlreadyInvoiced || !selected[row.Neighbor.ID] {
 			skipped++
 			continue
 		}
-		_, err := s.store.IssueInvoice(r.Context(), yearID, row.Neighbor.ID, year.Year, time.Time{})
+		confirmed := strings.TrimSpace(r.PostForm.Get(batchHashField(row.Neighbor.ID)))
+		if confirmed != row.ContentHash {
+			changed = append(changed, row.Neighbor.Name)
+			continue
+		}
+		_, err := s.store.IssueInvoiceConfirmed(r.Context(), yearID, row.Neighbor.ID, year.Year, time.Time{}, confirmed)
+		if errors.Is(err, store.ErrInvoiceContentChanged) {
+			changed = append(changed, row.Neighbor.Name)
+			continue
+		}
 		if err != nil {
 			// One failure doesn't roll back the others (each invoice is its own
 			// festgeschriebenes document); report progress and stop.
@@ -171,6 +192,13 @@ func (s *Server) handleBatchIssueCommit(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		issued++
+	}
+	if len(changed) > 0 {
+		s.audit(r, "invoice_issue_batch", "year", yearID, fmt.Sprintf("%d ausgestellt, %d übersprungen, %d seit der Vorschau geändert", issued, skipped, len(changed)))
+		s.setFlash(w, r, "error", fmt.Sprintf("%d Rechnung(en) festgeschrieben (%d übersprungen). Die Buchungen haben sich seit der Vorschau geändert bei: %s — bitte die aktualisierte Vorschau prüfen und erneut festschreiben.",
+			issued, skipped, strings.Join(changed, ", ")))
+		redirect(w, r, fmt.Sprintf("/years/%d/issue-all", yearID))
+		return
 	}
 	s.audit(r, "invoice_issue_batch", "year", yearID, fmt.Sprintf("%d ausgestellt, %d übersprungen", issued, skipped))
 	s.setFlash(w, r, "success", fmt.Sprintf("%d Rechnung(en) festgeschrieben (%d übersprungen).", issued, skipped))

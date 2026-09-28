@@ -2,10 +2,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -42,8 +44,11 @@ func auditRetentionCutoffs(now time.Time) (short, long time.Time) {
 		time.Date(now.Year()-auditRetentionLongYears, time.January, 1, 0, 0, 0, 0, now.Location())
 }
 
+// main configures process-wide runtime limits and dispatches the server or a
+// maintenance subcommand.
 func main() {
 	setupLogging()
+	backup.ClampGoMemLimit()
 
 	// Subcommands (e.g. `treckrr restore <file>`); no args runs the web server.
 	if len(os.Args) > 1 {
@@ -213,7 +218,9 @@ func run() error {
 	leaseWG.Add(1)
 	go func() {
 		defer leaseWG.Done()
-		if err := appLease.Monitor(ctx, time.Second); err != nil {
+		// A heartbeat every 5s; each ping has its own longer timeout inside
+		// Monitor, so one slow round trip under load is not a lost lease.
+		if err := appLease.Monitor(ctx, 5*time.Second); err != nil {
 			// The advisory lock vanished with its PostgreSQL session. Do not
 			// attempt to reacquire it: an offline restore may already own the
 			// exclusive lock. Remove readiness first, then begin shutdown.
@@ -247,25 +254,57 @@ func run() error {
 
 	<-ctx.Done()
 	slog.Info("shutting down")
+	err = drainAndStop(srv, httpServer, &bkWG, &purgeWG, time.Now().Add(shutdownBudget))
+	leaseWG.Wait()
+	return err
+}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	err = httpServer.Shutdown(shutdownCtx)
-	// Give an in-flight scheduled backup a brief window to finish cleanly (its
-	// runs use context.WithoutCancel) rather than being killed mid-dump on deploy.
-	// Backups here are sub-second, so this rarely waits; the bound caps a large one
-	// (a full run can take up to 10 min, but we don't hold up a deploy that long —
-	// writeFileAtomic guarantees no partial file if we exit first).
-	if !waitTimeout(&bkWG, 30*time.Second) {
-		slog.Warn("shutdown: a scheduled backup was still running after 30s; exiting anyway")
+// Shutdown bounds. Every mail send (single, batch or outbox) has its own
+// store.MailDeliveryBudget (45s); the drain must outlast one of them so an
+// accepted SMTP dialog is settled rather than stranded as "sending". The total
+// stays below docker-compose's stop_grace_period (120s) so the process exits
+// on its own instead of being SIGKILLed mid-bookkeeping.
+const (
+	httpShutdownTimeout = 60 * time.Second
+	shutdownBudget      = 100 * time.Second
+)
+
+// drainAndStop shuts the process down in order: stop admitting background
+// work and cancel it (mail loops stop between messages), stop HTTP (in-flight
+// handlers, including a batch Mahnlauf, finish their current mail), then wait
+// for background tasks, the backup loop and the maintenance tick — all bounded
+// by one absolute deadline.
+func drainAndStop(srv *server.Server, httpServer *http.Server, bkWG, purgeWG *sync.WaitGroup, deadline time.Time) error {
+	srv.BeginShutdown()
+	httpDeadline := time.Now().Add(httpShutdownTimeout)
+	if httpDeadline.After(deadline) {
+		httpDeadline = deadline
+	}
+	shutdownCtx, cancel := context.WithDeadline(context.Background(), httpDeadline)
+	err := httpServer.Shutdown(shutdownCtx)
+	cancel()
+	if err != nil {
+		slog.Warn("shutdown: HTTP requests still running at the deadline", "err", err)
+	}
+	waitCtx, cancelWait := context.WithDeadline(context.Background(), deadline)
+	if werr := srv.WaitBackground(waitCtx); werr != nil {
+		slog.Warn("shutdown: background tasks still running at the deadline; exiting anyway")
+	}
+	cancelWait()
+	// Give an in-flight scheduled backup the remaining window to finish cleanly
+	// (its runs use context.WithoutCancel) rather than being killed mid-dump on
+	// deploy. A run cut off here leaves its attempt marker, so the next boot
+	// records it as failed instead of repeating it at once; writeFileAtomic
+	// guarantees no partial file.
+	if !waitTimeout(bkWG, time.Until(deadline)) {
+		slog.Warn("shutdown: a scheduled backup was still running at the deadline; exiting anyway")
 	}
 	// The maintenance tick stops BETWEEN outbox mails on ctx cancel and each
 	// mail's own budget is 45s — this wait lets an in-flight delivery finish its
 	// bookkeeping instead of leaving a delivered-but-still-pending row behind.
-	if !waitTimeout(&purgeWG, 50*time.Second) {
-		slog.Warn("shutdown: the maintenance tick was still running after 50s; exiting anyway")
+	if !waitTimeout(purgeWG, time.Until(deadline)) {
+		slog.Warn("shutdown: the maintenance tick was still running at the deadline; exiting anyway")
 	}
-	leaseWG.Wait()
 	return err
 }
 
@@ -401,16 +440,25 @@ func maintenanceTask(parent context.Context, timeout time.Duration, work func(co
 
 // runCommand dispatches CLI subcommands. Destructive restore requires typed
 // confirmation and an offline database lease; the GUI has its own drain gate.
+//
+// SIGINT/SIGTERM cancel the command's context instead of killing the process,
+// so deferred cleanup still runs: pg_dump/pg_restore are stopped, and a
+// rehearsal drops its scratch database (a full plaintext copy of production)
+// instead of leaving it behind. After the first signal the default behavior
+// returns, so a second Ctrl-C still terminates immediately.
 func runCommand(cmd string, args []string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	context.AfterFunc(ctx, stop)
 	switch cmd {
 	case "restore":
-		return runRestore(args)
+		return runRestore(ctx, args)
 	case "backup":
-		return runBackupCLI(args)
+		return runBackupCLI(ctx, args)
 	case "rotate-key":
-		return runRotateKeyCLI(args)
+		return runRotateKeyCLI(ctx, args)
 	case "rehearse-restore":
-		return runRehearseCLI(args)
+		return runRehearseCLI(ctx, args)
 	default:
 		return fmt.Errorf("unknown command %q (known: restore, backup, rotate-key, rehearse-restore)", cmd)
 	}
@@ -418,12 +466,12 @@ func runCommand(cmd string, args []string) error {
 
 // openBackup loads config, connects, and builds the backup service for a CLI
 // command. The caller must close the returned pool.
-func openBackup() (*config.Config, *sql.DB, *backup.Service, error) {
+func openBackup(ctx context.Context) (*config.Config, *sql.DB, *backup.Service, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	pool, err := db.Connect(context.Background(), cfg.DatabaseURL)
+	pool, err := db.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -441,7 +489,7 @@ func openBackup() (*config.Config, *sql.DB, *backup.Service, error) {
 }
 
 // runRestore handles `treckrr restore [--test] <file.dump.enc>`.
-func runRestore(args []string) error {
+func runRestore(parent context.Context, args []string) error {
 	var file string
 	test := false
 	for _, a := range args {
@@ -457,12 +505,12 @@ func runRestore(args []string) error {
 	if file == "" {
 		return fmt.Errorf("usage: treckrr restore [--test] <file.dump.enc>")
 	}
-	cfg, pool, bk, err := openBackup()
+	cfg, pool, bk, err := openBackup(parent)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(parent, 10*time.Minute)
 	defer cancel()
 
 	if test {
@@ -477,9 +525,7 @@ func runRestore(args []string) error {
 	// Destructive: require an explicit typed confirmation on the terminal.
 	fmt.Fprintf(os.Stderr,
 		"WARNING: this OVERWRITES the live database with %s.\nType RESTORE to continue: ", file)
-	var answer string
-	_, _ = fmt.Fscanln(os.Stdin, &answer)
-	if strings.TrimSpace(answer) != "RESTORE" {
+	if answer, err := readLine(ctx, os.Stdin); err != nil || strings.TrimSpace(answer) != "RESTORE" {
 		return fmt.Errorf("aborted")
 	}
 	lease, err := db.AcquireOfflineRestoreLease(ctx, pool)
@@ -490,26 +536,62 @@ func runRestore(args []string) error {
 	if err := bk.Restore(ctx, file, cfg.DatabaseURL); err != nil {
 		return err
 	}
+	reconcileCtx, cancelReconcile := restoreReconcileContext(ctx)
+	defer cancelReconcile()
 	st := store.New(pool, cfg.EncryptionSecret)
-	if err := st.ReconcileAfterRestore(ctx); err != nil {
+	if err := st.ReconcileAfterRestore(reconcileCtx); err != nil {
 		return fmt.Errorf("restore completed but reconciliation failed; keep the app stopped: %w", err)
 	}
 	slog.Info("restore complete", "file", file)
+	if held, err := st.HeldMailCount(reconcileCtx); err == nil && held > 0 {
+		slog.Warn("restored outbox mail is held; release or discard it on the admin backup page",
+			"held", held)
+	}
 	return nil
+}
+
+// restoreReconcileContext gives committed restore state a bounded settlement
+// window even when the signal-aware restore context is canceled immediately
+// after pg_restore succeeds.
+func restoreReconcileContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+}
+
+// readLine reads one line from r, giving up when ctx ends (for example on
+// Ctrl-C while waiting for the typed confirmation).
+func readLine(ctx context.Context, r io.Reader) (string, error) {
+	type result struct {
+		line string
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		line, err := bufio.NewReader(r).ReadString('\n')
+		if err == io.EOF && line != "" {
+			err = nil
+		}
+		done <- result{line, err}
+	}()
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case res := <-done:
+		return res.line, res.err
+	}
 }
 
 // runBackupCLI handles `treckrr backup` — write one encrypted dump to BACKUP_DIR
 // (the same path the scheduler uses). Handy for an external cron if preferred.
-func runBackupCLI(args []string) error {
+func runBackupCLI(ctx context.Context, args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("usage: treckrr backup")
 	}
-	_, pool, bk, err := openBackup()
+	_, pool, bk, err := openBackup(ctx)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
-	if err := bk.RunScheduled(context.Background()); err != nil {
+	if err := bk.RunScheduled(ctx); err != nil {
 		return err
 	}
 	slog.Info("encrypted backup written")
@@ -521,7 +603,7 @@ func runBackupCLI(args []string) error {
 //
 // The previous key is read from BACKUP_ENCRYPTION_KEY_OLD rather than an
 // argument, so it never lands in the shell history or a process list.
-func runRotateKeyCLI(args []string) error {
+func runRotateKeyCLI(ctx context.Context, args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("usage: treckrr rotate-key   (set BACKUP_ENCRYPTION_KEY to the new key and BACKUP_ENCRYPTION_KEY_OLD to the previous one)")
 	}
@@ -529,12 +611,12 @@ func runRotateKeyCLI(args []string) error {
 	if oldKey == "" {
 		return fmt.Errorf("BACKUP_ENCRYPTION_KEY_OLD is not set — it must hold the key the existing dumps were written with")
 	}
-	_, pool, bk, err := openBackup()
+	_, pool, bk, err := openBackup(ctx)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
-	res, err := bk.RotateKey(context.Background(), oldKey)
+	res, err := bk.RotateKey(ctx, oldKey)
 	for _, n := range res.Rotated {
 		slog.Info("rotated", "file", n)
 	}
@@ -564,11 +646,11 @@ func backupCLIMaxBytes(raw string) (int64, error) {
 
 // runRehearseCLI restores the newest dump into a scratch database and queries it
 // — the real drill behind the panel's "Restore getestet" line.
-func runRehearseCLI(args []string) error {
+func runRehearseCLI(ctx context.Context, args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("usage: treckrr rehearse-restore   (needs BACKUP_REHEARSE_URL)")
 	}
-	_, pool, bk, err := openBackup()
+	_, pool, bk, err := openBackup(ctx)
 	if err != nil {
 		return err
 	}
@@ -584,7 +666,7 @@ func runRehearseCLI(args []string) error {
 	if err != nil {
 		return err
 	}
-	rep, err := bk.RehearseRestore(context.Background(), enc)
+	rep, err := bk.RehearseRestore(ctx, enc)
 	if err != nil {
 		return err
 	}

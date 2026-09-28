@@ -163,9 +163,8 @@ func (s *Store) NeighborYearHistory(ctx context.Context, neighborID int64) ([]Ne
 			return nil, err
 		}
 		r.Net = r.Cost.Add(r.Ledger)
-		r.Remaining = r.Payable.Add(r.Ledger).Sub(r.PaidAmount)
-		r.Paid = r.Remaining.IsZero()
-		r.Credit = r.Remaining.IsNegative()
+		r.Remaining = models.RoundMoney(r.Payable.Add(r.Ledger).Sub(r.PaidAmount))
+		r.Paid, r.Credit = models.BalanceState(r.Remaining)
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -219,6 +218,7 @@ func (s *Store) YearlyTotals(ctx context.Context) ([]YearTotal, error) {
 
 // AddNeighborLedger records a manual posting and returns its id.
 func (s *Store) AddNeighborLedger(ctx context.Context, yearID, neighborID int64, amount decimal.Decimal, description string, date time.Time) (int64, error) {
+	amount = models.RoundMoney(amount) // whole cents, like every stored money amount
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -240,8 +240,10 @@ func (s *Store) AddNeighborLedger(ctx context.Context, yearID, neighborID int64,
 	return id, tx.Commit()
 }
 
-// UpdateNeighborLedger edits a posting's amount, description and date.
+// UpdateNeighborLedger edits a posting's amount, description and date. A
+// carry-forward side is refused with ErrLedgerTransfer.
 func (s *Store) UpdateNeighborLedger(ctx context.Context, id int64, amount decimal.Decimal, description string, date time.Time) error {
+	amount = models.RoundMoney(amount)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -258,11 +260,15 @@ func (s *Store) UpdateNeighborLedger(ctx context.Context, id int64, amount decim
 	if err != nil {
 		return err
 	}
+	if before.TransferID != "" {
+		return ErrLedgerTransfer
+	}
 	if err := protectStructuredLedger(ctx, tx, id, yearID, neighborID); err != nil {
 		return err
 	}
 	res, err := tx.ExecContext(ctx,
-		`UPDATE neighbor_ledger SET amount=$1, description=$2, posting_date=$3 WHERE id=$4 AND booking IS NULL`,
+		`UPDATE neighbor_ledger SET amount=$1, description=$2, posting_date=$3
+		  WHERE id=$4 AND booking IS NULL AND transfer_id=''`,
 		amount, description, date, id)
 	if err != nil {
 		return err
@@ -280,7 +286,8 @@ func (s *Store) UpdateNeighborLedger(ctx context.Context, id int64, amount decim
 	return tx.Commit()
 }
 
-// SetLedgerVoided marks a posting as voided (or restores it).
+// SetLedgerVoided marks a posting as voided (or restores it). A carry-forward
+// side is refused with ErrLedgerTransfer; SetLedgerVoidedTransfer handles both.
 func (s *Store) SetLedgerVoided(ctx context.Context, id int64, voided bool, reason string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -297,6 +304,9 @@ func (s *Store) SetLedgerVoided(ctx context.Context, id int64, voided bool, reas
 	before, err := ledgerForUpdate(ctx, tx, id)
 	if err != nil {
 		return err
+	}
+	if before.TransferID != "" {
+		return ErrLedgerTransfer
 	}
 	if err := protectStructuredLedger(ctx, tx, id, yearID, neighborID); err != nil {
 		return err
@@ -323,10 +333,17 @@ func (s *Store) SetLedgerVoided(ctx context.Context, id int64, voided bool, reas
 }
 
 type ledgerMutationRow struct {
-	Amount decimal.Decimal
-	Date   time.Time
-	Voided bool
+	Amount     decimal.Decimal
+	Date       time.Time
+	Voided     bool
+	TransferID string
 }
+
+// ErrLedgerTransfer refuses to change one side of a carry-forward on its own:
+// both postings share a transfer_id and must always sum to zero, so a transfer
+// is only ever voided or undone as a unit (SetLedgerVoidedTransfer /
+// DeleteLedgerTransfer).
+var ErrLedgerTransfer = errors.New("carry-forward posting can only change as a pair")
 
 func ledgerAccount(ctx context.Context, tx *sql.Tx, id int64) (yearID, neighborID int64, err error) {
 	err = tx.QueryRowContext(ctx,
@@ -340,8 +357,8 @@ func ledgerAccount(ctx context.Context, tx *sql.Tx, id int64) (yearID, neighborI
 func ledgerForUpdate(ctx context.Context, tx *sql.Tx, id int64) (ledgerMutationRow, error) {
 	var row ledgerMutationRow
 	err := tx.QueryRowContext(ctx,
-		`SELECT amount, posting_date, voided FROM neighbor_ledger WHERE id=$1 FOR UPDATE`, id).
-		Scan(&row.Amount, &row.Date, &row.Voided)
+		`SELECT amount, posting_date, voided, transfer_id FROM neighbor_ledger WHERE id=$1 FOR UPDATE`, id).
+		Scan(&row.Amount, &row.Date, &row.Voided, &row.TransferID)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
 	}
@@ -369,7 +386,8 @@ func (s *Store) GetLedgerEntry(ctx context.Context, id int64) (yearID, neighborI
 	return
 }
 
-// DeleteNeighborLedger removes a posting.
+// DeleteNeighborLedger removes a posting. A carry-forward side is refused with
+// ErrLedgerTransfer; DeleteLedgerTransfer removes both.
 func (s *Store) DeleteNeighborLedger(ctx context.Context, id int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -386,6 +404,9 @@ func (s *Store) DeleteNeighborLedger(ctx context.Context, id int64) error {
 	before, err := ledgerForUpdate(ctx, tx, id)
 	if err != nil {
 		return err
+	}
+	if before.TransferID != "" {
+		return ErrLedgerTransfer
 	}
 	if err := protectStructuredLedger(ctx, tx, id, yearID, neighborID); err != nil {
 		return err

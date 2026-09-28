@@ -73,10 +73,10 @@ func TestPhotoVisibilityIntegration(t *testing.T) {
 	}
 	eid := entries[0].ID
 
-	// Two images in ONE round-trip.
-	img := pngBytes(t)
+	// Two images in ONE round-trip. They must differ: an identical image is
+	// stored once per booking (WEB-10).
 	e.postFiles(fmt.Sprintf("/entries/%d/photos", eid), "photo", map[string][]byte{
-		"schein1.png": img, "schein2.png": img,
+		"schein1.png": pngBytes(t), "schein2.png": pngBytesSeed(t, 7),
 	})
 	counts, err := e.st.PhotoCounts(e.ctx, yid, nid)
 	if err != nil {

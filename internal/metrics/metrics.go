@@ -39,6 +39,13 @@ const (
 	MaintenanceFails = "treckrr_maintenance_failures_total"
 	MailSent         = "treckrr_mail_sent_total"
 	MailFailed       = "treckrr_mail_failed_total"
+
+	// BackupInterruptedRuns counts scheduled backups that a dying process left
+	// unfinished (found through their persisted attempt marker).
+	BackupInterruptedRuns = "treckrr_backup_interrupted_runs_total"
+	// BackupS3PruneFailures counts S3 retention steps that could not complete
+	// (listing, ownership check or delete).
+	BackupS3PruneFailures = "treckrr_backup_s3_prune_failures_total"
 )
 
 var (

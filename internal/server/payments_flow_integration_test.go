@@ -21,7 +21,7 @@ func TestPaymentFlowIntegration(t *testing.T) {
 		"gespann_id": {itoa64(e.gespannID)}, "entry_date": {"2026-05-01"},
 		"hours": {"2"}, "unit": {"h"},
 	})
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{"year_id": {itoa64(yid)}})
+	e.postIssue(nid, url.Values{"year_id": {itoa64(yid)}})
 
 	// Payment with a method: the row must show method AND the linked invoice.
 	e.post(fmt.Sprintf("/neighbors/%d/payments", nid), url.Values{
@@ -131,7 +131,7 @@ func TestSkontoClauseOnBelegIntegration(t *testing.T) {
 		t.Errorf("skonto clause shown without an issued invoice")
 	}
 
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{"year_id": {itoa64(yid)}})
+	e.postIssue(nid, url.Values{"year_id": {itoa64(yid)}})
 	if page := e.get(belegURL); !strings.Contains(page, "% Skonto") {
 		t.Errorf("skonto clause missing on the issued invoice")
 	}
@@ -147,7 +147,7 @@ func TestSkontoClauseOnBelegIntegration(t *testing.T) {
 	// A NEW invoice issued while the offer is off carries no clause: storno the
 	// current one and re-issue.
 	e.post(fmt.Sprintf("/neighbors/%d/invoice/storno", nid), url.Values{"year_id": {itoa64(yid)}, "reason": {"skonto test"}})
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{"year_id": {itoa64(yid)}})
+	e.postIssue(nid, url.Values{"year_id": {itoa64(yid)}})
 	if page := e.get(belegURL); strings.Contains(page, "% Skonto") {
 		t.Errorf("skonto clause shown on an invoice issued while the offer is off")
 	}

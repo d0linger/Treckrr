@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"log/slog"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,11 +75,48 @@ func (l *loginLimiter) fail(ctx context.Context, key string) int {
 	return n
 }
 
-// reset clears the key after a successful attempt.
+// reset clears the key after a successful attempt. Only for buckets that belong
+// to the authenticated principal (per-user, per-account); a shared per-IP
+// bucket must use refund instead.
 func (l *loginLimiter) reset(ctx context.Context, key string) {
 	if err := l.store.RateLimitReset(ctx, key); err != nil {
 		slog.Warn("ratelimit reset failed", "key", sanitizeLog(key), "err", sanitizeLog(err.Error()))
 	}
+}
+
+// refund returns the one reservation a successful attempt took from a shared
+// bucket (admitVerification charges every attempt up front). Earlier failures
+// stay counted: a success from the same address must not launder them.
+func (l *loginLimiter) refund(ctx context.Context, key string) {
+	if err := l.store.RateLimitRefund(ctx, key); err != nil {
+		slog.Warn("ratelimit refund failed", "key", sanitizeLog(key), "err", sanitizeLog(err.Error()))
+	}
+}
+
+// ipv6LimitPrefix is the prefix length IPv6 clients are bucketed by. A /64 is
+// the smallest block routinely assigned to one subscriber, and every address in
+// it is freely selectable by that client — keying on the full address let one
+// client rotate through fresh buckets on every request.
+const ipv6LimitPrefix = 64
+
+// rateLimitIP maps a client address to its rate-limit bucket: IPv4 (including
+// IPv4-mapped IPv6) as is, IPv6 as its /64 network. Anything unparsable is
+// returned unchanged, which also makes the function idempotent. Audit records
+// keep the full address; this is for limiter keys only.
+func rateLimitIP(ip string) string {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return ip
+	}
+	if v4 := parsed.To4(); v4 != nil {
+		return v4.String()
+	}
+	return parsed.Mask(net.CIDRMask(ipv6LimitPrefix, 8*net.IPv6len)).String() + "/" + strconv.Itoa(ipv6LimitPrefix)
+}
+
+// limiterIP is the per-IP rate-limit key for the request's client.
+func (s *Server) limiterIP(r *http.Request) string {
+	return rateLimitIP(s.clientIP(r))
 }
 
 // accountKey namespaces the account-scoped login limiter by normalized username,
@@ -88,7 +127,7 @@ func accountKey(username string) string {
 
 // shareKey namespaces the public share-link miss counter by client IP, keeping it
 // clear of the login buckets so a blocked scanner cannot also lock out a login.
-func shareKey(ip string) string { return "share:" + ip }
+func shareKey(ip string) string { return "share:" + rateLimitIP(ip) }
 
 // shareBlocked reports whether this client has produced enough share-token misses
 // to look like it is scanning.
@@ -131,7 +170,7 @@ const (
 	ceremonyWindow    = 15 * time.Minute
 )
 
-func ceremonyKey(ip string) string { return "wabegin:" + ip }
+func ceremonyKey(ip string) string { return "wabegin:" + rateLimitIP(ip) }
 
 // allowCeremonyBegin consumes one begin permit and reports whether the caller may
 // proceed.

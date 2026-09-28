@@ -247,17 +247,45 @@ func (s *Server) auditLogin(r *http.Request, username, action, detail string) {
 // This assumes exactly one trusted proxy hop; for N chained proxies take the
 // entry N positions from the right. When not behind a trusted proxy the direct
 // connection address is used so a forged header is ignored entirely.
+//
+// All X-Forwarded-For header LINES count, in order: a proxy that appends its own
+// line instead of extending the client's (HAProxy's option forwardfor, for one)
+// leaves the client-supplied line first, and reading only that line made the
+// forged value win. The chosen entry must parse as an IP; anything else falls
+// back to the peer address rather than keying limiters or the audit log on
+// free-form text.
 func (s *Server) clientIP(r *http.Request) string {
 	host := hostOf(r.RemoteAddr)
 	if s.cfg.TrustProxy && s.proxyTrusted(host) {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if i := strings.LastIndexByte(xff, ','); i >= 0 {
-				return strings.TrimSpace(xff[i+1:])
-			}
-			return strings.TrimSpace(xff)
+		if ip, ok := rightmostForwardedIP(r.Header.Values("X-Forwarded-For")); ok {
+			return ip
 		}
 	}
 	return host
+}
+
+// rightmostForwardedIP returns the last entry across all X-Forwarded-For lines,
+// canonicalized, if it is a valid IP address (an optional port is tolerated).
+func rightmostForwardedIP(lines []string) (string, bool) {
+	last := ""
+	for _, line := range lines {
+		for _, entry := range strings.Split(line, ",") {
+			if entry = strings.TrimSpace(entry); entry != "" {
+				last = entry
+			}
+		}
+	}
+	if last == "" {
+		return "", false
+	}
+	ip := net.ParseIP(last)
+	if ip == nil {
+		ip = net.ParseIP(hostOf(last))
+	}
+	if ip == nil {
+		return "", false
+	}
+	return ip.String(), true
 }
 
 // hostOf strips the port from a RemoteAddr, tolerating an address without one.

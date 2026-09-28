@@ -14,9 +14,15 @@ import (
 	"github.com/d0linger/treckrr/internal/store"
 )
 
+// invoiceFixture creates the standard fixed-year invoice fixture.
 func invoiceFixture(t *testing.T, vat bool) (*store.Store, *sql.DB, int64, int64, int64) {
+	return invoiceFixtureYear(t, vat, 2026)
+}
+
+// invoiceFixtureYear creates an invoice-ready booking fixture for the supplied year.
+func invoiceFixtureYear(t *testing.T, vat bool, year int) (*store.Store, *sql.DB, int64, int64, int64) {
 	t.Helper()
-	st, pool, yearID, neighborID := scratchBookingFixture(t)
+	st, pool, yearID, neighborID := scratchBookingFixtureYear(t, year)
 	ctx := context.Background()
 	lockCompanyRow(t, ctx, pool)
 	company := models.Company{
@@ -39,7 +45,7 @@ func invoiceFixture(t *testing.T, vat bool) (*store.Store, *sql.DB, int64, int64
 	}
 	entryID, err := st.CreateEntry(ctx, &models.Entry{
 		NeighborID: neighborID, BillingYearID: yearID,
-		Date:      time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC),
+		Date:      time.Date(year, 5, 10, 0, 0, 0, 0, time.UTC),
 		TaskLabel: "Review work", Unit: "Pauschale",
 		Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromInt(100), Cost: decimal.NewFromInt(100),
 	}, nil)
@@ -49,10 +55,16 @@ func invoiceFixture(t *testing.T, vat bool) (*store.Store, *sql.DB, int64, int64
 	return st, pool, yearID, neighborID, entryID
 }
 
+// issueFixtureInvoice issues the standard fixed-year fixture invoice.
 func issueFixtureInvoice(t *testing.T, st *store.Store, yearID, neighborID int64) models.Invoice {
+	return issueFixtureInvoiceYear(t, st, yearID, neighborID, 2026)
+}
+
+// issueFixtureInvoiceYear issues a fixture invoice for the supplied year.
+func issueFixtureInvoiceYear(t *testing.T, st *store.Store, yearID, neighborID int64, year int) models.Invoice {
 	t.Helper()
-	iv, err := st.IssueInvoice(context.Background(), yearID, neighborID, 2026,
-		time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC))
+	iv, err := st.IssueInvoice(context.Background(), yearID, neighborID, year,
+		time.Date(year, 9, 10, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("issue invoice: %v", err)
 	}
@@ -244,17 +256,23 @@ func TestRecurringAndReplayRespectInvoiceFreeze(t *testing.T) {
 			t.Fatalf("load recurring: %v", err)
 		}
 		issueFixtureInvoice(t, st, yearID, neighborID)
+		// The issued invoice is the rule's waiting state, not a failed tick:
+		// nothing is booked, nothing advances, and the reason is recorded.
 		created, err := st.RunDueRecurring(ctx)
-		if !errors.Is(err, store.ErrInvoiceLocked) || created != 0 {
-			t.Fatalf("due recurrence: created=%d err=%v, want 0/ErrInvoiceLocked", created, err)
+		if err != nil || created != 0 {
+			t.Fatalf("due recurrence: created=%d err=%v, want 0/nil (waiting)", created, err)
 		}
 		var after time.Time
+		var lastError string
 		if err := pool.QueryRowContext(ctx,
-			`SELECT next_run FROM recurring_entries WHERE id=$1`, ruleID).Scan(&after); err != nil {
+			`SELECT next_run, last_error FROM recurring_entries WHERE id=$1`, ruleID).Scan(&after, &lastError); err != nil {
 			t.Fatalf("reload recurring: %v", err)
 		}
 		if !after.Equal(before) {
 			t.Fatalf("blocked occurrence advanced from %v to %v", before, after)
+		}
+		if !strings.Contains(lastError, "Rechnung") {
+			t.Fatalf("waiting rule records last_error %q, want the invoice reason", lastError)
 		}
 	})
 

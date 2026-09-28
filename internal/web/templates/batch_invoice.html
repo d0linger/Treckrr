@@ -17,7 +17,7 @@
 			<tbody>
 				{{range .Rows}}
 				<tr>
-					<td>{{if and .Issuable (not .AlreadyInvoiced)}}<input type="checkbox" name="neighbor_id" value="{{.Neighbor.ID}}" checked aria-label="{{.Neighbor.Name}} festschreiben">{{end}}</td>
+					<td>{{if and .Issuable (not .AlreadyInvoiced)}}<input type="checkbox" name="neighbor_id" value="{{.Neighbor.ID}}" checked aria-label="{{.Neighbor.Name}} festschreiben"><input type="hidden" name="hash_{{.Neighbor.ID}}" value="{{.ContentHash}}">{{end}}</td>
 					<td><a href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}">{{.Neighbor.Name}}</a></td>
 					<td class="num">{{.Bookings}}</td>
 					<td class="num">{{if .AlreadyInvoiced}}–{{else}}{{money .Gross}}{{end}}</td>

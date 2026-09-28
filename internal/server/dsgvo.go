@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -282,9 +281,12 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 		for _, ph := range photos {
 			// The URL, not the bytes: a JSON document is the wrong carrier for
 			// megabytes of images, and each photo stays retrievable at this path.
+			// PhotoRef.URL picks the source table's route — a ledger receipt
+			// under /entries/ would 404 or, on an id collision, name another
+			// booking's photo.
 			dy.Photos = append(dy.Photos, dsgvoPhoto{
 				EntryDate: ph.EntryDate, Task: ph.TaskLabel, Uploaded: ph.Created,
-				URL: fmt.Sprintf("/entries/%d/photos/%d", ph.EntryID, ph.PhotoID),
+				URL: ph.URL(),
 			})
 		}
 		for _, snd := range sends {

@@ -181,10 +181,13 @@ func (s *Server) handleYearAddNeighbor(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleYearRemoveNeighbor removes a neighbor from the year (membership only).
-// It refuses when the neighbor still has entries booked or ledger postings in
-// that year — removal would orphan them: still counted in the year total
-// but invisible in the per-neighbor/payment views, the same
-// skew the membership guard in handleLedgerAdd prevents on the add side.
+// It refuses while the neighbor still has ANY record in that year — bookings,
+// ledger postings, payments, documents, installments or dunning/send history.
+// Removal would orphan them: still counted in the year total but invisible in
+// the per-neighbor/payment views and impossible to reverse, because every
+// account writer requires the membership. The check and the removal are one
+// locked store transaction (see store.RemoveNeighborFromYear), so a booking
+// written concurrently cannot slip in between.
 func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
@@ -192,43 +195,46 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 	}
 	yearID := s.yearIDFromForm(r)
 	neighborID := formInt64(r, "neighbor_id")
-	count, err := s.store.CountEntriesForNeighborYear(r.Context(), yearID, neighborID)
-	if err != nil {
-		s.serverError(w, "remove neighbor: count entries", err)
-		return
-	}
-	if count > 0 {
-		s.setFlash(w, r, "error", "Nachbar hat noch Buchungen in diesem Jahr und kann nicht entfernt werden.")
+	err := s.store.RemoveNeighborFromYear(r.Context(), yearID, neighborID)
+	var inUse *store.MembershipInUseError
+	switch {
+	case errors.As(err, &inUse):
+		s.setFlash(w, r, "error", "Nachbar hat noch "+membershipDependentLabel(inUse.Kind)+
+			" in diesem Jahr und kann nicht entfernt werden.")
 		redirect(w, r, dashboardURL(yearID))
 		return
-	}
-	ledgerCount, err := s.store.CountLedgerForNeighborYear(r.Context(), yearID, neighborID)
-	if err != nil {
-		s.serverError(w, "remove neighbor: count ledger", err)
-		return
-	}
-	if ledgerCount > 0 {
-		s.setFlash(w, r, "error", "Nachbar hat noch Verrechnungspositionen (Konto) in diesem Jahr und kann nicht entfernt werden.")
+	case errors.Is(err, store.ErrNotFound):
+		s.setFlash(w, r, "info", "Nachbar ist in diesem Jahr nicht (mehr) vorhanden.")
 		redirect(w, r, dashboardURL(yearID))
 		return
-	}
-	payCount, err := s.store.CountPaymentsForNeighborYear(r.Context(), yearID, neighborID)
-	if err != nil {
-		s.serverError(w, "remove neighbor: count payments", err)
-		return
-	}
-	if payCount > 0 {
-		s.setFlash(w, r, "error", "Nachbar hat noch Zahlungen in diesem Jahr und kann nicht entfernt werden.")
-		redirect(w, r, dashboardURL(yearID))
-		return
-	}
-	if err := s.store.RemoveNeighborFromYear(r.Context(), yearID, neighborID); err != nil {
+	case err != nil:
 		s.serverError(w, "remove neighbor from year", err)
 		return
 	}
 	s.audit(r, "remove_neighbor", "year", yearID, s.neighborName(r, neighborID)+" · Jahr "+s.yearLabel(r, yearID))
 	s.setFlash(w, r, "success", "Nachbar aus dem Jahr entfernt.")
 	redirect(w, r, dashboardURL(yearID))
+}
+
+// membershipDependentLabel names a store.MembershipInUseError kind in German.
+func membershipDependentLabel(kind string) string {
+	switch kind {
+	case "entries":
+		return "Buchungen"
+	case "ledger":
+		return "Verrechnungspositionen (Konto)"
+	case "payments":
+		return "Zahlungen"
+	case "invoices":
+		return "Belege (Rechnung, Abschlag oder Gutschrift)"
+	case "payment_plans":
+		return "Raten im Ratenplan"
+	case "beleg_sends":
+		return "vermerkte Beleg-Versendungen"
+	case "dunning_notices":
+		return "Mahnungen"
+	}
+	return "Einträge"
 }
 
 // handleNeighborUpdate changes a neighbor's name, note, address, and tax id.
@@ -300,7 +306,14 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		paymentTerm = &n
 	}
-	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email, iban, paymentTerm); err != nil {
+	// A refused update (anonymized or unknown neighbor) writes nothing, so it is
+	// neither reported as success nor audited: the append-only log must not
+	// record a diff that never reached the database.
+	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email, iban, paymentTerm); errors.Is(err, store.ErrNeighborAnonymized) {
+		s.setFlash(w, r, "error", "Dieser Nachbar wurde anonymisiert — seine Daten können nicht mehr bearbeitet werden.")
+	} else if errors.Is(err, store.ErrNotFound) {
+		s.setFlash(w, r, "error", "Nachbar nicht gefunden.")
+	} else if err != nil {
 		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")
 	} else {
 		detail := name

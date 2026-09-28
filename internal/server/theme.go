@@ -52,9 +52,28 @@ func safeReturnPath(r *http.Request, fallback string) string {
 	if !strings.HasPrefix(u.Path, "/") || strings.HasPrefix(u.Path, "//") || strings.Contains(u.Path, "\\") {
 		return fallback
 	}
-	target := u.Path
+	// Control characters are refused outright, decoded or not: browsers strip a
+	// tab or newline from a Location value, so "/%09/evil.com" — which passes the
+	// checks above once decoded to "/\t/evil.com" — would be followed as
+	// "//evil.com".
+	if hasControlChar(u.Path) || hasControlChar(u.RawQuery) {
+		return fallback
+	}
+	// Emit the ESCAPED path, never the decoded one, so nothing the Referer
+	// percent-encoded reaches the Location header raw.
+	target := u.EscapedPath()
+	if len(target) == 0 || target[0] != '/' ||
+		(len(target) > 1 && (target[1] == '/' || target[1] == '\\')) ||
+		strings.Contains(target[1:], "\\") {
+		return fallback
+	}
 	if u.RawQuery != "" {
 		target += "?" + u.RawQuery
 	}
 	return target
+}
+
+// hasControlChar reports whether s contains an ASCII control character or DEL.
+func hasControlChar(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0
 }

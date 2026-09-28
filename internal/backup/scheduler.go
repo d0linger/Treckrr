@@ -11,12 +11,15 @@ import (
 // Distinct from the application/restore and memory-heavy work leases.
 const backupSchedulerLeaseKey int64 = 472019260912
 
-// schedulerState is the cluster-wide success and retry clock for each target.
+// schedulerState is the cluster-wide success and retry clock for each target,
+// plus the start time of a scheduled run that has not reported back yet.
 type schedulerState struct {
-	volumeLast  time.Time
-	volumeRetry time.Time
-	s3Last      time.Time
-	s3Retry     time.Time
+	volumeLast    time.Time
+	volumeRetry   time.Time
+	volumeAttempt time.Time
+	s3Last        time.Time
+	s3Retry       time.Time
+	s3Attempt     time.Time
 }
 
 // acquireSchedulerLease elects one scheduler process through PostgreSQL and
@@ -63,13 +66,20 @@ func (s *Service) loadSchedulerState(ctx context.Context, fallback Status) (sche
 	if s.db == nil {
 		return state, nil
 	}
-	var volumeLast, volumeRetry, s3Last, s3Retry sql.NullTime
+	var volumeLast, volumeRetry, volumeAttempt, s3Last, s3Retry, s3Attempt sql.NullTime
 	err := s.db.QueryRowContext(ctx, `
-		SELECT volume_last_success, volume_retry_at, s3_last_success, s3_retry_at
+		SELECT volume_last_success, volume_retry_at, volume_attempt_at,
+		       s3_last_success, s3_retry_at, s3_attempt_at
 		  FROM backup_scheduler_state WHERE id=1`).Scan(
-		&volumeLast, &volumeRetry, &s3Last, &s3Retry)
+		&volumeLast, &volumeRetry, &volumeAttempt, &s3Last, &s3Retry, &s3Attempt)
 	if err != nil {
 		return schedulerState{}, fmt.Errorf("read backup scheduler state: %w", err)
+	}
+	if volumeAttempt.Valid {
+		state.volumeAttempt = volumeAttempt.Time
+	}
+	if s3Attempt.Valid {
+		state.s3Attempt = s3Attempt.Time
 	}
 	if volumeLast.Valid {
 		state.volumeLast = volumeLast.Time
@@ -117,13 +127,13 @@ func (s *Service) recordSchedulerResult(ctx context.Context, destination string,
 		if success {
 			_, err := s.db.ExecContext(ctx, `
 				UPDATE backup_scheduler_state
-				   SET volume_last_success=$1, volume_retry_at=NULL, updated_at=now()
+				   SET volume_last_success=$1, volume_retry_at=NULL, volume_attempt_at=NULL, updated_at=now()
 				 WHERE id=1`, now)
 			return err
 		}
 		_, err := s.db.ExecContext(ctx, `
 			UPDATE backup_scheduler_state
-			   SET volume_retry_at=$1, updated_at=now()
+			   SET volume_retry_at=$1, volume_attempt_at=NULL, updated_at=now()
 			 WHERE id=1`, retryAt)
 		return err
 	case "s3":
@@ -138,18 +148,73 @@ func (s *Service) recordSchedulerResult(ctx context.Context, destination string,
 		if success {
 			_, err := s.db.ExecContext(ctx, `
 				UPDATE backup_scheduler_state
-				   SET s3_last_success=$1, s3_retry_at=NULL, updated_at=now()
+				   SET s3_last_success=$1, s3_retry_at=NULL, s3_attempt_at=NULL, updated_at=now()
 				 WHERE id=1`, now)
 			return err
 		}
 		_, err := s.db.ExecContext(ctx, `
 			UPDATE backup_scheduler_state
-			   SET s3_retry_at=$1, updated_at=now()
+			   SET s3_retry_at=$1, s3_attempt_at=NULL, updated_at=now()
 			 WHERE id=1`, retryAt)
 		return err
 	default:
 		return fmt.Errorf("unknown backup scheduler destination %q", destination)
 	}
+}
+
+// markSchedulerAttempt durably records that a scheduled run of destination
+// starts now, together with a retry clock one backoff ahead. Success or
+// failure replaces both (recordSchedulerResult). If the process dies mid-run
+// they survive: the next tick logs the interrupted run as a failure and waits
+// out the backoff instead of restarting the same heavy job immediately.
+func (s *Service) markSchedulerAttempt(ctx context.Context, destination string, now time.Time) error {
+	retryAt := now.Add(statusRetryBackoff)
+	var query string
+	switch destination {
+	case "volume":
+		if s.db == nil {
+			s.volRetryAt = retryAt
+			return nil
+		}
+		query = `UPDATE backup_scheduler_state
+		            SET volume_attempt_at=$1, volume_retry_at=$2, updated_at=now()
+		          WHERE id=1`
+	case "s3":
+		if s.db == nil {
+			s.s3RetryAt = retryAt
+			return nil
+		}
+		query = `UPDATE backup_scheduler_state
+		            SET s3_attempt_at=$1, s3_retry_at=$2, updated_at=now()
+		          WHERE id=1`
+	default:
+		return fmt.Errorf("unknown backup scheduler destination %q", destination)
+	}
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_, err := s.db.ExecContext(settleCtx, query, now, retryAt)
+	return err
+}
+
+// clearSchedulerAttempt removes an attempt marker once its interruption has
+// been recorded, leaving the retry clock in place.
+func (s *Service) clearSchedulerAttempt(ctx context.Context, destination string) error {
+	if s.db == nil {
+		return nil
+	}
+	var query string
+	switch destination {
+	case "volume":
+		query = `UPDATE backup_scheduler_state SET volume_attempt_at=NULL, updated_at=now() WHERE id=1`
+	case "s3":
+		query = `UPDATE backup_scheduler_state SET s3_attempt_at=NULL, updated_at=now() WHERE id=1`
+	default:
+		return fmt.Errorf("unknown backup scheduler destination %q", destination)
+	}
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_, err := s.db.ExecContext(settleCtx, query)
+	return err
 }
 
 // persistSchedulerResult gives scheduler bookkeeping its own short settlement

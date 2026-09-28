@@ -377,6 +377,27 @@ test("failed pricing preview still submits exactly once after the precheck", asy
   expect(submissions[0].get("booking_direction")).toBe("out");
 });
 
+/** Shows a server error page from the single online POST instead of re-sending the form. */
+for (const [status, contentType, body, shown] of [
+  [500, "text/html", "<!doctype html><title>Fehler</title><h1>Interner Fehler</h1>", "Interner Fehler"],
+  [403, "text/plain", "<b>CSRF-Token ungültig</b>", "<b>CSRF-Token ungültig</b>"],
+] as const) {
+  test(`a ${status} answer is shown once and never re-posted`, async ({ page }) => {
+    const form = await mockPage(page);
+    const submissions: URLSearchParams[] = [];
+    await page.route("**/entries", route => {
+      submissions.push(new URLSearchParams(route.request().postData()!));
+      return route.fulfill({ status, contentType, body });
+    });
+    await ownEquipment(form);
+    await form.locator('[name="task_label"]').fill("Fehlerseite");
+    await form.getByRole("button", { name: "Buchung speichern", exact: true }).click();
+    // Plain text stays text: the markup is visible literally, not rendered.
+    await expect(page.locator("body")).toContainText(shown);
+    expect(submissions).toHaveLength(1);
+  });
+}
+
 /** Ensures personal counterparty drafts never overwrite remembered own booking defaults. */
 test("remembered defaults ignore incoming, labor and fixed drafts", async ({ page }) => {
   let form = await mockPage(page);

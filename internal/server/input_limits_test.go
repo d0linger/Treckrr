@@ -68,10 +68,11 @@ func TestPriceDecimalLimits(t *testing.T) {
 // expired cookie or rate limiter, must reject before accessing the absent store.
 func TestLogin2FACodeLimit(t *testing.T) {
 	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
-	form := url.Values{"totp": {strings.Repeat("1", maxNameLen+1)}}
+	pending := s.signPending2FA(123, []byte("binding"))
+	form := url.Values{"totp": {strings.Repeat("1", maxNameLen+1)}, csrfFieldName: {s.pending2FACSRFToken(pending)}}
 	req := httptest.NewRequest(http.MethodPost, "/login/2fa", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: pending2FACookie, Value: s.signPending2FA(123)})
+	req.AddCookie(&http.Cookie{Name: pending2FACookie, Value: pending})
 	rr := httptest.NewRecorder()
 	s.handleLogin2FA(rr, req)
 	if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/login" {
@@ -91,7 +92,7 @@ func TestStepUpInputLimits(t *testing.T) {
 		handler           http.HandlerFunc
 	}{
 		{name: "password change", field: "current_password", back: "/account/password", handler: s.handleAccountPasswordSubmit},
-		{name: "2FA confirm", field: "password", back: "/account/2fa", handler: s.handleTwoFactorConfirm},
+		{name: "2FA confirm", field: "password", back: twoFactorRetryPath, handler: s.handleTwoFactorConfirm},
 		{name: "recovery codes", field: "password", back: "/account/2fa", handler: s.handleRecoveryRegenerate},
 		{name: "2FA disable", field: "password", back: "/account/2fa", handler: s.handleTwoFactorDisable},
 	} {
@@ -119,7 +120,7 @@ func TestStepUpInputLimits(t *testing.T) {
 			s,
 			s.handleTwoFactorConfirm,
 			form,
-			"/account/2fa",
+			twoFactorRetryPath,
 			"Code darf höchstens 100 Zeichen lang sein.",
 		)
 	})

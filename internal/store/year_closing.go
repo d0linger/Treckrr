@@ -115,8 +115,10 @@ func (s *Store) YearClosingChecks(ctx context.Context, yearID int64) ([]ClosingC
 		if err := rows.Scan(&name, &rest); err != nil {
 			return nil, err
 		}
-		// Cent-level rounding leftovers are not an open item.
-		if rest.LessThan(decimal.NewFromFloat(0.01)) {
+		// openAmountExpr is already rounded to cents (models.BalanceState), so
+		// anything positive is at least one cent and open; the dunning list uses
+		// the same rule.
+		if !rest.IsPositive() {
 			continue
 		}
 		open.Count++

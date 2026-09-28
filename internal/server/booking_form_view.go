@@ -205,7 +205,7 @@ func (s *Server) updateBookingEntryV2(w http.ResponseWriter, r *http.Request, ex
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	entry, ids, ledger, people, msg, err := s.parseBookingV2(r, previous)
+	entry, ids, ledger, people, msg, err := s.parseBookingV2(r, previous, false)
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return
@@ -245,7 +245,7 @@ func (s *Server) updateBookingLedgerV2(w http.ResponseWriter, r *http.Request, e
 		s.rejectUnifiedBooking(w, r, "Art und Richtung bleiben beim Bearbeiten erhalten.")
 		return
 	}
-	_, _, ledger, _, msg, err := s.parseBookingV2(r, existing.Booking.BookingPeople())
+	_, _, ledger, _, msg, err := s.parseBookingV2(r, existing.Booking.BookingPeople(), false)
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return

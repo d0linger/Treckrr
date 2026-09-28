@@ -25,6 +25,18 @@ func TestPartialDocumentsIntegration(t *testing.T) {
 		"hours": {"2"}, "unit": {"h"},
 	})
 
+	// Sub-cent input is rejected instead of silently becoming a different cent
+	// amount in the persisted document.
+	page := e.post(fmt.Sprintf("/neighbors/%d/anzahlung", nid), url.Values{
+		"year_id": {itoa64(yid)}, "amount": {"9,995"}, "label": {"Ungültiger Abschlag"},
+	})
+	if !strings.Contains(page, msgMoneyCents) {
+		t.Errorf("sub-cent Abschlag did not show the precision error")
+	}
+	if got, err := e.st.ListAnzahlungen(e.ctx, yid, nid); err != nil || len(got) != 0 {
+		t.Fatalf("sub-cent Abschlag was persisted: n=%d err=%v", len(got), err)
+	}
+
 	// Two Abschläge: 30 and 20.
 	e.post(fmt.Sprintf("/neighbors/%d/anzahlung", nid), url.Values{
 		"year_id": {itoa64(yid)}, "amount": {"30"}, "label": {"1. Abschlag"}, "due_on": {"2026-06-02"},
@@ -55,7 +67,7 @@ func TestPartialDocumentsIntegration(t *testing.T) {
 	}
 
 	// Journal: both Abschläge are listed but carry no revenue.
-	page := e.get(fmt.Sprintf("/rechnungsjournal?year=%d", yid))
+	page = e.get(fmt.Sprintf("/rechnungsjournal?year=%d", yid))
 	if !strings.Contains(page, "Abschlag") || !strings.Contains(page, anz[0].Number) {
 		t.Errorf("journal does not list the Abschläge")
 	}
@@ -81,7 +93,7 @@ func TestPartialDocumentsIntegration(t *testing.T) {
 	}
 
 	// Now the Schlussrechnung: the single tax document, at its full amount.
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{"year_id": {itoa64(yid)}})
+	e.postIssue(nid, url.Values{"year_id": {itoa64(yid)}})
 	iv, err := e.st.GetInvoice(e.ctx, yid, nid)
 	if err != nil {
 		t.Fatalf("Schlussrechnung: %v", err)

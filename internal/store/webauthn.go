@@ -122,13 +122,28 @@ func (s *Store) AddWebauthnCredential(ctx context.Context, userID int64, c model
 // TouchWebauthnCredential updates the signature counter, current backup state
 // and last-used time after a successful login. Backup-State (BS) can change over
 // a credential's life (it flips when the authenticator first syncs), so the
-// latest value is tracked here for the next assertion; the counter is kept for
-// clone-detection hygiene.
-func (s *Store) TouchWebauthnCredential(ctx context.Context, credentialID []byte, signCount uint32, backupState bool) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE webauthn_credentials SET sign_count=$1, backup_state=$2, last_used_at=now() WHERE credential_id=$3`,
+// latest value is tracked here for the next assertion.
+//
+// The counter only moves forward: the row is updated when the stored count is
+// below the asserted one, or when both are 0 (a counter-less synced passkey).
+// An unconditional write was last-writer-wins, so of two racing assertions the
+// lower count could land and mask a later regression. advanced=false means the
+// counter did not advance — a regression, or a lost race against a higher
+// count — and the caller must treat it as a possible clone. A credential that
+// no longer exists also reports false.
+func (s *Store) TouchWebauthnCredential(ctx context.Context, credentialID []byte, signCount uint32, backupState bool) (advanced bool, err error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE webauthn_credentials SET sign_count=$1, backup_state=$2, last_used_at=now()
+		  WHERE credential_id=$3 AND (sign_count < $1 OR (sign_count = 0 AND $1 = 0))`,
 		int64(signCount), backupState, credentialID)
-	return err
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // DeleteWebauthnCredential removes one of the user's passkeys and returns its name,

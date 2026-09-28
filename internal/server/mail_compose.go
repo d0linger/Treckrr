@@ -7,6 +7,7 @@ import (
 
 	"github.com/d0linger/treckrr/internal/mail"
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // ---- E-Mail-Vorlagen und Kopie-Empfänger (Ausbaukarte 99) ------------------
@@ -45,4 +46,18 @@ func (s *Server) sendMailCopy(ctx context.Context, company models.Company, subje
 	if err := mail.Send(ctx, s.cfg, cc, "[Kopie] "+subject, body, atts); err != nil {
 		slog.Warn("mail copy to the configured CC failed", "err", sanitizeLog(err.Error()))
 	}
+}
+
+// sendMailCopyAsync sends the CC copy outside the request path. A single-send
+// handler already spent up to one SMTP budget on the neighbor's mail; a second
+// synchronous dialog could push the redirect past the write deadline, so the
+// operator would see an error for a mail that went out. The copy runs as a
+// registered background task, so shutdown and restore drain it.
+func (s *Server) sendMailCopyAsync(ctx context.Context, company models.Company, subject, body string, atts []mail.Attachment) {
+	if strings.TrimSpace(company.MailCC) == "" {
+		return
+	}
+	s.goBackground(ctx, store.MailDeliveryBudget, func(copyCtx context.Context) {
+		s.sendMailCopy(copyCtx, company, subject, body, atts)
+	})
 }

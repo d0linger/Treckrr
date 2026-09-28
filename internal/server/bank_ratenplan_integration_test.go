@@ -55,7 +55,7 @@ func TestBankImportMatchingIntegration(t *testing.T) {
 		"gespann_id": {itoa64(e.gespannID)}, "entry_date": {"2026-05-10"},
 		"hours": {"2"}, "unit": {"h"},
 	})
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{"year_id": {itoa64(yid)}})
+	e.postIssue(nid, url.Values{"year_id": {itoa64(yid)}})
 	iv, err := e.st.GetInvoice(e.ctx, yid, nid)
 	if err != nil {
 		t.Fatalf("invoice: %v", err)
@@ -140,7 +140,7 @@ func TestBankImportMatchingIntegration(t *testing.T) {
 
 	// Commit with the manual assignment; all three credits must book.
 	e.post("/payments/import", url.Values{
-		"raw":                     {statement},
+		"upload_token":            {extractValue(t, page, "upload_token")},
 		"assign_" + unmatchedHash: {itoa64(iv.ID)},
 	})
 	pays, err := e.st.ListPayments(e.ctx, yid, nid)
@@ -175,7 +175,7 @@ func TestBankImportMatchingIntegration(t *testing.T) {
 
 	// Re-committing the same statement must book nothing (hash de-dup).
 	e.post("/payments/import", url.Values{
-		"raw":                     {statement},
+		"upload_token":            {extractValue(t, page, "upload_token")},
 		"assign_" + unmatchedHash: {itoa64(iv.ID)},
 	})
 	if pays, _ = e.st.ListPayments(e.ctx, yid, nid); len(pays) != 3 {

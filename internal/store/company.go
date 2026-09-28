@@ -394,11 +394,39 @@ func (s *Store) BackfillInvoiceSnapshots(ctx context.Context) (int, error) {
 	return n, nil
 }
 
+// ErrInvoiceContentChanged reports that the invoice content rebuilt under the
+// account lock no longer matches the preview the operator confirmed.
+var ErrInvoiceContentChanged = errors.New("invoice content changed since preview")
+
 // IssueInvoice freezes the current invoice content (Festschreibung) under a
 // sequential per-year number and stores it, or returns the existing active
 // invoice if one is already issued (idempotent). Content and number are fixed
 // once, so the document stays stable regardless of later booking/price changes.
+//
+// It freezes whatever the content is at commit time. The operator-facing paths
+// use IssueInvoiceConfirmed, which binds the number to the previewed content.
 func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year int, issuedOn time.Time) (models.Invoice, error) {
+	return s.issueInvoice(ctx, yearID, neighborID, year, issuedOn, "")
+}
+
+// IssueInvoiceConfirmed is IssueInvoice bound to the content the operator saw:
+// confirmedHash is the preview's InvoiceContent.Hash (from BuildInvoiceContent).
+// The content is rebuilt under the account lock that serializes every booking
+// write, and if it differs — a booking added, edited or voided, a price basis
+// or master data changed since the preview — nothing is issued and
+// ErrInvoiceContentChanged is returned. A number is legally fixed (§ 131) the
+// moment it is issued; it must never cover lines nobody looked at. An empty
+// hash is refused the same way.
+func (s *Store) IssueInvoiceConfirmed(ctx context.Context, yearID, neighborID int64, year int, issuedOn time.Time, confirmedHash string) (models.Invoice, error) {
+	if confirmedHash == "" {
+		return models.Invoice{}, ErrInvoiceContentChanged
+	}
+	return s.issueInvoice(ctx, yearID, neighborID, year, issuedOn, confirmedHash)
+}
+
+// issueInvoice implements IssueInvoice; a non-empty confirmedHash must match
+// the content rebuilt under the lock.
+func (s *Store) issueInvoice(ctx context.Context, yearID, neighborID int64, year int, issuedOn time.Time, confirmedHash string) (models.Invoice, error) {
 	if iv, err := s.GetInvoice(ctx, yearID, neighborID); err == nil {
 		return iv, nil
 	} else if !errors.Is(err, ErrNotFound) {
@@ -426,6 +454,12 @@ func (s *Store) IssueInvoice(ctx context.Context, yearID, neighborID int64, year
 	content, err := s.buildInvoiceContentTx(ctx, tx, yearID, neighborID)
 	if err != nil {
 		return models.Invoice{}, err
+	}
+	// Compared before the Skonto terms are folded in below: the preview's
+	// BuildInvoiceContent hash is computed without them (they anchor on the
+	// issue date, which only exists from here on).
+	if confirmedHash != "" && content.Hash != confirmedHash {
+		return models.Invoice{}, ErrInvoiceContentChanged
 	}
 	if len(content.MissingMandatory()) > 0 {
 		return models.Invoice{}, ErrInvoiceIncomplete

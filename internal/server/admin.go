@@ -122,7 +122,7 @@ func (s *Server) handleUserPassword(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/users")
 		return
 	}
-	s.setFlash(w, r, "success", "Passwort gesetzt. Bestehende Sitzungen wurden beendet.")
+	s.setFlash(w, r, "success", "Passwort gesetzt. Bestehende Sitzungen wurden beendet und Passkeys entfernt.")
 	redirect(w, r, "/admin/users")
 }
 
@@ -220,15 +220,16 @@ func (s *Server) handleUserResetTotp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// One transaction: disable the factor, discard the recovery codes, revoke every
-	// session. An admin presses this because an account is compromised or an
-	// authenticator is lost, and a partial result is the worst possible outcome —
-	// the second factor off while the sessions it protected keep running. All three
-	// therefore apply together or not at all.
+	// session and passkey. An admin presses this because an account is compromised
+	// or an authenticator is lost, and a partial result is the worst possible
+	// outcome — the second factor off while the sessions (or an attacker's
+	// passkey, which skips TOTP) keep working. All of it therefore applies
+	// together or not at all.
 	if err := s.store.ResetTotpForUser(r.Context(), id); err != nil {
 		s.serverError(w, "2fa reset", err)
 		return
 	}
-	s.setFlash(w, r, "success", "2FA für "+target.Username+" zurückgesetzt und bestehende Sitzungen beendet. Der Benutzer kann es neu einrichten.")
+	s.setFlash(w, r, "success", "2FA für "+target.Username+" zurückgesetzt, bestehende Sitzungen beendet und Passkeys entfernt. Der Benutzer kann beides neu einrichten.")
 	redirect(w, r, "/admin/users")
 }
 

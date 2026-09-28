@@ -269,10 +269,26 @@
 			form.dataset.submitting = "";
 			form.requestSubmit();
 		}
-		fetch("/api/entries/precheck?" + params.toString(), { credentials: "same-origin" })
-			.then(function (r) { return r.ok ? r.json() : {}; })
+		// Bounded: on a weak connection the browser still reports "online" while a
+		// request can hang for minutes with the save button spinning.
+		var ctrl = typeof AbortController === "function" ? new AbortController() : null;
+		var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 10000) : 0;
+		fetch("/api/entries/precheck?" + params.toString(), { credentials: "same-origin", signal: ctrl ? ctrl.signal : undefined })
+			.then(function (r) { clearTimeout(timer); return r.ok ? r.json() : {}; })
 			.then(function (d) { if (!d.warn || window.confirm(d.warn)) go(); else releaseButton(); })
-			.catch(function () { go(); }); // fail-open: never block saving on a network hiccup
+			.catch(function () {
+				clearTimeout(timer);
+				// Never block saving on a network hiccup — but a POST now would die the
+				// same way and lose the booking. offline.js queues it under its retry key
+				// instead; without offline.js (no IndexedDB) the classic submit remains.
+				if (typeof form.treckrrQueue === "function") form.treckrrQueue();
+				else go();
+			});
+	});
+	// A Back-restored page keeps the "precheck passed" marker of the booking it
+	// already saved; the next booking must run its own precheck.
+	window.addEventListener("pageshow", function (e) {
+		if (e.persisted) { form.dataset.checked = ""; form.dataset.checking = ""; }
 	});
 
 	// When the user cancels the plausibility confirm, the booking is NOT submitted,

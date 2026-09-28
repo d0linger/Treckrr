@@ -5,11 +5,13 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -114,8 +116,8 @@ func Migrate(ctx context.Context, pool *sql.DB) error {
 		return fmt.Errorf("migrate: acquire conn: %w", err)
 	}
 	defer conn.Close() // releases the session advisory lock even on error
-	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, migrateLockKey); err != nil {
-		return fmt.Errorf("migrate: advisory lock: %w", err)
+	if err := acquireMigrateLock(ctx, conn); err != nil {
+		return err
 	}
 	defer func() { _, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock($1)`, migrateLockKey) }()
 
@@ -153,31 +155,92 @@ func Migrate(ctx context.Context, pool *sql.DB) error {
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", name, err)
 		}
-		tx, err := pool.BeginTx(ctx, nil)
-		if err != nil {
+		if err := applyMigration(ctx, pool, name, string(content)); err != nil {
 			return err
 		}
-		// Migrations are exempt. A schema change (an index build, a constraint
-		// validation over a large table) is precisely the long-running statement
-		// the pool-wide timeout is there to kill, and killing it half-way would
-		// leave the schema behind its recorded version. SET LOCAL reverts on
-		// commit or rollback, so only this transaction is affected.
-		if _, err := tx.ExecContext(ctx, `SET LOCAL statement_timeout = 0`); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("migration %s: lift statement timeout: %w", name, err)
+	}
+	return nil
+}
+
+// Lock waits of the migration runner. The session lock is polled rather than
+// awaited in one statement: the pool's statement_timeout (30 s) would cancel a
+// blocking pg_advisory_lock while another instance runs a long migration, and
+// the waiting instance would fail to boot. Polling a try-lock keeps each
+// statement short and bounds the whole wait by the caller's context instead.
+const (
+	migrateLockPoll = 500 * time.Millisecond
+	// migrationLockTimeout bounds how long a migration's DDL may queue for a
+	// table lock. An ALTER waiting behind a long reader otherwise blocks every
+	// later reader of that table for as long as it waits.
+	migrationLockTimeout = "10s"
+	migrationAttempts    = 5
+)
+
+// acquireMigrateLock takes the session-level migration lock on conn, waiting
+// as long as ctx allows.
+func acquireMigrateLock(ctx context.Context, conn *sql.Conn) error {
+	for {
+		var locked bool
+		if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, migrateLockKey).Scan(&locked); err != nil {
+			return fmt.Errorf("migrate: advisory lock: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, string(content)); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("apply migration %s: %w", name, err)
+		if locked {
+			return nil
 		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO schema_migrations (name) VALUES ($1)`, name); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("record migration %s: %w", name, err)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("migrate: advisory lock: %w", ctx.Err())
+		case <-time.After(migrateLockPoll):
 		}
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit migration %s: %w", name, err)
+	}
+}
+
+// applyMigration runs one migration in its own transaction and retries the
+// whole transaction when its DDL could not get a table lock within
+// migrationLockTimeout; the rollback has released everything it held.
+func applyMigration(ctx context.Context, pool *sql.DB, name, content string) error {
+	var err error
+	for attempt := 1; attempt <= migrationAttempts; attempt++ {
+		err = applyMigrationOnce(ctx, pool, name, content)
+		var pgErr *pgconn.PgError
+		if err == nil || !errors.As(err, &pgErr) || pgErr.Code != "55P03" { // lock_not_available
+			return err
 		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(time.Duration(attempt) * time.Second):
+		}
+	}
+	return err
+}
+
+func applyMigrationOnce(ctx context.Context, pool *sql.DB, name, content string) error {
+	tx, err := pool.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }() // no-op after Commit
+	// Migrations are exempt. A schema change (an index build, a constraint
+	// validation over a large table) is precisely the long-running statement
+	// the pool-wide timeout is there to kill, and killing it half-way would
+	// leave the schema behind its recorded version. SET LOCAL reverts on
+	// commit or rollback, so only this transaction is affected.
+	if _, err := tx.ExecContext(ctx, `SET LOCAL statement_timeout = 0`); err != nil {
+		return fmt.Errorf("migration %s: lift statement timeout: %w", name, err)
+	}
+	if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '`+migrationLockTimeout+`'`); err != nil {
+		return fmt.Errorf("migration %s: set lock timeout: %w", name, err)
+	}
+	if _, err := tx.ExecContext(ctx, content); err != nil {
+		return fmt.Errorf("apply migration %s: %w", name, err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO schema_migrations (name) VALUES ($1)`, name); err != nil {
+		return fmt.Errorf("record migration %s: %w", name, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration %s: %w", name, err)
 	}
 	return nil
 }

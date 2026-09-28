@@ -19,6 +19,11 @@ const totpTestFixture = "JBSWY3DPEHPK3PXP" // #nosec G101 -- public test seed, n
 func TestEnsureAdminValidatesOnlyCredentialWritesIntegration(t *testing.T) {
 	st, pool := scratchStore(t)
 	ctx := t.Context()
+	// With no administrator yet, a missing ADMIN_USERNAME is created — so a weak
+	// bootstrap value must be rejected before that write.
+	if err := st.EnsureAdmin(ctx, "fresh-bootstrap", "weak-password", false); err == nil {
+		t.Fatal("weak bootstrap password was accepted for a new admin")
+	}
 	username := fmt.Sprintf("legacy-admin-%d", time.Now().UnixNano())
 	if _, err := st.CreateUser(ctx, username, "existing-admin-123", models.RoleAdmin); err != nil {
 		t.Fatal(err)
@@ -32,8 +37,10 @@ func TestEnsureAdminValidatesOnlyCredentialWritesIntegration(t *testing.T) {
 	if _, err := st.AuthenticateUser(ctx, username, "existing-admin-123"); err != nil {
 		t.Fatalf("rejected reset changed the existing credential: %v", err)
 	}
-	if err := st.EnsureAdmin(ctx, username+"-missing", "weak-password", false); err == nil {
-		t.Fatal("weak bootstrap password was accepted for a new admin")
+	// Once an administrator exists, a missing ADMIN_USERNAME is not re-created at
+	// all (AUTH-02), so the unused weak value cannot block startup either.
+	if err := st.EnsureAdmin(ctx, username+"-missing", "weak-password", false); err != nil {
+		t.Fatalf("unused bootstrap value blocked startup with an admin present: %v", err)
 	}
 
 	editor := fmt.Sprintf("legacy-editor-%d", time.Now().UnixNano())

@@ -82,16 +82,64 @@ func (s *Store) AttemptMail(ctx context.Context, id int64,
 func (s *Store) ProcessMailOutbox(ctx context.Context,
 	send MailSender,
 ) (delivered, exhausted int, err error) {
-	// A process can die after transmitting DATA but before settling the row.
-	// Once two per-message budgets have elapsed, retrying that claim is unsafe.
+	// A process can die while it holds a claim. Once two per-message budgets
+	// have elapsed the claim is stale. Every clock comparison uses the database
+	// clock, which also stamped claimed_at, so app/DB clock skew cannot sweep a
+	// live claim. A claim that provably never reached SMTP DATA cannot have
+	// delivered anything and returns to the queue (or fails once its attempts
+	// are exhausted). Anything else, including claims taken by older binaries
+	// without a phase marker, may have been delivered and is never retried.
+	staleAfter := (2 * perMailBudget).Seconds()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, `
+		UPDATE mail_outbox
+		   SET status=CASE WHEN attempts >= $2 THEN 'failed' ELSE 'pending' END,
+		       terminal_at=CASE WHEN attempts >= $2 THEN now() END,
+		       claimed_at=NULL, delivery_phase=NULL, next_attempt_at=now(),
+		       last_error='worker stopped before SMTP DATA'
+		 WHERE status='sending' AND delivery_phase='claimed'
+		   AND claimed_at < now() - make_interval(secs => $1)
+		 RETURNING `+outboxSelectColumns, staleAfter, outboxMaxAttempts)
+	if err != nil {
+		return 0, 0, err
+	}
+	var staleFailed []OutboxMail
+	for rows.Next() {
+		m, scanErr := scanOutboxMail(rows)
+		if scanErr != nil {
+			_ = rows.Close()
+			return 0, 0, scanErr
+		}
+		if m.Status == MailStatusFailed {
+			staleFailed = append(staleFailed, m)
+		}
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, 0, err
+	}
+	for _, m := range staleFailed {
+		if err := addMailAuditTx(ctx, tx, "mail_retry_failed", m, fmt.Sprintf(
+			"%s endgültig NICHT zugestellt an %s (%d Versuche): worker stopped before SMTP DATA",
+			m.Subject, m.Recipient, m.Attempts)); err != nil {
+			return 0, 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, 0, err
+	}
 	if _, err := s.db.ExecContext(ctx, `
 		UPDATE mail_outbox
 		   SET status='ambiguous', terminal_at=now(),
 		       last_error=CASE WHEN last_error='' THEN 'worker stopped during delivery' ELSE last_error END
-		 WHERE status='sending' AND claimed_at < $1`, time.Now().Add(-2*perMailBudget)); err != nil {
+		 WHERE status='sending' AND claimed_at < now() - make_interval(secs => $1)`, staleAfter); err != nil {
 		return 0, 0, err
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err = s.db.QueryContext(ctx, `
 		SELECT `+outboxSelectColumns+`
 		  FROM mail_outbox
 		 WHERE status='pending' AND next_attempt_at <= now()
@@ -143,12 +191,16 @@ func (s *Store) processOneOutboxMail(ctx context.Context, m OutboxMail, dueOnly 
 	send MailSender,
 ) (status string, attempted bool, err error) {
 	var attempts int
+	// The backoff is added to the database clock, the same clock the due query
+	// compares against, so app/DB skew cannot shorten or stretch it.
 	err = s.db.QueryRowContext(ctx, `
 		UPDATE mail_outbox
-		   SET status='sending', claimed_at=now(), attempts=attempts+1, next_attempt_at=$2,
+		   SET status='sending', claimed_at=now(), attempts=attempts+1,
+		       next_attempt_at=now() + make_interval(secs => $2),
+		       delivery_phase='claimed',
 		       message_id=COALESCE(NULLIF(message_id,''),$4)
 		 WHERE id=$1 AND status='pending' AND ($3 = false OR next_attempt_at <= now())
-		 RETURNING attempts`, m.ID, time.Now().Add(outboxBackoff(m.Attempts+1)), dueOnly, m.MessageID).
+		 RETURNING attempts`, m.ID, outboxBackoff(m.Attempts+1).Seconds(), dueOnly, m.MessageID).
 		Scan(&attempts)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m.Status, false, nil
@@ -157,7 +209,25 @@ func (s *Store) processOneOutboxMail(ctx context.Context, m OutboxMail, dueOnly 
 		return "", false, err
 	}
 
-	sendErr := send(ctx, m.MessageID, m.Recipient, m.Subject, m.Body, m.AttName, m.AttType, m.AttData)
+	// Mark the claim as "DATA started" right before the SMTP DATA command. If
+	// that write fails the transport aborts before DATA, so the mail is
+	// definitely not delivered and the ordinary retry path applies.
+	sendCtx := mail.WithDataStartHook(ctx, func(hookCtx context.Context) error {
+		res, err := s.db.ExecContext(hookCtx, `
+			UPDATE mail_outbox SET delivery_phase='data'
+			 WHERE id=$1 AND status='sending'`, m.ID)
+		if err != nil {
+			return err
+		}
+		if n, err := res.RowsAffected(); err != nil || n != 1 {
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("delivery intent %d is no longer claimed", m.ID)
+		}
+		return nil
+	})
+	sendErr := send(sendCtx, m.MessageID, m.Recipient, m.Subject, m.Body, m.AttName, m.AttType, m.AttData)
 	if sendErr == nil {
 		if err := s.settleDelivered(ctx, m, attempts); err != nil {
 			detail := "delivery confirmed but bookkeeping failed: " + safeMailError(err)
@@ -244,10 +314,10 @@ func (s *Store) settleDelivered(ctx context.Context, m OutboxMail, attempts int)
 // settleRejected either schedules a bounded retry or records terminal failure.
 func (s *Store) settleRejected(ctx context.Context, m OutboxMail, attempts int, sendErr error) (string, bool, error) {
 	status := MailStatusPending
-	terminal := any(nil)
+	terminal := false
 	if attempts >= outboxMaxAttempts {
 		status = MailStatusFailed
-		terminal = time.Now()
+		terminal = true
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -256,7 +326,7 @@ func (s *Store) settleRejected(ctx context.Context, m OutboxMail, attempts int, 
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE mail_outbox
-		   SET status=$2, claimed_at=NULL, terminal_at=$3, last_error=$4
+		   SET status=$2, claimed_at=NULL, terminal_at=CASE WHEN $3 THEN now() END, last_error=$4
 		 WHERE id=$1 AND status='sending'`, m.ID, status, terminal, safeMailError(sendErr)); err != nil {
 		return "", true, err
 	}

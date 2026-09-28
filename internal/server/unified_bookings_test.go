@@ -5,16 +5,15 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 )
 
-// TestUnifiedEntryDate requires explicit dates in unified forms while retaining
-// the current-time fallback used by legacy clients and queued submissions.
+// TestUnifiedEntryDate requires valid dates in unified AND legacy forms: a queued
+// legacy submission replayed days later must never be booked on the replay day.
 func TestUnifiedEntryDate(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name, kind, date  string
-		invalid, fallback bool
+		name, kind, date string
+		invalid          bool
 	}{
 		{name: "explicit missing", kind: "quantity", invalid: true},
 		{name: "explicit malformed", kind: "quantity", date: "not-a-date", invalid: true},
@@ -22,9 +21,9 @@ func TestUnifiedEntryDate(t *testing.T) {
 		{name: "explicit non-leap day", kind: "quantity", date: "2026-02-29", invalid: true},
 		{name: "explicit leap day", kind: "quantity", date: "2024-02-29"},
 		{name: "explicit trimmed", kind: " quantity ", date: " 2026-09-13 "},
-		{name: "legacy missing", fallback: true},
-		{name: "legacy malformed", date: "not-a-date", fallback: true},
-		{name: "legacy impossible", date: "2026-02-30", fallback: true},
+		{name: "legacy missing", invalid: true},
+		{name: "legacy malformed", date: "not-a-date", invalid: true},
+		{name: "legacy impossible", date: "2026-02-30", invalid: true},
 		{name: "legacy valid", date: "2026-09-13"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -35,9 +34,7 @@ func TestUnifiedEntryDate(t *testing.T) {
 			}
 			r := httptest.NewRequest("POST", "/entries", strings.NewReader(form.Encode()))
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			before := time.Now()
 			entry, ids, msg, err := (&Server{}).resolveUnifiedEntryFromForm(r)
-			after := time.Now()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -50,11 +47,7 @@ func TestUnifiedEntryDate(t *testing.T) {
 			if entry == nil || msg != "" {
 				t.Fatalf("valid/legacy form rejected: entry=%+v message=%q", entry, msg)
 			}
-			if tc.fallback {
-				if entry.Date.Before(before) || entry.Date.After(after) {
-					t.Fatalf("legacy fallback date = %v, outside %v .. %v", entry.Date, before, after)
-				}
-			} else if got := entry.Date.Format("2006-01-02"); got != strings.TrimSpace(tc.date) {
+			if got := entry.Date.Format("2006-01-02"); got != strings.TrimSpace(tc.date) {
 				t.Errorf("date = %s, want %s", got, tc.date)
 			}
 		})

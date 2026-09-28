@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -173,11 +174,33 @@ func (s *Store) CreateNeighbor(ctx context.Context, name, note string) (int64, e
 func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note, address, taxID, email, iban string, paymentTermDays *int) error {
 	// Never re-populate personal fields on an anonymized neighbor (DSGVO Art. 17):
 	// the UI hides the edit form, and this WHERE clause is the server-side backstop
-	// against a crafted POST reviving erased data.
-	_, err := s.db.ExecContext(ctx,
+	// against a crafted POST reviving erased data. A refused update is reported
+	// (ErrNeighborAnonymized, or ErrNotFound for an unknown id) so the caller
+	// does not claim success or audit a change that never happened.
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE neighbors SET name=$1, note=$2, address=$3, tax_id=$4, email=$5, iban=$8, payment_term_days=$7 WHERE id=$6 AND NOT anonymized`,
 		name, note, address, taxID, email, id, paymentTermDays, iban)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n > 0 {
+		return nil
+	}
+	var anonymized bool
+	err = s.db.QueryRowContext(ctx, `SELECT anonymized FROM neighbors WHERE id=$1`, id).Scan(&anonymized)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return ErrNotFound
+	case err != nil:
+		return err
+	case anonymized:
+		return ErrNeighborAnonymized
+	}
+	// Not reachable in practice (Postgres counts matched rows, and anonymization
+	// is one-way); nothing was written, so never report it as a success.
+	return ErrNotFound
 }
 
 // DeleteNeighbor removes a neighbor without retained financial or delivery history.
@@ -309,7 +332,7 @@ func existingEntryForReplay(
 	if storedYearID != yearID || storedNeighborID != neighborID {
 		return 0, nil, false, ErrIdempotencyConflict
 	}
-	if storedFingerprint.String != fingerprint {
+	if !replayFingerprintMatches(storedFingerprint.String, fingerprint) {
 		return 0, nil, false, ErrIdempotencyConflict
 	}
 	if linked.Valid {
@@ -318,7 +341,129 @@ func existingEntryForReplay(
 	return id, linkedID, true, nil
 }
 
+// replayFingerprintMatches compares a retry with the stored row. A row stored
+// without a fingerprint (legacy offline format, quick rows before per-row
+// fingerprints) cannot be compared and keeps its historical "same key, same
+// booking" meaning; a stored fingerprint must match exactly.
+func replayFingerprintMatches(stored, incoming string) bool {
+	return stored == "" || stored == incoming
+}
+
+// ReplayProbe names one keyed row of an offline retry and the fingerprint of the
+// request that would create it.
+type ReplayProbe struct {
+	Key, Fingerprint string
+}
+
+// ReplayState classifies a retry key before any master data is consulted.
+type ReplayState int
+
+const (
+	// ReplayNew means the key is unused: the request is processed normally.
+	ReplayNew ReplayState = iota
+	// ReplayRecorded means this account already holds the same request.
+	ReplayRecorded
+	// ReplayDiffers means this account holds a different booking under the key.
+	ReplayDiffers
+	// ReplayLedger means a counterclaim of this account holds the key; its
+	// content can only be compared by CreateLedgerBooking.
+	ReplayLedger
+	// ReplayForeign means the key belongs to another account or year.
+	ReplayForeign
+)
+
+// ProbeReplay classifies retry keys under the same advisory key locks as the
+// creating transactions, so a concurrent first attempt is seen once committed.
+// It lets a replay deduplicate BEFORE catalog, person, year, membership and
+// invoice checks: a booking stored before its answer was lost must not be
+// reported as rejected because master data changed in the meantime.
+func (s *Store) ProbeReplay(ctx context.Context, yearID, neighborID int64, probes []ReplayProbe) ([]ReplayState, error) {
+	states := make([]ReplayState, len(probes))
+	keys := make([]string, 0, len(probes))
+	for _, p := range probes {
+		if p.Key != "" {
+			keys = append(keys, p.Key)
+		}
+	}
+	if len(keys) == 0 {
+		return states, nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockBookingKeys(ctx, tx, keys...); err != nil {
+		return nil, err
+	}
+	for i, p := range probes {
+		if p.Key == "" {
+			continue
+		}
+		var storedYearID, storedNeighborID int64
+		var fingerprint sql.NullString
+		err := tx.QueryRowContext(ctx, `SELECT billing_year_id, neighbor_id, request_fingerprint
+			FROM entries WHERE idempotency_key=$1`, p.Key).Scan(&storedYearID, &storedNeighborID, &fingerprint)
+		switch {
+		case err == nil:
+			switch {
+			case storedYearID != yearID || storedNeighborID != neighborID:
+				states[i] = ReplayForeign
+			case replayFingerprintMatches(fingerprint.String, p.Fingerprint):
+				states[i] = ReplayRecorded
+			default:
+				states[i] = ReplayDiffers
+			}
+			continue
+		case !errors.Is(err, sql.ErrNoRows):
+			return nil, err
+		}
+		err = tx.QueryRowContext(ctx, `SELECT billing_year_id, neighbor_id
+			FROM neighbor_ledger WHERE idempotency_key=$1`, p.Key).Scan(&storedYearID, &storedNeighborID)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			states[i] = ReplayNew
+		case err != nil:
+			return nil, err
+		case storedYearID != yearID || storedNeighborID != neighborID:
+			states[i] = ReplayForeign
+		default:
+			states[i] = ReplayLedger
+		}
+	}
+	return states, tx.Commit()
+}
+
+// EntryAudit is the § 132 BAO trail of a created booking. It is written in the
+// creating transaction: an audit written after commit is lost for good when the
+// process dies in between, because the client's retry then deduplicates.
+type EntryAudit struct {
+	// Action defaults to "create".
+	Action string
+	// Detail describes the main entry, CompanionDetail a pair's companion.
+	Detail, CompanionDetail string
+}
+
+func (a *EntryAudit) write(ctx context.Context, tx *sql.Tx, id int64, detail string) error {
+	if a == nil || id == 0 {
+		return nil
+	}
+	action := a.Action
+	if action == "" {
+		action = "create"
+	}
+	return addAuditTx(ctx, tx, action, "entry", strconv.FormatInt(id, 10), detail)
+}
+
+// CreateEntry inserts one booking without an audit row (import, recurrence and
+// tests audit on their own).
 func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []int64) (int64, error) {
+	return s.CreateEntryAudited(ctx, e, machineIDs, nil)
+}
+
+// CreateEntryAudited is CreateEntry with its audit row written in the same
+// transaction. A replay that deduplicates writes nothing.
+func (s *Store) CreateEntryAudited(ctx context.Context, e *models.Entry, machineIDs []int64, audit *EntryAudit) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -346,6 +491,11 @@ func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 	if err != nil {
 		return 0, err
 	}
+	if audit != nil {
+		if err := audit.write(ctx, tx, id, audit.Detail); err != nil {
+			return 0, err
+		}
+	}
 	return id, tx.Commit()
 }
 
@@ -362,6 +512,12 @@ func (s *Store) CreateEntry(ctx context.Context, e *models.Entry, machineIDs []i
 // If only the machine was deleted, its FK was set to NULL on the surviving
 // companion; restoring the machine also restores that link, not its pricing.
 func (s *Store) CreateEntryPair(ctx context.Context, e *models.Entry, machineIDs []int64, companion *models.Entry) (mainID, companionID int64, err error) {
+	return s.CreateEntryPairAudited(ctx, e, machineIDs, companion, nil)
+}
+
+// CreateEntryPairAudited is CreateEntryPair with an audit row for each half it
+// actually inserts, written in the same transaction.
+func (s *Store) CreateEntryPairAudited(ctx context.Context, e *models.Entry, machineIDs []int64, companion *models.Entry, audit *EntryAudit) (mainID, companionID int64, err error) {
 	if companion == nil || companion.NeighborID != e.NeighborID || companion.BillingYearID != e.BillingYearID {
 		return 0, 0, ErrNotFound
 	}
@@ -432,6 +588,14 @@ func (s *Store) CreateEntryPair(ctx context.Context, e *models.Entry, machineIDs
 			WHERE idempotency_key=$2 AND linked_entry_id IS NULL
 			  AND neighbor_id=$3 AND billing_year_id=$4 AND unit='Mannstunde'`,
 			linkID, companion.IdempotencyKey, e.NeighborID, e.BillingYearID); err != nil {
+			return 0, 0, err
+		}
+	}
+	if audit != nil {
+		if err := audit.write(ctx, tx, mainID, audit.Detail); err != nil {
+			return 0, 0, err
+		}
+		if err := audit.write(ctx, tx, companionID, audit.CompanionDetail); err != nil {
 			return 0, 0, err
 		}
 	}
@@ -523,6 +687,16 @@ func (s *Store) SyncPairHours(ctx context.Context, partnerID int64, hours decima
 	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
 		return decimal.Zero, err
 	}
+	cost, err := syncPairHoursTx(ctx, tx, partnerID, hours)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	return cost, tx.Commit()
+}
+
+// syncPairHoursTx is SyncPairHours inside a transaction that already holds the
+// partner's account lock.
+func syncPairHoursTx(ctx context.Context, tx *sql.Tx, partnerID int64, hours decimal.Decimal) (decimal.Decimal, error) {
 	var unit string
 	if err := tx.QueryRowContext(ctx, `SELECT unit FROM entries WHERE id=$1 FOR UPDATE`, partnerID).Scan(&unit); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -534,7 +708,7 @@ func (s *Store) SyncPairHours(ctx context.Context, partnerID int64, hours decima
 		return decimal.Zero, ErrPairHoursPrecision
 	}
 	var cost decimal.Decimal
-	err = tx.QueryRowContext(ctx, `
+	err := tx.QueryRowContext(ctx, `
 		UPDATE entries SET
 		  hours    = CASE WHEN unit = 'h' THEN $2::numeric ELSE hours END,
 		  quantity = $2::numeric,
@@ -544,10 +718,67 @@ func (s *Store) SyncPairHours(ctx context.Context, partnerID int64, hours decima
 	if errors.Is(err, sql.ErrNoRows) {
 		return decimal.Zero, ErrNotFound
 	}
+	return cost, err
+}
+
+// PairSync reports the partner half UpdateEntryWithPartner adjusted.
+type PairSync struct {
+	PartnerID int64           // 0 when there was nothing to mirror
+	Hours     decimal.Decimal // the hours mirrored onto the partner
+	Cost      decimal.Decimal // the partner's recomputed cost
+}
+
+// UpdateEntryWithPartner saves an edited booking and, when syncPair is set,
+// mirrors its hours onto the linked partner — in ONE transaction under the
+// account lock. As two separate transactions an invoice issued between them
+// froze a pair whose machine and Mannstunden hours disagreed; now either both
+// halves change or neither does (ErrPairHoursPrecision leaves both untouched).
+// The partner is re-resolved under the lock, and one on another account is
+// never touched.
+func (s *Store) UpdateEntryWithPartner(ctx context.Context, e *models.Entry, machineIDs []int64, syncPair bool) (PairSync, error) {
+	ensureUnit(e)
+	yearID, neighborID, err := s.entryAccount(ctx, e.ID)
 	if err != nil {
-		return decimal.Zero, err
+		return PairSync{}, err
 	}
-	return cost, tx.Commit()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return PairSync{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
+		return PairSync{}, err
+	}
+	if err := updateEntryTx(ctx, tx, e, machineIDs); err != nil {
+		return PairSync{}, err
+	}
+	var sync PairSync
+	if syncPair {
+		hours := e.Hours
+		if e.Unit != "" && e.Unit != "h" {
+			hours = e.Quantity
+		}
+		var partner sql.NullInt64
+		// Same preference as LinkedPartnerID (the forward link first), limited
+		// to this account.
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COALESCE(
+			  (SELECT p.id FROM entries src JOIN entries p ON p.id = src.linked_entry_id
+			    WHERE src.id=$1 AND p.billing_year_id=$2 AND p.neighbor_id=$3),
+			  (SELECT id FROM entries
+			    WHERE linked_entry_id=$1 AND billing_year_id=$2 AND neighbor_id=$3
+			    ORDER BY id LIMIT 1))`, e.ID, yearID, neighborID).Scan(&partner); err != nil {
+			return PairSync{}, err
+		}
+		if partner.Valid && hours.IsPositive() {
+			cost, err := syncPairHoursTx(ctx, tx, partner.Int64, hours)
+			if err != nil {
+				return PairSync{}, err
+			}
+			sync = PairSync{PartnerID: partner.Int64, Hours: hours, Cost: cost}
+		}
+	}
+	return sync, tx.Commit()
 }
 
 // DeleteEntry removes an entry.
@@ -837,10 +1068,10 @@ func (s *Store) YearNeighborSummaries(ctx context.Context, yearID int64) ([]Year
 		); err != nil {
 			return nil, err
 		}
-		r.Remaining = r.Payable.Sub(r.PaidAmount)
+		r.Remaining = models.RoundMoney(r.Payable.Sub(r.PaidAmount))
 		// A negative rest is money I owe the neighbor, not a settled account.
-		r.Paid = r.Remaining.IsZero()
-		r.Credit = r.Remaining.IsNegative()
+		// Judged at cent precision, like the dunning list and the checklist.
+		r.Paid, r.Credit = models.BalanceState(r.Remaining)
 		out = append(out, r)
 	}
 	return out, rows.Err()

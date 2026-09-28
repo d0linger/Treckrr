@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"regexp"
@@ -165,13 +166,52 @@ func (s *Server) handlePaymentImportForm(w http.ResponseWriter, r *http.Request)
 	s.render(w, r, "payment_import", data)
 }
 
+// msgImportTooLarge is the flash for an import file over maxImportPayloadLen.
+const msgImportTooLarge = "Die Datei ist zu groß — höchstens 4 MB sind möglich. Bitte den Export auf einen kürzeren Zeitraum beschränken."
+
+// msgImportExpired is the flash for a commit whose server-side upload is gone
+// (expired, already purged, or never made on this account).
+const msgImportExpired = "Die Vorschau ist abgelaufen oder ungültig — bitte die Datei erneut hochladen und prüfen."
+
+// readImportFile reads an uploaded import file, reporting (nil, false, nil)
+// when it exceeds maxImportPayloadLen. The old io.LimitReader silently
+// truncated such a file and parsed whatever prefix fit.
+func readImportFile(file io.Reader) ([]byte, bool, error) {
+	raw, err := io.ReadAll(io.LimitReader(file, maxImportPayloadLen+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if len(raw) > maxImportPayloadLen {
+		return nil, false, nil
+	}
+	return raw, true, nil
+}
+
+// currentUserID is the id of the signed-in user, 0 without one.
+func (s *Server) currentUserID(r *http.Request) int64 {
+	if u := s.currentUser(r); u != nil {
+		return u.ID
+	}
+	return 0
+}
+
 // handlePaymentImportPreview parses the uploaded statement and shows which credits
-// match an invoice. Nothing is written; the raw content is echoed for commit.
+// match an invoice. No payment is written; the file itself is parked server-side
+// (store.SaveImportUpload) and the commit names it by token. Echoing the raw
+// file through a hidden field made a medium-sized statement exceed the body cap
+// on its way back and fail as a bogus CSRF error.
 func (s *Server) handlePaymentImportPreview(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(4 << 20); err != nil {
+	if err := r.ParseMultipartForm(maxImportPayloadLen); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			s.setFlash(w, r, "error", msgImportTooLarge)
+			redirect(w, r, "/payments/import")
+			return
+		}
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		s.setFlash(w, r, "error", "Bitte eine CSV- oder camt.053-Datei wählen.")
@@ -179,9 +219,14 @@ func (s *Server) handlePaymentImportPreview(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer file.Close()
-	raw, err := io.ReadAll(io.LimitReader(file, 4<<20))
+	raw, fits, err := readImportFile(file)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	if !fits {
+		s.setFlash(w, r, "error", msgImportTooLarge)
+		redirect(w, r, "/payments/import")
 		return
 	}
 	txns, perr := bankimport.Parse(raw)
@@ -212,28 +257,87 @@ func (s *Server) handlePaymentImportPreview(w http.ResponseWriter, r *http.Reque
 		}
 		data["Assignable"] = assignable
 	}
+	token, err := s.store.SaveImportUpload(r.Context(), store.ImportUploadPayment, s.currentUserID(r), 0, raw)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	data["Rows"] = rows
 	data["Importable"] = importable
 	data["Total"] = len(rows)
-	data["Raw"] = string(raw)
+	data["UploadToken"] = token
 	s.render(w, r, "payment_import", data)
 }
 
-// handlePaymentImportCommit re-parses the echoed statement and books each matched,
-// not-yet-imported credit as a payment. RecordPaymentImport dedups so a re-submit
-// (or re-uploading the same statement) never double-books.
+// paymentImportSkip is a credit the commit could not book, with the reason.
+type paymentImportSkip struct {
+	Label  string // invoice number, or amount when there is none
+	Reason string
+}
+
+// paymentImportSkipReason classifies a per-credit ImportPayment failure. A
+// business refusal (erased account, invoice no longer issued, neighbor no
+// longer in the year) concerns that credit alone: it is reported and the rest
+// of the statement is still booked. ok=false means an infrastructure error.
+func paymentImportSkipReason(err error) (string, bool) {
+	switch {
+	case errors.Is(err, store.ErrNeighborAnonymized):
+		return "Nachbar anonymisiert", true
+	case errors.Is(err, store.ErrNotFound):
+		return "Rechnung oder Nachbar nicht mehr buchbar", true
+	case errors.Is(err, store.ErrYearCompleted):
+		return "Abrechnungsjahr abgeschlossen", true
+	case errors.Is(err, store.ErrInvoiceLocked):
+		return "Rechnung gesperrt", true
+	}
+	return "", false
+}
+
+// paymentImportSummary is the commit's flash text: booked count first, then
+// every skipped credit with its reason (the first few by name).
+func paymentImportSummary(booked int, skipped []paymentImportSkip) string {
+	msg := itoa(booked) + " Zahlung(en) importiert und zugeordnet."
+	if len(skipped) == 0 {
+		return msg
+	}
+	const named = 5
+	parts := make([]string, 0, named)
+	for i, sk := range skipped {
+		if i == named {
+			parts = append(parts, "…")
+			break
+		}
+		parts = append(parts, sk.Label+" ("+sk.Reason+")")
+	}
+	return msg + " " + itoa(len(skipped)) + " übersprungen: " + strings.Join(parts, ", ") + "."
+}
+
+// handlePaymentImportCommit re-parses the statement parked by the preview and
+// books each matched, not-yet-imported credit as a payment. ImportPayment dedups
+// by hash, so a re-submit (or re-uploading the same statement) never
+// double-books. A credit the store refuses for a business reason is skipped and
+// named in the summary; only an infrastructure error aborts with a 500.
 func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
-	raw := r.FormValue("raw")
-	if len(raw) > maxImportPayloadLen {
-		s.setFlash(w, r, "error", "Importdaten zu groß.")
+	token := trimmed(r, "upload_token")
+	if token == "" || len(token) > maxNameLen {
+		s.setFlash(w, r, "error", msgImportExpired)
 		redirect(w, r, "/payments/import")
 		return
 	}
-	txns, perr := bankimport.Parse([]byte(raw))
+	raw, err := s.store.LoadImportUpload(r.Context(), token, store.ImportUploadPayment, s.currentUserID(r), 0)
+	if errors.Is(err, store.ErrNotFound) {
+		s.setFlash(w, r, "error", msgImportExpired)
+		redirect(w, r, "/payments/import")
+		return
+	} else if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	txns, perr := bankimport.Parse(raw)
 	if perr != nil {
 		s.setFlash(w, r, "error", perr.Error())
 		redirect(w, r, "/payments/import")
@@ -255,6 +359,7 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	booked := 0
+	var skipped []paymentImportSkip
 	for _, row := range rows {
 		if !row.Importable() {
 			continue
@@ -270,14 +375,31 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		// credit marked-imported-but-unbooked (which would skip it forever).
 		fresh, err := s.store.ImportPayment(r.Context(), row.Txn.Hash, row.YearID, row.NeighborID, row.InvoiceID, row.Txn.Amount, paidOn, note)
 		if err != nil {
-			s.serverError(w, r.URL.Path, err)
-			return
+			reason, business := paymentImportSkipReason(err)
+			if !business {
+				// Rows booked so far are committed and audited (ImportPayment
+				// writes its audit row in the same transaction).
+				s.serverError(w, r.URL.Path, err)
+				return
+			}
+			// The transaction rolled back, hash included: once the cause is
+			// fixed, a re-import books this credit.
+			label := row.InvoiceNumber
+			if label == "" {
+				label = deDecimal(row.Txn.Amount) + " €"
+			}
+			skipped = append(skipped, paymentImportSkip{Label: label, Reason: reason})
+			continue
 		}
 		if !fresh {
 			continue // a concurrent/earlier import already booked it
 		}
 		booked++
 	}
-	s.setFlash(w, r, "success", itoa(booked)+" Zahlung(en) importiert und zugeordnet.")
+	kind := "success"
+	if len(skipped) > 0 {
+		kind = "error"
+	}
+	s.setFlash(w, r, kind, paymentImportSummary(booked, skipped))
 	redirect(w, r, "/payments/import")
 }

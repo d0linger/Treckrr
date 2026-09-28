@@ -45,6 +45,7 @@ type Server struct {
 	started         time.Time
 	maintenance     atomic.Bool  // set during a restore: the gate serves 503 for normal traffic
 	leaseLost       atomic.Bool  // irreversible: the application lease session was lost
+	draining        atomic.Bool  // process shutdown began: no new background tasks
 	activity        sync.RWMutex // drains requests and background maintenance before restore
 	restoreLease    func(context.Context) (func() error, error)
 	backgroundMu    sync.Mutex
@@ -296,6 +297,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/backup/s3/test", s.admin(s.handleBackupS3Test))
 	mux.Handle("POST /admin/backup/s3/run", s.admin(s.handleBackupS3Run))
 	mux.Handle("GET /admin/backup/s3/file/{name}", s.admin(s.handleBackupS3File))
+	mux.Handle("POST /admin/backup/held-mail/{id}/release", s.admin(s.handleHeldMailRelease))
+	mux.Handle("POST /admin/backup/held-mail/{id}/discard", s.admin(s.handleHeldMailDiscard))
 	mux.Handle("GET /admin/company", s.admin(s.handleCompany))
 	mux.Handle("POST /admin/company", s.admin(s.handleCompanySave))
 	mux.Handle("GET /admin/users", s.admin(s.handleUsers))
@@ -422,7 +425,12 @@ const maxRequestBody = 1 << 20 // 1 MiB
 // can be restored either way: `treckrr restore <file>` reads from BACKUP_DIR and
 // never passes through this HTTP path, but defaults to the same archive cap.
 // Larger offline restores require BACKUP_CLI_MAX_BYTES and provisioned memory.
-const maxBackupUpload = 128 << 20 // 128 MiB
+//
+// The 128 MiB are the ceiling, not a constant: backup.OnlineBudget lowers the
+// allowance in a container started with a smaller memory limit (same 1:6 ratio
+// as 128 MiB : 768 MiB), so an upload the container cannot hold is refused
+// up front instead of OOM-killing the app.
+func maxBackupUpload() int64 { return backup.OnlineBudget() }
 
 // limitBody wraps the request body in an http.MaxBytesReader so a client cannot
 // stream an unbounded payload into ParseForm (and onward into bcrypt, decoding,
@@ -457,7 +465,7 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 			limit := int64(maxRequestBody)
 			// Restore uploads a full encrypted dump — exempt those exact routes.
 			if isBackupUploadPath(r.URL.Path) {
-				// The 128 MiB allowance is for authenticated admins only. Resolve the
+				// The restore allowance (up to 128 MiB) is for authenticated admins only. Resolve the
 				// session here — outermost, before the large body is read and before
 				// CSRF's FormValue would parse it — and reject anyone else, so an
 				// unauthenticated client can't drive a memory-exhaustion parse (T-02).
@@ -465,7 +473,7 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 					http.Error(w, "Zugriff verweigert", http.StatusForbidden)
 					return
 				}
-				limit = maxBackupUpload
+				limit = maxBackupUpload()
 			} else if isPhotoUploadPath(r.URL.Path) {
 				// A phone photo exceeds 1 MiB; allow more, but only for an
 				// authenticated user (no pre-auth large-body parse).
@@ -474,6 +482,22 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 					return
 				}
 				limit = maxPhotoUpload
+			} else if isImportUploadPath(r.URL.Path) {
+				// The import previews take the statement or CSV itself (up to
+				// maxImportPayloadLen); same authenticated-only rule as photos.
+				if u := s.currentUser(r); u == nil {
+					http.Error(w, "Zugriff verweigert", http.StatusForbidden)
+					return
+				}
+				limit = maxImportUpload
+				// A body that announces its oversize is answered as what it is.
+				// Read past the cap, it would surface in csrf's FormValue as an
+				// empty token — a 403 "CSRF-Token ungültig" that sends the
+				// operator hunting for a session problem instead of a big file.
+				if r.ContentLength > limit {
+					http.Error(w, "Die Datei ist zu groß — höchstens 4 MB sind möglich. Bitte den Export auf einen kürzeren Zeitraum beschränken.", http.StatusRequestEntityTooLarge)
+					return
+				}
 			}
 			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
@@ -485,6 +509,19 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 // therefore get the large body allowance (guarded by an admin check in limitBody).
 func isBackupUploadPath(p string) bool {
 	return p == "/admin/backup/restore" || p == "/admin/backup/validate"
+}
+
+// maxImportUpload is the body allowance of the two import previews: the file
+// itself (maxImportPayloadLen, which the handlers enforce on the content) plus
+// headroom for the multipart framing and the few other form fields. The commits
+// that follow send only a token, so they stay under maxRequestBody.
+const maxImportUpload = maxImportPayloadLen + 64<<10
+
+// isImportUploadPath reports the routes that receive an import file: the
+// bank-statement and booking-CSV previews (the latter also takes the corrected
+// CSV text from its own editor).
+func isImportUploadPath(p string) bool {
+	return p == "/payments/import/preview" || p == "/entries/import/preview"
 }
 
 // isPhotoUploadPath reports the booking-photo upload route (POST
@@ -503,10 +540,11 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		user := s.currentUser(r)
 		if user == nil {
+			s.expireStaleSession(w, r)
 			// An offline replay is a background fetch, not a navigation: answer 401
 			// so the client keeps the booking queued and retries after the next
 			// login, instead of following a redirect it would read as success.
-			if r.Header.Get("X-Offline-Replay") == "1" {
+			if isOfflineReplay(r) {
 				http.Error(w, "Anmeldung erforderlich", http.StatusUnauthorized)
 				return
 			}
@@ -516,11 +554,21 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 		s.refreshSessionCookie(w, r)
 		// Force a password change before anything else (except the change page).
 		if user.MustChangePassword && r.URL.Path != "/account/password" {
+			if isOfflineReplay(r) {
+				http.Error(w, mustChangePasswordReplayMsg, http.StatusConflict)
+				return
+			}
 			http.Redirect(w, r, "/account/password", http.StatusSeeOther)
 			return
 		}
 		// Viewers may not mutate data, except managing their own account.
 		if r.Method == http.MethodPost && !user.CanWrite() && !isSelfServicePath(r.URL.Path) {
+			// A replay would read the redirect as neither success nor rejection and
+			// re-send the item on every page load; a 403 lets it surface instead.
+			if isOfflineReplay(r) {
+				http.Error(w, readOnlyReplayMsg, http.StatusForbidden)
+				return
+			}
 			s.setFlash(w, r, "error", "Nur-Lese-Konto: Änderungen sind nicht möglich.")
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
@@ -529,6 +577,20 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 		ctx = store.WithAuditActor(ctx, store.AuditActor{UserID: &user.ID, Username: user.Username, IP: s.clientIP(r)})
 		h(w, r.WithContext(ctx))
 	})
+}
+
+// Offline-replay answers for the auth branches that would otherwise redirect.
+// The client shows them to the user, so they are phrased for the user.
+const (
+	readOnlyReplayMsg           = "Nur-Lese-Konto: Änderungen sind nicht möglich. Die gespeicherte Buchung wurde nicht übernommen."
+	mustChangePasswordReplayMsg = "Passwortänderung erforderlich: Bitte zuerst das Passwort ändern, danach werden gespeicherte Buchungen erneut gesendet." // #nosec G101 -- user-facing message, not a credential
+)
+
+// isOfflineReplay reports whether the request is a background replay of a
+// queued offline submission (offline.js), which must get a status code it can
+// act on rather than a redirect.
+func isOfflineReplay(r *http.Request) bool {
+	return r.Header.Get("X-Offline-Replay") == "1"
 }
 
 // isSelfServicePath allows viewers to POST to their own account management.
@@ -542,6 +604,11 @@ func (s *Server) admin(h http.HandlerFunc) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		user := s.currentUser(r)
 		if user == nil {
+			s.expireStaleSession(w, r)
+			if isOfflineReplay(r) {
+				http.Error(w, "Anmeldung erforderlich", http.StatusUnauthorized)
+				return
+			}
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
@@ -552,6 +619,10 @@ func (s *Server) admin(h http.HandlerFunc) http.Handler {
 		// Force a pending password change before any admin action (mirrors auth()).
 		// No /admin route is the change-password page, so redirect unconditionally.
 		if user.MustChangePassword {
+			if isOfflineReplay(r) {
+				http.Error(w, mustChangePasswordReplayMsg, http.StatusConflict)
+				return
+			}
 			http.Redirect(w, r, "/account/password", http.StatusSeeOther)
 			return
 		}
@@ -594,18 +665,22 @@ func (s *Server) cookie(r *http.Request, base string) (*http.Cookie, error) {
 func (s *Server) currentUser(r *http.Request) *models.User {
 	if cached, ok := r.Context().Value(userCacheKey).(*userCache); ok {
 		if !cached.done {
-			cached.user, cached.done = s.resolveUser(r), true
+			cached.user, cached.stale = s.resolveUser(r)
+			cached.done = true
 		}
 		return cached.user
 	}
-	return s.resolveUser(r)
+	user, _ := s.resolveUser(r)
+	return user
 }
 
 // userCache memoizes one session resolution for the lifetime of a request. A nil
 // user is cached too (done), so an anonymous request doesn't re-query either.
+// stale records that the cookie was present but positively unknown to the store.
 type userCache struct {
-	user *models.User
-	done bool
+	user  *models.User
+	stale bool
+	done  bool
 }
 
 const userCacheKey ctxKey = "usercache"
@@ -617,16 +692,37 @@ func withUserCache(r *http.Request) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), userCacheKey, &userCache{}))
 }
 
-func (s *Server) resolveUser(r *http.Request) *models.User {
+// resolveUser resolves the session cookie to its user. stale reports a cookie
+// the store positively no longer honors (revoked, expired, user disabled) — as
+// opposed to a lookup that failed transiently, which must not cost the user a
+// still-valid cookie.
+func (s *Server) resolveUser(r *http.Request) (user *models.User, stale bool) {
 	c, err := s.cookie(r, sessionCookie)
 	if err != nil || c.Value == "" {
-		return nil
+		return nil, false
 	}
-	user, err := s.store.UserFromSession(r.Context(), c.Value, sessionTTL, sessionAbsoluteTTL)
+	user, err = s.store.UserFromSession(r.Context(), c.Value, sessionTTL, sessionAbsoluteTTL)
 	if err != nil {
-		return nil
+		return nil, sessionGone(err)
 	}
-	return user
+	return user, false
+}
+
+// expireStaleSession deletes a session cookie whose server-side session is
+// gone. Nothing else ever cleared it: after a password change elsewhere, a
+// revocation, an admin reset or the absolute TTL, the browser kept sending a
+// dead cookie for up to 30 days, and every login page rendered for it carried
+// a session-derived CSRF token that no longer matched anything.
+func (s *Server) expireStaleSession(w http.ResponseWriter, r *http.Request) {
+	stale := false
+	if cached, ok := r.Context().Value(userCacheKey).(*userCache); ok && cached.done {
+		stale = cached.stale
+	} else {
+		_, stale = s.resolveUser(r)
+	}
+	if stale {
+		s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
+	}
 }
 
 // refreshSessionCookie re-issues the session cookie with a fresh MaxAge so an
@@ -747,11 +843,22 @@ func staticServer() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Templates append the content-hash as ?v=<hash>, so a versioned URL changes
 		// whenever the asset changes — it can be cached hard (immutable, 1 year). An
-		// unversioned direct hit (e.g. /sw.js fetching /static/... or a bookmark) keeps
-		// the short, revalidating cache so it can't get stuck on a stale build.
-		if r.URL.Query().Get("v") != "" {
+		// unversioned direct hit (e.g. a bookmark) keeps the short, revalidating
+		// cache so it can't get stuck on a stale build.
+		//
+		// Immutable only for THIS build's hash. During a rolling deploy a page from
+		// the new instance can send ?v=<new> to an old instance; answering with the
+		// old bytes under a year-long immutable header would pin them in every cache
+		// on the way. Any other version is served but must be revalidated, and the
+		// served version is named so the service worker never stores a mismatch.
+		version := web.AssetVersion()
+		w.Header().Set("X-Treckrr-Asset-Version", version)
+		switch v := r.URL.Query().Get("v"); {
+		case v == version:
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		} else {
+		case v != "":
+			w.Header().Set("Cache-Control", "no-cache")
+		default:
 			w.Header().Set("Cache-Control", "public, max-age=3600")
 		}
 		gzipStatic(w, r, fs)

@@ -77,8 +77,8 @@ func TestCarryForwardCascadeIntegration(t *testing.T) {
 	}
 
 	// Carry the open 100 into year B: A settles to 0, B opens at 100.
-	if err := st.CarryForward(ctx, nid, fromYear, toYear, hundred, time.Now(), "Ins Folgejahr", "Übertrag"); err != nil {
-		t.Fatalf("carry: %v", err)
+	if moved, err := st.CarryForwardRemaining(ctx, nid, fromYear, toYear, time.Now(), "Ins Folgejahr", "Übertrag"); err != nil || !moved.Equal(hundred) {
+		t.Fatalf("carry: moved=%s err=%v, want 100", moved, err)
 	}
 	if !remaining(fromYear).IsZero() {
 		t.Fatalf("after carry remaining A = %s, want 0", remaining(fromYear))

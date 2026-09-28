@@ -21,9 +21,12 @@ const (
 	MailStatusSent      = "sent"
 	MailStatusFailed    = "failed"
 	MailStatusAmbiguous = "ambiguous"
-	mailQueueMaxRows    = 1_000
-	mailQueueMaxBytes   = 256 << 20
-	mailQueueLockKey    = int64(472019260913)
+	// MailStatusHeld parks an intent that a backup restore brought back as
+	// pending or sending. It is never delivered until an operator releases it.
+	MailStatusHeld    = "held"
+	mailQueueMaxRows  = 1_000
+	mailQueueMaxBytes = 256 << 20
+	mailQueueLockKey  = int64(472019260913)
 )
 
 // ErrMailQueueCapacity means the durable queue has reached its bounded row or
@@ -167,7 +170,7 @@ func (s *Store) CreateMailIntent(ctx context.Context, m OutboxMail) (OutboxMail,
 				SELECT count(*), COALESCE(sum(octet_length(att_data)),0)
 				  FROM mail_outbox
 				 WHERE id<>$1
-				   AND status IN ('pending','sending','failed','ambiguous')
+				   AND status IN ('pending','sending','failed','ambiguous','held')
 				   AND redacted_at IS NULL`, m.ID).Scan(&queueRows, &payloadBytes); err != nil {
 				return OutboxMail{}, false, err
 			}
@@ -206,7 +209,7 @@ func (s *Store) CreateMailIntent(ctx context.Context, m OutboxMail) (OutboxMail,
 	if err := tx.QueryRowContext(ctx, `
 		SELECT count(*), COALESCE(sum(octet_length(att_data)),0)
 		  FROM mail_outbox
-		 WHERE status IN ('pending','sending','failed','ambiguous')
+		 WHERE status IN ('pending','sending','failed','ambiguous','held')
 		   AND redacted_at IS NULL`).Scan(&queueRows, &payloadBytes); err != nil {
 		return OutboxMail{}, false, err
 	}
@@ -220,11 +223,11 @@ func (s *Store) CreateMailIntent(ctx context.Context, m OutboxMail) (OutboxMail,
 		INSERT INTO mail_outbox
 		       (kind, neighbor_id, billing_year_id, recipient, subject, body,
 		        att_name, att_type, att_data, next_attempt_at, meta, delivery_key, message_id)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now() + make_interval(secs => $10),$11,$12,$13)
 		ON CONFLICT (delivery_key) WHERE delivery_key IS NOT NULL DO NOTHING
 		RETURNING id, status, attempts, next_attempt_at`,
 		m.Kind, nullable(m.NeighborID), nullable(m.BillingYearID), m.Recipient, m.Subject, m.Body,
-		m.AttName, m.AttType, m.AttData, time.Now().Add(outboxBackoff(1)), meta,
+		m.AttName, m.AttType, m.AttData, outboxBackoff(1).Seconds(), meta,
 		m.DeliveryKey, m.MessageID).Scan(&m.ID, &m.Status, &m.Attempts, &next)
 	if errors.Is(err, sql.ErrNoRows) {
 		created = false
@@ -263,3 +266,7 @@ func (s *Store) PendingMailCount(ctx context.Context) (int64, error) {
 // between a successful SMTP dialog and the status='sent' UPDATE, leaving the
 // row pending and the neighbor with a duplicate invoice on every later tick.
 const perMailBudget = 45 * time.Second
+
+// MailDeliveryBudget is the bound on one synchronous delivery attempt
+// (AttemptMail), exported so request handlers can size their write deadline.
+const MailDeliveryBudget = perMailBudget

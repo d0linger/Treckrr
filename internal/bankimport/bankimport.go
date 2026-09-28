@@ -56,11 +56,32 @@ func disambiguateDuplicateHashes(txns []Txn) {
 	}
 }
 
+// maxAmountLen bounds the raw amount text handed to the decimal parser. The
+// longest plausible statement amount ("-999.999.999,99") is 15 characters; 32
+// leaves room for odd grouping while keeping the parse trivially cheap.
+const maxAmountLen = 32
+
+// maxAmount is the exclusive upper bound for a credit's magnitude. A single
+// bank transfer of a billion euros does not occur in this application, and the
+// bound keeps every later decimal operation (hashing, matching, NUMERIC
+// storage) on small numbers.
+var maxAmount = decimal.NewFromInt(1_000_000_000)
+
 // parseAmount accepts German ("1.234,56") or plain ("1234.56") decimals.
+//
+// Scientific notation is refused BEFORE the decimal parser sees it: shopspring
+// accepts exponents up to 2^31, parses them cheaply, and then setHash's
+// StringFixed(2) materializes a billion-digit number — one crafted statement
+// line would exhaust the container's memory. The same rule guards the server's
+// form decimals (parseGermanDecimalOK). Beyond syntax, an amount must stay
+// below maxAmount and carry at most two significant decimal places (cents);
+// anything else is not a euro amount and is skipped like any unparsable cell.
+// Every amount valid under these rules parses to exactly the value it did
+// before, so the de-duplication hash of already imported statements is stable.
 func parseAmount(raw string) (decimal.Decimal, bool) {
 	s := strings.TrimSpace(raw)
 	s = strings.ReplaceAll(s, " ", "")
-	if s == "" {
+	if s == "" || len(s) > maxAmountLen || strings.ContainsAny(s, "eE") {
 		return decimal.Zero, false
 	}
 	// Which separator is the decimal one? The LAST of the two decides:
@@ -80,6 +101,9 @@ func parseAmount(raw string) (decimal.Decimal, bool) {
 	}
 	d, err := decimal.NewFromString(s)
 	if err != nil {
+		return decimal.Zero, false
+	}
+	if d.Abs().GreaterThanOrEqual(maxAmount) || !d.Equal(d.Truncate(2)) {
 		return decimal.Zero, false
 	}
 	return d, true

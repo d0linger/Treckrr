@@ -20,12 +20,14 @@ type AssignableInvoice struct {
 }
 
 // ListAssignableInvoices returns the issued invoices (newest first) a credit can
-// be assigned to by hand when neither reference nor IBAN matched.
+// be assigned to by hand when neither reference nor IBAN matched. Invoices of
+// anonymized neighbors are excluded: ImportPayment refuses to book on an erased
+// account (ErrNeighborAnonymized), so offering them only produces a failed row.
 func (s *Store) ListAssignableInvoices(ctx context.Context) ([]AssignableInvoice, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT iv.id, iv.billing_year_id, iv.neighbor_id, iv.number, n.name, COALESCE(iv.gross, 0)
 		   FROM invoices iv JOIN neighbors n ON n.id = iv.neighbor_id
-		  WHERE iv.kind='invoice' AND iv.status='issued'
+		  WHERE iv.kind='invoice' AND iv.status='issued' AND NOT n.anonymized
 		  ORDER BY iv.id DESC LIMIT 200`)
 	if err != nil {
 		return nil, err
@@ -81,12 +83,16 @@ type InvoiceRefTarget struct {
 // per-transaction path (a regex query per credit, plus a neighbor-name SELECT
 // per match) cost a 400-line statement ~1600 round trips per preview and the
 // same again on commit.
+//
+// Anonymized neighbors are not targets: ImportPayment refuses to book on an
+// erased account, and a matched-but-unbookable credit used to abort the whole
+// import. Such a credit now simply stays unmatched in the preview.
 func (s *Store) IssuedInvoiceTargets(ctx context.Context) ([]InvoiceRefTarget, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT iv.id, iv.billing_year_id, iv.neighbor_id, iv.number,
 		        COALESCE(iv.payment_reference, ''), n.name
 		   FROM invoices iv JOIN neighbors n ON n.id = iv.neighbor_id
-		  WHERE iv.kind = 'invoice' AND iv.status = 'issued'
+		  WHERE iv.kind = 'invoice' AND iv.status = 'issued' AND NOT n.anonymized
 		  ORDER BY iv.id`)
 	if err != nil {
 		return nil, err
@@ -112,7 +118,7 @@ func (s *Store) NeighborIBANMap(ctx context.Context) (map[string]int64, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT upper(replace(iban, ' ', '')), CASE WHEN count(*) = 1 THEN min(id) ELSE 0 END
 		   FROM neighbors
-		  WHERE NOT archived AND btrim(iban) <> ''
+		  WHERE NOT archived AND NOT anonymized AND btrim(iban) <> ''
 		  GROUP BY upper(replace(iban, ' ', ''))`)
 	if err != nil {
 		return nil, err

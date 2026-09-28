@@ -29,7 +29,8 @@ const fixture = `<!doctype html><html lang="de"><head>
       <input name="q_person" value="${i === 1 ? "44" : "55"}">
       <input name="q_key" data-quick-key type="hidden">`).join("")}
     <button type="submit">Schnell speichern</button>
-  </form>${panel}
+  </form>
+  <form method="post" action="/logout"><button type="submit">Abmelden</button></form>${panel}
   <script src="/static/js/app.js"></script><script src="/static/js/offline.js"></script>
   <script src="/static/js/entry-form.js"></script></body></html>`;
 
@@ -227,15 +228,50 @@ test("online save still reaches exactly one POST after the precheck", async ({ p
   await page.route("**/entries", route => {
     posts++;
     expect(route.request().method()).toBe("POST");
-    return route.fulfill({ contentType: "text/html", body: "Buchung gespeichert." });
+    // The server's answer to every booking form: 303 to the account page.
+    return route.fulfill({ status: 303, headers: { Location: "/neighbors/11?year=22" } });
   });
+  await page.route("**/neighbors/11?year=22", route => route.fulfill({ contentType: "text/html", body: "Buchung gespeichert." }));
   await page.getByRole("button", { name: "Buchung speichern", exact: true }).click();
   await expect(page.locator("body")).toHaveText("Buchung gespeichert.");
   expect(prechecks).toBe(1);
   expect(posts).toBe(1);
 });
 
-test("a late rejection does not resurrect a booking explicitly discarded during sending", async ({ page, context }) => {
+test("an online save whose connection dies is queued instead of lost", async ({ page }) => {
+  let posts = 0;
+  await page.route("**/entries", route => { posts++; return route.abort("internetdisconnected"); });
+  const save = page.getByRole("button", { name: "Buchung speichern", exact: true });
+  const key = await page.locator('[name="idempotency_key"]').inputValue();
+  await save.click();
+  await expect.poll(async () => (await queue(page)).length).toBe(1);
+  expect(posts).toBe(1);
+  const item = (await queue(page))[0];
+  expect(queuedValue(item, "idempotency_key")).toBe(key); // the POST that may have arrived deduplicates
+  expect(item.created).toBeGreaterThan(0);
+  await expect(save).toBeEnabled();
+  expect(await page.locator('[name="idempotency_key"]').inputValue()).not.toBe(key);
+});
+
+test("an unreachable precheck queues the booking without attempting the POST", async ({ page }) => {
+  let posts = 0;
+  await page.route("**/api/entries/precheck?*", route => route.abort("internetdisconnected"));
+  await page.route("**/entries", route => { posts++; return route.fulfill({ status: 204 }); });
+  await page.getByRole("button", { name: "Buchung speichern", exact: true }).click();
+  await expect.poll(async () => (await queue(page)).length).toBe(1);
+  expect(posts).toBe(0);
+  await expect(page.getByRole("button", { name: "Buchung speichern", exact: true })).toBeEnabled();
+});
+
+test("an empty date is filled with the capture day", async ({ page, context }) => {
+  await page.locator('[name="entry_date"]').fill("");
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "Buchung speichern", exact: true }).click();
+  await expect.poll(async () => (await queue(page)).length).toBe(1);
+  expect(queuedValue((await queue(page))[0], "entry_date")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+});
+
+test("discarding is blocked while the booking is being sent", async ({ page, context }) => {
   let reply!: () => void;
   const release = new Promise<void>(resolve => { reply = resolve; });
   let started = false;
@@ -250,16 +286,67 @@ test("a late rejection does not resurrect a booking explicitly discarded during 
   await page.locator("[data-offline-badge]").click();
   await context.setOffline(false);
   await expect.poll(() => started).toBe(true);
-  page.once("dialog", dialog => dialog.accept());
-  await page.getByRole("button", { name: "Verwerfen", exact: true }).click();
-  await expect.poll(async () => (await queue(page)).length).toBe(0);
+  // The POST may already have stored it: "Verwerfen" must not pretend otherwise.
+  await expect(page.getByRole("button", { name: "Verwerfen", exact: true })).toBeDisabled();
   const response = page.waitForResponse("**/entries");
   reply();
   await response;
-  // Manual flush joins the in-flight promise, then redraws the emptied panel.
-  await page.locator("[data-offline-flush]").click();
+  await expect(page.locator("[data-offline-list]")).toContainText("Person fehlt.");
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "Verwerfen", exact: true }).click();
+  await expect.poll(async () => (await queue(page)).length).toBe(0);
   await expect(page.locator("[data-offline-list]")).toContainText("Nichts in der Warteschlange");
-  expect(await queue(page)).toEqual([]);
+});
+
+test("a replay stored with different data is shown as saved, without a correction editor", async ({ page, context }) => {
+  await page.route("**/entries", route => route.fulfill({
+    status: 422, headers: { "X-Treckrr-Replay": "stored" }, contentType: "text/plain",
+    body: "Bereits gespeichert (abweichend): Unter diesem Buchungsschlüssel ist schon eine Buchung mit anderen Daten gespeichert.",
+  }));
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "Buchung speichern", exact: true }).click();
+  await expect.poll(async () => (await queue(page)).length).toBe(1);
+  await context.setOffline(false);
+  await expect.poll(async () => (await queue(page))[0]?.rejection?.stored).toBe(true);
+  await page.locator("[data-offline-badge]").click();
+  await expect(page.locator("[data-offline-list]")).toContainText("nicht neu erfassen");
+  await expect(page.getByText("Buchungsdaten korrigieren", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /im Konto ansehen/ })).toHaveAttribute("href", "/neighbors/11?year=22");
+});
+
+test("saved quick rows are read-only in the correction editor", async ({ page, context }) => {
+  await page.route("**/entries/quick", route => {
+    const keys = new URLSearchParams(route.request().postData()!).getAll("q_key");
+    return route.fulfill({ status: 422, json: { message: "1 Buchung(en) gespeichert, 1 Zeile(n) ungültig.",
+      rows: { [keys[0]]: { status: "saved" }, [keys[1]]: { status: "invalid", message: "Person fehlt." } } } });
+  });
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "Schnell speichern" }).click();
+  await expect.poll(async () => (await queue(page)).length).toBe(1);
+  await context.setOffline(false);
+  await expect.poll(async () => (await queue(page))[0]?.rejection?.rows).toBeTruthy();
+  await page.locator("[data-offline-badge]").click();
+  await expect(page.locator("[data-offline-list]")).toContainText("Zeile 2: abgelehnt – Person fehlt.");
+  await page.getByText("Buchungsdaten korrigieren", { exact: true }).click();
+  await expect(page.getByLabel("Zeile 1 · Stunden (gespeichert)", { exact: true })).toHaveAttribute("readonly", "");
+  await expect(page.getByLabel("Zeile 2 · Stunden", { exact: true })).toBeEditable();
+});
+
+test("403 without a CSRF cause needs attention after repeated attempts", async ({ page, context }) => {
+  let posts = 0;
+  await page.route("**/entries", route => { posts++; return route.fulfill({ status: 403, body: "Nur-Lese-Konto." }); });
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "Buchung speichern", exact: true }).click();
+  await expect.poll(async () => (await queue(page)).length).toBe(1);
+  await context.setOffline(false);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (attempt > 1) await page.reload();
+    await expect.poll(() => posts).toBe(attempt);
+  }
+  await expect.poll(async () => (await queue(page))[0]?.rejection?.status).toBe(403);
+  await page.reload();
+  await page.waitForTimeout(300);
+  expect(posts).toBe(3); // now waits for a deliberate "Jetzt senden"
 });
 
 test("other owners and unstamped legacy items remain quarantined", async ({ page, context }) => {
@@ -270,12 +357,16 @@ test("other owners and unstamped legacy items remain quarantined", async ({ page
   await expect.poll(async () => (await queue(page)).length).toBe(1);
   const item = (await queue(page))[0];
   await page.evaluate(async item => {
+    const old = Date.now() - 31 * 24 * 60 * 60 * 1000;
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open("treckrr-offline", 1);
       request.onsuccess = () => {
         const db = request.result;
         const tx = db.transaction("queue", "readwrite");
-        tx.objectStore("queue").put({ ...item, id: "foreign", user: "8", rejection: { status: 422, message: "Private Fremdbuchung" } });
+        tx.objectStore("queue").put({
+          ...item, id: "foreign", user: "8", created: old, ownerSeen: old, quarantinedAt: old,
+          rejection: { status: 422, message: "Private Fremdbuchung" },
+        });
         tx.objectStore("queue").put({ ...item, id: "legacy", user: undefined });
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = () => { db.close(); reject(tx.error); };
@@ -288,9 +379,8 @@ test("other owners and unstamped legacy items remain quarantined", async ({ page
   await expect(page.locator("[data-offline-list]")).not.toContainText("Private Fremdbuchung");
   await context.setOffline(false);
   await expect.poll(() => posts).toBe(1);
+  await page.reload();
   await expect.poll(async () => (await queue(page)).length).toBe(2);
-  await page.locator("[data-offline-flush]").click();
-  await expect(page.locator("[data-offline-list]")).toContainText("Nichts in der Warteschlange");
   expect(posts).toBe(1);
   expect((await queue(page)).map(item => item.id).sort()).toEqual(["foreign", "legacy"]);
 });
@@ -315,3 +405,27 @@ for (const status of [401, 403, 500]) {
     expect(posts).toBe(2);
   });
 }
+
+test("logout with unsent bookings asks first and can export and delete them", async ({ page, context }) => {
+  let logouts = 0;
+  await page.route("**/logout", route => { logouts++; return route.fulfill({ contentType: "text/html", body: "Abgemeldet." }); });
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "Buchung speichern", exact: true }).click();
+  await expect.poll(async () => (await queue(page)).length).toBe(1);
+  await page.getByRole("button", { name: "Abmelden", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: /noch nicht gesendet/ });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Abbrechen" }).click();
+  await expect(page.locator("[data-offline-panel]")).toBeVisible();
+  expect(logouts).toBe(0);
+  await expect(page.getByRole("button", { name: "Abmelden", exact: true })).toBeEnabled();
+  await page.locator("[data-offline-close]").click();
+  await page.getByRole("button", { name: "Abmelden", exact: true }).click();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Sichern und löschen" }).click();
+  const backup = JSON.parse(readFileSync((await (await download).path())!, "utf8"));
+  expect(backup.items).toHaveLength(1);
+  await expect(page.locator("body")).toHaveText("Abgemeldet.");
+  expect(logouts).toBe(1);
+  expect(await queue(page)).toEqual([]);
+});

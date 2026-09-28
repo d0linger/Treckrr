@@ -71,6 +71,11 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
+	if models.HasSubCent(amount) {
+		s.setFlash(w, r, "error", msgMoneyCents)
+		redirect(w, r, neighborURL(neighborID, yearID))
+		return
+	}
 	if s.tooLong(w, r, "Datum", r.FormValue("paid_on"), 50) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
@@ -92,40 +97,48 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	if err := s.store.AddPayment(r.Context(), yearID, neighborID, amount, parsePaidOn(r.FormValue("paid_on")), note, paymentMethod(r)); err != nil {
-		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+	key := strings.TrimSpace(r.FormValue("idempotency_key"))
+	if s.tooLong(w, r, "Formularkennung", key, maxNameLen) {
 		redirect(w, r, neighborURL(neighborID, yearID))
 		return
 	}
-	msg := "Zahlung erfasst."
-	// Optional Skonto (§ 16 UStG): a percentage of the issued invoice's gross,
-	// booked as a credit note (net + USt split) alongside the payment. Skipped when
-	// there is no active invoice.
-	if pct := skonto; pct.IsPositive() {
-		iv, ierr := s.store.GetInvoice(r.Context(), yearID, neighborID)
-		switch {
-		case errors.Is(ierr, store.ErrNotFound):
-			// no active invoice → a Skonto has nothing to reduce; ignore silently.
-		case ierr != nil:
-			s.setFlash(w, r, "error", "Zahlung erfasst, aber der Rechnungsstatus für das Skonto war nicht prüfbar.")
-			redirect(w, r, neighborURL(neighborID, yearID))
-			return
-		case iv.Content != nil:
-			skGross := iv.Content.Gross.Mul(pct).Div(decimal.NewFromInt(100)).Round(2)
-			if skGross.IsPositive() {
-				g, gerr := s.store.GutschriftInvoice(r.Context(), yearID, neighborID, skGross, "Skonto "+pct.String()+" %")
-				if gerr != nil {
-					s.setFlash(w, r, "error", "Zahlung erfasst, aber die Skonto-Gutschrift ist fehlgeschlagen (übersteigt sie den offenen Rechnungsbetrag?).")
-					redirect(w, r, neighborURL(neighborID, yearID))
-					return
-				}
-				msg = "Zahlung + Skonto-Gutschrift " + g.Number + " (" + skGross.StringFixed(2) + " €) erfasst."
-			}
-		}
+	// Payment and optional Skonto (§ 16 UStG: a percentage of the issued
+	// invoice's gross, booked as a credit note with net + USt split) are one
+	// transaction: either both are recorded or neither. No active invoice means
+	// the Skonto has nothing to reduce and is ignored, as before.
+	res, err := s.store.RecordPayment(r.Context(), store.PaymentInput{
+		YearID: yearID, NeighborID: neighborID, Amount: amount,
+		PaidOn: parsePaidOn(r.FormValue("paid_on")), Note: note, Method: paymentMethod(r),
+		SkontoPct: skonto, IdempotencyKey: key,
+	})
+	switch {
+	case errors.Is(err, store.ErrIdempotencyConflict):
+		s.setFlash(w, r, "error", msgFormKeyConflict)
+	case errors.Is(err, store.ErrSkontoYearCompleted):
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen — eine Skonto-Gutschrift ist nicht mehr möglich. Nichts gespeichert: Zahlung ohne Skonto erfassen oder das Jahr wieder öffnen.")
+	case errors.Is(err, store.ErrGutschriftTooLarge):
+		s.setFlash(w, r, "error", "Das Skonto übersteigt den noch nicht gutgeschriebenen Rechnungsbetrag. Nichts gespeichert.")
+	case err != nil:
+		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+	case res.Duplicate:
+		// A resubmitted form (lost redirect, browser retry): the payment is
+		// already there, and it must not be booked a second time.
+		s.setFlash(w, r, "info", "Diese Zahlung war bereits erfasst.")
+	case res.Skonto != nil:
+		s.setFlash(w, r, "success", "Zahlung + Skonto-Gutschrift "+res.Skonto.Number+" ("+
+			res.Skonto.Content.Gross.Neg().StringFixed(2)+" €) erfasst.")
+	default:
+		s.setFlash(w, r, "success", "Zahlung erfasst.")
 	}
-	s.setFlash(w, r, "success", msg)
 	redirect(w, r, neighborURL(neighborID, yearID))
 }
+
+// User-facing messages shared by the money forms.
+const (
+	msgMoneyCents         = "Bitte einen Betrag mit höchstens zwei Nachkommastellen eingeben."
+	msgFormKeyConflict    = "Dieses Formular wurde bereits mit anderen Angaben gespeichert — bitte die Seite neu laden und erneut erfassen."
+	msgLedgerTransferEdit = "Ein Übertrag kann nicht einseitig geändert werden — bitte den Übertrag als Ganzes stornieren oder rückgängig machen und neu übernehmen."
+)
 
 // handlePaymentDelete removes a payment and returns to its neighbor/year.
 func (s *Server) handlePaymentDelete(w http.ResponseWriter, r *http.Request) {
@@ -264,6 +277,8 @@ func (s *Server) handleNeighborCarryForward(w http.ResponseWriter, r *http.Reque
 	toDesc := "Übertrag aus " + itoa(year.Year)
 	moved, err := s.store.CarryForwardRemaining(r.Context(), neighborID, yearID, nextID, time.Now(), fromDesc, toDesc)
 	switch {
+	case errors.Is(err, store.ErrCarryTargetCompleted):
+		s.setFlash(w, r, "error", "Das Folgejahr "+itoa(year.Year+1)+" ist bereits abgeschlossen — ein Übertrag dorthin ist nicht möglich.")
 	case err != nil:
 		s.setFlash(w, r, "error", "Übernahme fehlgeschlagen.")
 	case moved.IsZero():
@@ -346,6 +361,11 @@ func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
 	amount, okAmount := parseGermanDecimalOK(r.FormValue("amount"))
 	if !okAmount || !amount.IsPositive() {
 		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
+		redirect(w, r, back)
+		return
+	}
+	if models.HasSubCent(amount) {
+		s.setFlash(w, r, "error", msgMoneyCents)
 		redirect(w, r, back)
 		return
 	}
@@ -440,13 +460,34 @@ func (s *Server) handleInstallmentAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
+	if models.HasSubCent(amount) {
+		s.setFlash(w, r, "error", msgMoneyCents)
+		redirect(w, r, back)
+		return
+	}
 	note := strings.TrimSpace(r.FormValue("note"))
 	if s.tooLong(w, r, "Notiz", note, maxNoteLen) {
 		redirect(w, r, back)
 		return
 	}
-	if _, err := s.store.AddInstallment(r.Context(), yearID, neighborID, amount, parsePaidOn(r.FormValue("due_on")), note); err != nil {
+	key := strings.TrimSpace(r.FormValue("idempotency_key"))
+	if s.tooLong(w, r, "Formularkennung", key, maxNameLen) {
+		redirect(w, r, back)
+		return
+	}
+	_, duplicate, err := s.store.AddInstallmentOnce(r.Context(), yearID, neighborID, amount,
+		parsePaidOn(r.FormValue("due_on")), note, key)
+	switch {
+	case errors.Is(err, store.ErrIdempotencyConflict):
+		s.setFlash(w, r, "error", msgFormKeyConflict)
+		redirect(w, r, back)
+		return
+	case err != nil:
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
+		redirect(w, r, back)
+		return
+	case duplicate:
+		s.setFlash(w, r, "info", "Diese Rate war bereits erfasst.")
 		redirect(w, r, back)
 		return
 	}
@@ -497,11 +538,10 @@ func (s *Server) handleCreditPayout(w http.ResponseWriter, r *http.Request) {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
-	// Bound by the year lock like every other balance-changing write — the
-	// payout path had no guard at all.
-	if !s.requireOpenYear(w, r, yearID, back) {
-		return
-	}
+	// Deliberately NOT restricted to open years: paying out a Guthaben is a
+	// settlement, like "Rest als bezahlt" and the carry-forward, and completed
+	// years are exactly where the dashboard asks for it. The store serializes
+	// it on the account lock and audits it (store.PayoutCredit).
 	// The amount is derived from the balance, so it must be recomputed under the
 	// account lock inside the writing transaction — reading it here and posting
 	// it afterwards is the read-then-write race that lets two concurrent clicks

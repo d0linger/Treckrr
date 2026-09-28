@@ -227,12 +227,76 @@ func (s *Store) AddNeighborToYear(ctx context.Context, yearID, neighborID int64)
 	return err
 }
 
-// RemoveNeighborFromYear unlinks a neighbor from a billing year.
+// ErrMembershipInUse reports that a neighbor still has records in a billing
+// year; the concrete *MembershipInUseError names which kind.
+var ErrMembershipInUse = errors.New("neighbor still has records in this year")
+
+// MembershipInUseError names the first dependent record kind that blocks
+// removing a neighbor from a year: "entries", "ledger", "payments",
+// "invoices", "payment_plans", "beleg_sends" or "dunning_notices".
+type MembershipInUseError struct{ Kind string }
+
+func (e *MembershipInUseError) Error() string {
+	return "neighbor still has " + e.Kind + " in this year"
+}
+
+// Is lets errors.Is(err, ErrMembershipInUse) match every kind.
+func (e *MembershipInUseError) Is(target error) bool { return target == ErrMembershipInUse }
+
+// membershipDependents lists every table whose rows belong to one account
+// (year, neighbor), in the order they are reported. Voided, soft-deleted and
+// canceled rows count too: they are retained history and would be orphaned the
+// same way — invisible in every membership-based view and impossible to
+// reverse, because every account writer requires the membership row.
+var membershipDependents = []string{
+	"entries", "neighbor_ledger", "payments", "invoices",
+	"payment_plans", "beleg_sends", "dunning_notices",
+}
+
+// RemoveNeighborFromYear unlinks a neighbor from a billing year, but only while
+// no record of any kind belongs to that account. The check and the DELETE run
+// in ONE transaction under the account lock that every booking, ledger,
+// payment, installment and document writer takes, so a concurrent write either
+// commits first (and is seen here) or waits and then finds the membership gone.
+// ErrNotFound when the neighbor is not a member of the year.
 func (s *Store) RemoveNeighborFromYear(ctx context.Context, yearID, neighborID int64) error {
-	_, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	// Membership is administrative, not a booking: allowed in completed years
+	// and for anonymized neighbors, exactly as before — the guard below is what
+	// keeps it from touching history.
+	ok, err := lockAccountBoundary(ctx, tx, yearID, neighborID, false, true)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNotFound
+	}
+	for _, table := range membershipDependents {
+		var exists bool
+		// table comes from the constant list above, never from input.
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS(SELECT 1 FROM `+table+` WHERE billing_year_id=$1 AND neighbor_id=$2)`, //nolint:gosec // G202: fixed table list
+			yearID, neighborID).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			kind := table
+			if table == "neighbor_ledger" {
+				kind = "ledger"
+			}
+			return &MembershipInUseError{Kind: kind}
+		}
+	}
+	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM billing_year_neighbors WHERE billing_year_id=$1 AND neighbor_id=$2`,
-		yearID, neighborID)
-	return err
+		yearID, neighborID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // NeighborInYear reports whether a neighbor participates in a billing year.

@@ -797,6 +797,9 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
+	// PDF render, the intent write and one bounded SMTP attempt must all fit
+	// before the redirect; the global 30s WriteTimeout is shorter than that.
+	extendWriteDeadline(w, 2*store.MailDeliveryBudget)
 	blob, err := pdf.RenderInvoice(&iv)
 	if err != nil {
 		s.serverError(w, "beleg email: pdf", err)
@@ -839,7 +842,7 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	switch status {
 	case store.MailStatusSent:
 		if created {
-			s.sendMailCopy(r.Context(), company, subject, body, []mail.Attachment{att})
+			s.sendMailCopyAsync(r.Context(), company, subject, body, []mail.Attachment{att})
 			s.setFlash(w, r, "success", "Rechnung an "+neighbor.Email+" gesendet.")
 		} else {
 			s.setFlash(w, r, "success", "Rechnung wurde bereits per E-Mail versendet.")
@@ -850,6 +853,8 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	case store.MailStatusAmbiguous:
 		metrics.Inc(metrics.MailFailed)
 		s.setFlash(w, r, "error", "Zustellung unklar — keine automatische Wiederholung. Bitte Empfänger und Audit-Log prüfen.")
+	case store.MailStatusHeld:
+		s.setFlash(w, r, "error", heldMailFlash)
 	default:
 		metrics.Inc(metrics.MailFailed)
 		s.setFlash(w, r, "error", "Versand endgültig fehlgeschlagen. Bitte im Audit-Log prüfen.")
@@ -965,6 +970,10 @@ func (s *Server) handleInvoiceConfirm(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "invoice_confirm", data)
 }
 
+// msgInvoiceContentChanged is shown with the refreshed preview when the content
+// to be festgeschrieben no longer matches what the operator confirmed.
+const msgInvoiceContentChanged = "Die Buchungen haben sich seit der Vorschau geändert — bitte die aktualisierte Vorschau prüfen und erneut festschreiben."
+
 // handleInvoiceIssue assigns and stores a sequential invoice number for a
 // neighbor+year (fixed once), then shows the Beleg in Rechnung mode.
 func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
@@ -1026,6 +1035,12 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 		}
 		issuedOn = d
 	}
+	// The number is bound to the content the operator confirmed: the confirm page
+	// posts the preview's content hash, and a mismatch (a booking added, edited
+	// or voided since, possibly by another session or an offline replay) shows
+	// the preview again instead of freezing lines nobody looked at.
+	confirmedHash := strings.TrimSpace(r.FormValue("content_hash"))
+	confirmURL := fmt.Sprintf("/neighbors/%d/invoice/confirm?year=%d", neighborID, yearID)
 	// § 11 UStG: only fix a number once every mandatory field is present. Build the
 	// content that will be frozen and block issuance if anything is missing, listing
 	// exactly what to fix. Skipped for an already-issued invoice (idempotent re-issue).
@@ -1040,11 +1055,23 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 			redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
 			return
 		}
+		if confirmedHash != content.Hash {
+			s.setFlash(w, r, "error", msgInvoiceContentChanged)
+			redirect(w, r, confirmURL)
+			return
+		}
 	} else if err != nil {
 		s.serverError(w, "invoice: lookup", err)
 		return
 	}
-	iv, err := s.store.IssueInvoice(r.Context(), yearID, neighborID, year.Year, issuedOn)
+	// The store re-checks the hash under the account lock, closing the window
+	// between the check above and the numbering.
+	iv, err := s.store.IssueInvoiceConfirmed(r.Context(), yearID, neighborID, year.Year, issuedOn, confirmedHash)
+	if errors.Is(err, store.ErrInvoiceContentChanged) {
+		s.setFlash(w, r, "error", msgInvoiceContentChanged)
+		redirect(w, r, confirmURL)
+		return
+	}
 	if err != nil {
 		msg := "Rechnung konnte nicht ausgestellt werden."
 		if errors.Is(err, store.ErrIssueDateInvalid) {
@@ -1094,9 +1121,43 @@ func (s *Server) handleInvoiceStorno(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.setFlash(w, r, "error", "Storno fehlgeschlagen.")
 	default:
-		s.setFlash(w, r, "success", "Rechnung storniert ("+sv.Number+"). Die Buchungen sind wieder bearbeitbar.")
+		// Attached credit notes were reversed by their own storno documents in
+		// the same transaction; name them so the operator knows what to hand over.
+		msg := "Rechnung storniert (" + sv.Number + ")."
+		if reversed := s.reversedCreditNumbers(r, yearID, neighborID, sv); len(reversed) > 0 {
+			msg += " Gutschrift-Stornos: " + strings.Join(reversed, ", ") + "."
+		}
+		s.setFlash(w, r, "success", msg+" Die Buchungen sind wieder bearbeitbar.")
 	}
 	redirect(w, r, back)
+}
+
+// reversedCreditNumbers names the storno documents issued today for credit
+// notes attached to the invoice that invoiceStorno reverses — the extra
+// documents StornoInvoice writes in the same transaction. Best-effort: it only
+// feeds the success message.
+func (s *Server) reversedCreditNumbers(r *http.Request, yearID, neighborID int64, invoiceStorno models.Invoice) []string {
+	if invoiceStorno.ReferencesInvoiceID == nil {
+		return nil
+	}
+	docs, err := s.store.ListInvoiceDocuments(r.Context(), yearID, neighborID)
+	if err != nil {
+		return nil
+	}
+	credits := map[int64]bool{}
+	for _, d := range docs {
+		if d.Kind == "gutschrift" && d.ReferencesInvoiceID != nil && *d.ReferencesInvoiceID == *invoiceStorno.ReferencesInvoiceID {
+			credits[d.ID] = true
+		}
+	}
+	var out []string
+	for _, d := range docs {
+		if d.Kind == "storno" && d.ReferencesInvoiceID != nil && credits[*d.ReferencesInvoiceID] &&
+			d.IssuedOn.Equal(invoiceStorno.IssuedOn) {
+			out = append(out, d.Number)
+		}
+	}
+	return out
 }
 
 // handleInvoiceGutschrift issues a credit note (§ 16 UStG Entgeltminderung, e.g. a
@@ -1131,7 +1192,13 @@ func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request)
 		redirect(w, r, back)
 		return
 	}
-	gv, err := s.store.GutschriftInvoice(r.Context(), yearID, neighborID, formDecimal(r, "amount").Abs(), note)
+	amount := formDecimal(r, "amount").Abs()
+	if models.HasSubCent(amount) {
+		s.setFlash(w, r, "error", msgMoneyCents)
+		redirect(w, r, back)
+		return
+	}
+	gv, err := s.store.GutschriftInvoice(r.Context(), yearID, neighborID, amount, note)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		s.setFlash(w, r, "error", "Keine aktive Rechnung für eine Gutschrift.")
