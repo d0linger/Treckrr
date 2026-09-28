@@ -2,8 +2,6 @@ package server
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/csv"
 	"errors"
 	"io"
@@ -18,17 +16,49 @@ import (
 	"github.com/d0linger/treckrr/internal/store"
 )
 
-// importToken returns a random id tying a preview to its commit. Each imported
-// row is keyed <token>:<line>, so a re-submitted commit (same token) dedupes every
-// row to a no-op via CreateEntry's ON CONFLICT, while two genuinely identical CSV
-// rows (different lines) still both import. Falls back to "" (no dedup) if the RNG
-// fails — worst case reverts to the prior non-idempotent behavior.
-func importToken() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return ""
+// The import token ties a preview to its commit twice over: it names the CSV
+// parked server-side by the preview (store.SaveImportUpload), and each imported
+// row is keyed <token>:<line>, so a re-submitted commit (same token) dedupes
+// every row to a no-op via CreateEntry's ON CONFLICT, while two genuinely
+// identical CSV rows (different lines) still both import.
+
+// Numeric bounds of the entries columns an imported row is written to. Postgres
+// rejects a value past a NUMERIC column's precision and silently rounds excess
+// scale, so both are checked per row before anything is written: an overflow on
+// row N used to fail the commit after rows 1..N-1 were stored.
+var (
+	maxImportQty   = decimal.NewFromInt(1_000_000_000)  // quantity/unit_price NUMERIC(14,4), kept at the form's 1e9 cap
+	maxImportHours = decimal.NewFromInt(10_000_000)     // hours NUMERIC(10,3)
+	maxImportRate  = decimal.NewFromInt(100_000_000)    // hourly_rate NUMERIC(12,4)
+	maxImportCost  = decimal.NewFromInt(10_000_000_000) // cost NUMERIC(14,4)
+)
+
+// importAmountError validates a parsed row's quantity, rate and derived cost
+// against the database columns. Returns "" when the row fits.
+func importAmountError(qtyOK, priceOK bool, row importRow) string {
+	switch {
+	case !qtyOK || !row.Qty.IsPositive():
+		return "Menge muss > 0 sein"
+	case !priceOK || !row.Price.IsPositive():
+		return "Satz muss > 0 sein"
+	case !row.Qty.Equal(row.Qty.Truncate(4)):
+		return "Menge: höchstens 4 Nachkommastellen"
+	case !row.Price.Equal(row.Price.Truncate(4)):
+		return "Satz: höchstens 4 Nachkommastellen"
+	case row.Qty.GreaterThanOrEqual(maxImportQty):
+		return "Menge zu groß"
+	case row.Price.GreaterThanOrEqual(maxImportQty):
+		return "Satz zu groß"
+	case row.Unit == "h" && !row.Qty.Equal(row.Qty.Truncate(3)):
+		return "Stunden: höchstens 3 Nachkommastellen"
+	case row.Unit == "h" && row.Qty.GreaterThanOrEqual(maxImportHours):
+		return "Stunden zu groß"
+	case row.Unit == "h" && row.Price.GreaterThanOrEqual(maxImportRate):
+		return "Stundensatz zu groß"
+	case row.Cost.GreaterThanOrEqual(maxImportCost):
+		return "Kosten (Menge × Satz) zu groß"
 	}
-	return base64.RawURLEncoding.EncodeToString(b)
+	return ""
 }
 
 // importRow is one parsed CSV line for the booking import, with a per-row error
@@ -102,25 +132,25 @@ func parseImportCSV(text string, members map[string]int64) ([]importRow, error) 
 		if strings.TrimSpace(strings.Join(rec, "")) == "" {
 			continue
 		}
+		qty, qtyOK := parseGermanDecimalOK(col(rec, 7))
+		price, priceOK := parseGermanDecimalOK(col(rec, 8))
 		row := importRow{
 			Line: line, Neighbor: col(rec, 0), DateStr: col(rec, 1), Task: col(rec, 2),
-			Unit: col(rec, 6), Qty: parseGermanDecimal(col(rec, 7)),
-			Price: parseGermanDecimal(col(rec, 8)), Note: col(rec, 10),
+			Unit: col(rec, 6), Qty: qty, Price: price, Note: col(rec, 10),
 		}
 		if row.Unit == "" {
 			row.Unit = "h"
 		}
 		row.Cost = row.Qty.Mul(row.Price).Round(2)
+		amountErr := importAmountError(qtyOK, priceOK, row)
 
 		switch {
 		case row.Neighbor == "":
 			row.Err = "Nachbar fehlt"
 		case members[strings.ToLower(row.Neighbor)] == 0:
 			row.Err = "Nachbar nicht im Jahr"
-		case !row.Qty.IsPositive():
-			row.Err = "Menge muss > 0 sein"
-		case !row.Price.IsPositive():
-			row.Err = "Satz muss > 0 sein"
+		case amountErr != "":
+			row.Err = amountErr
 		case lenError("Tätigkeit", row.Task, maxNameLen) != "":
 			row.Err = lenError("Tätigkeit", row.Task, maxNameLen)
 		case lenError("Einheit", row.Unit, 16) != "":
@@ -214,15 +244,26 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleImportPreview parses the uploaded CSV and shows a dry-run: which rows
-// would import and which are rejected. Nothing is written. The raw CSV is echoed
-// back in a hidden field so the commit step re-parses the exact same input.
+// would import and which are rejected. No booking is written. The CSV is parked
+// server-side under the import token, so the commit re-parses the exact same
+// input without the browser posting the file back (which, percent-encoded,
+// broke the body cap for medium-sized files).
 func (s *Server) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 	// The correction editor (Ausbaukarte 69) posts a plain urlencoded form, the
 	// upload a multipart one. ParseMultipartForm parses the urlencoded body too
 	// and then reports ErrNotMultipart, which is not an error here.
-	if err := r.ParseMultipartForm(4 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+	if err := r.ParseMultipartForm(maxImportPayloadLen); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			s.setFlash(w, r, "error", msgImportTooLarge)
+			redirect(w, r, "/entries/import?year="+itoa64(formInt64(r, "year_id")))
+			return
+		}
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
+	}
+	if r.MultipartForm != nil {
+		defer func() { _ = r.MultipartForm.RemoveAll() }()
 	}
 	yearID := formInt64(r, "year_id")
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
@@ -241,7 +282,7 @@ func (s *Server) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 	var raw []byte
 	if edited := r.FormValue("csv"); strings.TrimSpace(edited) != "" {
 		if len(edited) > maxImportPayloadLen {
-			s.setFlash(w, r, "error", "Importdaten zu groß.")
+			s.setFlash(w, r, "error", msgImportTooLarge)
 			redirect(w, r, "/entries/import?year="+itoa64(yearID))
 			return
 		}
@@ -254,9 +295,15 @@ func (s *Server) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer file.Close()
-		raw, err = io.ReadAll(io.LimitReader(file, 4<<20))
+		var fits bool
+		raw, fits, err = readImportFile(file)
 		if err != nil {
 			s.serverError(w, r.URL.Path, err)
+			return
+		}
+		if !fits {
+			s.setFlash(w, r, "error", msgImportTooLarge)
+			redirect(w, r, "/entries/import?year="+itoa64(yearID))
 			return
 		}
 	}
@@ -278,27 +325,87 @@ func (s *Server) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 			okCount++
 		}
 	}
+	// One-shot: the token names this exact CSV, and a re-submitted commit with
+	// it becomes a no-op row by row.
+	token, err := s.store.SaveImportUpload(r.Context(), store.ImportUploadBooking, s.currentUserID(r), yearID, raw)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	data := s.newPage(w, r, "Import-Vorschau", "dashboard")
 	data["Year"] = year
 	data["Rows"] = rows
 	data["OKCount"] = okCount
 	data["Total"] = len(rows)
-	data["CSV"] = string(raw)
-	data["ImportToken"] = importToken() // one-shot: a re-submitted commit becomes a no-op
+	data["CSV"] = string(raw) // the correction editor's starting text only
+	data["ImportToken"] = token
 	s.render(w, r, "import", data)
 }
 
-// handleImportCommit re-parses the echoed CSV and creates the importable rows.
+// importCommitSkipReason classifies a per-row CreateEntry failure. A business
+// refusal concerns that row alone and is reported; ok=false means an
+// infrastructure error that aborts the commit.
+func importCommitSkipReason(err error) (string, bool) {
+	switch {
+	case errors.Is(err, store.ErrInvoiceLocked):
+		return "Rechnung festgeschrieben", true
+	case errors.Is(err, store.ErrNeighborAnonymized):
+		return "Nachbar anonymisiert", true
+	case errors.Is(err, store.ErrYearCompleted):
+		return "Abrechnungsjahr abgeschlossen", true
+	case errors.Is(err, store.ErrNotFound):
+		return "Nachbar nicht im Jahr", true
+	case errors.Is(err, store.ErrIdempotencyConflict):
+		return "bereits für einen anderen Nachbarn importiert", true
+	}
+	return "", false
+}
+
+// importCommitSummary builds the audit detail and the flash text of a commit.
+func importCommitSummary(created, deselected int, failed []string) (audit, flash string) {
+	audit = itoa(created) + " Buchungen importiert"
+	flash = itoa(created) + " Buchung(en) importiert."
+	if deselected > 0 {
+		audit += ", " + itoa(deselected) + " abgewählt"
+		flash += " " + itoa(deselected) + " abgewählte Zeile(n) übersprungen."
+	}
+	if len(failed) > 0 {
+		audit += ", " + itoa(len(failed)) + " nicht gebucht"
+		const named = 5
+		shown := failed
+		more := ""
+		if len(shown) > named {
+			shown, more = shown[:named], ", …"
+		}
+		flash += " " + itoa(len(failed)) + " Zeile(n) nicht gebucht: " + strings.Join(shown, ", ") + more + "."
+	}
+	return audit, flash
+}
+
+// handleImportCommit re-parses the CSV parked by the preview and creates the
+// selected importable rows. A row the store refuses for a business reason (an
+// invoice festgeschrieben meanwhile, an erased neighbor) is skipped with its
+// reason and the loop goes on; whatever was created is audited even when an
+// infrastructure error ends the commit early.
 func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	yearID := formInt64(r, "year_id")
-	rawCSV := r.FormValue("csv")
-	if len(rawCSV) > maxImportPayloadLen {
-		s.setFlash(w, r, "error", "Importdaten zu groß.")
-		redirect(w, r, "/entries/import?year="+itoa64(yearID))
+	back := "/entries/import?year=" + itoa64(yearID)
+	// One-shot import: the token names the parked CSV, and keying each row
+	// <token>:<line> makes a re-submitted commit (double-click, browser retry) a
+	// no-op via CreateEntry's ON CONFLICT, without deduping two genuinely
+	// identical rows in the same file (distinct lines).
+	token := trimmed(r, "import_token")
+	if s.tooLong(w, r, "Import-Token", token, maxNameLen) {
+		redirect(w, r, back)
+		return
+	}
+	if token == "" {
+		s.setFlash(w, r, "error", msgImportExpired)
+		redirect(w, r, back)
 		return
 	}
 	year, err := s.store.GetBillingYear(r.Context(), yearID)
@@ -311,29 +418,30 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, dashboardURL(yearID))
 		return
 	}
+	raw, err := s.store.LoadImportUpload(r.Context(), token, store.ImportUploadBooking, s.currentUserID(r), yearID)
+	if errors.Is(err, store.ErrNotFound) {
+		s.setFlash(w, r, "error", msgImportExpired)
+		redirect(w, r, back)
+		return
+	} else if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	members, err := s.yearMembers(r, yearID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	rows, perr := parseImportCSV(rawCSV, members)
+	rows, perr := parseImportCSV(string(raw), members)
 	if perr != nil {
 		s.setFlash(w, r, "error", "CSV konnte nicht gelesen werden.")
-		redirect(w, r, "/entries/import?year="+itoa64(yearID))
+		redirect(w, r, back)
 		return
 	}
 	// Re-check locks at commit time (not just preview): an invoice may have been
 	// festgeschrieben between preview and commit. Locked rows get an error and are
 	// skipped by the !row.OK() guard below.
 	s.markLockedRows(r.Context(), yearID, rows)
-	// One-shot import: keying each row <token>:<line> makes a re-submitted commit
-	// (double-click, browser retry) a no-op via CreateEntry's ON CONFLICT, without
-	// deduping two genuinely identical rows in the same file (distinct lines).
-	token := trimmed(r, "import_token")
-	if s.tooLong(w, r, "Import-Token", token, maxNameLen) {
-		redirect(w, r, "/entries/import?year="+itoa64(yearID))
-		return
-	}
 	// Line selection (Ausbaukarte 69): with checkboxes present, only the ticked
 	// lines are imported. No checkbox at all means an older page or a client
 	// without them — fall back to "every OK row", the previous behavior.
@@ -345,22 +453,29 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	created, skipped := 0, 0
+	created, deselected := 0, 0
+	var failed []string // "Zeile N (reason)" for selected rows that were not booked
 	for _, row := range rows {
-		if !row.OK() {
+		if hasSelection && !selected[row.Line] {
+			if row.OK() {
+				deselected++
+			}
 			continue
 		}
-		if hasSelection && !selected[row.Line] {
-			skipped++
+		if !row.OK() {
+			// A ticked row that stopped being importable since the preview
+			// (typically: its invoice was festgeschrieben) is reported, not
+			// silently dropped.
+			if hasSelection {
+				failed = append(failed, "Zeile "+itoa(row.Line)+" ("+row.Err+")")
+			}
 			continue
 		}
 		e := &models.Entry{
 			NeighborID: row.NeighborID, BillingYearID: yearID, Date: row.Date,
 			TaskLabel: row.Task, Note: row.Note, Unit: row.Unit,
 			Quantity: row.Qty, UnitPrice: row.Price, Cost: row.Cost,
-		}
-		if token != "" {
-			e.IdempotencyKey = token + ":" + strconv.Itoa(row.Line)
+			IdempotencyKey: token + ":" + strconv.Itoa(row.Line),
 		}
 		if row.Unit == "h" { // keep the hour-booking convention so it counts as hours
 			e.Hours = row.Qty
@@ -368,24 +483,28 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 		}
 		newID, err := s.store.CreateEntry(r.Context(), e, nil)
 		if err != nil {
-			s.serverError(w, r.URL.Path, err)
-			return
+			reason, business := importCommitSkipReason(err)
+			if !business {
+				// Rows before this one are committed: leave their § 132 trail
+				// before the 500, or they would exist without an audit record.
+				detail, _ := importCommitSummary(created, deselected, append(failed, "Zeile "+itoa(row.Line)+" (Abbruch)"))
+				s.audit(r, "import", "year", yearID, detail)
+				s.serverError(w, r.URL.Path, err)
+				return
+			}
+			failed = append(failed, "Zeile "+itoa(row.Line)+" ("+reason+")")
+			continue
 		}
 		if newID != 0 { // 0 = an already-imported row on a re-submit; don't double-count
 			created++
 		}
 	}
-	s.audit(r, "import", "year", yearID, itoa(created)+" Buchungen importiert"+
-		func() string {
-			if skipped > 0 {
-				return ", " + itoa(skipped) + " abgewählt"
-			}
-			return ""
-		}())
-	msg := itoa(created) + " Buchung(en) importiert."
-	if skipped > 0 {
-		msg += " " + itoa(skipped) + " abgewählte Zeile(n) übersprungen."
+	detail, msg := importCommitSummary(created, deselected, failed)
+	s.audit(r, "import", "year", yearID, detail)
+	kind := "success"
+	if len(failed) > 0 {
+		kind = "error"
 	}
-	s.setFlash(w, r, "success", msg)
+	s.setFlash(w, r, kind, msg)
 	redirect(w, r, dashboardURL(yearID))
 }

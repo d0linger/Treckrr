@@ -306,7 +306,14 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		paymentTerm = &n
 	}
-	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email, iban, paymentTerm); err != nil {
+	// A refused update (anonymized or unknown neighbor) writes nothing, so it is
+	// neither reported as success nor audited: the append-only log must not
+	// record a diff that never reached the database.
+	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email, iban, paymentTerm); errors.Is(err, store.ErrNeighborAnonymized) {
+		s.setFlash(w, r, "error", "Dieser Nachbar wurde anonymisiert — seine Daten können nicht mehr bearbeitet werden.")
+	} else if errors.Is(err, store.ErrNotFound) {
+		s.setFlash(w, r, "error", "Nachbar nicht gefunden.")
+	} else if err != nil {
 		s.setFlash(w, r, "error", "Aktualisierung fehlgeschlagen.")
 	} else {
 		detail := name

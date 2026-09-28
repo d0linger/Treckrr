@@ -3,11 +3,13 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/d0linger/treckrr/internal/models"
@@ -40,6 +42,10 @@ const (
 	// giving up. Long enough to queue behind a slow decode, short enough that the
 	// user gets an answer rather than a hung request.
 	photoSlotWait = 30 * time.Second
+	// photoUploadDeadline is the write deadline for one multi-photo upload: every
+	// file may wait photoSlotWait for a decode slot and then decode, plus slack
+	// for the body read and the database writes.
+	photoUploadDeadline = maxPhotosPerUpload*(photoSlotWait+15*time.Second) + time.Minute
 )
 
 // acquirePhotoSlot blocks until a decode slot is free, the caller's request is
@@ -163,6 +169,12 @@ func (s *Server) handleBookingPhotoUpload(w http.ResponseWriter, r *http.Request
 	if !s.entryYearOpen(w, r, entry, "Das Abrechnungsjahr ist abgeschlossen – Belege können nicht mehr geändert werden.") {
 		return
 	}
+	// Up to maxPhotosPerUpload decodes, each of which may first queue up to
+	// photoSlotWait for a slot, do not fit the server's global 30 s
+	// WriteTimeout. Past it the photos still commit but the 303 is dropped, and
+	// the operator, seeing an error, uploads the same receipts again. The
+	// deadline is absolute, so it is extended before the body is even parsed.
+	extendWriteDeadline(w, photoUploadDeadline)
 	if err := r.ParseMultipartForm(maxPhotoUpload); err != nil {
 		s.setFlash(w, r, "error", "Upload zu groß oder ungültig.")
 		redirect(w, r, photoRoute(ledger, entryID)+"/edit")
@@ -187,8 +199,17 @@ func (s *Server) handleBookingPhotoUpload(w http.ResponseWriter, r *http.Request
 		dropped = len(files) - maxPhotosPerUpload
 		files = files[:maxPhotosPerUpload]
 	}
-	added, failed := 0, 0
+	added, failed, duplicates := 0, 0, 0
 	lastMsg := ""
+	// auditAdded writes the § 132 trail for what is stored so far. It runs on
+	// the normal path and before an early error return alike: each photo
+	// commits on its own, so an error on file k must not leave files 1..k-1
+	// stored without a trace.
+	auditAdded := func() {
+		if added > 0 {
+			s.audit(r, "photo_add", photoAuditSource(ledger), entryID, fmt.Sprintf("%s · %d Foto(s)", s.neighborName(r, entry.NeighborID), added))
+		}
+	}
 	for _, fh := range files {
 		file, err := fh.Open()
 		if err != nil {
@@ -198,6 +219,7 @@ func (s *Server) handleBookingPhotoUpload(w http.ResponseWriter, r *http.Request
 		raw, err := io.ReadAll(io.LimitReader(file, maxPhotoUpload))
 		_ = file.Close()
 		if err != nil {
+			auditAdded()
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
@@ -216,24 +238,32 @@ func (s *Server) handleBookingPhotoUpload(w http.ResponseWriter, r *http.Request
 		if ledger {
 			addPhoto = s.store.AddLedgerPhoto
 		}
-		if _, err := addPhoto(r.Context(), entryID, img, "image/jpeg"); err != nil {
+		if _, err := addPhoto(r.Context(), entryID, img, "image/jpeg"); errors.Is(err, store.ErrDuplicatePhoto) {
+			// A retry of an upload whose response was lost: already stored.
+			duplicates++
+			continue
+		} else if err != nil {
+			auditAdded()
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		added++
 	}
-	if added > 0 {
-		s.audit(r, "photo_add", photoAuditSource(ledger), entryID, fmt.Sprintf("%s · %d Foto(s)", s.neighborName(r, entry.NeighborID), added))
-	}
+	auditAdded()
 	over := ""
 	if dropped > 0 {
 		over = fmt.Sprintf(" %d weitere(s) Bild(er) über dem Limit von %d wurden nicht übernommen — bitte einzeln nachreichen.",
 			dropped, maxPhotosPerUpload)
 	}
+	if duplicates > 0 {
+		over += fmt.Sprintf(" %d Bild(er) waren bereits an dieser Buchung und wurden nicht doppelt gespeichert.", duplicates)
+	}
 	switch {
+	case added == 0 && failed == 0 && duplicates > 0:
+		s.setFlash(w, r, "info", strings.TrimSpace(over))
 	case added == 0:
 		s.setFlash(w, r, "error", orDefault(lastMsg, "Kein gültiges Bild.")+over)
-	case failed > 0 || dropped > 0:
+	case failed > 0 || dropped > 0 || duplicates > 0:
 		msg := fmt.Sprintf("%d Foto(s) angehängt.", added)
 		if failed > 0 {
 			msg = fmt.Sprintf("%d Foto(s) angehängt, %d abgelehnt: %s", added, failed, lastMsg)

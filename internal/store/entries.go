@@ -174,11 +174,33 @@ func (s *Store) CreateNeighbor(ctx context.Context, name, note string) (int64, e
 func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note, address, taxID, email, iban string, paymentTermDays *int) error {
 	// Never re-populate personal fields on an anonymized neighbor (DSGVO Art. 17):
 	// the UI hides the edit form, and this WHERE clause is the server-side backstop
-	// against a crafted POST reviving erased data.
-	_, err := s.db.ExecContext(ctx,
+	// against a crafted POST reviving erased data. A refused update is reported
+	// (ErrNeighborAnonymized, or ErrNotFound for an unknown id) so the caller
+	// does not claim success or audit a change that never happened.
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE neighbors SET name=$1, note=$2, address=$3, tax_id=$4, email=$5, iban=$8, payment_term_days=$7 WHERE id=$6 AND NOT anonymized`,
 		name, note, address, taxID, email, id, paymentTermDays, iban)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n > 0 {
+		return nil
+	}
+	var anonymized bool
+	err = s.db.QueryRowContext(ctx, `SELECT anonymized FROM neighbors WHERE id=$1`, id).Scan(&anonymized)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return ErrNotFound
+	case err != nil:
+		return err
+	case anonymized:
+		return ErrNeighborAnonymized
+	}
+	// Not reachable in practice (Postgres counts matched rows, and anonymization
+	// is one-way); nothing was written, so never report it as a success.
+	return ErrNotFound
 }
 
 // DeleteNeighbor removes a neighbor without retained financial or delivery history.

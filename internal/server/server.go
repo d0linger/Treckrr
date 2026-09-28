@@ -474,6 +474,22 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 					return
 				}
 				limit = maxPhotoUpload
+			} else if isImportUploadPath(r.URL.Path) {
+				// The import previews take the statement or CSV itself (up to
+				// maxImportPayloadLen); same authenticated-only rule as photos.
+				if u := s.currentUser(r); u == nil {
+					http.Error(w, "Zugriff verweigert", http.StatusForbidden)
+					return
+				}
+				limit = maxImportUpload
+				// A body that announces its oversize is answered as what it is.
+				// Read past the cap, it would surface in csrf's FormValue as an
+				// empty token — a 403 "CSRF-Token ungültig" that sends the
+				// operator hunting for a session problem instead of a big file.
+				if r.ContentLength > limit {
+					http.Error(w, "Die Datei ist zu groß — höchstens 4 MB sind möglich. Bitte den Export auf einen kürzeren Zeitraum beschränken.", http.StatusRequestEntityTooLarge)
+					return
+				}
 			}
 			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
@@ -485,6 +501,19 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 // therefore get the large body allowance (guarded by an admin check in limitBody).
 func isBackupUploadPath(p string) bool {
 	return p == "/admin/backup/restore" || p == "/admin/backup/validate"
+}
+
+// maxImportUpload is the body allowance of the two import previews: the file
+// itself (maxImportPayloadLen, which the handlers enforce on the content) plus
+// headroom for the multipart framing and the few other form fields. The commits
+// that follow send only a token, so they stay under maxRequestBody.
+const maxImportUpload = maxImportPayloadLen + 64<<10
+
+// isImportUploadPath reports the routes that receive an import file: the
+// bank-statement and booking-CSV previews (the latter also takes the corrected
+// CSV text from its own editor).
+func isImportUploadPath(p string) bool {
+	return p == "/payments/import/preview" || p == "/entries/import/preview"
 }
 
 // isPhotoUploadPath reports the booking-photo upload route (POST

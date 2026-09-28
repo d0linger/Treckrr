@@ -81,7 +81,7 @@ func TestPartialDocumentsIntegration(t *testing.T) {
 	}
 
 	// Now the Schlussrechnung: the single tax document, at its full amount.
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{"year_id": {itoa64(yid)}})
+	e.postIssue(nid, url.Values{"year_id": {itoa64(yid)}})
 	iv, err := e.st.GetInvoice(e.ctx, yid, nid)
 	if err != nil {
 		t.Fatalf("Schlussrechnung: %v", err)

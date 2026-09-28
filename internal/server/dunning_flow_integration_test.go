@@ -21,7 +21,7 @@ func TestDunningFlowIntegration(t *testing.T) {
 		"gespann_id": {itoa64(e.gespannID)}, "entry_date": {"2026-04-05"},
 		"hours": {"2"}, "unit": {"h"},
 	})
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{"year_id": {itoa64(yid)}})
+	e.postIssue(nid, url.Values{"year_id": {itoa64(yid)}})
 
 	// Company: 14-day default term, 10-day grace, 5 € fee on the 1st Mahnung —
 	// through the settings handler, so the new form fields are exercised too.
@@ -97,7 +97,7 @@ func TestDunningBatchEmailFallsBackToOutboxIntegration(t *testing.T) {
 		"gespann_id": {itoa64(e.gespannID)}, "entry_date": {"2026-04-06"},
 		"hours": {"1"}, "unit": {"h"},
 	})
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{"year_id": {itoa64(yid)}})
+	e.postIssue(nid, url.Values{"year_id": {itoa64(yid)}})
 	// Overdue immediately, and give the neighbor an address so the batch tries.
 	e.post(fmt.Sprintf("/neighbors/%d/update", nid), url.Values{
 		"name": {"IT-Nachbar " + e.uname}, "note": {""},

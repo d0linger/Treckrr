@@ -450,7 +450,7 @@ func TestInvoiceLifecycleHandlersIntegration(t *testing.T) {
 		"hours": {"2"}, "unit": {"h"},
 	})
 
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{"year_id": {itoa64(yid)}})
+	e.postIssue(nid, url.Values{"year_id": {itoa64(yid)}})
 	iv, err := e.st.GetInvoice(e.ctx, yid, nid)
 	if err != nil {
 		t.Fatalf("no invoice after issue: %v", err)
@@ -472,7 +472,7 @@ func TestInvoiceLifecycleHandlersIntegration(t *testing.T) {
 
 	// The batch run re-issues for the now invoice-less neighbor. Since Nr. 70 it
 	// issues only the ticked neighbors, so the selection has to be explicit.
-	e.post(fmt.Sprintf("/years/%d/issue-all", yid), url.Values{"neighbor_id": {itoa64(nid)}})
+	e.postIssueAll(yid, url.Values{"neighbor_id": {itoa64(nid)}})
 	if _, err := e.st.GetInvoice(e.ctx, yid, nid); err != nil {
 		t.Errorf("batch issue created no invoice: %v", err)
 	}

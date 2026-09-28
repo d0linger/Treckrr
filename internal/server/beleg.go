@@ -965,6 +965,10 @@ func (s *Server) handleInvoiceConfirm(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "invoice_confirm", data)
 }
 
+// msgInvoiceContentChanged is shown with the refreshed preview when the content
+// to be festgeschrieben no longer matches what the operator confirmed.
+const msgInvoiceContentChanged = "Die Buchungen haben sich seit der Vorschau geändert — bitte die aktualisierte Vorschau prüfen und erneut festschreiben."
+
 // handleInvoiceIssue assigns and stores a sequential invoice number for a
 // neighbor+year (fixed once), then shows the Beleg in Rechnung mode.
 func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
@@ -1026,6 +1030,12 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 		}
 		issuedOn = d
 	}
+	// The number is bound to the content the operator confirmed: the confirm page
+	// posts the preview's content hash, and a mismatch (a booking added, edited
+	// or voided since, possibly by another session or an offline replay) shows
+	// the preview again instead of freezing lines nobody looked at.
+	confirmedHash := strings.TrimSpace(r.FormValue("content_hash"))
+	confirmURL := fmt.Sprintf("/neighbors/%d/invoice/confirm?year=%d", neighborID, yearID)
 	// § 11 UStG: only fix a number once every mandatory field is present. Build the
 	// content that will be frozen and block issuance if anything is missing, listing
 	// exactly what to fix. Skipped for an already-issued invoice (idempotent re-issue).
@@ -1040,11 +1050,23 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 			redirect(w, r, fmt.Sprintf("/neighbors/%d/beleg?year=%d", neighborID, yearID))
 			return
 		}
+		if confirmedHash != content.Hash {
+			s.setFlash(w, r, "error", msgInvoiceContentChanged)
+			redirect(w, r, confirmURL)
+			return
+		}
 	} else if err != nil {
 		s.serverError(w, "invoice: lookup", err)
 		return
 	}
-	iv, err := s.store.IssueInvoice(r.Context(), yearID, neighborID, year.Year, issuedOn)
+	// The store re-checks the hash under the account lock, closing the window
+	// between the check above and the numbering.
+	iv, err := s.store.IssueInvoiceConfirmed(r.Context(), yearID, neighborID, year.Year, issuedOn, confirmedHash)
+	if errors.Is(err, store.ErrInvoiceContentChanged) {
+		s.setFlash(w, r, "error", msgInvoiceContentChanged)
+		redirect(w, r, confirmURL)
+		return
+	}
 	if err != nil {
 		msg := "Rechnung konnte nicht ausgestellt werden."
 		if errors.Is(err, store.ErrIssueDateInvalid) {

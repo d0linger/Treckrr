@@ -44,7 +44,7 @@ func TestYearClosingIntegration(t *testing.T) {
 	}
 
 	// Issue: the first check clears, "never sent" and "unpaid" open up.
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{"year_id": {itoa64(yid)}})
+	e.postIssue(nid, url.Values{"year_id": {itoa64(yid)}})
 	checks, _ = e.st.YearClosingChecks(e.ctx, yid)
 	byKey = map[string]int{}
 	amounts := map[string]string{}

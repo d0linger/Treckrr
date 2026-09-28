@@ -97,7 +97,7 @@ func TestEntryListAndBulkIntegration(t *testing.T) {
 	}
 
 	// Now freeze an invoice: every bulk action must skip these bookings and say so.
-	e.post(fmt.Sprintf("/neighbors/%d/invoice", nid), url.Values{"year_id": {itoa64(yid)}})
+	e.postIssue(nid, url.Values{"year_id": {itoa64(yid)}})
 	all := url.Values{"year_id": {itoa64(yid)}, "action": {"delete"}}
 	for _, en := range entries {
 		all.Add("entry_id", itoa64(en.ID))
@@ -138,7 +138,7 @@ func TestBatchIssueSelectionIntegration(t *testing.T) {
 
 	// Empty selection: nothing may be frozen — this is the one mistake that
 	// costs a Storno per invoice to undo.
-	e.post(fmt.Sprintf("/years/%d/issue-all", yid), url.Values{})
+	e.postIssueAll(yid, url.Values{})
 	for _, n := range []int64{nid, second} {
 		if _, err := e.st.GetInvoice(e.ctx, yid, n); err == nil {
 			t.Fatalf("an empty selection issued an invoice for %d", n)
@@ -146,7 +146,7 @@ func TestBatchIssueSelectionIntegration(t *testing.T) {
 	}
 
 	// Only the second neighbor.
-	e.post(fmt.Sprintf("/years/%d/issue-all", yid), url.Values{"neighbor_id": {itoa64(second)}})
+	e.postIssueAll(yid, url.Values{"neighbor_id": {itoa64(second)}})
 	if _, err := e.st.GetInvoice(e.ctx, yid, second); err != nil {
 		t.Errorf("the selected neighbor got no invoice: %v", err)
 	}

@@ -2,6 +2,9 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"strconv"
 	"time"
 )
 
@@ -11,7 +14,15 @@ type EntryPhoto struct {
 	Created time.Time
 }
 
-// AddEntryPhoto stores a re-encoded image for a booking and returns its id.
+// ErrDuplicatePhoto reports that the booking already holds a byte-identical
+// image. Uploads are re-encoded deterministically, so a re-submitted upload
+// (a retry after a dropped response) produces exactly the stored bytes again.
+var ErrDuplicatePhoto = errors.New("identical photo already attached to this booking")
+
+// AddEntryPhoto stores a re-encoded image for a booking and returns its id. An
+// image identical to one the booking already carries is not stored twice
+// (ErrDuplicatePhoto); the check runs under the account lock, so two racing
+// retries cannot both insert.
 func (s *Store) AddEntryPhoto(ctx context.Context, entryID int64, image []byte, contentType string) (int64, error) {
 	yearID, neighborID, err := s.entryAccount(ctx, entryID)
 	if err != nil {
@@ -25,10 +36,18 @@ func (s *Store) AddEntryPhoto(ctx context.Context, entryID int64, image []byte, 
 	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
 		return 0, err
 	}
+	// bytea equality compares lengths first, so differing photos cost no
+	// detoasting; only a same-sized candidate is compared byte by byte.
 	var id int64
 	err = tx.QueryRowContext(ctx,
-		`INSERT INTO entry_photos (entry_id, image, content_type) VALUES ($1,$2,$3) RETURNING id`,
+		`INSERT INTO entry_photos (entry_id, image, content_type)
+		 SELECT $1::bigint, $2::bytea, $3::text
+		  WHERE NOT EXISTS (SELECT 1 FROM entry_photos WHERE entry_id=$1 AND image=$2)
+		 RETURNING id`,
 		entryID, image, contentType).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrDuplicatePhoto
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -99,6 +118,18 @@ type PhotoRef struct {
 	TaskLabel string
 	Created   time.Time
 	IsLedger  bool
+}
+
+// URL is the app path serving this photo. Entry and ledger photos live in two
+// tables with independent id sequences, so the source decides the route: a
+// ledger photo addressed under /entries/ would 404 or, on an id collision,
+// resolve to another booking's receipt.
+func (p PhotoRef) URL() string {
+	source := "/entries/"
+	if p.IsLedger {
+		source = "/ledger/"
+	}
+	return source + strconv.FormatInt(p.EntryID, 10) + "/photos/" + strconv.FormatInt(p.PhotoID, 10)
 }
 
 // PhotoCountsForEntries counts receipt photos for exactly the given entries —
