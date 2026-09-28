@@ -51,7 +51,8 @@ func (s *Server) handleLedgerRecurringCreate(w http.ResponseWriter, r *http.Requ
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden.")
 		return
 	}
-	if s.tooLong(w, r, "Startdatum", r.FormValue("next_run"), maxNameLen) {
+	if s.tooLong(w, r, "Startdatum", r.FormValue("next_run"), maxNameLen) ||
+		s.tooLong(w, r, "Intervall", r.FormValue("interval_kind"), maxNameLen) {
 		redirect(w, r, "/recurring")
 		return
 	}

@@ -83,6 +83,63 @@ func TestLogin2FACodeLimit(t *testing.T) {
 	}
 }
 
+// TestRecurringIntervalLimits rejects oversized cadence values in every
+// recurring-rule creation and update path before accessing the database.
+func TestRecurringIntervalLimits(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	for _, tc := range []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{name: "booking create", handler: s.handleRecurringCreate},
+		{name: "booking update", handler: s.handleRecurringUpdate},
+		{name: "ledger create", handler: s.handleLedgerRecurringCreate},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			form := url.Values{
+				"next_run":      {"2026-09-28"},
+				"interval_kind": {strings.Repeat("w", maxNameLen+1)},
+			}
+			assertFormRedirect(
+				t,
+				s,
+				tc.handler,
+				form,
+				"/recurring",
+				"Intervall darf höchstens 100 Zeichen lang sein.",
+			)
+		})
+	}
+}
+
+// TestPasskeyRegisterBeginPasswordLimit rejects impossible bcrypt passwords
+// before consuming a persistent verification-attempt allowance.
+func TestPasskeyRegisterBeginPasswordLimit(t *testing.T) {
+	s := &Server{}
+	for _, tc := range []struct {
+		name     string
+		password string
+	}{
+		{name: "ASCII", password: strings.Repeat("a", 73)},
+		{name: "UTF-8", password: strings.Repeat("ä", 37)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"password":%q}`, tc.password)
+			req := httptest.NewRequest(http.MethodPost, "/profile/passkeys/register/begin", strings.NewReader(body))
+			rr := httptest.NewRecorder()
+
+			s.handlePasskeyRegisterBegin(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+			}
+			if got := strings.TrimSpace(rr.Body.String()); got != "Passwort darf höchstens 72 Byte lang sein." {
+				t.Errorf("body = %q", got)
+			}
+		})
+	}
+}
+
 // TestStepUpInputLimits checks that oversized credentials never reach the
 // database or consume an admission attempt, including multibyte passwords.
 func TestStepUpInputLimits(t *testing.T) {
