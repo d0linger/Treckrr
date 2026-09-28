@@ -16,7 +16,9 @@ import (
 //  1. Reset the pool — discard connections holding stale cached plans.
 //  2. Migrate — re-apply whatever the backup lacked (forward-only; a backup NEWER
 //     than this binary is left as-is, there is no matching migration to apply).
-//  3. Invalidate restored sessions and pending WebAuthn ceremonies.
+//  3. Invalidate restored sessions and pending WebAuthn ceremonies, and hold
+//     every restored pending/sending outbox mail for operator release: it may
+//     already have been delivered after the backup was taken (HeldMailCount).
 //  4. Backfill invoice snapshots — the same idempotent step run at boot, so a
 //     restored pre-Festschreibung backup gets its frozen snapshots without a
 //     restart.
@@ -38,6 +40,9 @@ func (s *Store) ReconcileAfterRestore(ctx context.Context) error {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM webauthn_ceremonies`); err != nil {
+			return err
+		}
+		if _, err := holdOutboxAfterRestoreTx(ctx, tx); err != nil {
 			return err
 		}
 		if err := tx.Commit(); err != nil {

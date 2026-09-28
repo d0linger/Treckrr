@@ -45,6 +45,7 @@ type Server struct {
 	started         time.Time
 	maintenance     atomic.Bool  // set during a restore: the gate serves 503 for normal traffic
 	leaseLost       atomic.Bool  // irreversible: the application lease session was lost
+	draining        atomic.Bool  // process shutdown began: no new background tasks
 	activity        sync.RWMutex // drains requests and background maintenance before restore
 	restoreLease    func(context.Context) (func() error, error)
 	backgroundMu    sync.Mutex
@@ -296,6 +297,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/backup/s3/test", s.admin(s.handleBackupS3Test))
 	mux.Handle("POST /admin/backup/s3/run", s.admin(s.handleBackupS3Run))
 	mux.Handle("GET /admin/backup/s3/file/{name}", s.admin(s.handleBackupS3File))
+	mux.Handle("POST /admin/backup/held-mail/{id}/release", s.admin(s.handleHeldMailRelease))
+	mux.Handle("POST /admin/backup/held-mail/{id}/discard", s.admin(s.handleHeldMailDiscard))
 	mux.Handle("GET /admin/company", s.admin(s.handleCompany))
 	mux.Handle("POST /admin/company", s.admin(s.handleCompanySave))
 	mux.Handle("GET /admin/users", s.admin(s.handleUsers))

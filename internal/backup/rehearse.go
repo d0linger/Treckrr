@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -77,6 +78,10 @@ func (s *Service) RehearseRestore(ctx context.Context, enc []byte) (Rehearsal, e
 	}
 	defer admin.Close()
 
+	// An interrupted earlier rehearsal (SIGKILL, OOM, a crashed host) leaves a
+	// full plaintext copy of production behind. Remove such leftovers first.
+	dropStaleScratch(ctx, admin, time.Now())
+
 	// Never drop an existing database to recover from a name collision.
 	if _, err := admin.ExecContext(ctx, `CREATE DATABASE "`+scratch+`"`); err != nil {
 		return rep, fmt.Errorf("rehearsal: create scratch db: %w", err)
@@ -87,7 +92,7 @@ func (s *Service) RehearseRestore(ctx context.Context, enc []byte) (Rehearsal, e
 		dropScratch(cleanupCtx, admin, scratch)
 	}()
 
-	tmp, cleanup, err := writeTemp(raw)
+	tmp, cleanup, err := s.writeTemp(raw)
 	if err != nil {
 		return rep, err
 	}
@@ -178,6 +183,92 @@ func dropScratch(ctx context.Context, admin *sql.DB, name string) {
 	}
 }
 
+// scratchPrefix names every rehearsal scratch database.
+const scratchPrefix = "treckrr_rehearsal_"
+
+// scratchName builds "treckrr_rehearsal_<unix seconds>_<nonce>" (61 bytes with
+// a 32-hex nonce, inside PostgreSQL's 63-byte identifier limit).
+func scratchName(created time.Time, nonce string) string {
+	return scratchPrefix + strconv.FormatInt(created.Unix(), 10) + "_" + nonce
+}
+
+// staleScratchAge is how old a scratch database must be before another
+// rehearsal may drop it: older than any rehearsal can legitimately run.
+const staleScratchAge = rehearsalTimeout + 5*time.Minute
+
+// staleScratch decides whether a scratch database is a leftover. Timestamped
+// names are stale once older than staleScratchAge. Names from earlier releases
+// (a bare 32-hex nonce, no timestamp) cannot be dated; they are only dropped
+// when no session is connected to them, since a running rehearsal holds one
+// for all but a moment.
+func staleScratch(name string, connected bool, now time.Time) bool {
+	rest, ok := strings.CutPrefix(name, scratchPrefix)
+	if !ok {
+		return false
+	}
+	stamp, nonce, timestamped := strings.Cut(rest, "_")
+	if !timestamped {
+		return isHex(rest, 32) && !connected
+	}
+	secs, err := strconv.ParseInt(stamp, 10, 64)
+	if err != nil || !isHex(nonce, 32) {
+		return false
+	}
+	return now.Sub(time.Unix(secs, 0)) > staleScratchAge
+}
+
+// isHex reports whether s is exactly n lowercase hex digits.
+func isHex(s string, n int) bool {
+	if len(s) != n {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// dropStaleScratch removes leftover rehearsal databases. Best effort: a
+// failure is logged and never blocks the rehearsal itself.
+func dropStaleScratch(ctx context.Context, admin *sql.DB, now time.Time) {
+	stale, err := listStaleScratch(ctx, admin, now)
+	if err != nil {
+		slog.Warn("rehearsal: listing leftover scratch databases failed", "err", err)
+	}
+	for _, name := range stale {
+		slog.Warn("rehearsal: dropping leftover scratch database from an interrupted run", "db", name)
+		dropScratch(ctx, admin, name)
+	}
+}
+
+// listStaleScratch returns the rehearsal scratch databases that staleScratch
+// classifies as leftovers.
+func listStaleScratch(ctx context.Context, admin *sql.DB, now time.Time) ([]string, error) {
+	rows, err := admin.QueryContext(ctx, `
+		SELECT d.datname,
+		       EXISTS (SELECT 1 FROM pg_stat_activity a WHERE a.datname = d.datname)
+		  FROM pg_database d
+		 WHERE d.datname LIKE 'treckrr\_rehearsal\_%'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var stale []string
+	for rows.Next() {
+		var name string
+		var connected bool
+		if err := rows.Scan(&name, &connected); err != nil {
+			return stale, err
+		}
+		if staleScratch(name, connected, now) {
+			stale = append(stale, name)
+		}
+	}
+	return stale, rows.Err()
+}
+
 // scratchTarget derives the maintenance connection (to the "postgres" database)
 // and the scratch database name, and refuses a configuration that would point
 // the rehearsal at the live database.
@@ -187,11 +278,13 @@ func scratchTarget(rehearseURL, liveURL string) (adminURL, scratch string, err e
 		return "", "", errors.New("rehearsal: a valid PostgreSQL URL is required")
 	}
 	// The prefix stays recognizable; ownership is unique to this invocation.
+	// The creation time in the name lets a later rehearsal recognize and drop
+	// a leftover that an interrupted run could not clean up itself.
 	var nonce [16]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return "", "", err
 	}
-	scratch = "treckrr_rehearsal_" + hex.EncodeToString(nonce[:])
+	scratch = scratchName(time.Now(), hex.EncodeToString(nonce[:]))
 	if lu, lerr := url.Parse(liveURL); lerr == nil {
 		if strings.EqualFold(lu.Host, ru.Host) && strings.TrimPrefix(lu.Path, "/") == scratch {
 			return "", "", errors.New("rehearsal: the rehearsal database must not be the live database")

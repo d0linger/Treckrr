@@ -322,12 +322,12 @@ func TestVerifyS3ObjectRejectsBadIntegration(t *testing.T) {
 			_ = cl.RemoveObject(context.Background(), svc.opt.S3.Bucket, svc.opt.S3.Prefix+name, minio.RemoveObjectOptions{})
 		}
 	})
-	// Correct size, but the stored bytes are not a decryptable archive → must reject.
-	if err := svc.verifyS3Object(ctx, name, int64(len(junk))); err == nil {
-		t.Error("verifyS3Object accepted a non-decryptable stored object")
+	// Correct size, but the stored bytes differ from the verified archive → must reject.
+	if err := svc.verifyS3Object(ctx, name, int64(len(junk)), sha256.Sum256([]byte("a verified archive"))); err == nil {
+		t.Error("verifyS3Object accepted a stored object that differs from the verified archive")
 	}
 	// Size mismatch (as from an incomplete upload) → must reject on the size check.
-	if err := svc.verifyS3Object(ctx, name, int64(len(junk))+100); err == nil {
+	if err := svc.verifyS3Object(ctx, name, int64(len(junk))+100, sha256.Sum256(junk)); err == nil {
 		t.Error("verifyS3Object accepted a size mismatch (incomplete upload)")
 	}
 }

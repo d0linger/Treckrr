@@ -64,6 +64,13 @@ RUN apk upgrade --no-cache \
 	&& apk add --no-cache ca-certificates tzdata wget postgresql16-client \
 	&& adduser -D -u 10001 treckrr
 ENV TZ=Europe/Vienna
+# Soft heap ceiling for the Go runtime. Without it the GC lets the heap grow to
+# twice the live set, so a backup or restore holding a large archive can push
+# the container past its memory limit (768M in docker-compose.yml) and get
+# OOM-killed. 512MiB leaves room below that limit for the pg_dump/pg_restore
+# child processes and the /tmp tmpfs, which are charged to the same cgroup.
+# Override with -e GOMEMLIMIT=… when the container limit differs.
+ENV GOMEMLIMIT=512MiB
 
 # Provision the backup dir owned by the non-root app user. A named volume
 # mounted here inherits this ownership on first creation, so uid 10001 can

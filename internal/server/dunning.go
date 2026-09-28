@@ -386,6 +386,9 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
+	// PDF render, the intent write and one bounded SMTP attempt must all fit
+	// before the redirect; the global 30s WriteTimeout is shorter than that.
+	extendWriteDeadline(w, 2*store.MailDeliveryBudget)
 	status, err := s.deliverMahnung(r.Context(), v, true)
 	if err != nil {
 		slog.Error("mahnung email intent failed", "neighbor", v.Neighbor.ID, "err", sanitizeLog(err.Error()))
@@ -402,6 +405,8 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 		s.setFlash(w, r, "error", "Versand fehlgeschlagen — zur automatischen Wiederholung eingeplant.")
 	case "ambiguous":
 		s.setFlash(w, r, "error", "Zustellung unklar — keine automatische Wiederholung. Bitte Empfänger und Audit-Log prüfen.")
+	case "held":
+		s.setFlash(w, r, "error", heldMailFlash)
 	default:
 		s.setFlash(w, r, "error", "Versand endgültig fehlgeschlagen. Bitte im Audit-Log prüfen.")
 	}
@@ -412,7 +417,9 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 // attempts only a newly-created row. The store settles delivery history and
 // outbox state in one transaction; ambiguous SMTP outcomes are never retried.
 // explicitResend is reserved for a single-recipient POST; a batch can never
-// reopen a terminal failed or ambiguous outcome by being submitted twice.
+// reopen a terminal failed or ambiguous outcome by being submitted twice. It
+// also marks the single-send request path, whose CC copy is sent
+// asynchronously; the batch sends its copies in line with its own deadline.
 func (s *Server) deliverMahnung(ctx context.Context, v *mahnungView, explicitResend bool) (string, error) {
 	blob, err := v.toPDF()
 	if err != nil {
@@ -449,10 +456,16 @@ func (s *Server) deliverMahnung(ctx context.Context, v *mahnungView, explicitRes
 	switch status {
 	case store.MailStatusSent:
 		if created {
-			s.sendMailCopy(ctx, v.Company, subject, body, []mail.Attachment{att})
+			if explicitResend {
+				s.sendMailCopyAsync(ctx, v.Company, subject, body, []mail.Attachment{att})
+			} else {
+				s.sendMailCopy(ctx, v.Company, subject, body, []mail.Attachment{att})
+			}
 			return "sent", nil
 		}
 		return "alreadySent", nil
+	case store.MailStatusHeld:
+		return "held", nil
 	case store.MailStatusPending, store.MailStatusSending:
 		metrics.Inc(metrics.MailFailed)
 		return "queued", nil
@@ -618,7 +631,7 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 	bctx, cancelBatch := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Minute)
 	defer cancelBatch()
 
-	var sent, alreadySent, queued, ambiguous, skipped, failed int
+	var sent, alreadySent, queued, ambiguous, held, skipped, failed int
 	ran := false
 	s.BackgroundTask(bctx, func(taskCtx context.Context) {
 		ran = true
@@ -657,6 +670,8 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 				queued++
 			case "ambiguous":
 				ambiguous++
+			case "held":
+				held++
 			default:
 				failed++
 			}
@@ -676,6 +691,9 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 	if ambiguous > 0 {
 		msg += fmt.Sprintf(", %d mit unklarem Zustellstatus (manuell prüfen)", ambiguous)
 	}
+	if held > 0 {
+		msg += fmt.Sprintf(", %d nach einer Wiederherstellung angehalten (unter Backup freigeben oder verwerfen)", held)
+	}
 	if failed > 0 {
 		msg += fmt.Sprintf(", %d fehlgeschlagen (bitte prüfen und nur betroffene Nachbarn erneut senden)", failed)
 	}
@@ -683,7 +701,7 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 		msg += fmt.Sprintf(", %d ohne E-Mail-Adresse übersprungen", skipped)
 	}
 	kind := "success"
-	if failed > 0 || ambiguous > 0 {
+	if failed > 0 || ambiguous > 0 || held > 0 {
 		kind = "error"
 	}
 	s.setFlash(w, r, kind, msg+".")

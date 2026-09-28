@@ -223,6 +223,13 @@ func (s *Server) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
 		data["NextVolume"] = fmtNext(nv)
 		data["NextS3"] = fmtNext(ns)
 	}
+	// Mail parked by a restore is listed regardless of the backup configuration:
+	// an offline CLI restore holds it too.
+	if held, err := s.store.ListHeldMail(r.Context(), heldMailListLimit); err == nil {
+		data["HeldMail"] = held
+	} else {
+		slog.Error("backup panel: list held mail", "err", sanitizeLog(err.Error()))
+	}
 	s.render(w, r, "backup", data)
 }
 
@@ -308,7 +315,15 @@ func (s *Server) handleBackupSettings(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "backup_settings", "backup", 0,
 			fmt.Sprintf("Volume %q/behalte %d · S3 %q/behalte %d",
 				bs.VolumeCron, bs.VolumeKeep, bs.S3Cron, bs.S3Keep))
-		s.setFlash(w, r, "success", "Backup-Zeitplan gespeichert.")
+		msg := "Backup-Zeitplan gespeichert."
+		// Valid but hazardous around the DST change: save, and say so.
+		for _, expr := range []string{bs.VolumeCron, bs.S3Cron} {
+			if warning := backup.CronDSTWarning(expr); warning != "" {
+				msg += " " + warning
+				break
+			}
+		}
+		s.setFlash(w, r, "success", msg)
 	}
 	redirect(w, r, "/admin/backup")
 }
@@ -610,7 +625,13 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 	}
 	s.audit(r, "backup_restore", "backup", 0, fmt.Sprintf("%d Objekte aus Upload wiederhergestellt", objects))
 	reconciled = true
-	s.setFlash(w, r, "success", "Wiederherstellung abgeschlossen (Schema aktualisiert, kein Neustart nötig). Bitte neu anmelden.")
+	msg := "Wiederherstellung abgeschlossen (Schema aktualisiert, kein Neustart nötig). Bitte neu anmelden."
+	if held, err := s.store.HeldMailCount(rctx); err != nil {
+		slog.Error("post-restore: count held mail", "err", sanitizeLog(err.Error()))
+	} else if held > 0 {
+		msg += fmt.Sprintf(" %d ausstehende E-Mail(s) aus dem Backup wurden angehalten, weil sie nach dem Backup schon versendet worden sein könnten — bitte unter „Angehaltene E-Mails“ freigeben oder verwerfen.", held)
+	}
+	s.setFlash(w, r, "success", msg)
 	redirect(w, r, "/admin/backup")
 }
 

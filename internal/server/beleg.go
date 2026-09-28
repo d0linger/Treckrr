@@ -797,6 +797,9 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
+	// PDF render, the intent write and one bounded SMTP attempt must all fit
+	// before the redirect; the global 30s WriteTimeout is shorter than that.
+	extendWriteDeadline(w, 2*store.MailDeliveryBudget)
 	blob, err := pdf.RenderInvoice(&iv)
 	if err != nil {
 		s.serverError(w, "beleg email: pdf", err)
@@ -839,7 +842,7 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	switch status {
 	case store.MailStatusSent:
 		if created {
-			s.sendMailCopy(r.Context(), company, subject, body, []mail.Attachment{att})
+			s.sendMailCopyAsync(r.Context(), company, subject, body, []mail.Attachment{att})
 			s.setFlash(w, r, "success", "Rechnung an "+neighbor.Email+" gesendet.")
 		} else {
 			s.setFlash(w, r, "success", "Rechnung wurde bereits per E-Mail versendet.")
@@ -850,6 +853,8 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	case store.MailStatusAmbiguous:
 		metrics.Inc(metrics.MailFailed)
 		s.setFlash(w, r, "error", "Zustellung unklar — keine automatische Wiederholung. Bitte Empfänger und Audit-Log prüfen.")
+	case store.MailStatusHeld:
+		s.setFlash(w, r, "error", heldMailFlash)
 	default:
 		metrics.Inc(metrics.MailFailed)
 		s.setFlash(w, r, "error", "Versand endgültig fehlgeschlagen. Bitte im Audit-Log prüfen.")

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // A database-scoped lock shared by serving instances, exclusive during restore.
@@ -87,33 +89,85 @@ func (l *ApplicationLease) Exclusive(ctx context.Context) (func() error, error) 
 	}, nil
 }
 
+// Heartbeat tuning for Monitor. The timeout is deliberately independent of,
+// and much longer than, the interval: with pgx a ping that hits its deadline
+// closes the connection, which ends the session and drops the advisory lock.
+// A one-second timeout turned every checkpoint or I/O stall (typically the
+// app's own pg_dump or restore) into a full restart.
+const (
+	leasePingTimeout     = 15 * time.Second
+	leaseMaxPingFailures = 3
+)
+
 // Monitor verifies that the dedicated session holding the application lease is
 // still alive. It returns nil on normal context cancellation and a wrapped
-// ErrApplicationLeaseLost on the first failed heartbeat. A failed lease must
-// never be silently reacquired: an offline restore may already hold the
-// exclusive lock by then.
+// ErrApplicationLeaseLost once the lease is gone: immediately when the session
+// is closed, otherwise after leaseMaxPingFailures consecutive failed heartbeats.
+// A failed lease must never be silently reacquired: an offline restore may
+// already hold the exclusive lock by then.
+//
+// While this process holds the exclusive restore lock (Exclusive), heartbeats
+// pause: the restore itself owns the session and the database is under its
+// heaviest load, so a probe could only hurt.
 func (l *ApplicationLease) Monitor(ctx context.Context, interval time.Duration) error {
+	return l.monitor(ctx, interval, leasePingTimeout, leaseMaxPingFailures)
+}
+
+func (l *ApplicationLease) monitor(ctx context.Context, interval, timeout time.Duration, maxFailures int) error {
 	if interval <= 0 {
 		interval = time.Second
 	}
+	if timeout <= 0 {
+		timeout = leasePingTimeout
+	}
+	if maxFailures < 1 {
+		maxFailures = 1
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	failures := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			checkCtx, cancel := context.WithTimeout(ctx, interval)
+			if !l.mu.TryLock() {
+				continue // exclusive restore (or Close) in progress
+			}
+			checkCtx, cancel := context.WithTimeout(ctx, timeout)
 			err := l.conn.PingContext(checkCtx)
 			cancel()
-			if err != nil {
-				if ctx.Err() != nil {
-					return nil
-				}
+			closed := err != nil && l.sessionClosed()
+			l.mu.Unlock()
+			if err == nil {
+				failures = 0
+				continue
+			}
+			if ctx.Err() != nil {
+				return nil
+			}
+			failures++
+			if closed || failures >= maxFailures {
 				return fmt.Errorf("%w: %v", ErrApplicationLeaseLost, err)
 			}
 		}
 	}
+}
+
+// sessionClosed reports whether the lease's database session is definitely
+// gone. A closed session has released its advisory locks, so retrying the
+// heartbeat cannot help. Callers hold l.mu.
+func (l *ApplicationLease) sessionClosed() bool {
+	err := l.conn.Raw(func(driverConn any) error {
+		if c, ok := driverConn.(interface{ IsClosed() bool }); ok && c.IsClosed() {
+			return driver.ErrBadConn
+		}
+		if c, ok := driverConn.(interface{ Conn() *pgx.Conn }); ok && c.Conn().IsClosed() {
+			return driver.ErrBadConn
+		}
+		return nil
+	})
+	return err != nil
 }
 
 // Close releases the lease and discards its session rather than returning a

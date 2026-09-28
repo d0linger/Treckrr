@@ -38,14 +38,14 @@ func (s *Server) Background(ctx context.Context, work func()) {
 // new registrations, then cancels and drains every registered task before it
 // takes the exclusive database lease.
 func (s *Server) BackgroundTask(ctx context.Context, work func(context.Context)) {
-	if ctx.Err() != nil || s.maintenanceActive() {
+	if ctx.Err() != nil || s.maintenanceActive() || s.draining.Load() {
 		return
 	}
 	taskCtx, cancel := context.WithCancel(ctx)
 	task := backgroundTask{cancel: cancel, done: make(chan struct{})}
 
 	s.backgroundMu.Lock()
-	if s.maintenanceActive() {
+	if s.maintenanceActive() || s.draining.Load() {
 		s.backgroundMu.Unlock()
 		cancel()
 		return
@@ -86,6 +86,52 @@ func (s *Server) cancelBackground(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// BeginShutdown starts the process drain: no new background task is admitted,
+// and every registered one is asked to stop. Mail loops observe the
+// cancellation between messages, so a mail already being delivered finishes
+// with its own bounded budget and is settled instead of being cut off.
+func (s *Server) BeginShutdown() {
+	s.backgroundMu.Lock()
+	s.draining.Store(true)
+	for _, task := range s.backgroundTasks {
+		task.cancel()
+	}
+	s.backgroundMu.Unlock()
+}
+
+// WaitBackground waits until every registered background task has returned or
+// ctx ends. Call it after BeginShutdown.
+func (s *Server) WaitBackground(ctx context.Context) error {
+	s.backgroundMu.Lock()
+	tasks := make([]backgroundTask, 0, len(s.backgroundTasks))
+	for _, task := range s.backgroundTasks {
+		tasks = append(tasks, task)
+	}
+	s.backgroundMu.Unlock()
+	for _, task := range tasks {
+		select {
+		case <-task.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+// goBackground runs work asynchronously as a registered background task with
+// its own timeout, detached from the caller's cancellation. Restore admission
+// and shutdown cancel and wait for it like any other task.
+func (s *Server) goBackground(ctx context.Context, timeout time.Duration, work func(context.Context)) {
+	if s.maintenanceActive() || s.draining.Load() {
+		return
+	}
+	taskCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	go func() {
+		defer cancel()
+		s.BackgroundTask(taskCtx, work)
+	}()
 }
 
 // FailClosed immediately removes this process from readiness and asks every
