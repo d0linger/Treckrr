@@ -190,14 +190,14 @@ func TestLedgerTransferSidesAreLockedIntegration(t *testing.T) {
 // gross less the credits already issued.
 func TestFreeGutschriftPreInvoiceCapIntegration(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		vat   bool
-		gross string // would-be invoice gross of the 100.00 booking
-	}{{"no vat", false, "100"}, {"vat 20", true, "120"}} {
+		name string
+		vat  bool
+		cap  string // pre-invoice cap for the 100.00 booking: never above its net
+	}{{"no vat", false, "100"}, {"vat 20", true, "100"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			st, _, yearID, neighborID, _ := invoiceFixture(t, tc.vat)
 			ctx := context.Background()
-			over := dec(tc.gross).Add(dec("0.01"))
+			over := dec(tc.cap).Add(dec("0.01"))
 			if _, err := st.FreeGutschrift(ctx, yearID, neighborID, 2026, over, "zu viel"); !errors.Is(err, store.ErrGutschriftExceedsBookings) ||
 				!errors.Is(err, store.ErrGutschriftTooLarge) {
 				t.Fatalf("over cap = %v, want ErrGutschriftExceedsBookings", err)
@@ -205,19 +205,18 @@ func TestFreeGutschriftPreInvoiceCapIntegration(t *testing.T) {
 			if _, err := st.FreeGutschrift(ctx, yearID, neighborID, 2026, dec("60"), "Teil"); err != nil {
 				t.Fatalf("first credit: %v", err)
 			}
-			rest := dec(tc.gross).Sub(dec("60"))
+			rest := dec(tc.cap).Sub(dec("60"))
 			if _, err := st.FreeGutschrift(ctx, yearID, neighborID, 2026, rest.Add(dec("0.01")), "Rest+"); !errors.Is(err, store.ErrGutschriftExceedsBookings) {
 				t.Fatalf("credits summed over cap = %v, want ErrGutschriftExceedsBookings", err)
 			}
 			if _, err := st.FreeGutschrift(ctx, yearID, neighborID, 2026, rest, "Rest"); err != nil {
 				t.Fatalf("credit at cap: %v", err)
 			}
-			// Without VAT the would-be gross equals the live booking net the
-			// balance falls back to, so nothing is left to pay out.
-			if !tc.vat {
-				if payout, err := st.PayoutCredit(ctx, yearID, neighborID, time.Now(), "Guthaben"); err != nil || !payout.IsZero() {
-					t.Fatalf("payout of an unbacked credit = %s (%v), want nothing", payout, err)
-				}
+			// The balance bills the bookings net until the invoice exists, so a
+			// credit up to the cap leaves nothing to pay out, with or without VAT
+			// (the gross-only cap left the VAT share as an unbacked Guthaben).
+			if payout, err := st.PayoutCredit(ctx, yearID, neighborID, time.Now(), "Guthaben"); err != nil || !payout.IsZero() {
+				t.Fatalf("payout of an unbacked credit = %s (%v), want nothing", payout, err)
 			}
 		})
 	}

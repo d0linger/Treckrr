@@ -135,7 +135,7 @@ func (s *Store) FreeGutschrift(ctx context.Context, yearID, neighborID int64, ye
 	//
 	// Before any invoice exists the cap is the gross the invoice WOULD have if it
 	// were issued now — the same content IssueInvoice freezes, built inside this
-	// locked transaction. Without that cap an uncapped pre-invoice credit made the
+	// locked transaction — bounded by the net the balance bills until then. Without that cap an uncapped pre-invoice credit made the
 	// balance negative, and payout or carry-forward then moved a Guthaben no
 	// payment ever backed; the IssueInvoice refusal only helped if an invoice was
 	// ever issued.
@@ -150,7 +150,27 @@ func (s *Store) FreeGutschrift(ctx context.Context, yearID, neighborID int64, ye
 		if err != nil {
 			return models.Invoice{}, err
 		}
-		if err := checkCreditCap(ctx, tx, yearID, neighborID, wouldBe.Gross, gross); err != nil {
+		// Until the invoice exists the balance (remainingSQL) counts the bookings
+		// as their stored cost, i.e. net for a VAT-registered company, while the
+		// would-be invoice is gross. Capping at the gross alone let a maximal
+		// credit leave the VAT share behind as a payable Guthaben, so the cap is
+		// also bounded by what the balance itself bills: a pre-invoice credit
+		// can then only turn the account negative through real payments.
+		var billed decimal.Decimal
+		if err := tx.QueryRowContext(ctx, `
+			SELECT ROUND(
+			         (SELECT COALESCE(SUM(cost),0) FROM entries
+			           WHERE billing_year_id=$1 AND neighbor_id=$2 AND NOT voided)
+			       + (SELECT COALESCE(SUM(amount),0) FROM neighbor_ledger
+			           WHERE billing_year_id=$1 AND neighbor_id=$2 AND NOT voided), 2)`,
+			yearID, neighborID).Scan(&billed); err != nil {
+			return models.Invoice{}, err
+		}
+		capBase := decimal.Min(wouldBe.Gross, billed)
+		if capBase.IsNegative() {
+			capBase = decimal.Zero
+		}
+		if err := checkCreditCap(ctx, tx, yearID, neighborID, capBase, gross); err != nil {
 			if errors.Is(err, ErrGutschriftTooLarge) {
 				return models.Invoice{}, ErrGutschriftExceedsBookings
 			}
