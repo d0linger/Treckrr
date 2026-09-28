@@ -218,6 +218,7 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 
 // ---- registration ceremony (authenticated) ------------------------------
 
+// handlePasskeyRegisterBegin verifies step-up credentials and starts passkey registration.
 func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	user := userFromCtx(r)
 	// Step-up: adding a durable passkey requires re-entering the password, so a
@@ -231,6 +232,10 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "Ungültige Anfrage.", http.StatusBadRequest)
+		return
+	}
+	if len(body.Password) > 72 {
+		http.Error(w, "Passwort darf höchstens 72 Byte lang sein.", http.StatusBadRequest)
 		return
 	}
 	// This is a password-verification endpoint like the 2FA and change-password
