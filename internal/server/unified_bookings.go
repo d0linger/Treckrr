@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -198,6 +199,116 @@ func unifiedRequestFingerprint(r *http.Request) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// legacyRequestFingerprint binds a retry key of the historical single-booking
+// form (no booking_kind) to its inputs, so a corrected replay of a booking that
+// was already stored is reported instead of silently acknowledged. Rows stored
+// before it existed carry no fingerprint and still match (see store).
+func legacyRequestFingerprint(r *http.Request) string {
+	values := url.Values{}
+	for _, field := range []string{"neighbor_id", "year_id", "entry_date", "task_label", "note", "unit", "unit_custom",
+		"quantity", "unit_price", "hours", "mode", "gespann_id", "tractor_id", "load_level_id", "machine_ids",
+		"person_id", "person_hours", "person_rate"} {
+		for _, value := range r.Form[field] {
+			values.Add(field, strings.TrimSpace(value))
+		}
+	}
+	sort.Strings(values["machine_ids"])
+	sum := sha256.Sum256([]byte("legacy:v1\n" + values.Encode()))
+	return hex.EncodeToString(sum[:])
+}
+
+// entryRequestFingerprint is the retry identity of a POST /entries booking.
+func entryRequestFingerprint(r *http.Request) string {
+	if fp := unifiedRequestFingerprint(r); fp != "" {
+		return fp
+	}
+	return legacyRequestFingerprint(r)
+}
+
+// quickRowFingerprint binds one Schnellerfassung row's key to what the row
+// books. The machine half deliberately leaves the person out, so adding a
+// helper to an already stored row books just the companion; the companion's
+// fingerprint includes the person.
+func quickRowFingerprint(neighborID, yearID int64, date, gespann, hours, person string) string {
+	values := url.Values{
+		"neighbor_id": {strconv.FormatInt(neighborID, 10)}, "year_id": {strconv.FormatInt(yearID, 10)},
+		"date": {date}, "gespann": {gespann}, "hours": {hours}, "person": {person},
+	}
+	sum := sha256.Sum256([]byte("quick:v1\n" + values.Encode()))
+	return hex.EncodeToString(sum[:])
+}
+
+// replayStatusHeader marks a replay rejection whose booking is already stored,
+// so the offline queue shows it as saved-but-different instead of inviting a
+// correction (which can never be sent) or a re-entry (which would bill twice).
+const replayStatusHeader = "X-Treckrr-Replay"
+
+const (
+	replayDiffersMsg = "Bereits gespeichert (abweichend): Unter diesem Buchungsschlüssel ist schon eine Buchung mit anderen Daten gespeichert."
+	replayLedgerMsg  = "Bereits gespeichert: Unter diesem Buchungsschlüssel liegt schon eine Verrechnung im Konto; die Stammdaten haben sich seither geändert."
+	// replayConflictMsg is the per-row reason of a quick row stored with other data.
+	replayConflictMsg = "Bereits gespeichert (abweichend)."
+)
+
+// rejectStoredReplay answers a retry whose key already holds a stored booking.
+// It stays a 422 (with a marker header) so an older client still surfaces it.
+func (s *Server) rejectStoredReplay(w http.ResponseWriter, r *http.Request, msg, redirectTo string) {
+	if r.Header.Get("X-Offline-Replay") == "1" {
+		w.Header().Set(replayStatusHeader, "stored")
+		http.Error(w, msg, http.StatusUnprocessableEntity)
+		return
+	}
+	s.setFlash(w, r, "error", msg+" Bitte die gespeicherte Buchung im Konto prüfen.")
+	redirect(w, r, redirectTo)
+}
+
+// acceptRecordedReplay answers a retry of a booking that is already stored.
+func (s *Server) acceptRecordedReplay(w http.ResponseWriter, r *http.Request, redirectTo string) {
+	if r.Header.Get("X-Offline-Replay") == "1" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	s.setFlash(w, r, "success", "Buchung war bereits erfasst.")
+	redirect(w, r, redirectTo)
+}
+
+// probeBookingReplay deduplicates a keyed single booking before any master
+// data, year, membership or invoice check can reject it. done reports that the
+// request has been answered; ledger reports that a counterclaim holds the key
+// (its content is compared by the store once the form parses).
+func (s *Server) probeBookingReplay(w http.ResponseWriter, r *http.Request, probes []store.ReplayProbe) (done, ledger bool) {
+	neighborID, yearID := formInt64(r, "neighbor_id"), formInt64(r, "year_id")
+	for _, p := range probes {
+		if p.Key == "" || len(p.Key) > maxNameLen {
+			return false, false // validated (and rejected) by the normal path
+		}
+	}
+	states, err := s.store.ProbeReplay(r.Context(), yearID, neighborID, probes)
+	if err != nil {
+		s.unifiedBookingError(w, r, err)
+		return true, false
+	}
+	recorded := true
+	for _, state := range states {
+		switch state {
+		case store.ReplayForeign:
+			s.unifiedBookingError(w, r, store.ErrIdempotencyConflict)
+			return true, false
+		case store.ReplayDiffers:
+			s.rejectStoredReplay(w, r, replayDiffersMsg, neighborURL(neighborID, yearID))
+			return true, false
+		case store.ReplayLedger:
+			ledger = true
+		}
+		recorded = recorded && state == store.ReplayRecorded
+	}
+	if recorded {
+		s.acceptRecordedReplay(w, r, neighborURL(neighborID, yearID))
+		return true, false
+	}
+	return false, ledger
+}
+
 // rejectUnifiedBooking gives offline capture a recoverable status instead of a
 // misleading success redirect, while preserving the interactive flash workflow.
 func (s *Server) rejectUnifiedBooking(w http.ResponseWriter, r *http.Request, msg string) {
@@ -308,18 +419,18 @@ func (s *Server) resolveLaborFromForm(r *http.Request) (*models.Entry, string, e
 		UnitPrice: rate, Cost: cost, PersonID: &person.ID}, "", nil
 }
 
-// resolveUnifiedEntryFromForm retains transient lookup failures for offline retry
-// while the historical machine/quantity resolver keeps its established contract.
+// resolveUnifiedEntryFromForm retains transient lookup failures for offline retry:
+// only a validation problem is a message, a store failure is an error (500).
 func (s *Server) resolveUnifiedEntryFromForm(r *http.Request) (*models.Entry, []int64, string, error) {
 	if trimmed(r, "booking_kind") == "labor" {
 		entry, msg, err := s.resolveLaborFromForm(r)
 		return entry, nil, msg, err
 	}
 	if trimmed(r, "booking_kind") != "" {
+		// The unified form reports the date before anything else.
 		if _, err := time.Parse("2006-01-02", trimmed(r, "entry_date")); err != nil {
 			return nil, nil, "Bitte ein gültiges Datum angeben.", nil
 		}
 	}
-	entry, ids, msg := s.resolveEntryFromForm(r)
-	return entry, ids, msg, nil
+	return s.resolveEntryFromForm(r)
 }

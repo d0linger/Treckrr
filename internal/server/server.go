@@ -806,11 +806,22 @@ func staticServer() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Templates append the content-hash as ?v=<hash>, so a versioned URL changes
 		// whenever the asset changes — it can be cached hard (immutable, 1 year). An
-		// unversioned direct hit (e.g. /sw.js fetching /static/... or a bookmark) keeps
-		// the short, revalidating cache so it can't get stuck on a stale build.
-		if r.URL.Query().Get("v") != "" {
+		// unversioned direct hit (e.g. a bookmark) keeps the short, revalidating
+		// cache so it can't get stuck on a stale build.
+		//
+		// Immutable only for THIS build's hash. During a rolling deploy a page from
+		// the new instance can send ?v=<new> to an old instance; answering with the
+		// old bytes under a year-long immutable header would pin them in every cache
+		// on the way. Any other version is served but must be revalidated, and the
+		// served version is named so the service worker never stores a mismatch.
+		version := web.AssetVersion()
+		w.Header().Set("X-Treckrr-Asset-Version", version)
+		switch v := r.URL.Query().Get("v"); {
+		case v == version:
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		} else {
+		case v != "":
+			w.Header().Set("Cache-Control", "no-cache")
+		default:
 			w.Header().Set("Cache-Control", "public, max-age=3600")
 		}
 		gzipStatic(w, r, fs)

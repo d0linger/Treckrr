@@ -148,8 +148,9 @@ func entryBookingPerson(e models.Entry) models.BookingPerson {
 }
 
 // parseBookingV2 resolves shared controls for all types without conflating own
-// invoice-bearing entries with signed account counterclaims.
-func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson) (*models.Entry, []int64, *store.LedgerBookingInput, []models.BookingPerson, string, error) {
+// invoice-bearing entries with signed account counterclaims. creating marks a new
+// booking, which may not pick a deactivated tractor or machine by hand.
+func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson, creating bool) (*models.Entry, []int64, *store.LedgerBookingInput, []models.BookingPerson, string, error) {
 	kind, direction, msg := unifiedBookingSelection(r)
 	if msg != "" {
 		return nil, nil, nil, nil, msg, nil
@@ -170,6 +171,9 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 		return nil, nil, nil, nil, msg, err
 	}
 	year, err := s.store.GetBillingYear(r.Context(), formInt64(r, "year_id"))
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil, nil, nil, "Unbekanntes Abrechnungsjahr.", nil
+	}
 	if err != nil {
 		return nil, nil, nil, nil, "", err
 	}
@@ -208,11 +212,12 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			return nil, nil, nil, nil, "Bitte gültige Stunden angeben. Maschinenstunden aus dem gepflegten Pool erlauben höchstens drei Nachkommastellen.", nil
 		}
 		if mode != "free" {
-			resolved, ids, message := s.resolveEntryFromForm(r)
-			if message != "" {
-				return nil, nil, nil, nil, message, nil
+			resolved, ids, message, err := s.resolveEntryFromForm(r)
+			if message != "" || err != nil {
+				return nil, nil, nil, nil, message, err
 			}
-			if message, err := s.checkBookingCatalog(r, resolved, ids, year.Base.ID); message != "" || err != nil {
+			requireActive := creating && resolved.GespannID == nil
+			if message, err := s.checkBookingCatalog(r, resolved, ids, year.Base.ID, requireActive); message != "" || err != nil {
 				return nil, nil, nil, nil, message, err
 			}
 			resolved.NeighborID, resolved.BillingYearID = main.NeighborID, main.BillingYearID
@@ -222,6 +227,9 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			b.PartnerLabel = strings.Trim(strings.Join([]string{main.TractorLabel, main.LoadLabel, main.MachineLabels}, " · "), " ·")
 			if main.GespannID != nil {
 				g, err := s.store.GetGespann(r.Context(), *main.GespannID)
+				if errors.Is(err, store.ErrNotFound) {
+					return nil, nil, nil, nil, "Die gewählte Auswahl ist nicht mehr vorhanden. Bitte neu wählen.", nil
+				}
 				if err != nil {
 					return nil, nil, nil, nil, "", err
 				}
@@ -272,12 +280,21 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 	return main, machines, nil, people, "", nil
 }
 
-// checkBookingCatalog prevents cross-price-basis references in counterclaims,
-// whose JSON references do not have the foreign-key checks of outgoing entries.
-func (s *Server) checkBookingCatalog(r *http.Request, entry *models.Entry, ids []int64, baseID int64) (string, error) {
+// checkBookingCatalog keeps every catalog reference of a booking on the year's
+// price basis: an id from another Bemessungsgrundlage would price the booking
+// with foreign rates, and year updates rely on booked references pointing at the
+// year's basis. requireActive additionally refuses a deactivated tractor or
+// machine picked by hand for a NEW booking — the new-booking form offers only
+// active ones; edits keep whatever the booking already uses (as V2 edits do).
+// A catalog item that no longer exists is a validation message, not an error.
+func (s *Server) checkBookingCatalog(r *http.Request, entry *models.Entry, ids []int64, baseID int64, requireActive bool) (string, error) {
 	invalid := "Die Auswahl gehört nicht zur Preisgrundlage dieses Jahres. Bitte neu wählen."
+	gone := "Die gewählte Auswahl ist nicht mehr vorhanden. Bitte neu wählen."
 	if entry.GespannID != nil {
 		g, err := s.store.GetGespann(r.Context(), *entry.GespannID)
+		if errors.Is(err, store.ErrNotFound) {
+			return gone, nil
+		}
 		if err != nil {
 			return "", err
 		}
@@ -287,15 +304,24 @@ func (s *Server) checkBookingCatalog(r *http.Request, entry *models.Entry, ids [
 	}
 	if entry.TractorID != nil {
 		t, err := s.store.GetTractor(r.Context(), *entry.TractorID)
+		if errors.Is(err, store.ErrNotFound) {
+			return gone, nil
+		}
 		if err != nil {
 			return "", err
 		}
 		if t.BaseID != baseID {
 			return invalid, nil
 		}
+		if requireActive && !t.Active {
+			return "Der Traktor „" + t.Label() + "“ ist inaktiv und kann nicht neu gebucht werden. Bitte einen aktiven Traktor wählen.", nil
+		}
 	}
 	if entry.LoadLevelID != nil {
 		l, err := s.store.GetLoadLevel(r.Context(), *entry.LoadLevelID)
+		if errors.Is(err, store.ErrNotFound) {
+			return gone, nil
+		}
 		if err != nil {
 			return "", err
 		}
@@ -307,9 +333,15 @@ func (s *Server) checkBookingCatalog(r *http.Request, entry *models.Entry, ids [
 	if err != nil {
 		return "", err
 	}
+	if len(machines) != len(ids) {
+		return gone, nil
+	}
 	for _, machine := range machines {
 		if machine.BaseID != baseID {
 			return invalid, nil
+		}
+		if requireActive && !machine.Active {
+			return "Die Maschine „" + machine.Name + "“ ist inaktiv und kann nicht neu gebucht werden. Bitte eine aktive Maschine wählen.", nil
 		}
 	}
 	return "", nil
@@ -317,12 +349,28 @@ func (s *Server) checkBookingCatalog(r *http.Request, entry *models.Entry, ids [
 
 // handleBookingCreateV2 stores the shared editor's complete group atomically.
 func (s *Server) handleBookingCreateV2(w http.ResponseWriter, r *http.Request) {
-	entry, ids, ledger, people, msg, err := s.parseBookingV2(r, nil)
+	// A retry of a stored booking is answered before catalog, person and year
+	// lookups: master data changed after a lost answer must not turn a saved
+	// booking into a "rejected" one that the user then enters a second time.
+	var ledgerStored bool
+	if key := trimmed(r, "idempotency_key"); key != "" {
+		var done bool
+		done, ledgerStored = s.probeBookingReplay(w, r, []store.ReplayProbe{{Key: key, Fingerprint: unifiedRequestFingerprint(r)}})
+		if done {
+			return
+		}
+	}
+	entry, ids, ledger, people, msg, err := s.parseBookingV2(r, nil, true)
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return
 	}
 	if msg != "" {
+		if ledgerStored {
+			// Its content can no longer be compared; it is stored all the same.
+			s.rejectStoredReplay(w, r, replayLedgerMsg, neighborURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
+			return
+		}
 		s.rejectUnifiedBooking(w, r, msg)
 		return
 	}
@@ -338,6 +386,10 @@ func (s *Server) handleBookingCreateV2(w http.ResponseWriter, r *http.Request) {
 				mainID = max(mainID, id)
 			}
 		}
+	}
+	if ledgerStored && errors.Is(err, store.ErrIdempotencyConflict) {
+		s.rejectStoredReplay(w, r, replayDiffersMsg, neighborURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
+		return
 	}
 	if err != nil {
 		s.unifiedBookingError(w, r, err)

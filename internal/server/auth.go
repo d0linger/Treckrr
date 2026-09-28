@@ -376,10 +376,18 @@ func (s *Server) clearTransitionalAuthCookies(w http.ResponseWriter, r *http.Req
 // transactionally before expiring browser state. A database failure preserves
 // the session cookie so the user can retry revocation.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	// Once browser state is expired, the browser also drops its HTTP cache for
+	// this origin. Deliberately only "cache", never "storage": storage would also
+	// wipe the origin-wide offline queue in IndexedDB, including other users'
+	// unsent bookings on a shared device, and the service worker. The queue is
+	// handled client-side before this POST instead (offline.js offers to keep, or
+	// to export and delete, the current user's items; quarantined items expire).
+	clearSiteData := func() { w.Header().Set("Clear-Site-Data", `"cache"`) }
 	c, err := s.cookie(r, sessionCookie)
 	if err != nil || c.Value == "" {
 		s.clearTransitionalAuthCookies(w, r)
 		s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
+		clearSiteData()
 		redirect(w, r, "/login")
 		return
 	}
@@ -398,6 +406,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// browser state is safe even though there is no new success event to audit.
 	s.clearTransitionalAuthCookies(w, r)
 	s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: "", MaxAge: -1})
+	clearSiteData()
 	redirect(w, r, "/login")
 }
 
