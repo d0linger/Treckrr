@@ -117,7 +117,7 @@ proxy trust, and requires `TRUSTED_PROXIES`. Pin a release rather than tracking
 | **ADMIN_PASSWORD** | Bootstrap admin password, changed at first login | — | Yes |
 | **POSTGRES_PASSWORD** | Database password; must match `DATABASE_URL` | — | Yes |
 | **POSTGRES_USER** / **POSTGRES_DB** | Database role and name | `treckrr` | No |
-| **ADMIN_USERNAME** | Bootstrap admin login name | `admin` | No |
+| **ADMIN_USERNAME** | Bootstrap admin login name. Created only while no active admin exists; a restart never promotes an existing account with this name | `admin` | No |
 | **APP_PORT** | Port inside the container | `8080` | No |
 | **HOST_PORT** | Published port on the host | `8080` | No |
 | **HOST_BIND** | Host interface to bind; `127.0.0.1` only reaches a proxy on the host itself | `0.0.0.0` | No |
@@ -127,7 +127,7 @@ proxy trust, and requires `TRUSTED_PROXIES`. Pin a release rather than tracking
 | **TRUSTED_PROXIES** | Comma-separated CIDRs allowed to set forwarded headers | — | No |
 | **ENCRYPTION_SECRET** | Data-at-rest key for TOTP secrets; pin to the OLD value before rotating `SESSION_SECRET` | `SESSION_SECRET` | No |
 | **RP_ID** / **RP_ORIGIN** | WebAuthn relying party host and origin; must match the browser URL | `localhost` / `http://localhost:8080` | No |
-| **ADMIN_PASSWORD_RESET** | Break-glass: reset the admin password on next boot | `false` | No |
+| **ADMIN_PASSWORD_RESET** | Break-glass for ONE start: reset the bootstrap admin's password to ADMIN_PASSWORD, make the account admin again, revoke its sessions and passkeys. Set back to `false` afterwards | `false` | No |
 | **BACKUP_ENCRYPTION_KEY** | Min. 16 chars; empty disables backups entirely | — | No |
 | **BACKUP_DIR** / **BACKUP_STATUS_FILE** | Dump directory and status file | `/backups` | No |
 | **BACKUP_KEEP** | Dumps to retain — seeds the GUI value on first boot only, after that Admin → Backup wins | `7` | No |
