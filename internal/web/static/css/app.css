@@ -2434,6 +2434,18 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .rollgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .rollgrid h3 { margin: 0; font-size: 1rem; }
 .rollgrid .form { gap: .6rem; }
+.comtimeline { margin: 0; padding: 0; list-style: none; display: grid; }
+.comtimeline__item { position: relative; display: grid; grid-template-columns: 1rem minmax(0, 1fr) auto; gap: .65rem; align-items: start; padding: .75rem 0; border-bottom: 1px solid var(--border); }
+.comtimeline__dot { width: .65rem; height: .65rem; margin-top: .3rem; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 3px var(--surface-2); }
+.comtimeline__item--mail .comtimeline__dot, .comtimeline__item--delivery .comtimeline__dot { background: var(--primary); }
+.comtimeline__item--dunning .comtimeline__dot { background: var(--danger); }
+.savedviews { display: grid; gap: .65rem; }
+.savedviews > div:first-child { display: flex; justify-content: space-between; gap: 1rem; }
+.savedviews__list { display: flex; flex-wrap: wrap; gap: .4rem; }
+.savedview { display: inline-flex; align-items: center; gap: .15rem; }
+.savedview form { display: inline-flex; }
+.savedview .iconact { width: 1.75rem; height: 1.75rem; }
+.savedviews__save { display: grid; grid-template-columns: minmax(12rem, 1fr) auto; gap: .5rem; }
 @media (max-width: 420px) {
 	.booking-direction__choices { grid-template-columns: minmax(0, 1fr); }
 	.booking-preview__line, .booking-preview__total, .bcard__line { flex-wrap: wrap; gap: .25rem; }
@@ -2441,3 +2453,4 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 	.beleg__calc-body > div { flex-wrap: wrap; }
 }
 @media (max-width: 720px) { .rollgrid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) { .savedviews__save { grid-template-columns: minmax(0, 1fr); } }

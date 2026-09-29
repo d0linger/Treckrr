@@ -192,6 +192,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /stats/export.csv", s.auth(s.handleStatsExport))
 	mux.Handle("GET /buchungen", s.auth(s.handleEntryList))
 	mux.Handle("POST /buchungen/bulk", s.auth(s.handleEntryBulk))
+	mux.Handle("POST /views/bookings", s.auth(s.handleSavedViewCreate))
+	mux.Handle("POST /views/{id}/delete", s.auth(s.handleSavedViewDelete))
 	mux.Handle("GET /personen", s.auth(s.handlePersons))
 	mux.Handle("POST /personen", s.auth(s.handlePersonCreate))
 	mux.Handle("POST /personen/{id}/update", s.auth(s.handlePersonUpdate))

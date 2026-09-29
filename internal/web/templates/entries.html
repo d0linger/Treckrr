@@ -64,6 +64,17 @@
 			<a class="btn btn--ghost btn--sm" href="/buchungen?year={{.Year.ID}}">Zurücksetzen</a>
 		</div>
 	</form>
+	<div class="savedviews card">
+		<div><strong>Gespeicherte Ansichten</strong><span class="muted small">Persönlich für {{.User.Username}} · serverseitig gespeichert</span></div>
+		<div class="savedviews__list">
+			{{range .SavedViews}}<span class="savedview"><a class="chip2 chip2--open" href="/buchungen?{{.Query}}">{{.Name}}</a>{{if $.User.CanWrite}}<form method="post" action="/views/{{.ID}}/delete" data-confirm="Ansicht „{{.Name}}“ löschen?"><button class="iconact" type="submit" aria-label="Ansicht {{.Name}} löschen">×</button></form>{{end}}</span>{{else}}<span class="muted small">Noch keine Ansicht gespeichert.</span>{{end}}
+		</div>
+		{{if .User.CanWrite}}<form method="post" action="/views/bookings" class="savedviews__save">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}"><input type="hidden" name="query" value="{{.SavedQuery}}">
+			<input class="input" name="name" maxlength="60" placeholder="z. B. offene Maschinenbuchungen" aria-label="Name der Ansicht" required>
+			<button class="btn btn--ghost btn--sm" type="submit">Aktuelle Filter speichern</button>
+		</form>{{end}}
+	</div>
 
 	<p class="muted small">{{.Total}} Buchung(en) · Summe beider Richtungen (ohne Storno) {{money .SumCost}}{{if gt .Pages 1}} · Seite {{.Page}} von {{.Pages}}{{end}}</p>
 	<p class="muted small">Positive Beträge schuldet der Nachbar, negative Beträge schulde ich. Zahlungen sind hier nicht enthalten.</p>

@@ -84,5 +84,19 @@
 		<span class="empty__title">Noch keine Zahlungen erfasst</span>
 	</div>
 	{{end}}
+
+	<h2 class="section-title">Kommunikationschronik</h2>
+	<p class="muted small">Dokumente, Übergaben, E-Mails, Mahnungen und Freigabelink-Zugriffe in einem schreibgeschützten Verlauf.</p>
+	{{if .Communication}}
+	<ol class="comtimeline">
+		{{range .Communication}}
+		<li class="comtimeline__item comtimeline__item--{{.Kind}}">
+			<span class="comtimeline__dot" aria-hidden="true"></span>
+			<div><strong>{{.Title}}</strong><span class="muted small">{{.OccurredAt.Format "02.01.2006 15:04"}}{{if .Year}} · {{.Year}}{{end}}{{with .Detail}} · {{.}}{{end}} · {{.Status}}</span></div>
+			{{if and $.User.IsAdmin (eq .Kind "mail")}}<a class="btn btn--ghost btn--sm no-print" href="/admin/mail/{{.Reference}}">Details</a>{{end}}
+		</li>
+		{{end}}
+	</ol>
+	{{else}}<div class="empty empty--slim"><span class="empty__title">Noch keine Kommunikation protokolliert</span></div>{{end}}
 </section>
 {{end}}

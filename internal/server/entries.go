@@ -276,6 +276,12 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 	data["TotalHours"] = totalHours
 	data["Payments"] = payments
 	data["PaidTotal"] = paidTotal
+	communication, err := s.store.NeighborCommunication(r.Context(), neighbor.ID, 200)
+	if err != nil {
+		s.serverError(w, "neighbor communication", err)
+		return
+	}
+	data["Communication"] = communication
 	// Mehrjahresverlauf (Ausbaukarte 85): the tiles said what each year was,
 	// never where the relationship is going. Same bar-chart partial as the
 	// statistics page, one row per year.
