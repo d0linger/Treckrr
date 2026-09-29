@@ -16,17 +16,28 @@ const heldMailListLimit = 100
 
 // handleHeldMailRelease returns one held outbox intent to the delivery queue.
 func (s *Server) handleHeldMailRelease(w http.ResponseWriter, r *http.Request) {
-	s.settleHeldMail(w, r, true)
+	s.settleHeldMail(w, r, true, "/admin/backup#held-mail")
 }
 
 // handleHeldMailDiscard ends one held outbox intent without sending it.
 func (s *Server) handleHeldMailDiscard(w http.ResponseWriter, r *http.Request) {
-	s.settleHeldMail(w, r, false)
+	s.settleHeldMail(w, r, false, "/admin/backup#held-mail")
+}
+
+// handleMailCenterRelease keeps the restore-safety decision available from the
+// consolidated mail center while the original backup-page workflow remains.
+func (s *Server) handleMailCenterRelease(w http.ResponseWriter, r *http.Request) {
+	s.settleHeldMail(w, r, true, "/admin/mail")
+}
+
+// handleMailCenterDiscard ends a held intent from the consolidated mail center.
+func (s *Server) handleMailCenterDiscard(w http.ResponseWriter, r *http.Request) {
+	s.settleHeldMail(w, r, false, "/admin/mail")
 }
 
 // settleHeldMail applies an admin's release/discard decision; the store writes
 // the audit line in the same transaction.
-func (s *Server) settleHeldMail(w http.ResponseWriter, r *http.Request, release bool) {
+func (s *Server) settleHeldMail(w http.ResponseWriter, r *http.Request, release bool, target string) {
 	id, err := pathID(r)
 	if err != nil {
 		s.notFound(w, r)
@@ -49,5 +60,5 @@ func (s *Server) settleHeldMail(w http.ResponseWriter, r *http.Request, release 
 	default:
 		s.setFlash(w, r, "success", "„"+held.Subject+"“ an "+held.Recipient+" verworfen (nicht gesendet).")
 	}
-	redirect(w, r, "/admin/backup#held-mail")
+	redirect(w, r, target)
 }

@@ -46,6 +46,7 @@ type OutboxMail struct {
 	AttType       string
 	AttData       []byte
 	Attempts      int
+	AttemptSeq    int
 	Status        string
 	DeliveryKey   string
 	MessageID     string

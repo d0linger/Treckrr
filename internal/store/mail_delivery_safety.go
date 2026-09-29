@@ -19,7 +19,7 @@ type rowScanner interface {
 
 const outboxSelectColumns = `id, kind, COALESCE(neighbor_id,0), COALESCE(billing_year_id,0),
 	recipient, subject, body, att_name, att_type, COALESCE(att_data,''::bytea), attempts,
-	status, COALESCE(delivery_key,''), COALESCE(message_id,''), claimed_at, terminal_at,
+	attempt_seq, status, COALESCE(delivery_key,''), COALESCE(message_id,''), claimed_at, terminal_at,
 	COALESCE(meta,'{}'::jsonb)`
 
 // MailSender performs one SMTP attempt using the durable Message-ID stored with
@@ -35,7 +35,7 @@ func scanOutboxMail(row rowScanner) (OutboxMail, error) {
 	)
 	err := row.Scan(&m.ID, &m.Kind, &m.NeighborID, &m.BillingYearID, &m.Recipient,
 		&m.Subject, &m.Body, &m.AttName, &m.AttType, &m.AttData, &m.Attempts,
-		&m.Status, &m.DeliveryKey, &m.MessageID, &claimedAt, &terminal, &meta)
+		&m.AttemptSeq, &m.Status, &m.DeliveryKey, &m.MessageID, &claimedAt, &terminal, &meta)
 	if err != nil {
 		return OutboxMail{}, err
 	}
@@ -107,22 +107,31 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 	if err != nil {
 		return 0, 0, err
 	}
-	var staleFailed []OutboxMail
+	var staleRecovered []OutboxMail
 	for rows.Next() {
 		m, scanErr := scanOutboxMail(rows)
 		if scanErr != nil {
 			_ = rows.Close()
 			return 0, 0, scanErr
 		}
-		if m.Status == MailStatusFailed {
-			staleFailed = append(staleFailed, m)
-		}
+		staleRecovered = append(staleRecovered, m)
 	}
 	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return 0, 0, err
 	}
-	for _, m := range staleFailed {
+	for _, m := range staleRecovered {
+		outcome := "retry"
+		if m.Status == MailStatusFailed {
+			outcome = "failed"
+		}
+		if err := finishMailAttemptTx(ctx, tx, m.ID, m.AttemptSeq, outcome,
+			"worker stopped before SMTP DATA"); err != nil {
+			return 0, 0, err
+		}
+		if m.Status != MailStatusFailed {
+			continue
+		}
 		if err := addMailAuditTx(ctx, tx, "mail_retry_failed", m, fmt.Sprintf(
 			"%s endgültig NICHT zugestellt an %s (%d Versuche): worker stopped before SMTP DATA",
 			m.Subject, m.Recipient, m.Attempts)); err != nil {
@@ -132,11 +141,47 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 	if err := tx.Commit(); err != nil {
 		return 0, 0, err
 	}
-	if _, err := s.db.ExecContext(ctx, `
+	tx, err = s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err = tx.QueryContext(ctx, `
 		UPDATE mail_outbox
 		   SET status='ambiguous', terminal_at=now(),
 		       last_error=CASE WHEN last_error='' THEN 'worker stopped during delivery' ELSE last_error END
-		 WHERE status='sending' AND claimed_at < now() - make_interval(secs => $1)`, staleAfter); err != nil {
+		 WHERE status='sending' AND claimed_at < now() - make_interval(secs => $1)
+		 RETURNING `+outboxSelectColumns, staleAfter)
+	if err != nil {
+		return 0, 0, err
+	}
+	var staleAmbiguous []OutboxMail
+	for rows.Next() {
+		m, scanErr := scanOutboxMail(rows)
+		if scanErr != nil {
+			_ = rows.Close()
+			return 0, 0, scanErr
+		}
+		staleAmbiguous = append(staleAmbiguous, m)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, 0, err
+	}
+	// pgx does not permit another statement on this transaction while RETURNING
+	// rows are open, so settle the attempt history only after fully buffering and
+	// closing the result set above.
+	for _, m := range staleAmbiguous {
+		if err := finishMailAttemptTx(ctx, tx, m.ID, m.AttemptSeq, "ambiguous",
+			"worker stopped during delivery"); err != nil {
+			return 0, 0, err
+		}
+		if err := addMailAuditTx(ctx, tx, "mail_delivery_ambiguous", m,
+			m.Subject+" · Zustellung nach Worker-Abbruch unklar; keine automatische Wiederholung"); err != nil {
+			return 0, 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return 0, 0, err
 	}
 	rows, err = s.db.QueryContext(ctx, `
@@ -190,22 +235,36 @@ func (s *Store) ProcessMailOutbox(ctx context.Context,
 func (s *Store) processOneOutboxMail(ctx context.Context, m OutboxMail, dueOnly bool,
 	send MailSender,
 ) (status string, attempted bool, err error) {
-	var attempts int
+	var attempts, attemptSeq int
 	// The backoff is added to the database clock, the same clock the due query
 	// compares against, so app/DB skew cannot shorten or stretch it.
-	err = s.db.QueryRowContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	err = tx.QueryRowContext(ctx, `
 		UPDATE mail_outbox
 		   SET status='sending', claimed_at=now(), attempts=attempts+1,
+		       attempt_seq=attempt_seq+1,
 		       next_attempt_at=now() + make_interval(secs => $2),
 		       delivery_phase='claimed',
 		       message_id=COALESCE(NULLIF(message_id,''),$4)
 		 WHERE id=$1 AND status='pending' AND ($3 = false OR next_attempt_at <= now())
-		 RETURNING attempts`, m.ID, outboxBackoff(m.Attempts+1).Seconds(), dueOnly, m.MessageID).
-		Scan(&attempts)
+		 RETURNING attempts, attempt_seq`, m.ID, outboxBackoff(m.Attempts+1).Seconds(), dueOnly, m.MessageID).
+		Scan(&attempts, &attemptSeq)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m.Status, false, nil
 	}
 	if err != nil {
+		return "", false, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO mail_outbox_attempts (outbox_id, attempt_no)
+		VALUES ($1,$2)`, m.ID, attemptSeq); err != nil {
+		return "", false, err
+	}
+	if err := tx.Commit(); err != nil {
 		return "", false, err
 	}
 
@@ -213,7 +272,12 @@ func (s *Store) processOneOutboxMail(ctx context.Context, m OutboxMail, dueOnly 
 	// that write fails the transport aborts before DATA, so the mail is
 	// definitely not delivered and the ordinary retry path applies.
 	sendCtx := mail.WithDataStartHook(ctx, func(hookCtx context.Context) error {
-		res, err := s.db.ExecContext(hookCtx, `
+		tx, err := s.db.BeginTx(hookCtx, nil)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		res, err := tx.ExecContext(hookCtx, `
 			UPDATE mail_outbox SET delivery_phase='data'
 			 WHERE id=$1 AND status='sending'`, m.ID)
 		if err != nil {
@@ -225,13 +289,18 @@ func (s *Store) processOneOutboxMail(ctx context.Context, m OutboxMail, dueOnly 
 			}
 			return fmt.Errorf("delivery intent %d is no longer claimed", m.ID)
 		}
-		return nil
+		if _, err := tx.ExecContext(hookCtx, `
+			UPDATE mail_outbox_attempts SET data_started_at=now()
+			 WHERE outbox_id=$1 AND attempt_no=$2 AND outcome='sending'`, m.ID, attemptSeq); err != nil {
+			return err
+		}
+		return tx.Commit()
 	})
 	sendErr := send(sendCtx, m.MessageID, m.Recipient, m.Subject, m.Body, m.AttName, m.AttType, m.AttData)
 	if sendErr == nil {
-		if err := s.settleDelivered(ctx, m, attempts); err != nil {
+		if err := s.settleDelivered(ctx, m, attempts, attemptSeq); err != nil {
 			detail := "delivery confirmed but bookkeeping failed: " + safeMailError(err)
-			markedStatus, markErr := s.markMailAmbiguous(ctx, m, detail)
+			markedStatus, markErr := s.markMailAmbiguous(ctx, m, attemptSeq, detail)
 			if markErr != nil {
 				return MailStatusSending, true, fmt.Errorf("settle delivered mail: %w", errors.Join(err, markErr))
 			}
@@ -240,17 +309,17 @@ func (s *Store) processOneOutboxMail(ctx context.Context, m OutboxMail, dueOnly 
 		return MailStatusSent, true, nil
 	}
 	if mail.IsAmbiguous(sendErr) {
-		markedStatus, err := s.markMailAmbiguous(ctx, m, safeMailError(sendErr))
+		markedStatus, err := s.markMailAmbiguous(ctx, m, attemptSeq, safeMailError(sendErr))
 		if err != nil {
 			return MailStatusSending, true, err
 		}
 		return markedStatus, true, nil
 	}
-	return s.settleRejected(ctx, m, attempts, sendErr)
+	return s.settleRejected(ctx, m, attempts, attemptSeq, sendErr)
 }
 
 // settleDelivered commits the sent state, business history, and audit atomically.
-func (s *Store) settleDelivered(ctx context.Context, m OutboxMail, attempts int) error {
+func (s *Store) settleDelivered(ctx context.Context, m OutboxMail, attempts, attemptSeq int) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -268,6 +337,9 @@ func (s *Store) settleDelivered(ctx context.Context, m OutboxMail, attempts int)
 			return err
 		}
 		return fmt.Errorf("delivery intent %d was not in sending state", m.ID)
+	}
+	if err := finishMailAttemptTx(ctx, tx, m.ID, attemptSeq, "sent", ""); err != nil {
+		return err
 	}
 
 	channel := "e-mail"
@@ -312,7 +384,7 @@ func (s *Store) settleDelivered(ctx context.Context, m OutboxMail, attempts int)
 }
 
 // settleRejected either schedules a bounded retry or records terminal failure.
-func (s *Store) settleRejected(ctx context.Context, m OutboxMail, attempts int, sendErr error) (string, bool, error) {
+func (s *Store) settleRejected(ctx context.Context, m OutboxMail, attempts, attemptSeq int, sendErr error) (string, bool, error) {
 	status := MailStatusPending
 	terminal := false
 	if attempts >= outboxMaxAttempts {
@@ -330,6 +402,13 @@ func (s *Store) settleRejected(ctx context.Context, m OutboxMail, attempts int, 
 		 WHERE id=$1 AND status='sending'`, m.ID, status, terminal, safeMailError(sendErr)); err != nil {
 		return "", true, err
 	}
+	outcome := "retry"
+	if status == MailStatusFailed {
+		outcome = "failed"
+	}
+	if err := finishMailAttemptTx(ctx, tx, m.ID, attemptSeq, outcome, safeMailError(sendErr)); err != nil {
+		return "", true, err
+	}
 	if status == MailStatusFailed {
 		if err := addMailAuditTx(ctx, tx, "mail_retry_failed", m, fmt.Sprintf(
 			"%s endgültig NICHT zugestellt an %s (%d Versuche): %s",
@@ -344,9 +423,12 @@ func (s *Store) settleRejected(ctx context.Context, m OutboxMail, attempts int, 
 }
 
 // markMailAmbiguous parks an uncertain SMTP outcome for manual reconciliation.
-func (s *Store) markMailAmbiguous(ctx context.Context, m OutboxMail, detail string) (string, error) {
+func (s *Store) markMailAmbiguous(ctx context.Context, m OutboxMail, attemptSeq int, detail string) (string, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return "", err
+	}
+	if err := finishMailAttemptTx(ctx, tx, m.ID, attemptSeq, "ambiguous", detail); err != nil {
 		return "", err
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -373,6 +455,17 @@ func (s *Store) markMailAmbiguous(ctx context.Context, m OutboxMail, detail stri
 		return "", err
 	}
 	return MailStatusAmbiguous, nil
+}
+
+// finishMailAttemptTx closes the attempt row created with the delivery claim.
+// Legacy claims may have no row, so a zero-row update is intentionally allowed.
+func finishMailAttemptTx(ctx context.Context, tx *sql.Tx, outboxID int64, attemptNo int, outcome, detail string) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE mail_outbox_attempts
+		   SET outcome=$3, detail=$4, finished_at=now()
+		 WHERE outbox_id=$1 AND attempt_no=$2 AND outcome='sending'`,
+		outboxID, attemptNo, outcome, detail)
+	return err
 }
 
 // addMailAuditTx appends delivery evidence within the settlement transaction.

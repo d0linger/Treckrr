@@ -290,6 +290,12 @@ func (s *Server) Handler() http.Handler {
 	// Admin only.
 	mux.Handle("GET /admin/audit", s.admin(s.handleAudit))
 	mux.Handle("GET /admin/audit/export", s.admin(s.handleAuditExport))
+	mux.Handle("GET /admin/mail", s.admin(s.handleMailOutbox))
+	mux.Handle("GET /admin/mail/{id}", s.admin(s.handleMailOutboxDetail))
+	mux.Handle("POST /admin/mail/{id}/retry", s.admin(s.handleMailRetry))
+	mux.Handle("POST /admin/mail/{id}/force-resend", s.admin(s.handleMailForceResend))
+	mux.Handle("POST /admin/mail/{id}/release", s.admin(s.handleMailCenterRelease))
+	mux.Handle("POST /admin/mail/{id}/discard", s.admin(s.handleMailCenterDiscard))
 	mux.Handle("GET /admin/backup", s.admin(s.handleBackupStatus))
 	mux.Handle("POST /admin/backup/run", s.admin(s.handleBackupRun))
 	mux.Handle("POST /admin/backup/run-scheduled", s.admin(s.handleBackupRunScheduled))

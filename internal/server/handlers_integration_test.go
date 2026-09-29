@@ -338,6 +338,7 @@ func TestCSRFInvariantEveryPostFormCarriesTokenIntegration(t *testing.T) {
 		"/account/2fa",
 		"/admin/users",
 		"/admin/audit",
+		"/admin/mail",
 		"/admin/backup",
 		"/admin/company",
 	}
