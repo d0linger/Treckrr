@@ -301,7 +301,31 @@ func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 			return 0, err
 		}
 	}
+	if err := replaceEntryMachineSnapshotsTx(ctx, tx, id, machineIDs); err != nil {
+		return 0, err
+	}
 	return id, nil
+}
+
+// replaceEntryMachineSnapshotsTx freezes the selected machines' contribution
+// and self-cost rates in the same transaction as the booking. A later catalog
+// edit therefore cannot rewrite historical margins. Empty machine selections
+// deliberately produce no rows so legacy and non-machine bookings stay distinct.
+func replaceEntryMachineSnapshotsTx(ctx context.Context, tx *sql.Tx, entryID int64, machineIDs []int64) error {
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM entry_machine_snapshots WHERE entry_id=$1`, entryID); err != nil {
+		return err
+	}
+	if len(machineIDs) == 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO entry_machine_snapshots
+		       (entry_id, machine_id, machine_label, hourly_rate, self_cost_per_h)
+		SELECT $1, m.id, m.name, round(m.working_width * m.cost_per_ab, 4), m.self_cost_per_h
+		  FROM machines m
+		 WHERE m.id = ANY($2)`, entryID, machineIDs)
+	return err
 }
 
 func existingEntryForReplay(
@@ -1129,7 +1153,7 @@ func updateEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 			return err
 		}
 	}
-	return nil
+	return replaceEntryMachineSnapshotsTx(ctx, tx, e.ID, machineIDs)
 }
 
 // SetEntryVoided cancels or restores an entry (kept for traceability).

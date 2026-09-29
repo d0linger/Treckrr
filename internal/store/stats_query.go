@@ -9,25 +9,29 @@ import (
 
 // ---- Auswertungen (Ausbaukarte 83/84/85) -----------------------------------
 
-// MachineUsage reports recorded hours and estimates their revenue and cost at
-// CURRENT machine rates. Bookings snapshot only the combined rig rate, not its
-// components; exact historical machine allocations cannot be reconstructed.
-// These estimates must not be presented as booked or invoiced revenue.
+// MachineUsage reports recorded hours with the component rates frozen when the
+// booking was saved. Estimated is true when at least one legacy booking in the
+// row predates component snapshots and therefore uses today's catalog values.
 type MachineUsage struct {
-	Name     string
-	Hours    decimal.Decimal
-	Rate     decimal.Decimal // € per hour this machine contributes
-	SelfCost decimal.Decimal // € per hour it costs to run (0 = not configured)
-	Revenue  decimal.Decimal
-	Cost     decimal.Decimal
-	Margin   decimal.Decimal
+	Name      string
+	Hours     decimal.Decimal
+	Rate      decimal.Decimal // weighted average contribution per hour
+	SelfCost  decimal.Decimal // weighted average own cost per hour
+	Revenue   decimal.Decimal
+	Cost      decimal.Decimal
+	Margin    decimal.Decimal
+	Estimated bool // at least one legacy booking used today's catalog values
+	// CostComplete is true only when every aggregated booking has a frozen own
+	// cost. A partial zero-cost history must not be presented as a full margin.
+	CostComplete bool
 }
 
 // HasMargin reports whether self costs are configured for this machine.
-func (m MachineUsage) HasMargin() bool { return m.SelfCost.IsPositive() }
+func (m MachineUsage) HasMargin() bool { return m.CostComplete }
 
-// MachineUsageForYear aggregates machine hours and current-rate estimates for a
-// billing year, optionally narrowed to a date range (zero = unbounded).
+// MachineUsageForYear aggregates machine hours using immutable snapshots. Only
+// legacy entries without component snapshots fall back to current catalog
+// values, and their aggregate row is marked Estimated.
 func (s *Store) MachineUsageForYear(ctx context.Context, yearID int64, from, to time.Time) ([]MachineUsage, error) {
 	var fromArg, toArg any
 	if !from.IsZero() {
@@ -37,15 +41,33 @@ func (s *Store) MachineUsageForYear(ctx context.Context, yearID int64, from, to 
 		toArg = to
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT m.name, COALESCE(SUM(e.hours),0), round(m.working_width * m.cost_per_ab, 2), m.self_cost_per_h
-		   FROM entry_machines em
-		   JOIN entries e ON e.id = em.entry_id
-		   JOIN machines m ON m.id = em.machine_id
-		  WHERE e.billing_year_id = $1 AND NOT e.voided
-		    AND ($2::date IS NULL OR e.entry_date >= $2)
-		    AND ($3::date IS NULL OR e.entry_date <= $3)
-		  GROUP BY m.id, m.name, m.working_width, m.cost_per_ab, m.self_cost_per_h
-		  ORDER BY COALESCE(SUM(e.hours),0) DESC, m.name`,
+		`WITH usage AS (
+		    SELECT s.machine_label AS name, e.hours,
+		           s.hourly_rate AS rate, s.self_cost_per_h AS self_cost, false AS estimated
+		      FROM entry_machine_snapshots s
+		      JOIN entries e ON e.id = s.entry_id
+		     WHERE e.billing_year_id = $1 AND NOT e.voided
+		       AND ($2::date IS NULL OR e.entry_date >= $2)
+		       AND ($3::date IS NULL OR e.entry_date <= $3)
+		    UNION ALL
+		    SELECT m.name, e.hours, round(m.working_width * m.cost_per_ab, 4),
+		           m.self_cost_per_h, true
+		      FROM entry_machines em
+		      JOIN entries e ON e.id = em.entry_id
+		      JOIN machines m ON m.id = em.machine_id
+		     WHERE e.billing_year_id = $1 AND NOT e.voided
+		       AND ($2::date IS NULL OR e.entry_date >= $2)
+		       AND ($3::date IS NULL OR e.entry_date <= $3)
+		       AND NOT EXISTS (
+		           SELECT 1 FROM entry_machine_snapshots s WHERE s.entry_id = e.id
+		       )
+		)
+		SELECT name, COALESCE(SUM(hours),0),
+		       COALESCE(SUM(hours * rate),0), COALESCE(SUM(hours * self_cost),0),
+		       bool_or(estimated), bool_and(self_cost > 0)
+		  FROM usage
+		 GROUP BY name
+		 ORDER BY COALESCE(SUM(hours),0) DESC, name`,
 		yearID, fromArg, toArg)
 	if err != nil {
 		return nil, err
@@ -54,11 +76,15 @@ func (s *Store) MachineUsageForYear(ctx context.Context, yearID int64, from, to 
 	var out []MachineUsage
 	for rows.Next() {
 		var u MachineUsage
-		if err := rows.Scan(&u.Name, &u.Hours, &u.Rate, &u.SelfCost); err != nil {
+		if err := rows.Scan(&u.Name, &u.Hours, &u.Revenue, &u.Cost, &u.Estimated, &u.CostComplete); err != nil {
 			return nil, err
 		}
-		u.Revenue = u.Hours.Mul(u.Rate).Round(2)
-		u.Cost = u.Hours.Mul(u.SelfCost).Round(2)
+		u.Revenue = u.Revenue.Round(2)
+		u.Cost = u.Cost.Round(2)
+		if u.Hours.IsPositive() {
+			u.Rate = u.Revenue.Div(u.Hours).Round(4)
+			u.SelfCost = u.Cost.Div(u.Hours).Round(4)
+		}
 		u.Margin = u.Revenue.Sub(u.Cost)
 		out = append(out, u)
 	}
