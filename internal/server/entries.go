@@ -204,7 +204,21 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	data["Machines"] = machines
 	data["Gespanne"] = gespanne
 	data["Today"] = time.Now().Format("2006-01-02")
-	data["BookingValues"] = newBookingValues()
+	bookingValues := newBookingValues()
+	if raw := r.URL.Query().Get("machine"); raw != "" {
+		if machineID, err := strconv.ParseInt(raw, 10, 64); err == nil && machineID > 0 {
+			for _, machine := range machines {
+				if machine.ID == machineID {
+					bookingValues["mode"] = "manual"
+					data["SelectedMachineIDs"] = []int64{machineID}
+					data["BookingPrefilled"] = true
+					data["PrefilledMachine"] = machine
+					break
+				}
+			}
+		}
+	}
+	data["BookingValues"] = bookingValues
 	data["BookingLocked"] = data["HasInvoice"]
 	data["BookingAction"] = "/entries"
 	s.render(w, r, "neighbor", data)

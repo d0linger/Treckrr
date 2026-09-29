@@ -231,6 +231,9 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /prices", s.auth(s.handlePrices))
 	mux.Handle("GET /prices/compare", s.auth(s.handlePriceCompare))
+	mux.Handle("GET /prices/machines/labels", s.auth(s.handleMachineLabels))
+	mux.Handle("GET /prices/machines/{id}/qr.png", s.auth(s.handleMachineQR))
+	mux.Handle("GET /machines/{id}/book", s.auth(s.handleMachineBook))
 	mux.Handle("POST /prices/loadlevels", s.auth(s.handleLoadLevelSave))
 	mux.Handle("POST /prices/loadlevels/{id}/delete", s.auth(s.handleLoadLevelDelete))
 	mux.Handle("POST /prices/tractors", s.auth(s.handleTractorSave))

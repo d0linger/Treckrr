@@ -24,6 +24,7 @@
 	<div class="flash flash--info">Dieses Abrechnungsjahr ist <strong>abgeschlossen</strong> – neue Buchungen und Löschungen sind gesperrt.</div>
 	{{else}}
 	<h2 class="section-title" id="neue-buchung">Neue Buchung erfassen</h2>
+	{{with .PrefilledMachine}}<div class="flash flash--info"><strong>{{.Name}}</strong> wurde über den Maschinen-QR vorausgewählt. Bitte Nachbar, Richtung, Datum und Stunden prüfen; gespeichert wird erst mit „Buchung speichern“.</div>{{end}}
 	{{if .HasInvoice}}<p class="flash flash--info">Für dieses Jahr ist bereits eine Rechnung festgeschrieben. Neue Leistungen und Gegenpositionen sind gesperrt.</p>{{end}}
 	{{template "booking-form" .}}
 	<details class="card disclosure">

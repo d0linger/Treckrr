@@ -141,7 +141,7 @@
 	{{end}}
 
 	<!-- Maschinen ---------------------------------------------------------->
-	<h2 class="section-title">Maschinen <span class="badge">{{len .MachineViews}}</span> <span class="muted">(Stundensatz = AB × €/AB·h)</span></h2>
+	<div class="btnrow btnrow--split"><h2 class="section-title">Maschinen <span class="badge">{{len .MachineViews}}</span> <span class="muted">(Stundensatz = AB × €/AB·h)</span></h2>{{if .MachineViews}}<a class="btn btn--ghost btn--sm" href="/prices/machines/labels?base={{.Base.ID}}">QR-Etiketten drucken</a>{{end}}</div>
 	<datalist id="machine-cats">
 		{{range .Categories}}<option value="{{.}}"></option>{{end}}
 	</datalist>

@@ -439,6 +439,40 @@ em { font-style: normal; color: var(--muted); }
 	.notice__actions { grid-column: 2; }
 }
 
+/* QR field capture: the scan page stays one-handed; the print sheet uses real
+   white labels with enough quiet space around every code. */
+.machine-scan__hero { display: flex; align-items: center; gap: .8rem; }
+.machine-scan__hero > div { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: .16rem; }
+.machine-scan__icon { width: 3rem; height: 3rem; display: grid; place-items: center; flex: 0 0 auto;
+	border-radius: var(--radius); background: var(--surface-2); color: var(--primary); }
+.machine-scan__years { display: flex; gap: .4rem; overflow-x: auto; padding-bottom: .15rem; }
+.machine-scan__neighbors { display: grid; gap: .4rem; }
+.machine-scan__neighbor { min-height: var(--tap); display: flex; justify-content: space-between; align-items: center;
+	gap: .7rem; padding: .65rem .75rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
+	background: var(--surface-2); color: var(--text); font-weight: 650; }
+.machine-scan__neighbor:hover { border-color: var(--primary); }
+.machine-label-help { display: flex; gap: 1rem; align-items: center; justify-content: space-between; }
+.machine-label-help p { margin: 0; max-width: 60ch; }
+.machine-labels { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .65rem; }
+.machine-label { min-height: 12rem; display: grid; grid-template-columns: 9rem minmax(0,1fr); align-items: center; gap: .65rem;
+	padding: .7rem; break-inside: avoid; border: 1px dashed var(--border-strong); border-radius: var(--radius); background: #fff; color: #111; }
+.machine-label img { width: 9rem; height: 9rem; display: block; image-rendering: pixelated; }
+.machine-label__copy { min-width: 0; display: flex; flex-direction: column; gap: .28rem; }
+.machine-label__copy strong { font: 750 1.15rem/1.15 var(--font-sans); overflow-wrap: anywhere; }
+.machine-label__copy span, .machine-label__copy small { color: #454545; }
+.machine-label__brand { font: 700 .66rem/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+@media (max-width: 650px) {
+	.machine-labels { grid-template-columns: 1fr; }
+	.machine-label-help { align-items: stretch; flex-direction: column; }
+}
+@media print {
+	.machine-label-page { display: block; }
+	.machine-labels { grid-template-columns: repeat(2, 1fr); gap: 4mm; }
+	.machine-label { min-height: 54mm; grid-template-columns: 42mm 1fr; gap: 4mm; padding: 4mm; border: .3mm dashed #777; border-radius: 2mm; }
+	.machine-label img { width: 42mm; height: 42mm; }
+	.machine-label__copy strong { font-size: 13pt; }
+}
+
 /* ---- Admin operations strip ----------------------------------------- */
 /* Only admin routes render this compact read-only strip. It reuses the same
    durable signals as the detailed pages and remains horizontally scrollable on

@@ -1,0 +1,20 @@
+{{define "content"}}
+<section class="stack machine-label-page">
+	<div class="pagehead no-print">
+		<a class="backbtn" href="/prices?base={{.Base.ID}}" aria-label="Zurück zu den Maschinen">{{template "ic-back"}}</a>
+		<div><h2 class="pagehead__t">Maschinen-Etiketten</h2><p class="muted small">{{.Base.Year}} · {{.Base.Name}} · nur aktive Maschinen</p></div>
+	</div>
+	<div class="card no-print machine-label-help">
+		<p>Etiketten ausdrucken und an der passenden Maschine anbringen. Nach dem Scan ist eine Anmeldung erforderlich; gespeichert wird erst im bestehenden Buchungsformular.</p>
+		<button class="btn btn--primary" type="button" data-print>Drucken</button>
+	</div>
+	<div class="machine-labels">
+		{{range .Machines}}
+		<article class="machine-label">
+			<img src="/prices/machines/{{.ID}}/qr.png" width="180" height="180" alt="QR-Code für {{.Name}}">
+			<div class="machine-label__copy"><span class="machine-label__brand">Treckrr · Maschine</span><strong>{{.Name}}</strong>{{if .Category}}<span>{{.Category}}</span>{{end}}<small>Scannen · anmelden · Buchung prüfen</small><small>Grundlage {{$.Base.Year}}</small></div>
+		</article>
+		{{else}}<div class="empty"><strong>Keine aktiven Maschinen</strong><span class="muted small">Für diese Grundlage gibt es derzeit keine Etiketten.</span></div>{{end}}
+	</div>
+</section>
+{{end}}

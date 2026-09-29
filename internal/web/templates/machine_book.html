@@ -1,0 +1,32 @@
+{{define "content"}}
+<section class="stack machine-scan">
+	<div class="pagehead">
+		<a class="backbtn" href="/prices?base={{.Machine.BaseID}}#machine-{{.Machine.ID}}" aria-label="Zurück zur Maschine">{{template "ic-back"}}</a>
+		<div><h2 class="pagehead__t">{{.Machine.Name}}</h2><p class="muted small">Maschinen-QR · Buchungsentwurf starten</p></div>
+	</div>
+
+	<div class="card machine-scan__hero">
+		<span class="machine-scan__icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="18" r="2"/><circle cx="17.5" cy="18" r="2"/><path d="M4 8.5h16l-2 6H6zM6 14.5h12"/></svg></span>
+		<div><strong>{{.Machine.Name}}</strong><span class="muted small">{{if .Machine.Category}}{{.Machine.Category}} · {{end}}{{num .Machine.WorkingWidth}} m · {{money .Machine.HourlyRate}}/h</span></div>
+		{{if not .Machine.Active}}<span class="pill-off">inaktiv</span>{{end}}
+	</div>
+
+	{{if not .User.CanWrite}}
+	<div class="flash flash--info">Dein Konto hat Nur-Lese-Zugriff. Eine Buchung kann nicht gestartet werden.</div>
+	{{else if not .Machine.Active}}
+	<div class="flash flash--info">Diese Maschine ist für neue Buchungen deaktiviert. Das Etikett bleibt bewusst auflösbar, legt aber keinen Entwurf an.</div>
+	{{else if not .MachineYears}}
+	<div class="flash flash--info">Für diese Kostengrundlage gibt es kein offenes Abrechnungsjahr. Es wurde nichts gespeichert.</div>
+	{{else}}
+	<nav class="machine-scan__years" aria-label="Abrechnungsjahr wählen">
+		{{range .MachineYears}}<a class="yearpill {{if and $.SelectedYear (eq .ID $.SelectedYear.ID)}}is-active{{end}}" href="/machines/{{$.Machine.ID}}/book?year={{.ID}}" {{if and $.SelectedYear (eq .ID $.SelectedYear.ID)}}aria-current="page"{{end}}>{{.Year}}</a>{{end}}
+	</nav>
+	<div class="card stack stack--tight">
+		<div><strong>Für wen wurde die Maschine eingesetzt?</strong><p class="muted small">Die Auswahl öffnet nur den vorhandenen Buchungsdialog. Datum, Richtung und Stunden müssen dort geprüft werden.</p></div>
+		<div class="machine-scan__neighbors">
+			{{range .Neighbors}}<a class="machine-scan__neighbor" href="/neighbors/{{.ID}}?year={{$.SelectedYear.ID}}&amp;machine={{$.Machine.ID}}#neue-buchung"><span>{{.Name}}</span><span aria-hidden="true">›</span></a>{{else}}<p class="muted small">In diesem Jahr sind keine aktiven Nachbarn zugeordnet.</p>{{end}}
+		</div>
+	</div>
+	{{end}}
+</section>
+{{end}}

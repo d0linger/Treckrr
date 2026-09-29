@@ -1,7 +1,7 @@
 {{define "booking-form"}}
 {{$v := or .BookingValues (dict)}}{{$kind := or (index $v "booking_kind") "equipment"}}{{$direction := or (index $v "booking_direction") "out"}}{{$mode := or (index $v "mode") "gespann"}}{{$unit := index $v "unit"}}
 <form method="post" action="{{or .BookingAction "/entries"}}" class="card form" data-entry-form data-unified-booking
-	{{if .BookingEdit}}data-entry-edit{{else}}data-entry-create{{if not .BookingCopy}} data-entry-defaults{{end}}{{end}}
+	{{if .BookingEdit}}data-entry-edit{{else}}data-entry-create{{if and (not .BookingCopy) (not .BookingPrefilled)}} data-entry-defaults{{end}}{{end}}
  data-pricing-url="/api/base/{{.Base.ID}}/pricing" data-neighbor-name="{{.Neighbor.Name}}" {{if or .BookingLocked .HasInvoice}}data-booking-locked{{end}}>
 	<input type="hidden" name="booking_form_version" value="2">
 	<input type="hidden" name="year_id" value="{{.Year.ID}}">
