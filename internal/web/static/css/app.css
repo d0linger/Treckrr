@@ -2423,7 +2423,21 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .booking-preview__total { border-top: 1px solid var(--border); padding-top: .55rem; margin-top: .55rem !important; font-weight: 650; }
 .booking-preview strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
 [data-pricing-status]:empty { display: none; }
+.beleg__calc { margin: -.25rem 0 .35rem 5.2rem; border-left: 2px solid var(--border); padding: .1rem 0 .1rem .75rem; color: var(--muted); font-size: .78rem; }
+.beleg__calc summary { cursor: pointer; font-weight: 700; color: var(--muted); }
+.beleg__calc-body { display: grid; gap: .35rem; margin-top: .5rem; }
+.beleg__calc-body > div { display: flex; justify-content: space-between; gap: 1rem; }
+.beleg__calc-body strong { text-align: right; color: var(--text); font-weight: 650; }
+.beleg__calc-body small { display: block; font-weight: 400; color: var(--muted); }
+.beleg__calc-parts ul { margin: 0; text-align: right; list-style: none; }
+.beleg__calc--total { margin: .4rem 0 0; padding: .55rem .75rem; border: 1px solid var(--border); border-radius: var(--radius); }
+.rollgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.rollgrid h3 { margin: 0; font-size: 1rem; }
+.rollgrid .form { gap: .6rem; }
 @media (max-width: 420px) {
 	.booking-direction__choices { grid-template-columns: minmax(0, 1fr); }
 	.booking-preview__line, .booking-preview__total, .bcard__line { flex-wrap: wrap; gap: .25rem; }
+	.beleg__calc { margin-left: 0; }
+	.beleg__calc-body > div { flex-wrap: wrap; }
 }
+@media (max-width: 720px) { .rollgrid { grid-template-columns: minmax(0, 1fr); } }

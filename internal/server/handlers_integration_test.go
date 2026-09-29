@@ -330,6 +330,7 @@ func TestCSRFInvariantEveryPostFormCarriesTokenIntegration(t *testing.T) {
 		"/prices/compare",
 		fmt.Sprintf("/gespanne?base=%d", e.baseID64),
 		"/years",
+		fmt.Sprintf("/years/%d/wechsel", yid),
 		fmt.Sprintf("/stats?year=%d", yid),
 		fmt.Sprintf("/mahnwesen?year=%d", yid),
 		"/recurring",

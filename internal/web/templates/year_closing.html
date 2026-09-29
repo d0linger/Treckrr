@@ -10,6 +10,7 @@
 	<div class="card">
 		<strong>Dieses Jahr ist bereits abgeschlossen.</strong>
 		<p class="muted small">Rechnungen, Storni, Gutschriften und Abschläge sind gesperrt. Für eine Korrektur muss das Jahr mit Begründung wieder geöffnet werden. Zahlungen bleiben jederzeit erfassbar.</p>
+		<a class="btn btn--primary btn--sm" href="/years/{{.Year.ID}}/wechsel">Geführten Jahreswechsel starten</a>
 	</div>
 	{{end}}
 
@@ -45,6 +46,7 @@
 			<input type="hidden" name="status" value="completed">
 			<button class="btn btn--primary btn--sm" type="submit">Jahr {{.Year.Year}} abschließen</button>
 		</form>
+		<p class="muted small">Nach dem Abschluss führt dich der Jahreswechsel-Assistent durch Sicherung, Folgejahr, Nachbarn, offene Posten und Serien.</p>
 	</div>
 	{{end}}
 </section>

@@ -50,11 +50,35 @@ type BelegMachine struct {
 	Rate   decimal.Decimal
 }
 
+// BelegCalculation explains a stored line without recomputing it from current
+// master data. Difference exposes any historical correction to multiplication.
+type BelegCalculation struct {
+	Quantity       decimal.Decimal
+	Unit           string
+	UnitPrice      decimal.Decimal
+	Raw            decimal.Decimal
+	Rounded        decimal.Decimal
+	Stored         decimal.Decimal
+	Difference     decimal.Decimal
+	MachineParts   []store.EntryMachineSnapshot
+	MachineLabels  string
+	LegacyMachines bool
+}
+
+// Corrected reports whether the stored amount differs from the rounded formula.
+func (c BelegCalculation) Corrected() bool { return !c.Difference.IsZero() }
+
+// BelegEntry pairs a booking with its cent-exact stored calculation path.
+type BelegEntry struct {
+	models.Entry
+	Calculation BelegCalculation
+}
+
 // BelegDay groups a neighbor's bookings by calendar day so the date is shown once
 // per day (a left rail marks the continuation rows), keeping a long list compact.
 type BelegDay struct {
 	Date    string
-	Entries []models.Entry
+	Entries []BelegEntry
 }
 
 // BelegService is one distinct Leistung aggregated across the year — booking
@@ -232,17 +256,34 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 		}
 	}
 
+	snapshots, err := s.store.EntryMachineSnapshotsByNeighborYear(r.Context(), neighbor.ID, year.ID)
+	if err != nil {
+		return nil, err
+	}
 	// Group bookings by day (date shown once per day) and aggregate identical
 	// Leistungen for the optional "Bündeln" view. Both render the same bookings as
 	// the flat list; totals are unchanged (voided bookings are excluded from the
 	// aggregate, exactly as they are from the totals). Entries arrive date-ordered.
 	var days []BelegDay
 	for _, e := range entries {
+		qty, unit, unitPrice := e.Hours, "h", e.HourlyRate
+		if e.Unit != "" && e.Unit != "h" {
+			qty, unit, unitPrice = e.Quantity, e.Unit, e.UnitPrice
+		}
+		raw := qty.Mul(unitPrice)
+		parts := snapshots[e.ID]
+		calculation := BelegCalculation{
+			Quantity: qty, Unit: unit, UnitPrice: unitPrice, Raw: raw,
+			Rounded: raw.Round(2), Stored: e.Cost, Difference: e.Cost.Sub(raw.Round(2)),
+			MachineParts: parts, MachineLabels: e.MachineLabels,
+			LegacyMachines: len(parts) == 0 && strings.TrimSpace(e.MachineLabels) != "",
+		}
+		view := BelegEntry{Entry: e, Calculation: calculation}
 		d := e.Date.Format("02.01.")
 		if n := len(days); n > 0 && days[n-1].Date == d {
-			days[n-1].Entries = append(days[n-1].Entries, e)
+			days[n-1].Entries = append(days[n-1].Entries, view)
 		} else {
-			days = append(days, BelegDay{Date: d, Entries: []models.Entry{e}})
+			days = append(days, BelegDay{Date: d, Entries: []BelegEntry{view}})
 		}
 	}
 	svcByLabel := map[string]*BelegService{}
@@ -314,6 +355,7 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	}
 	data["Neighbor"] = neighbor
 	data["Days"] = days
+	data["HasCalculationPath"] = true
 	data["Groups"] = groups
 	data["CanBundle"] = len(groups) > 0 && len(groups) < bookings
 	data["Bundle"] = r.URL.Query().Get("bundeln") == "1"

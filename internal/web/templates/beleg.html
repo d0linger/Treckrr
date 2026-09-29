@@ -60,6 +60,17 @@
 				<span class="beleg__h beleg__r">{{if $e.Voided}}—{{else if eq $e.Unit "h"}}{{num $e.Hours}}{{else}}—{{end}}</span>
 				<span class="beleg__b beleg__r">{{money $e.Cost}}</span>
 			</div>
+			{{if $.HasCalculationPath}}<details class="beleg__calc no-print">
+				<summary>Rechenweg</summary>
+				<div class="beleg__calc-body">
+					<div><span>Gebuchte Formel</span><strong>{{num $e.Calculation.Quantity}} {{$e.Calculation.Unit}} × {{num $e.Calculation.UnitPrice}} € = {{num $e.Calculation.Raw}} €</strong></div>
+					<div><span>Rundung je Position</span><strong>{{money $e.Calculation.Rounded}}</strong></div>
+					{{if $e.Calculation.Corrected}}<div><span>Korrektur / historischer Unterschied</span><strong>{{if $e.Calculation.Difference.IsPositive}}+{{end}}{{money $e.Calculation.Difference}}</strong></div>{{end}}
+					<div><span>Gespeicherter Zeilenbetrag</span><strong>{{money $e.Calculation.Stored}}</strong></div>
+					{{if $e.Calculation.MachineParts}}<div class="beleg__calc-parts"><span>Maschinen-Snapshots</span><ul>{{range $e.Calculation.MachineParts}}<li>{{.Label}} · {{money .HourlyRate}}/h</li>{{end}}</ul></div>
+					{{else if $e.Calculation.LegacyMachines}}<div><span>Maschinen</span><strong>{{$e.Calculation.MachineLabels}}<small>Historische Buchung ohne Komponenten-Snapshot; maßgeblich ist der gespeicherte Gesamtsatz.</small></strong></div>{{end}}
+				</div>
+			</details>{{end}}
 			{{end}}
 			{{else}}
 			<div class="beleg__empty">Keine Buchungen in diesem Jahr.</div>
@@ -107,6 +118,25 @@
 		{{if and .Ledger (not .HasPayments)}}
 		<div class="beleg__lsub beleg__lsub--total beleg__sum-informal" data-beleg-final-total><span></span><span>{{if .Credit}}Guthaben{{else}}Saldo{{end}}</span><span class="beleg__r"></span><span class="beleg__r">{{money .Saldo}}</span></div>
 		{{end}}
+		{{if .HasCalculationPath}}<details class="beleg__calc beleg__calc--total no-print">
+			<summary>Rechenweg Gesamtbetrag</summary>
+			<div class="beleg__calc-body">
+				{{if .Rechnung}}
+				<div><span>Leistungen netto</span><strong>{{money .InvNet}}</strong></div>
+				{{if .InvShowVAT}}<div><span>USt {{num .InvRate}} % auf {{money .InvNet}}</span><strong>{{money .InvUSt}}</strong></div>{{end}}
+				<div><span>Rechnung brutto</span><strong>{{money .InvBrutto}}</strong></div>
+				<div><span>Verrechnung</span><strong>{{money .InvLedger}}</strong></div>
+				{{if .InvCredits.IsNegative}}<div><span>Gutschriften</span><strong>{{money .InvCredits}}</strong></div>{{end}}
+				{{if .HasPayments}}<div><span>Zahlungen</span><strong>−{{money .PaidSum}}</strong></div>{{end}}
+				<div><span>Restbetrag zu zahlen</span><strong>{{money .InvRest}}</strong></div>
+				{{else}}
+				<div><span>Leistungen</span><strong>{{money .TotalCost}}</strong></div>
+				<div><span>Verrechnung</span><strong>{{money .LedgerSum}}</strong></div>
+				{{if .HasPayments}}<div><span>Zahlungen</span><strong>−{{money .PaidSum}}</strong></div>{{end}}
+				<div><span>{{if .Credit}}Guthaben{{else}}Gespeicherter Saldo{{end}}</span><strong>{{if .HasPayments}}{{money .Remaining}}{{else}}{{money .Saldo}}{{end}}</strong></div>
+				{{end}}
+			</div>
+		</details>{{end}}
 
 		{{if .HasGrund}}
 		<div class="beleg__grund" id="beleg-grund">
