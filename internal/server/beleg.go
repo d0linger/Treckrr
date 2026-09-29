@@ -18,6 +18,7 @@ import (
 
 	"github.com/d0linger/treckrr/internal/auth"
 	"github.com/d0linger/treckrr/internal/calc"
+	"github.com/d0linger/treckrr/internal/einvoice"
 	"github.com/d0linger/treckrr/internal/mail"
 	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
@@ -374,6 +375,9 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	data["Company"] = company
 	data["HasInvoice"] = hasInvoice
 	data["Invoice"] = invoice
+	if hasInvoice {
+		data["EInvoiceMissing"] = einvoice.MissingFields(invoice)
+	}
 	data["Rechnung"] = hasInvoice && r.URL.Query().Get("rechnung") == "1"
 	// Invoice reconciliation. USt is computed on the Leistungsentgelt (the
 	// services actually supplied) — NOT on the mutual-claim-netted saldo — so

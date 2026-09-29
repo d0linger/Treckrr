@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -132,6 +134,15 @@ func (s *Store) ListInvoiceDocs(ctx context.Context, yearID int64) ([]models.Inv
 		}
 	}
 	return out, nil
+}
+
+// GetInvoiceDocument returns one immutable invoice-family document by id.
+func (s *Store) GetInvoiceDocument(ctx context.Context, id int64) (models.Invoice, error) {
+	iv, err := scanInvoice(s.db.QueryRowContext(ctx, `SELECT `+invoiceCols+` FROM invoices WHERE id=$1`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return iv, ErrNotFound
+	}
+	return iv, err
 }
 
 // KUCalendarYearGross is the signed revenue of one CALENDAR year across all

@@ -246,10 +246,14 @@
 			{{if .HasInvoice}}
 			{{if not .Shared}}
 			<a class="btn btn--ghost" href="/neighbors/{{.Neighbor.ID}}/beleg.pdf?year={{.Year.ID}}" target="_blank" rel="noopener">{{template "ic-copy"}} Rechnung als PDF</a>
+			{{if not .EInvoiceMissing}}<a class="btn btn--ghost" href="/documents/{{.Invoice.ID}}/ebinterface.xml">E-Rechnung XML</a>{{end}}
 			{{end}}
 			{{end}}
 		</div>
 		</div>
+		{{if and .HasInvoice .EInvoiceMissing (not .Shared)}}
+		<p class="muted small">E-Rechnung nicht verfügbar: {{range $i, $m := .EInvoiceMissing}}{{if $i}}, {{end}}{{$m}}{{end}}. Strukturierte Daten müssen vor der Festschreibung gepflegt sein.</p>
+		{{end}}
 		<div class="beleg__actgroup">
 			<span class="beleg__actlabel">Weitergeben &amp; Versand</span>
 		<div class="beleg__actrow">

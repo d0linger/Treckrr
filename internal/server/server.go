@@ -180,6 +180,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /neighbors/{id}/gutschrift", s.auth(s.handleFreeGutschrift))
 	mux.Handle("POST /neighbors/{id}/anzahlung", s.auth(s.handleAnzahlungCreate))
 	mux.Handle("POST /documents/{id}/storno", s.auth(s.handleDocumentStorno))
+	mux.Handle("GET /documents/{id}/ebinterface.xml", s.auth(s.handleEInvoiceXML))
 	mux.Handle("GET /years/{id}/abschluss", s.auth(s.handleYearClosing))
 	mux.Handle("GET /years/{id}/wechsel", s.auth(s.handleYearRollover))
 	mux.Handle("POST /years/{id}/wechsel/create", s.auth(s.handleYearRolloverCreate))

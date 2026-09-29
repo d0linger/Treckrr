@@ -73,6 +73,17 @@
 							value="{{with .Neighbor.PaymentTermDays}}{{.}}{{end}}" placeholder="Firmenstandard"></label>
 					</div>
 					</details>
+					<details class="disclosure form-details" {{if or .Neighbor.EInvoiceStreet .Neighbor.EInvoiceZIP .Neighbor.EInvoiceTown .Neighbor.EInvoiceOrderID}}open{{end}}>
+						<summary>Strukturierte E-Rechnung <span class="muted small">ebInterface 6.1</span></summary>
+						<p class="muted small">Gilt für künftig festgeschriebene Rechnungen; vorhandene Snapshots werden nicht nachträglich verändert.</p>
+						<div class="form__grid form__grid--two">
+						<label class="field"><span>Straße und Hausnummer</span><input class="input" name="einvoice_street" value="{{.Neighbor.EInvoiceStreet}}"></label>
+						<label class="field"><span>PLZ</span><input class="input" name="einvoice_zip" value="{{.Neighbor.EInvoiceZIP}}"></label>
+						<label class="field"><span>Ort</span><input class="input" name="einvoice_town" value="{{.Neighbor.EInvoiceTown}}"></label>
+						<label class="field"><span>Ländercode</span><input class="input" name="einvoice_country_code" value="{{.Neighbor.EInvoiceCountryCode}}" maxlength="2" placeholder="AT"></label>
+						<label class="field"><span>Auftragsreferenz / Order-ID</span><input class="input" name="einvoice_order_id" value="{{.Neighbor.EInvoiceOrderID}}" placeholder="für e-Rechnung.gv.at erforderlich"></label>
+						</div>
+					</details>
 					<div class="btnrow"><button class="btn btn--primary btn--sm" type="submit">Speichern</button></div>
 				</form>
 				<div class="btnrow">

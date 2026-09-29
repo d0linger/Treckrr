@@ -366,6 +366,28 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
+	einvoice := models.InvoiceParty{
+		Street: trimmed(r, "einvoice_street"), ZIP: trimmed(r, "einvoice_zip"),
+		Town: trimmed(r, "einvoice_town"), CountryCode: strings.ToUpper(trimmed(r, "einvoice_country_code")),
+		OrderID: trimmed(r, "einvoice_order_id"),
+	}
+	if einvoice.CountryCode == "" {
+		einvoice.CountryCode = "AT"
+	}
+	if !countryCodeShape.MatchString(einvoice.CountryCode) {
+		s.setFlash(w, r, "error", "E-Rechnungs-Ländercode muss aus zwei Buchstaben bestehen (z. B. AT).")
+		redirect(w, r, neighborReturnURL(r, id))
+		return
+	}
+	for label, value := range map[string]string{
+		"E-Rechnungs-Straße": einvoice.Street, "E-Rechnungs-PLZ": einvoice.ZIP,
+		"E-Rechnungs-Ort": einvoice.Town, "Auftragsreferenz": einvoice.OrderID,
+	} {
+		if s.tooLong(w, r, label, value, maxNameLen) {
+			redirect(w, r, neighborReturnURL(r, id))
+			return
+		}
+	}
 	// Leeres Feld = Firmenstandard (NULL), sonst 0-365 Tage.
 	var paymentTerm *int
 	if v := strings.TrimSpace(r.FormValue("payment_term_days")); v != "" {
@@ -380,7 +402,7 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	// A refused update (anonymized or unknown neighbor) writes nothing, so it is
 	// neither reported as success nor audited: the append-only log must not
 	// record a diff that never reached the database.
-	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email, iban, paymentTerm); errors.Is(err, store.ErrNeighborAnonymized) {
+	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email, iban, paymentTerm, einvoice); errors.Is(err, store.ErrNeighborAnonymized) {
 		s.setFlash(w, r, "error", "Dieser Nachbar wurde anonymisiert — seine Daten können nicht mehr bearbeitet werden.")
 	} else if errors.Is(err, store.ErrNotFound) {
 		s.setFlash(w, r, "error", "Nachbar nicht gefunden.")

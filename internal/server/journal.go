@@ -15,6 +15,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/d0linger/treckrr/internal/einvoice"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
@@ -426,6 +427,13 @@ func (s *Server) handleJournalZip(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_, _ = f.Write(b)
+		if iv.Kind == "invoice" && iv.Status == "issued" {
+			if xb, xerr := einvoice.Render(*iv); xerr == nil {
+				if xf, createErr := zw.Create(zipNameSafe.ReplaceAllString(iv.Number, "_") + "_ebinterface-6p1.xml"); createErr == nil {
+					_, _ = xf.Write(xb)
+				}
+			}
+		}
 	}
 	var csvBuf bytes.Buffer
 	csvBuf.Write([]byte{0xEF, 0xBB, 0xBF})
