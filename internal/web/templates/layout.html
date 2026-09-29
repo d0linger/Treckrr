@@ -57,6 +57,10 @@
 			<button type="button" class="appbar__icon" data-cmdk-open aria-label="Schnellsuche (Strg+K)" title="Schnellsuche (Strg+K)">
 				<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
 			</button>
+			<a class="appbar__icon appbar__notify" href="/notifications" aria-label="Hinweise{{if .UnreadNotifications}}: {{.UnreadNotifications}} ungelesen{{end}}" title="Hinweise">
+				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+				{{if .UnreadNotifications}}<span class="appbar__notify-count">{{.UnreadNotifications}}</span>{{end}}
+			</a>
 			{{end}}
 			<button type="button" class="appbar__offline" data-offline-badge aria-live="polite" hidden
 				aria-haspopup="dialog" title="Offline erfasste Buchungen ansehen"></button>
@@ -153,6 +157,8 @@
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5 20a7 7 0 0 1 14 0"/></svg></span>Personen</a>
 			<a class="drawer__item {{if eq .Active "profile"}}is-active{{end}}" href="/profile" {{if eq .Active "profile"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span>Einstellungen</a>
+			<a class="drawer__item {{if eq .Active "notifications"}}is-active{{end}}" href="/notifications" {{if eq .Active "notifications"}}aria-current="page"{{end}}>
+				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></span>Hinweise{{if .UnreadNotifications}}<span class="badge">{{.UnreadNotifications}}</span>{{end}}</a>
 			{{if .User.IsAdmin}}
 			<h2 class="drawer__label">Verwaltung</h2>
 			<a class="drawer__item {{if eq .Active "admin"}}is-active{{end}}" href="/admin/users" {{if eq .Active "admin"}}aria-current="page"{{end}}>

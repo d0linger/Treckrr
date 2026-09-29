@@ -1,0 +1,45 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
+		<div>
+			<h2 class="pagehead__t">Hinweise</h2>
+			<p class="muted small">Fälligkeiten und Betriebszustände an einer Stelle – ohne automatische fachliche Änderungen.</p>
+		</div>
+	</div>
+
+	<div class="card noticeprefs">
+		<div><strong>Wochenübersicht</strong><p class="muted small">Einmal pro Woche gebündelt über den vorhandenen, sicheren Mailausgang.</p></div>
+		<form method="post" action="/account/notifications" class="noticeprefs__form">
+			<label class="switch"><input type="checkbox" name="weekly_email" {{if .NotificationPreferences.WeeklyEmail}}checked{{end}} {{if not .MailEnabled}}disabled{{end}}><span>Per E-Mail</span></label>
+			<button class="btn btn--ghost btn--sm" type="submit">Speichern</button>
+		</form>
+		{{if not .MailEnabled}}<p class="muted small">SMTP ist nicht konfiguriert; In-App-Hinweise funktionieren weiterhin.</p>{{end}}
+	</div>
+
+	{{if .Notifications}}
+	<div class="btnrow btnrow--split">
+		<span class="muted small">Neueste 100 Hinweise</span>
+		<form method="post" action="/notifications/read-all"><button class="btn btn--ghost btn--sm" type="submit">Alle als gelesen</button></form>
+	</div>
+	<ol class="noticefeed" aria-label="Benachrichtigungen">
+		{{range .Notifications}}
+		<li class="notice notice--{{.Tone}} {{if .ReadAt}}is-read{{end}}">
+			<span class="notice__mark" aria-hidden="true">{{if eq .Tone "bad"}}!{{else if eq .Tone "warn"}}·{{else}}i{{end}}</span>
+			<div class="notice__body">
+				<div class="notice__top"><strong>{{.Title}}</strong>{{if not .ReadAt}}<span class="badge">Neu</span>{{end}}</div>
+				{{if .Detail}}<span class="notice__detail">{{.Detail}}</span>{{end}}
+				<span class="muted small">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>
+			</div>
+			<div class="notice__actions">
+				<form method="post" action="/notifications/{{.ID}}/open"><button class="btn btn--primary btn--sm" type="submit">Öffnen</button></form>
+				<form method="post" action="/notifications/{{.ID}}/dismiss"><button class="iconact" type="submit" aria-label="Hinweis ausblenden">×</button></form>
+			</div>
+		</li>
+		{{end}}
+	</ol>
+	{{else}}
+	<div class="empty"><strong>Keine Hinweise</strong><span class="muted small">Aktuell gibt es nichts, das deine Aufmerksamkeit benötigt.</span></div>
+	{{end}}
+</section>
+{{end}}

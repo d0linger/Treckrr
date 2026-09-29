@@ -407,6 +407,37 @@ em { font-style: normal; color: var(--muted); }
 }
 .appbar__icon:hover { background: var(--chassis-hover); }
 .appbar__icon svg { display: block; }
+.appbar__notify { position: relative; }
+.appbar__notify-count { position: absolute; top: 2px; right: 1px; min-width: 1.05rem; height: 1.05rem;
+	display: grid; place-items: center; padding: 0 .2rem; border-radius: 999px; background: var(--danger);
+	color: #fff; font: 700 .62rem/1 var(--font-mono); box-shadow: 0 0 0 2px var(--chassis); }
+
+/* Notification center: one compact, actionable stream with state carried by a
+   narrow signal rail instead of large colored surfaces. */
+.noticeprefs { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .7rem 1rem; align-items: center; }
+.noticeprefs p { margin: .2rem 0 0; }
+.noticeprefs__form { display: flex; gap: .65rem; align-items: center; }
+.noticeprefs > .muted { grid-column: 1 / -1; }
+.noticefeed { list-style: none; margin: 0; padding: 0; display: grid; gap: .55rem; }
+.notice { --notice-signal: var(--primary); display: grid; grid-template-columns: 1.5rem minmax(0,1fr) auto;
+	gap: .7rem; align-items: center; padding: .75rem .8rem; background: var(--card-grad);
+	border: 1px solid var(--card-hairline); border-left: 3px solid var(--notice-signal); border-radius: var(--radius); box-shadow: var(--card-shadow); }
+.notice--warn { --notice-signal: var(--accent); }
+.notice--bad { --notice-signal: var(--danger); }
+.notice.is-read { opacity: .72; }
+.notice__mark { width: 1.35rem; height: 1.35rem; display: grid; place-items: center; border-radius: 50%;
+	background: color-mix(in srgb, var(--notice-signal) 14%, transparent); color: var(--notice-signal); font: 800 .76rem/1 var(--font-mono); }
+.notice__body { min-width: 0; display: grid; gap: .18rem; }
+.notice__top { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+.notice__detail { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.notice__actions { display: flex; align-items: center; gap: .35rem; }
+.notice__actions form { margin: 0; }
+@media (max-width: 560px) {
+	.noticeprefs { grid-template-columns: 1fr; }
+	.noticeprefs__form { justify-content: space-between; }
+	.notice { grid-template-columns: 1.5rem minmax(0,1fr); align-items: start; }
+	.notice__actions { grid-column: 2; }
+}
 
 /* ---- Admin operations strip ----------------------------------------- */
 /* Only admin routes render this compact read-only strip. It reuses the same

@@ -259,6 +259,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /bases/{id}/unlock", s.auth(s.handleBaseUnlock))
 
 	mux.Handle("GET /profile", s.auth(s.handleProfile))
+	mux.Handle("GET /notifications", s.auth(s.handleNotifications))
+	mux.Handle("POST /notifications/{id}/open", s.auth(s.handleNotificationOpen))
+	mux.Handle("POST /notifications/{id}/dismiss", s.auth(s.handleNotificationDismiss))
+	mux.Handle("POST /notifications/read-all", s.auth(s.handleNotificationsReadAll))
+	mux.Handle("POST /account/notifications", s.auth(s.handleNotificationPreferences))
 	mux.Handle("GET /account/password", s.auth(s.handleAccountPasswordForm))
 	mux.Handle("POST /account/password", s.auth(s.handleAccountPasswordSubmit))
 	mux.Handle("GET /account/passkeys", s.auth(s.handlePasskeys))
