@@ -104,7 +104,7 @@
 {{if .PhotoAction}}{{template "booking_attachments" .}}{{end}}
 {{if .RecurringAction}}
 <details class="card disclosure"><summary>Als Serie wiederholen</summary><p class="muted small">Wiederholt diese Leistung im offenen Jahr. Gespann, vereinbarte Preise und alle ausgewählten Personen werden aus der Buchung übernommen.</p>
-	<form method="post" action="{{.RecurringAction}}" class="form"><div class="form__grid form__grid--two"><label class="field"><span>Rhythmus</span><select class="select" name="interval_kind"><option value="weekly">wöchentlich</option><option value="monthly">monatlich</option></select></label><label class="field"><span>Erster Lauf</span><input class="input" type="date" name="next_run" value="{{.NextWeek}}" required></label></div>
+	<form method="post" action="{{.RecurringAction}}" class="form"><div class="form__grid"><label class="field"><span>Rhythmus</span><select class="select" name="interval_kind"><option value="weekly">wöchentlich</option><option value="monthly">monatlich</option></select></label><label class="field"><span>Erster Lauf</span><input class="input" type="date" name="next_run" value="{{.NextWeek}}" required></label><label class="field"><span>Endet am <em>(optional)</em></span><input class="input" type="date" name="ends_on"></label></div>
 	{{if .BookingHasOptionalPeople}}<label class="check"><input type="checkbox" name="with_person" value="1" checked><span>Alle zusätzlichen Personen bei jedem Lauf mitbuchen</span></label>{{end}}
 	<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit" {{if .BookingLocked}}disabled{{end}}>Serie einrichten</button><a class="link small" href="/recurring">Serien verwalten ›</a></div></form>
 </details>{{end}}

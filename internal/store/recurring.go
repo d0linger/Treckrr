@@ -13,7 +13,6 @@ import (
 	"github.com/d0linger/treckrr/internal/models"
 )
 
-// CreateRecurring stores a new recurring-booking rule.
 // ErrSourceEntryVoided reports that the booking a series was to be created from
 // was canceled between the handler's check and the insert.
 var ErrSourceEntryVoided = errors.New("source entry is voided")
@@ -22,7 +21,25 @@ var ErrSourceEntryVoided = errors.New("source entry is voided")
 // canceled, removed, or changed before the recurring template could be saved.
 var ErrSourceCompanionUnavailable = errors.New("source companion is unavailable")
 
+// ErrRecurringEndBeforeStart rejects a schedule whose optional end precedes its
+// next occurrence.
+var ErrRecurringEndBeforeStart = errors.New("recurring end date precedes next run")
+
+// ErrRecurringEnded prevents reactivating or running an already ended series.
+var ErrRecurringEnded = errors.New("recurring series has ended")
+
+// CreateRecurring stores an unbounded recurring-booking rule for compatibility
+// with callers that do not expose schedule bounds.
 func (s *Store) CreateRecurring(ctx context.Context, sourceEntryID, neighborID int64, t models.RecurTemplate, intervalKind string, nextRun time.Time) error {
+	return s.CreateRecurringUntil(ctx, sourceEntryID, neighborID, t, intervalKind, nextRun, nil)
+}
+
+// CreateRecurringUntil stores a new recurring rule with an optional inclusive
+// end date. The compatibility wrapper above keeps existing callers unbounded.
+func (s *Store) CreateRecurringUntil(ctx context.Context, sourceEntryID, neighborID int64, t models.RecurTemplate, intervalKind string, nextRun time.Time, endsOn *time.Time) error {
+	if endsOn != nil && endsOn.Before(nextRun) {
+		return ErrRecurringEndBeforeStart
+	}
 	blob, err := json.Marshal(t)
 	if err != nil {
 		return err
@@ -95,8 +112,8 @@ func (s *Store) CreateRecurring(ctx context.Context, sourceEntryID, neighborID i
 		return ErrSourceCompanionUnavailable
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO recurring_entries (neighbor_id, template, interval_kind, next_run)
-		 VALUES ($1,$2,$3,$4)`, neighborID, blob, intervalKind, nextRun); err != nil {
+		`INSERT INTO recurring_entries (neighbor_id, template, interval_kind, next_run, ends_on)
+		 VALUES ($1,$2,$3,$4,$5)`, neighborID, blob, intervalKind, nextRun, endsOn); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -106,7 +123,7 @@ func (s *Store) CreateRecurring(ctx context.Context, sourceEntryID, neighborID i
 func (s *Store) ListRecurring(ctx context.Context) ([]models.RecurringEntry, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT re.id, re.neighbor_id, n.name, re.template, re.interval_kind,
-		        re.next_run, re.active, re.created_at, re.last_run_at,
+		        re.next_run, re.ends_on, re.active, re.created_at, re.last_run_at,
 		        re.last_error, re.last_error_at
 		   FROM recurring_entries re JOIN neighbors n ON n.id = re.neighbor_id
 		  ORDER BY re.active DESC, re.next_run`)
@@ -118,9 +135,9 @@ func (s *Store) ListRecurring(ctx context.Context) ([]models.RecurringEntry, err
 	for rows.Next() {
 		var r models.RecurringEntry
 		var blob []byte
-		var last, errAt sql.NullTime
+		var last, endsOn, errAt sql.NullTime
 		if err := rows.Scan(&r.ID, &r.NeighborID, &r.NeighborName, &blob, &r.IntervalKind,
-			&r.NextRun, &r.Active, &r.CreatedAt, &last, &r.LastError, &errAt); err != nil {
+			&r.NextRun, &endsOn, &r.Active, &r.CreatedAt, &last, &r.LastError, &errAt); err != nil {
 			return nil, err
 		}
 		if errAt.Valid {
@@ -132,6 +149,10 @@ func (s *Store) ListRecurring(ctx context.Context) ([]models.RecurringEntry, err
 		if last.Valid {
 			r.LastRunAt = &last.Time
 		}
+		if endsOn.Valid {
+			r.EndsOn = &endsOn.Time
+		}
+		r.Upcoming = recurringPreview(r.NextRun, r.IntervalKind, r.EndsOn, 6)
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -141,8 +162,18 @@ func (s *Store) ListRecurring(ctx context.Context) ([]models.RecurringEntry, err
 // caller can audit "paused" vs "resumed". ErrNotFound when the id doesn't exist.
 func (s *Store) ToggleRecurring(ctx context.Context, id int64) (active bool, err error) {
 	err = s.db.QueryRowContext(ctx,
-		`UPDATE recurring_entries SET active = NOT active WHERE id=$1 RETURNING active`, id).Scan(&active)
+		`UPDATE recurring_entries
+		    SET active = NOT active
+		  WHERE id=$1 AND (active OR ends_on IS NULL OR ends_on >= GREATEST(next_run,current_date))
+		  RETURNING active`, id).Scan(&active)
 	if errors.Is(err, sql.ErrNoRows) {
+		var exists bool
+		if qerr := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM recurring_entries WHERE id=$1)`, id).Scan(&exists); qerr != nil {
+			return false, qerr
+		}
+		if exists {
+			return false, ErrRecurringEnded
+		}
 		return false, ErrNotFound
 	}
 	return active, err
@@ -173,6 +204,22 @@ func advanceDate(d time.Time, kind string) time.Time {
 		return time.Date(firstNext.Year(), firstNext.Month(), day, 0, 0, 0, 0, d.Location())
 	}
 	return d.AddDate(0, 0, 7) // weekly (default)
+}
+
+// recurringPreview calculates future dates with the exact cadence function used
+// by the runner and stops at the inclusive end date.
+func recurringPreview(start time.Time, kind string, endsOn *time.Time, limit int) []time.Time {
+	if limit <= 0 {
+		return nil
+	}
+	out := make([]time.Time, 0, limit)
+	for next := start; len(out) < limit; next = advanceDate(next, kind) {
+		if endsOn != nil && next.After(*endsOn) {
+			break
+		}
+		out = append(out, next)
+	}
+	return out
 }
 
 // neighborYearForDate returns the non-completed billing year matching the date's
@@ -210,7 +257,7 @@ func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 	// Deterministic order: the oldest due work first, then by id. Without it an
 	// arbitrary subset of rules could be starved behind a failing one.
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, neighbor_id, template, interval_kind, next_run
+		`SELECT id, neighbor_id, template, interval_kind, next_run, ends_on
 		   FROM recurring_entries WHERE active AND next_run <= $1::date
 		  ORDER BY next_run, id`, today.Format("2006-01-02"))
 	if err != nil {
@@ -221,12 +268,14 @@ func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 		tmpl           models.RecurTemplate
 		kind           string
 		next           time.Time
+		endsOn         *time.Time
 	}
 	var list []due
 	for rows.Next() {
 		var d due
 		var blob []byte
-		if err := rows.Scan(&d.id, &d.neighborID, &blob, &d.kind, &d.next); err != nil {
+		var endsOn sql.NullTime
+		if err := rows.Scan(&d.id, &d.neighborID, &blob, &d.kind, &d.next, &endsOn); err != nil {
 			_ = rows.Close()
 			return 0, err
 		}
@@ -239,6 +288,11 @@ func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 		// rule in positive UTC offsets. Rebuild the same calendar day locally.
 		year, month, day := d.next.Date()
 		d.next = time.Date(year, month, day, 0, 0, 0, 0, today.Location())
+		if endsOn.Valid {
+			year, month, day = endsOn.Time.Date()
+			end := time.Date(year, month, day, 0, 0, 0, 0, today.Location())
+			d.endsOn = &end
+		}
 		list = append(list, d)
 	}
 	_ = rows.Close()
@@ -249,7 +303,7 @@ func (s *Store) RunDueRecurring(ctx context.Context) (int, error) {
 	created := 0
 	var errs []error
 	for _, d := range list {
-		n, err := s.runDueRule(ctx, d.id, d.neighborID, d.tmpl, d.kind, d.next, today)
+		n, err := s.runDueRule(ctx, d.id, d.neighborID, d.tmpl, d.kind, d.next, d.endsOn, today)
 		created += n
 		if err != nil {
 			// Infrastructure failure for THIS rule: keep going so one rule can
@@ -296,7 +350,9 @@ func (s *Store) runDueRule(
 	ruleID, neighborID int64,
 	tmpl models.RecurTemplate,
 	kind string,
-	start, today time.Time,
+	start time.Time,
+	endsOn *time.Time,
+	today time.Time,
 ) (int, error) {
 	created := 0
 	next := start
@@ -309,7 +365,7 @@ func (s *Store) runDueRule(
 		return 0, err
 	}
 	var runErr error
-	for i := 0; i < 60 && !next.After(today); i++ { // cap catch-up per rule per tick
+	for i := 0; i < 60 && !next.After(today) && (endsOn == nil || !next.After(*endsOn)); i++ { // cap catch-up per rule per tick
 		yid, ok, yerr := s.neighborYearForDate(ctx, neighborID, next)
 		if yerr != nil {
 			runErr = yerr
@@ -349,7 +405,8 @@ func (s *Store) runDueRule(
 	// before it are booked and must not be retried under a new date. next_run
 	// stays unchanged while waiting; last_run_at moves only when an occurrence
 	// ran; last_error shows the current waiting state and clears once it runs.
-	if err := s.saveRuleProgress(ctx, ruleID, next, lastRun, waitReason, runErr == nil); err != nil {
+	ended := endsOn != nil && next.After(*endsOn)
+	if err := s.saveRuleProgress(ctx, ruleID, next, lastRun, waitReason, runErr == nil, ended); err != nil {
 		return created, errors.Join(runErr, err)
 	}
 	return created, runErr
@@ -357,10 +414,16 @@ func (s *Store) runDueRule(
 
 // saveRuleProgress writes next_run/last_run_at when an occurrence ran and, when
 // the rule's outcome is known, its waiting reason (” clears it).
-func (s *Store) saveRuleProgress(ctx context.Context, ruleID int64, next time.Time, lastRun *time.Time, waitReason string, outcomeKnown bool) error {
-	if lastRun != nil {
-		if _, err := s.db.ExecContext(ctx,
-			`UPDATE recurring_entries SET next_run=$1, last_run_at=$2 WHERE id=$3`, next, *lastRun, ruleID); err != nil {
+func (s *Store) saveRuleProgress(ctx context.Context, ruleID int64, next time.Time, lastRun *time.Time, waitReason string, outcomeKnown, ended bool) error {
+	if lastRun != nil || ended {
+		var ran any
+		if lastRun != nil {
+			ran = *lastRun
+		}
+		if _, err := s.db.ExecContext(ctx, `
+			UPDATE recurring_entries
+			   SET next_run=$1, last_run_at=COALESCE($2,last_run_at), active=CASE WHEN $3 THEN false ELSE active END
+			 WHERE id=$4`, next, ran, ended, ruleID); err != nil {
 			return err
 		}
 	}
@@ -509,6 +572,79 @@ func (s *Store) UpdateRecurring(ctx context.Context, id int64, intervalKind stri
 	return nil
 }
 
+// UpdateRecurringSchedule changes only future scheduling metadata. Already
+// materialized bookings and the frozen booking template remain untouched.
+func (s *Store) UpdateRecurringSchedule(ctx context.Context, id int64, intervalKind string, nextRun time.Time, endsOn *time.Time) error {
+	if intervalKind != "weekly" && intervalKind != "monthly" {
+		intervalKind = "weekly"
+	}
+	if endsOn != nil && endsOn.Before(nextRun) {
+		return ErrRecurringEndBeforeStart
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE recurring_entries SET interval_kind=$2, next_run=$3, ends_on=$4 WHERE id=$1`,
+		id, intervalKind, nextRun, endsOn)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// RecurringSkipResult describes the occurrence deliberately omitted and the
+// next effective schedule state.
+type RecurringSkipResult struct {
+	SkippedOn time.Time
+	NextRun   time.Time
+	Active    bool
+}
+
+// SkipNextRecurring records and advances exactly one scheduled occurrence under
+// a row lock. Existing bookings are never changed or removed.
+func (s *Store) SkipNextRecurring(ctx context.Context, id int64) (RecurringSkipResult, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return RecurringSkipResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var kind string
+	var current time.Time
+	var endsOn sql.NullTime
+	var active bool
+	err = tx.QueryRowContext(ctx, `
+		SELECT interval_kind, next_run, ends_on, active
+		  FROM recurring_entries WHERE id=$1 FOR UPDATE`, id).
+		Scan(&kind, &current, &endsOn, &active)
+	if errors.Is(err, sql.ErrNoRows) {
+		return RecurringSkipResult{}, ErrNotFound
+	}
+	if err != nil {
+		return RecurringSkipResult{}, err
+	}
+	if !active {
+		return RecurringSkipResult{}, ErrInactiveRule
+	}
+	next := advanceDate(current, kind)
+	remainActive := !endsOn.Valid || !next.After(endsOn.Time)
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO recurring_exceptions (recurring_id, skipped_on)
+		VALUES ($1,$2) ON CONFLICT (recurring_id, skipped_on) DO NOTHING`, id, current); err != nil {
+		return RecurringSkipResult{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE recurring_entries
+		   SET next_run=$2, active=$3, last_error='', last_error_at=NULL
+		 WHERE id=$1`, id, next, remainActive); err != nil {
+		return RecurringSkipResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return RecurringSkipResult{}, err
+	}
+	return RecurringSkipResult{SkippedOn: current, NextRun: next, Active: remainActive}, nil
+}
+
 // RunRecurringNow materializes ONE extra occurrence of a rule, dated today,
 // without touching the rhythm — "jetzt zusätzlich buchen", not "vorziehen".
 // It reuses the scheduled run's idempotency key ("recur:<rule>:<date>"), so
@@ -524,9 +660,10 @@ func (s *Store) RunRecurringNow(ctx context.Context, id int64) (int64, bool, err
 	var neighborID int64
 	var blob []byte
 	var active bool
+	var endsOn sql.NullTime
 	err := s.db.QueryRowContext(ctx,
-		`SELECT neighbor_id, template, active FROM recurring_entries WHERE id=$1`, id).
-		Scan(&neighborID, &blob, &active)
+		`SELECT neighbor_id, template, active, ends_on FROM recurring_entries WHERE id=$1`, id).
+		Scan(&neighborID, &blob, &active, &endsOn)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, ErrNotFound
 	}
@@ -542,6 +679,14 @@ func (s *Store) RunRecurringNow(ctx context.Context, id int64) (int64, bool, err
 	}
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	if endsOn.Valid {
+		year, month, day := endsOn.Time.Date()
+		end := time.Date(year, month, day, 0, 0, 0, 0, today.Location())
+		if today.After(end) {
+			_, _ = s.db.ExecContext(ctx, `UPDATE recurring_entries SET active=false WHERE id=$1`, id)
+			return 0, false, ErrRecurringEnded
+		}
+	}
 	yid, ok, err := s.neighborYearForDate(ctx, neighborID, today)
 	if err != nil {
 		return 0, false, err

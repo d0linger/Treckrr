@@ -181,6 +181,8 @@ type RecurringEntry struct {
 	Template     RecurTemplate
 	IntervalKind string
 	NextRun      time.Time
+	EndsOn       *time.Time
+	Upcoming     []time.Time
 	Active       bool
 	CreatedAt    time.Time
 	LastRunAt    *time.Time

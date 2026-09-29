@@ -42,7 +42,8 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 		"Startdatum",
 		r.FormValue("next_run"),
 		maxNameLen,
-	) || s.tooLong(w, r, "Intervall", r.FormValue("interval_kind"), maxNameLen) {
+	) || s.tooLong(w, r, "Intervall", r.FormValue("interval_kind"), maxNameLen) ||
+		s.tooLong(w, r, "Enddatum", r.FormValue("ends_on"), maxNameLen) {
 		redirect(w, r, "/recurring")
 		return
 	}
@@ -75,6 +76,12 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 	if perr != nil {
 		start = time.Now().AddDate(0, 0, 7)
 	}
+	endsOn, perr := optionalRecurringEnd(r, start)
+	if perr != nil {
+		s.setFlash(w, r, "error", perr.Error())
+		redirect(w, r, "/recurring")
+		return
+	}
 	tmpl := models.RecurTemplate{
 		Unit: entry.Unit, Quantity: entry.Quantity, UnitPrice: entry.UnitPrice,
 		Hours: entry.Hours, HourlyRate: entry.HourlyRate, Cost: entry.Cost,
@@ -97,7 +104,7 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := s.store.CreateRecurring(r.Context(), id, entry.NeighborID, tmpl, kind, start); err != nil {
+	if err := s.store.CreateRecurringUntil(r.Context(), id, entry.NeighborID, tmpl, kind, start, endsOn); err != nil {
 		if errors.Is(err, store.ErrSourceEntryVoided) {
 			s.setFlash(w, r, "error", "Aus einer stornierten Buchung kann keine Serie eingerichtet werden.")
 			redirect(w, r, "/recurring")
@@ -126,6 +133,10 @@ func (s *Server) handleRecurringToggle(w http.ResponseWriter, r *http.Request) {
 	active, err := s.store.ToggleRecurring(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
 		s.notFound(w, r)
+		return
+	} else if errors.Is(err, store.ErrRecurringEnded) {
+		s.setFlash(w, r, "error", "Diese Serie ist bereits beendet. Bitte Enddatum oder nächsten Lauf anpassen.")
+		redirect(w, r, "/recurring")
 		return
 	} else if err != nil {
 		s.serverError(w, r.URL.Path, err)
@@ -178,7 +189,8 @@ func (s *Server) handleRecurringUpdate(w http.ResponseWriter, r *http.Request) {
 		"Startdatum",
 		r.FormValue("next_run"),
 		maxNameLen,
-	) || s.tooLong(w, r, "Intervall", r.FormValue("interval_kind"), maxNameLen) {
+	) || s.tooLong(w, r, "Intervall", r.FormValue("interval_kind"), maxNameLen) ||
+		s.tooLong(w, r, "Enddatum", r.FormValue("ends_on"), maxNameLen) {
 		redirect(w, r, "/recurring")
 		return
 	}
@@ -189,17 +201,77 @@ func (s *Server) handleRecurringUpdate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/recurring")
 		return
 	}
-	switch err := s.store.UpdateRecurring(r.Context(), id, kind, next); {
+	endsOn, perr := optionalRecurringEnd(r, next)
+	if perr != nil {
+		s.setFlash(w, r, "error", perr.Error())
+		redirect(w, r, "/recurring")
+		return
+	}
+	switch err := s.store.UpdateRecurringSchedule(r.Context(), id, kind, next, endsOn); {
 	case errors.Is(err, store.ErrNotFound):
 		s.notFound(w, r)
 		return
 	case err != nil:
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 	default:
-		s.audit(r, "update", "recurring", id, kind+" · nächster Lauf "+next.Format("02.01.2006"))
+		detail := kind + " · nächster Lauf " + next.Format("02.01.2006")
+		if endsOn != nil {
+			detail += " · endet " + endsOn.Format("02.01.2006")
+		} else {
+			detail += " · ohne Enddatum"
+		}
+		s.audit(r, "update", "recurring", id, detail)
 		s.setFlash(w, r, "success", "Serie aktualisiert.")
 	}
 	redirect(w, r, "/recurring")
+}
+
+// handleRecurringSkipNext records and advances one occurrence without touching
+// any booking that already exists.
+func (s *Server) handleRecurringSkipNext(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	result, err := s.store.SkipNextRecurring(r.Context(), id)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.notFound(w, r)
+		return
+	case errors.Is(err, store.ErrInactiveRule):
+		s.setFlash(w, r, "error", "Die Serie ist pausiert oder bereits beendet.")
+	case err != nil:
+		s.serverError(w, r.URL.Path, err)
+		return
+	default:
+		detail := "Termin " + result.SkippedOn.Format("02.01.2006") + " übersprungen"
+		if result.Active {
+			detail += " · nächster Lauf " + result.NextRun.Format("02.01.2006")
+		} else {
+			detail += " · Serie beendet"
+		}
+		s.audit(r, "recurring_skip", "recurring", id, detail)
+		s.setFlash(w, r, "success", detail+".")
+	}
+	redirect(w, r, "/recurring")
+}
+
+// optionalRecurringEnd parses an optional inclusive end date and enforces that
+// at least the next scheduled occurrence remains possible.
+func optionalRecurringEnd(r *http.Request, next time.Time) (*time.Time, error) {
+	raw := trimmed(r, "ends_on")
+	if raw == "" {
+		return nil, nil
+	}
+	end, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return nil, errors.New("Bitte ein gültiges Enddatum angeben")
+	}
+	if end.Before(next) {
+		return nil, errors.New("Das Enddatum darf nicht vor dem nächsten Lauf liegen")
+	}
+	return &end, nil
 }
 
 // handleRecurringRunNow books one extra occurrence for today (Ausbaukarte 68).
@@ -216,6 +288,8 @@ func (s *Server) handleRecurringRunNow(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, store.ErrInactiveRule):
 		s.setFlash(w, r, "error", "Die Serie ist pausiert — bitte zuerst aktivieren.")
+	case errors.Is(err, store.ErrRecurringEnded):
+		s.setFlash(w, r, "error", "Die Laufzeit dieser Serie ist bereits beendet.")
 	case err != nil:
 		s.serverError(w, r.URL.Path, err)
 		return

@@ -89,6 +89,7 @@ type NeighborRecurringExport struct {
 	Template     models.RecurTemplate `json:"template"`
 	IntervalKind string               `json:"interval_kind"`
 	NextRun      time.Time            `json:"next_run"`
+	EndsOn       *time.Time           `json:"ends_on,omitempty"`
 	Active       bool                 `json:"active"`
 	CreatedAt    time.Time            `json:"created_at"`
 	LastRunAt    *time.Time           `json:"last_run_at,omitempty"`
@@ -98,7 +99,7 @@ type NeighborRecurringExport struct {
 // templates whose next occurrence has no billing year yet.
 func (s *Store) ListNeighborRecurringExport(ctx context.Context, neighborID int64) ([]NeighborRecurringExport, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, template, interval_kind, next_run, active, created_at, last_run_at
+		`SELECT id, template, interval_kind, next_run, ends_on, active, created_at, last_run_at
 		   FROM recurring_entries WHERE neighbor_id=$1 ORDER BY id`, neighborID)
 	if err != nil {
 		return nil, err
@@ -108,7 +109,7 @@ func (s *Store) ListNeighborRecurringExport(ctx context.Context, neighborID int6
 	for rows.Next() {
 		var rule NeighborRecurringExport
 		var blob []byte
-		if err := rows.Scan(&rule.ID, &blob, &rule.IntervalKind, &rule.NextRun,
+		if err := rows.Scan(&rule.ID, &blob, &rule.IntervalKind, &rule.NextRun, &rule.EndsOn,
 			&rule.Active, &rule.CreatedAt, &rule.LastRunAt); err != nil {
 			return nil, err
 		}
