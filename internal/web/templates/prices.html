@@ -90,6 +90,25 @@
 					<button class="btn btn--primary btn--sm" type="submit">Speichern</button>
 				</div>
 			</form>
+			<details class="disclosure form-details" {{if .HasProposal}}open{{end}}>
+				<summary>Selbstkosten berechnen {{if .HasProposal}}<span class="muted small">Vorschlag {{money .Proposal}}/h · aktiv {{money .Machine.SelfCostPerH}}/h</span>{{else}}<span class="muted small">Annahmen ergänzen</span>{{end}}</summary>
+				<form method="post" action="/prices/machines/{{.Machine.ID}}/cost-model" class="form">
+					<input type="hidden" name="base_id" value="{{$.Base.ID}}">
+					<p class="muted small">Vorschlag = ((Anschaffung − Restwert) / Nutzungsdauer + Wartung + Versicherung + Sonstiges) / Jahresstunden + Treibstoff je Stunde.</p>
+					<div class="form__grid form__grid--two">
+					<label class="field"><span>Anschaffungskosten €</span><input class="input" name="acquisition_cost" inputmode="decimal" value="{{num .Machine.AcquisitionCost}}"></label>
+					<label class="field"><span>Restwert €</span><input class="input" name="residual_value" inputmode="decimal" value="{{num .Machine.ResidualValue}}"></label>
+					<label class="field"><span>Nutzungsdauer Jahre</span><input class="input" type="number" min="0" max="100" name="useful_years" value="{{.Machine.UsefulYears}}"></label>
+					<label class="field"><span>Einsatzstunden pro Jahr</span><input class="input" name="annual_hours" inputmode="decimal" value="{{num .Machine.AnnualHours}}"></label>
+					<label class="field"><span>Treibstoff €/h</span><input class="input" name="fuel_cost_per_h" inputmode="decimal" value="{{num .Machine.FuelCostPerH}}"></label>
+					<label class="field"><span>Wartung €/Jahr</span><input class="input" name="annual_maintenance" inputmode="decimal" value="{{num .Machine.AnnualMaintenance}}"></label>
+					<label class="field"><span>Versicherung €/Jahr</span><input class="input" name="annual_insurance" inputmode="decimal" value="{{num .Machine.AnnualInsurance}}"></label>
+					<label class="field"><span>Sonstige Kosten €/Jahr</span><input class="input" name="annual_other_cost" inputmode="decimal" value="{{num .Machine.AnnualOtherCost}}"></label>
+					</div>
+					{{if .HasProposal}}<div class="card"><span class="muted small">Berechneter Vorschlag</span><br><strong>{{money .Proposal}} pro Stunde</strong></div>{{end}}
+					<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit" name="action" value="save">Nur Annahmen speichern</button><button class="btn btn--primary btn--sm" type="submit" name="action" value="apply" data-confirm="Berechneten Vorschlag als aktiven Selbstkostensatz übernehmen?">Vorschlag übernehmen</button></div>
+				</form>
+			</details>
 			<div class="btnrow">
 				<form method="post" action="/prices/tractors/{{.Tractor.ID}}/toggle">
 					<input type="hidden" name="base_id" value="{{$.Base.ID}}">

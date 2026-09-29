@@ -233,6 +233,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /prices/tractors/{id}/toggle", s.auth(s.handleTractorToggle))
 	mux.Handle("POST /prices/tractors/{id}/delete", s.auth(s.handleTractorDelete))
 	mux.Handle("POST /prices/machines", s.auth(s.handleMachineSave))
+	mux.Handle("POST /prices/machines/{id}/cost-model", s.auth(s.handleMachineCostModel))
 	mux.Handle("POST /prices/machines/{id}/toggle", s.auth(s.handleMachineToggle))
 	mux.Handle("POST /prices/machines/{id}/delete", s.auth(s.handleMachineDelete))
 

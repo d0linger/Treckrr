@@ -146,7 +146,9 @@ func (s *Store) DeleteTractor(ctx context.Context, id int64) error {
 
 // ---- Machines ------------------------------------------------------------
 
-const machineCols = `id, base_id, name, working_width, cost_per_ab, active, category, sort_order, self_cost_per_h`
+const machineCols = `id, base_id, name, working_width, cost_per_ab, active, category, sort_order, self_cost_per_h,
+	acquisition_cost, residual_value, useful_years, annual_hours, fuel_cost_per_h,
+	annual_maintenance, annual_insurance, annual_other_cost`
 
 // ListMachines returns all machines of a base (active and inactive).
 func (s *Store) ListMachines(ctx context.Context, baseID int64) ([]models.Machine, error) {
@@ -170,12 +172,37 @@ func (s *Store) queryMachines(ctx context.Context, query string, args ...any) ([
 	for rows.Next() {
 		var m models.Machine
 		if err := rows.Scan(&m.ID, &m.BaseID, &m.Name, &m.WorkingWidth, &m.CostPerAB,
-			&m.Active, &m.Category, &m.SortOrder, &m.SelfCostPerH); err != nil {
+			&m.Active, &m.Category, &m.SortOrder, &m.SelfCostPerH,
+			&m.AcquisitionCost, &m.ResidualValue, &m.UsefulYears, &m.AnnualHours, &m.FuelCostPerH,
+			&m.AnnualMaintenance, &m.AnnualInsurance, &m.AnnualOtherCost); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// UpdateMachineCostModel stores calculation assumptions and optionally applies
+// the resulting proposal to the active self-cost rate in the same statement.
+func (s *Store) UpdateMachineCostModel(ctx context.Context, machine models.Machine, apply bool) error {
+	proposal, ok := machine.CalculatedSelfCost()
+	if apply && !ok {
+		return errors.New("machine self-cost assumptions incomplete")
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE machines SET acquisition_cost=$1, residual_value=$2,
+		useful_years=$3, annual_hours=$4, fuel_cost_per_h=$5, annual_maintenance=$6,
+		annual_insurance=$7, annual_other_cost=$8,
+		self_cost_per_h=CASE WHEN $9 THEN $10 ELSE self_cost_per_h END WHERE id=$11`,
+		machine.AcquisitionCost, machine.ResidualValue, machine.UsefulYears, machine.AnnualHours,
+		machine.FuelCostPerH, machine.AnnualMaintenance, machine.AnnualInsurance,
+		machine.AnnualOtherCost, apply, proposal, machine.ID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // SetMachineActive activates or deactivates a machine.

@@ -289,11 +289,34 @@ type Machine struct {
 	// SelfCostPerH is what running this machine COSTS per hour (Ausbaukarte 83).
 	// The rate above is what it earns; without this there is only turnover and
 	// no Deckungsbeitrag. 0 = not configured, and the margin stays hidden.
-	SelfCostPerH decimal.Decimal
+	SelfCostPerH      decimal.Decimal
+	AcquisitionCost   decimal.Decimal
+	ResidualValue     decimal.Decimal
+	UsefulYears       int
+	AnnualHours       decimal.Decimal
+	FuelCostPerH      decimal.Decimal
+	AnnualMaintenance decimal.Decimal
+	AnnualInsurance   decimal.Decimal
+	AnnualOtherCost   decimal.Decimal
 }
 
 // HourlyRate returns the machine's contribution to a Gespann's hourly rate.
 func (m Machine) HourlyRate() decimal.Decimal { return m.WorkingWidth.Mul(m.CostPerAB).Round(2) }
+
+// CalculatedSelfCost returns the transparent proposal from the stored
+// assumptions. It never changes SelfCostPerH; callers must apply it explicitly.
+func (m Machine) CalculatedSelfCost() (decimal.Decimal, bool) {
+	if m.UsefulYears <= 0 || !m.AnnualHours.IsPositive() {
+		return decimal.Zero, false
+	}
+	depreciable := m.AcquisitionCost.Sub(m.ResidualValue)
+	if depreciable.IsNegative() {
+		depreciable = decimal.Zero
+	}
+	annual := depreciable.Div(decimal.NewFromInt(int64(m.UsefulYears))).
+		Add(m.AnnualMaintenance).Add(m.AnnualInsurance).Add(m.AnnualOtherCost)
+	return annual.Div(m.AnnualHours).Add(m.FuelCostPerH).Round(2), true
+}
 
 // Gespann is a named fixed combination of a tractor, a load level and machines.
 type Gespann struct {
