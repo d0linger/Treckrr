@@ -107,6 +107,8 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 			 END
 			 WHERE neighbor_id = $1 AND (description <> '' OR void_reason <> '' OR booking IS NOT NULL)`,
 			`UPDATE payments SET note = '' WHERE neighbor_id = $1 AND note <> ''`,
+			`UPDATE payment_import_rows SET reference = '', payer_name = '', payer_iban = ''
+			 WHERE neighbor_id = $1 AND (reference <> '' OR payer_name <> '' OR payer_iban <> '')`,
 			`DELETE FROM mail_outbox WHERE neighbor_id = $1`,
 			`DELETE FROM beleg_shares WHERE neighbor_id = $1`,
 			// Ratenplan notes are operator-typed free text about the person

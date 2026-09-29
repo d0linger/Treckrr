@@ -12,6 +12,23 @@
 			<input class="input" type="file" name="file" accept=".csv,.xml,.sta,.mt940,.txt,text/csv,application/xml,text/xml,text/plain" required></label>
 		<div class="btnrow"><button class="btn btn--ghost btn--sm" type="submit">Vorschau</button></div>
 	</form>
+	{{if .Batches}}
+	<div class="card">
+		<h3 class="section-title">Letzte Importläufe</h3>
+		<div class="tablewrap" role="region" aria-label="Letzte Zahlungsimporte" tabindex="0">
+			<table class="dtable">
+				<thead><tr><th>Import</th><th>Zeitpunkt</th><th>Quelle</th><th>Ergebnis</th><th></th></tr></thead>
+				<tbody>{{range .Batches}}
+				<tr>
+					<td>#{{.ID}}</td><td>{{.CreatedAt.Format "02.01.2006 15:04"}}</td><td>{{.ShortHash}}…</td>
+					<td><span class="tag {{if eq .Status "completed"}}tag--paid{{else if eq .Status "failed"}}tag--open{{else}}tag--progress{{end}}">{{.StatusLabel}}</span> · {{.BookedRows}} verbucht</td>
+					<td class="num"><a class="btn btn--ghost btn--sm" href="/payments/import/batches/{{.ID}}">Details</a></td>
+				</tr>
+				{{end}}</tbody>
+			</table>
+		</div>
+	</div>
+	{{end}}
 	{{else}}
 	<p class="muted small">{{.Importable}} von {{.Total}} Eingängen werden automatisch zugeordnet.{{if .Assignable}} Offene Eingänge können unten manuell einer Rechnung zugewiesen werden.{{end}}</p>
 	<form method="post" action="/payments/import" data-confirm="Ausgewählte Zahlungen wie zugeordnet verbuchen?">

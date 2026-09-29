@@ -287,17 +287,19 @@
 		<div class="bcard">
 			<div class="bcard__head">
 				<span class="bcard__date">{{date .PaidOn}}</span>
-				<span class="bcard__task">Zahlung</span>
-				<span class="bcard__cost">−{{money .Amount}}</span>
+				<span class="bcard__task">{{if .Reversal}}Bankimport-Korrektur{{else}}Zahlung{{end}}{{with .ImportBatchID}} <span class="tag">Import #{{.}}</span>{{end}}</span>
+				<span class="bcard__cost">{{if .Reversal}}+{{money .DisplayAmount}}{{else}}−{{money .Amount}}{{end}}</span>
 			</div>
 			<div class="bcard__foot">
 				<span class="bcard__detail">{{if .Method}}{{.Method}}{{end}}{{if .InvoiceNumber}}{{if .Method}} · {{end}}Rechnung {{.InvoiceNumber}}{{end}}{{if .Note}}{{if or .Method .InvoiceNumber}} · {{end}}{{.Note}}{{end}}{{if not (or .Method .InvoiceNumber .Note)}}—{{end}}</span>
 				<span class="bcard__acts">
+					{{if not .ImportBatchID}}{{if not .Reversal}}
 					<a class="iconact" href="/payments/{{.ID}}/copy" title="Als neue Zahlung duplizieren" aria-label="Duplizieren">{{template "ic-copy"}}</a>
 					<a class="iconact" href="/payments/{{.ID}}/edit" title="Bearbeiten" aria-label="Bearbeiten">{{template "ic-edit"}}</a>
 					<form method="post" action="/payments/{{.ID}}/delete" data-confirm-danger data-confirm="Zahlung vom {{date .PaidOn}} über {{money .Amount}} löschen?">
 						<button class="iconact iconact--danger" type="submit" title="Löschen" aria-label="Löschen">{{template "ic-trash"}}</button>
 					</form>
+					{{end}}{{end}}
 				</span>
 			</div>
 		</div>

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/d0linger/treckrr/internal/models"
 )
 
@@ -20,7 +22,10 @@ type RetainedPayment struct {
 func (s *Store) ListRetainedPayments(ctx context.Context, yearID, neighborID int64) ([]RetainedPayment, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT p.id, p.billing_year_id, p.neighbor_id, p.amount, p.paid_on, p.note,
-		        p.method, p.invoice_id, COALESCE(iv.number,''), p.created_at, p.deleted_at
+		        p.method, p.invoice_id, COALESCE(iv.number,''),
+		        (SELECT r.batch_id FROM payment_import_rows r
+		          WHERE r.payment_id=p.id OR r.reversal_payment_id=p.id LIMIT 1),
+		        p.reversal_of_payment_id IS NOT NULL, p.created_at, p.deleted_at
 		   FROM payments p LEFT JOIN invoices iv ON iv.id=p.invoice_id
 		  WHERE p.billing_year_id=$1 AND p.neighbor_id=$2 ORDER BY p.paid_on, p.id`, yearID, neighborID)
 	if err != nil {
@@ -31,10 +36,48 @@ func (s *Store) ListRetainedPayments(ctx context.Context, yearID, neighborID int
 	for rows.Next() {
 		var p RetainedPayment
 		if err := rows.Scan(&p.ID, &p.BillingYearID, &p.NeighborID, &p.Amount, &p.PaidOn, &p.Note,
-			&p.Method, &p.InvoiceID, &p.InvoiceNumber, &p.Created, &p.DeletedAt); err != nil {
+			&p.Method, &p.InvoiceID, &p.InvoiceNumber, &p.ImportBatchID, &p.Reversal, &p.Created, &p.DeletedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// NeighborPaymentImportExport is the personal transaction metadata retained in
+// the payment-import journal for one neighbor.
+type NeighborPaymentImportExport struct {
+	BatchID         int64           `json:"batch_id"`
+	RowNo           int             `json:"row_no"`
+	TransactionDate *time.Time      `json:"transaction_date,omitempty"`
+	Amount          decimal.Decimal `json:"amount"`
+	Reference       string          `json:"reference,omitempty"`
+	PayerName       string          `json:"payer_name,omitempty"`
+	PayerIBAN       string          `json:"payer_iban,omitempty"`
+	Status          string          `json:"status"`
+	Reason          string          `json:"reason,omitempty"`
+}
+
+// ListNeighborPaymentImportExport returns journal rows directly attributed to
+// the subject in a billing year, including unmatched business refusals.
+func (s *Store) ListNeighborPaymentImportExport(ctx context.Context, yearID, neighborID int64) ([]NeighborPaymentImportExport, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT batch_id, row_no, transaction_date, amount, reference,
+		       payer_name, payer_iban, status, reason
+		  FROM payment_import_rows
+		 WHERE billing_year_id=$1 AND neighbor_id=$2 ORDER BY batch_id, row_no`, yearID, neighborID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []NeighborPaymentImportExport
+	for rows.Next() {
+		var row NeighborPaymentImportExport
+		if err := rows.Scan(&row.BatchID, &row.RowNo, &row.TransactionDate, &row.Amount,
+			&row.Reference, &row.PayerName, &row.PayerIBAN, &row.Status, &row.Reason); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
 	}
 	return out, rows.Err()
 }

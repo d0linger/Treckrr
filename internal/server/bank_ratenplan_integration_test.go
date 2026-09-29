@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -12,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/d0linger/treckrr/internal/bankimport"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // postMultipart uploads one file through the real handler, with the CSRF token
@@ -139,17 +141,28 @@ func TestBankImportMatchingIntegration(t *testing.T) {
 	}
 
 	// Commit with the manual assignment; all three credits must book.
-	e.post("/payments/import", url.Values{
+	done := e.post("/payments/import", url.Values{
 		"upload_token":            {extractValue(t, page, "upload_token")},
 		"assign_" + unmatchedHash: {itoa64(iv.ID)},
 	})
+	if !strings.Contains(done, "Ergebnisbericht herunterladen") {
+		t.Error("completed import did not open its durable result page")
+	}
 	pays, err := e.st.ListPayments(e.ctx, yid, nid)
 	if err != nil || len(pays) != 3 {
 		t.Fatalf("payments after import: %v (n=%d, want 3)", err, len(pays))
 	}
 	longNotePrefix := "Bank-Import: Zahlung " + iv.PaymentReference + " " + nonce + " "
 	longNoteFound := false
+	var batchID int64
 	for _, p := range pays {
+		if p.ImportBatchID == nil {
+			t.Errorf("imported payment %d has no batch provenance", p.ID)
+		} else if batchID == 0 {
+			batchID = *p.ImportBatchID
+		} else if *p.ImportBatchID != batchID {
+			t.Errorf("one statement produced multiple batches: %d and %d", batchID, *p.ImportBatchID)
+		}
 		if p.Method != "überweisung" {
 			t.Errorf("imported payment has method %q, want überweisung", p.Method)
 		}
@@ -172,6 +185,14 @@ func TestBankImportMatchingIntegration(t *testing.T) {
 	if !longNoteFound {
 		t.Errorf("long imported payment note with prefix %q not found", longNotePrefix)
 	}
+	batch, importRows, err := e.st.GetPaymentImportBatch(e.ctx, batchID)
+	if err != nil || len(importRows) != 3 || batch.BookedRows != 3 {
+		t.Fatalf("import journal = batch %+v, rows %d, err %v", batch, len(importRows), err)
+	}
+	report := e.get(fmt.Sprintf("/payments/import/batches/%d/report.csv", batchID))
+	if !strings.Contains(report, "Quell-Fingerabdruck") || !strings.Contains(report, "verbucht") {
+		t.Error("downloadable import report is missing provenance or outcomes")
+	}
 
 	// Re-committing the same statement must book nothing (hash de-dup).
 	e.post("/payments/import", url.Values{
@@ -180,6 +201,29 @@ func TestBankImportMatchingIntegration(t *testing.T) {
 	})
 	if pays, _ = e.st.ListPayments(e.ctx, yid, nid); len(pays) != 3 {
 		t.Errorf("re-commit booked again: %d payments", len(pays))
+	}
+
+	// Corrections are equal counter-entries. The original row stays immutable
+	// and the batch journal records the reversal.
+	corrected := e.post(fmt.Sprintf("/payments/import/rows/%d/reverse", importRows[0].ID), url.Values{})
+	if !strings.Contains(corrected, "korrigiert") {
+		t.Error("batch detail does not show the corrected outcome")
+	}
+	pays, err = e.st.ListPayments(e.ctx, yid, nid)
+	if err != nil || len(pays) != 4 {
+		t.Fatalf("payments after counter-entry: %v (n=%d, want 4)", err, len(pays))
+	}
+	var reversalFound bool
+	for _, p := range pays {
+		if p.Reversal && p.Amount.Equal(importRows[0].Amount.Neg()) {
+			reversalFound = true
+		}
+	}
+	if !reversalFound {
+		t.Error("equal negative counter-entry is missing")
+	}
+	if changed, err := e.st.DeletePayment(e.ctx, importRows[0].PaymentID); changed || !errors.Is(err, store.ErrImportedPaymentImmutable) {
+		t.Errorf("imported original can be deleted: changed=%v err=%v", changed, err)
 	}
 }
 

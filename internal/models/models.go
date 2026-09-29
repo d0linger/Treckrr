@@ -453,8 +453,15 @@ type Payment struct {
 	// payments recorded before an invoice existed, or from before 0044).
 	InvoiceID     *int64
 	InvoiceNumber string // joined for display; empty when unlinked
+	// ImportBatchID identifies payments and counter-entries controlled by the
+	// immutable bank-import journal. Reversal is true for the counter-entry.
+	ImportBatchID *int64
+	Reversal      bool
 	Created       time.Time
 }
+
+// DisplayAmount returns a positive amount for sign-aware payment templates.
+func (p Payment) DisplayAmount() decimal.Decimal { return p.Amount.Abs() }
 
 // PaymentPlan is one agreed installment (Ratenplan). Planned rows only — actual
 // money flows through payments; the UI derives the state per installment by

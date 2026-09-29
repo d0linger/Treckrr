@@ -49,12 +49,13 @@ type dsgvoYear struct {
 	// incomplete. Money received, mutual settlements, the receipt photos held
 	// about this person, when their document was handed over and through which
 	// public link — all of it is personal data Treckrr stores.
-	Payments     []dsgvoPayment     `json:"payments,omitempty"`
-	Ledger       []dsgvoLedger      `json:"ledger,omitempty"`
-	Photos       []dsgvoPhoto       `json:"photos,omitempty"`
-	Sends        []dsgvoSend        `json:"sends,omitempty"`
-	ShareLinks   []dsgvoShare       `json:"share_links,omitempty"`
-	Installments []dsgvoInstallment `json:"installments,omitempty"`
+	Payments       []dsgvoPayment                      `json:"payments,omitempty"`
+	PaymentImports []store.NeighborPaymentImportExport `json:"payment_import_rows,omitempty"`
+	Ledger         []dsgvoLedger                       `json:"ledger,omitempty"`
+	Photos         []dsgvoPhoto                        `json:"photos,omitempty"`
+	Sends          []dsgvoSend                         `json:"sends,omitempty"`
+	ShareLinks     []dsgvoShare                        `json:"share_links,omitempty"`
+	Installments   []dsgvoInstallment                  `json:"installments,omitempty"`
 	// The dunning history is personal data too — arguably the most sensitive
 	// record held about a neighbor: which Mahnstufe went out when, through which
 	// channel, with what fee. An Auskunft omitting it is incomplete.
@@ -225,6 +226,11 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
+		paymentImports, err := s.store.ListNeighborPaymentImportExport(r.Context(), y.ID, n.ID)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
 		ledger, err := s.store.ListNeighborLedger(r.Context(), y.ID, n.ID)
 		if err != nil {
 			s.serverError(w, r.URL.Path, err)
@@ -255,11 +261,11 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
-		if len(entries) == 0 && len(invoices) == 0 && len(payments) == 0 && len(ledger) == 0 &&
+		if len(entries) == 0 && len(invoices) == 0 && len(payments) == 0 && len(paymentImports) == 0 && len(ledger) == 0 &&
 			len(photos) == 0 && len(sends) == 0 && len(shares) == 0 && len(plans) == 0 && len(dunning) == 0 {
 			continue // a year with no data for this person adds nothing.
 		}
-		dy := dsgvoYear{Year: y.Year}
+		dy := dsgvoYear{Year: y.Year, PaymentImports: paymentImports}
 		for _, e := range entries {
 			dy.Entries = append(dy.Entries, dsgvoEntryFrom(e))
 		}

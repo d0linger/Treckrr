@@ -68,10 +68,10 @@ func (r *mockPaymentRows) Columns() []string {
 		return []string{"exists"}
 	case strings.Contains(r.query, "SELECT billing_year_id, neighbor_id FROM payments"):
 		return []string{"billing_year_id", "neighbor_id"}
-	case strings.Contains(r.query, "SELECT billing_year_id, neighbor_id, amount"):
-		return []string{"billing_year_id", "neighbor_id", "amount", "paid_on", "method", "deleted_at"}
+	case strings.Contains(r.query, "p.deleted_at,"):
+		return []string{"billing_year_id", "neighbor_id", "amount", "paid_on", "method", "deleted_at", "imported", "reversal"}
 	case strings.Contains(r.query, "FROM payments"):
-		return []string{"id", "billing_year_id", "neighbor_id", "amount", "paid_on", "note", "method", "invoice_id", "number", "created_at"}
+		return []string{"id", "billing_year_id", "neighbor_id", "amount", "paid_on", "note", "method", "invoice_id", "number", "batch_id", "reversal", "created_at"}
 	default:
 		return []string{"id"}
 	}
@@ -93,7 +93,7 @@ func (r *mockPaymentRows) Next(dest []driver.Value) error {
 		dest[0] = true // NeighborInYear membership exists
 	case strings.Contains(r.query, "SELECT billing_year_id, neighbor_id FROM payments"):
 		copy(dest, []driver.Value{int64(1), int64(1)})
-	case strings.Contains(r.query, "SELECT billing_year_id, neighbor_id, amount"):
+	case strings.Contains(r.query, "p.deleted_at,"):
 		date := time.Date(
 			2026,
 			time.March,
@@ -104,7 +104,7 @@ func (r *mockPaymentRows) Next(dest []driver.Value) error {
 			0,
 			time.UTC,
 		)
-		copy(dest, []driver.Value{int64(1), int64(1), "100.00", date, "bar", nil})
+		copy(dest, []driver.Value{int64(1), int64(1), "100.00", date, "bar", nil, false, false})
 	case strings.Contains(r.query, "FROM payments"):
 		date := time.Date(
 			2026,
@@ -116,7 +116,7 @@ func (r *mockPaymentRows) Next(dest []driver.Value) error {
 			0,
 			time.UTC,
 		)
-		copy(dest, []driver.Value{int64(1), int64(1), int64(1), "100.00", date, "note", "bar", nil, "", date})
+		copy(dest, []driver.Value{int64(1), int64(1), int64(1), "100.00", date, "note", "bar", nil, "", nil, false, date})
 	default:
 		dest[0] = int64(1)
 	}

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/d0linger/treckrr/internal/db"
 	"github.com/d0linger/treckrr/internal/store"
 )
@@ -81,6 +83,21 @@ func TestAnonymizeNeighborIntegration(t *testing.T) {
 		VALUES ($1, '{"task_label":"Melken bei Anon"}'::jsonb, 'monthly', now(), TRUE)`, id); err != nil {
 		t.Fatalf("seed recurring rule: %v", err)
 	}
+	batchID, _, err := st.CreatePaymentImportBatch(ctx, 0, strings.Repeat("a", 64), []store.PaymentImportRowInput{{
+		RowNo: 1, TransactionHash: strings.Repeat("b", 64), Amount: decimal.NewFromInt(10),
+		Reference: "Zahlung von Anon", PayerName: name, PayerIBAN: "AT611904300234573201",
+		Status: store.PaymentImportUnmatched, Reason: "Test", YearID: yearID, NeighborID: id,
+	}})
+	if err != nil {
+		t.Fatalf("seed payment import row: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.ExecContext(ctx, `DELETE FROM payment_import_rows WHERE batch_id=$1`, batchID)
+		_, _ = pool.ExecContext(ctx, `DELETE FROM payment_import_batches WHERE id=$1`, batchID)
+	})
+	if rows, err := st.ListNeighborPaymentImportExport(ctx, yearID, id); err != nil || len(rows) != 1 || rows[0].PayerName != name {
+		t.Fatalf("payment import export before anonymize: %+v, %v", rows, err)
+	}
 
 	if err := st.AnonymizeNeighbor(ctx, id); err != nil {
 		t.Fatalf("anonymize: %v", err)
@@ -106,6 +123,13 @@ func TestAnonymizeNeighborIntegration(t *testing.T) {
 	}
 	if legacyEquipmentRows != 0 {
 		t.Errorf("legacy neighbor equipment survived anonymization (%d rows)", legacyEquipmentRows)
+	}
+	importRows, err := st.ListNeighborPaymentImportExport(ctx, yearID, id)
+	if err != nil || len(importRows) != 1 {
+		t.Fatalf("payment import rows after anonymization: %+v, %v", importRows, err)
+	}
+	if importRows[0].Reference != "" || importRows[0].PayerName != "" || importRows[0].PayerIBAN != "" {
+		t.Errorf("payment-import PII survived anonymization: %+v", importRows[0])
 	}
 	n, err := st.GetNeighbor(ctx, id)
 	if err != nil {

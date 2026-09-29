@@ -97,9 +97,9 @@
 		{{range .Payments}}
 		<div class="beleg__lrow beleg__lrow--ver beleg__pay">
 			<span class="beleg__d">{{.PaidOn.Format "02.01."}}</span>
-			<span class="beleg__t">Zahlung{{if .Note}} · {{.Note}}{{end}}</span>
+			<span class="beleg__t">{{if .Reversal}}Korrektur{{else}}Zahlung{{end}}{{if .Note}} · {{.Note}}{{end}}</span>
 			<span class="beleg__h beleg__r"></span>
-			<span class="beleg__b beleg__r beleg__b--neg">−{{money .Amount}}</span>
+			<span class="beleg__b beleg__r {{if not .Reversal}}beleg__b--neg{{end}}">{{if .Reversal}}+{{money .DisplayAmount}}{{else}}−{{money .Amount}}{{end}}</span>
 		</div>
 		{{end}}
 		<div class="beleg__lsub beleg__lsub--total beleg__sum-informal beleg__pay" data-beleg-final-total><span></span><span>{{if .Credit}}Guthaben{{else}}Offener Rest{{end}}</span><span class="beleg__r"></span><span class="beleg__r">{{money .Remaining}}</span></div>

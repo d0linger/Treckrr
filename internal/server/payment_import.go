@@ -1,7 +1,9 @@
 package server
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"regexp"
@@ -162,7 +164,13 @@ func (s *Server) matchTxns(r *http.Request, txns []bankimport.Txn, assign map[st
 
 // handlePaymentImportForm renders the upload form.
 func (s *Server) handlePaymentImportForm(w http.ResponseWriter, r *http.Request) {
-	data := s.newPage(w, r, "Zahlungen importieren", "dashboard")
+	batches, err := s.store.ListPaymentImportBatches(r.Context(), 20)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data := s.newPage(w, r, "Zahlungen importieren", "payimport")
+	data["Batches"] = batches
 	s.render(w, r, "payment_import", data)
 }
 
@@ -248,7 +256,7 @@ func (s *Server) handlePaymentImportPreview(w http.ResponseWriter, r *http.Reque
 			break
 		}
 	}
-	data := s.newPage(w, r, "Zahlungs-Import Vorschau", "dashboard")
+	data := s.newPage(w, r, "Zahlungs-Import Vorschau", "payimport")
 	if unmatched {
 		assignable, err := s.store.ListAssignableInvoices(r.Context())
 		if err != nil {
@@ -358,9 +366,33 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	batchRows := make([]store.PaymentImportRowInput, 0, len(rows))
+	for i, row := range rows {
+		status, reason := store.PaymentImportPending, ""
+		switch {
+		case row.AlreadyImported:
+			status, reason = store.PaymentImportDuplicate, "Bereits in einem früheren Import verbucht"
+		case !row.Matched:
+			status, reason = store.PaymentImportUnmatched, "Keine Rechnung zugeordnet"
+		}
+		batchRows = append(batchRows, store.PaymentImportRowInput{
+			RowNo: i + 1, TransactionHash: row.Txn.Hash, TransactionDate: row.Txn.Date,
+			Amount: row.Txn.Amount, Reference: row.Txn.Reference, PayerName: row.Txn.Name,
+			PayerIBAN: row.Txn.IBAN, MatchMethod: row.MatchedBy, Status: status, Reason: reason,
+			YearID: row.YearID, NeighborID: row.NeighborID, InvoiceID: row.InvoiceID,
+		})
+	}
+	sourceHash := sha256.Sum256(raw)
+	batchID, batchRowIDs, err := s.store.CreatePaymentImportBatch(
+		r.Context(), s.currentUserID(r), fmt.Sprintf("%x", sourceHash), batchRows,
+	)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	booked := 0
 	var skipped []paymentImportSkip
-	for _, row := range rows {
+	for i, row := range rows {
 		if !row.Importable() {
 			continue
 		}
@@ -373,12 +405,13 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		}
 		// Atomic: hash + payment are booked together, so a failure never leaves the
 		// credit marked-imported-but-unbooked (which would skip it forever).
-		fresh, err := s.store.ImportPayment(r.Context(), row.Txn.Hash, row.YearID, row.NeighborID, row.InvoiceID, row.Txn.Amount, paidOn, note)
+		fresh, err := s.store.ImportPayment(r.Context(), batchRowIDs[i], row.Txn.Hash, row.YearID, row.NeighborID, row.InvoiceID, row.Txn.Amount, paidOn, note)
 		if err != nil {
 			reason, business := paymentImportSkipReason(err)
 			if !business {
 				// Rows booked so far are committed and audited (ImportPayment
 				// writes its audit row in the same transaction).
+				_ = s.store.FinishPaymentImportBatch(r.Context(), batchID, true)
 				s.serverError(w, r.URL.Path, err)
 				return
 			}
@@ -389,6 +422,11 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 				label = deDecimal(row.Txn.Amount) + " €"
 			}
 			skipped = append(skipped, paymentImportSkip{Label: label, Reason: reason})
+			if err := s.store.MarkPaymentImportRowSkipped(r.Context(), batchRowIDs[i], reason); err != nil {
+				_ = s.store.FinishPaymentImportBatch(r.Context(), batchID, true)
+				s.serverError(w, r.URL.Path, err)
+				return
+			}
 			continue
 		}
 		if !fresh {
@@ -396,10 +434,93 @@ func (s *Server) handlePaymentImportCommit(w http.ResponseWriter, r *http.Reques
 		}
 		booked++
 	}
+	if err := s.store.FinishPaymentImportBatch(r.Context(), batchID, false); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	kind := "success"
 	if len(skipped) > 0 {
 		kind = "error"
 	}
 	s.setFlash(w, r, kind, paymentImportSummary(booked, skipped))
-	redirect(w, r, "/payments/import")
+	redirect(w, r, "/payments/import/batches/"+itoa64(batchID))
+}
+
+// handlePaymentImportBatch renders the durable outcome of one statement run.
+func (s *Server) handlePaymentImportBatch(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	batch, rows, err := s.store.GetPaymentImportBatch(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.notFound(w, r)
+		return
+	}
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data := s.newPage(w, r, "Zahlungsimport #"+itoa64(id), "payimport")
+	data["Batch"], data["Rows"] = batch, rows
+	s.render(w, r, "payment_import_batch", data)
+}
+
+// handlePaymentImportReport exports the exact stored outcomes, not a newly
+// parsed approximation of the source file.
+func (s *Server) handlePaymentImportReport(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	batch, rows, err := s.store.GetPaymentImportBatch(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.notFound(w, r)
+		return
+	}
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	cw, finish := csvDownload(w, r, "zahlungsimport-"+itoa64(id)+".csv")
+	defer finish()
+	_ = cw.Write([]string{"Import", "Quell-Fingerabdruck", "Position", "Datum", "Betrag (EUR)", "Status", "Grund", "Zuordnung", "Verwendungszweck", "Zahler", "IBAN", "Zahlungs-ID", "Korrektur-ID"})
+	for _, row := range rows {
+		date := ""
+		if row.TransactionDate != nil {
+			date = row.TransactionDate.Format("2006-01-02")
+		}
+		_ = cw.Write([]string{
+			strconv.FormatInt(batch.ID, 10), batch.SourceSHA256, strconv.Itoa(row.RowNo), date,
+			deDecimal(row.Amount), row.StatusLabel(), csvSafe(row.Reason), csvSafe(row.MatchMethod),
+			csvSafe(row.Reference), csvSafe(row.PayerName), csvSafe(row.PayerIBAN),
+			strconv.FormatInt(row.PaymentID, 10), strconv.FormatInt(row.ReversalPaymentID, 10),
+		})
+	}
+}
+
+// handlePaymentImportReverse corrects one imported credit through an equal
+// counter-entry. The original payment and import row remain unchanged evidence.
+func (s *Server) handlePaymentImportReverse(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	_, batchID, err := s.store.ReverseImportedPayment(r.Context(), id)
+	switch {
+	case errors.Is(err, store.ErrImportAlreadyReversed):
+		s.setFlash(w, r, "info", "Diese Importzahlung wurde bereits durch eine Gegenbuchung korrigiert.")
+	case errors.Is(err, store.ErrNotFound):
+		s.notFound(w, r)
+		return
+	case err != nil:
+		s.serverError(w, r.URL.Path, err)
+		return
+	default:
+		s.setFlash(w, r, "success", "Korrektur als Gegenbuchung erfasst. Die ursprüngliche Zahlung bleibt im Journal erhalten.")
+	}
+	redirect(w, r, "/payments/import/batches/"+itoa64(batchID))
 }

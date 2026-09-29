@@ -154,6 +154,8 @@ func (s *Server) handlePaymentDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	deleted, err := s.store.DeletePayment(r.Context(), id)
 	switch {
+	case errors.Is(err, store.ErrImportedPaymentImmutable):
+		s.setFlash(w, r, "error", "Importierte Zahlungen werden im Importjournal durch eine Gegenbuchung korrigiert.")
 	case err != nil:
 		s.setFlash(w, r, "error", "Löschen fehlgeschlagen.")
 	case deleted:
@@ -317,6 +319,11 @@ func (s *Server) handlePaymentEditForm(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	if p.ImportBatchID != nil || p.Reversal {
+		s.setFlash(w, r, "error", "Importierte Zahlungen werden im Importjournal durch eine Gegenbuchung korrigiert.")
+		redirect(w, r, neighborURL(p.NeighborID, p.BillingYearID))
+		return
+	}
 	data := s.newPage(w, r, "Zahlung bearbeiten", "")
 	data["Payment"] = p
 	data["NeighborName"] = s.neighborName(r, p.NeighborID)
@@ -375,6 +382,11 @@ func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated, err := s.store.UpdatePayment(r.Context(), id, amount, parsePaidOn(r.FormValue("paid_on")), note, paymentMethod(r))
+	if errors.Is(err, store.ErrImportedPaymentImmutable) {
+		s.setFlash(w, r, "error", "Importierte Zahlungen werden im Importjournal durch eine Gegenbuchung korrigiert.")
+		redirect(w, r, back)
+		return
+	}
 	if err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen.")
 		redirect(w, r, back)

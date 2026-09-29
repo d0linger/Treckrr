@@ -415,6 +415,11 @@ func (s *Server) handlePaymentCopy(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+	if p.ImportBatchID != nil || p.Reversal {
+		s.setFlash(w, r, "error", "Importierte Zahlungen können nicht dupliziert werden. Verwende bei Bedarf die Gegenbuchung im Importjournal.")
+		redirect(w, r, neighborURL(p.NeighborID, p.BillingYearID))
+		return
+	}
 	p.PaidOn = time.Now()
 	// The copy is a NEW payment, so it must not claim the source's invoice link
 	// or creation date — AddPayment resolves the current invoice itself.
