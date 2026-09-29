@@ -53,6 +53,31 @@
 	</div>
 	<p class="muted small">Das ZIP enthält alle Beleg-PDFs und das Journal.</p>
 
+	<h2 class="section-title">Buchhaltungsexport</h2>
+	<p class="muted small">Zusätzlicher CSV-Export aus den festgeschriebenen Belegwerten. Konten, Steuercode und Spalten sind reine Exportangaben; Rechnungen und Buchungen bleiben unverändert.</p>
+	{{if .AccountingProfiles}}
+	<div class="stack stack--sm">
+		{{range .AccountingProfiles}}
+		<div class="card row-between">
+			<div><strong>{{.Name}}</strong><br><span class="muted small">Erlös {{if .RevenueAccount}}{{.RevenueAccount}}{{else}}–{{end}} · Debitor {{if .ReceivableAccount}}{{.ReceivableAccount}}{{else}}–{{end}} · Steuercode {{if .TaxCode}}{{.TaxCode}}{{else}}–{{end}}</span></div>
+			<div class="btnrow"><a class="btn btn--ghost btn--sm" href="/rechnungsjournal/buchhaltung.csv?year={{$.Year.ID}}&profile={{.ID}}">CSV laden</a>{{if $.User.IsAdmin}}<form method="post" action="/rechnungsjournal/profile/{{.ID}}/delete" data-confirm="Exportprofil löschen?"><input type="hidden" name="year_id" value="{{$.Year.ID}}"><button class="btn btn--danger btn--sm" type="submit">Löschen</button></form>{{end}}</div>
+		</div>
+		{{end}}
+	</div>
+	{{else}}<p class="muted small">Noch kein Profil eingerichtet.</p>{{end}}
+	{{if .User.IsAdmin}}
+	<details class="card disclosure">
+		<summary>Exportprofil anlegen</summary>
+		<form method="post" action="/rechnungsjournal/profile" class="form">
+			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<div class="formgrid"><label class="field"><span>Name</span><input class="input" name="name" maxlength="60" required placeholder="z. B. Steuerberatung"></label><label class="field"><span>Erlöskonto</span><input class="input" name="revenue_account" maxlength="60"></label><label class="field"><span>Debitorenkonto</span><input class="input" name="receivable_account" maxlength="60"></label><label class="field"><span>Steuercode</span><input class="input" name="tax_code" maxlength="60"></label><label class="field"><span>Kostenstelle</span><input class="input" name="cost_center" maxlength="60"></label><label class="field"><span>Trennzeichen</span><select class="select" name="delimiter"><option value=";">Semikolon</option><option value=",">Komma</option></select></label></div>
+			<label class="check"><input type="checkbox" name="decimal_comma" value="true" checked> Dezimalkomma verwenden</label>
+			<fieldset class="fieldset"><legend>Spalten in dieser Reihenfolge</legend><div class="checkgroup">{{range .AccountingColumns}}<label class="check"><input type="checkbox" name="columns" value="{{.Key}}" checked> {{.Label}}</label>{{end}}</div></fieldset>
+			<button class="btn btn--primary" type="submit">Profil speichern</button>
+		</form>
+	</details>
+	{{end}}
+
 	{{if .UVAPeriods}}
 	<h2 class="section-title">{{if .ShowUVA}}UVA-Grundlage je Monat{{else}}Summen je Monat{{end}}</h2>
 	{{if .ShowUVA}}<p class="muted small">Bemessungsgrundlage (Netto) und Umsatzsteuer je Ausstellungsmonat — die Basis für das U30-Formular bei Regelbesteuerung.</p>{{end}}
