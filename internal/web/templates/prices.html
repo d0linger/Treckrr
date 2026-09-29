@@ -145,7 +145,7 @@
 	<p class="muted small" data-machine-empty hidden>Keine Maschine passt zu Suche und Kategorie.</p>
 	<div class="list list--onecol">
 		{{range .MachineViews}}
-		<details class="card disclosure disclosure--row {{if not .Machine.Active}}is-inactive{{end}}"
+		<details class="card disclosure disclosure--row {{if not .Machine.Active}}is-inactive{{end}}" id="machine-{{.Machine.ID}}"
 			data-machine-row data-category="{{.Machine.Category}}">
 			<summary>
 				<span class="list__main">

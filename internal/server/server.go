@@ -266,6 +266,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /payments/import/batches/{id}/report.csv", s.auth(s.handlePaymentImportReport))
 	mux.Handle("POST /payments/import/rows/{id}/reverse", s.auth(s.handlePaymentImportReverse))
 	mux.Handle("GET /recurring", s.auth(s.handleRecurringList))
+	mux.Handle("GET /data-quality", s.auth(s.handleDataQuality))
 	mux.Handle("POST /entries/{id}/recur", s.auth(s.handleRecurringCreate))
 	mux.Handle("POST /ledger/{id}/recur", s.auth(s.handleLedgerRecurringCreate))
 	mux.Handle("POST /recurring/{id}/toggle", s.auth(s.handleRecurringToggle))

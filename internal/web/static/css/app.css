@@ -1281,10 +1281,12 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .attn__row:hover { background: var(--surface-2); }
 .attn__row--warn { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .attn__row--owe { border-color: color-mix(in srgb, var(--owe) 40%, var(--border)); background: color-mix(in srgb, var(--owe) 7%, var(--surface)); }
+.attn__row--bad { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); background: color-mix(in srgb, var(--danger) 7%, var(--surface)); }
 .attn__ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
 	font-size: .9rem; font-weight: 800; flex: 0 0 auto; }
 .attn__ic--warn { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent-text); }
 .attn__ic--owe { background: color-mix(in srgb, var(--owe) 18%, transparent); color: var(--owe); }
+.attn__ic--bad { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger-text); }
 /* Guthaben (I owe the neighbor): same hue as the tile's Guthaben chip. */
 .attn__row--credit { border-color: color-mix(in srgb, var(--owe) 55%, var(--border)); background: color-mix(in srgb, var(--owe) 11%, var(--surface)); }
 .attn__ic--credit { background: color-mix(in srgb, var(--owe) 24%, transparent); color: var(--owe-text); }
@@ -1292,6 +1294,23 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .attn__txt { flex: 1; font-size: .85rem; }
 .attn__txt strong { font-weight: 800; }
 .attn__go { color: var(--muted); font-size: 1.1rem; line-height: 1; }
+
+/* Master-data completeness: compact diagnostic rows, ordered by the server so
+   blockers precede advisory additions. */
+.qualitylist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .55rem; }
+.qualityitem { display: flex; align-items: center; gap: .7rem; padding: .7rem .8rem;
+	background: var(--card-grad); border: 1px solid var(--card-hairline); border-left: 3px solid var(--accent);
+	border-radius: var(--radius); box-shadow: var(--card-shadow); }
+.qualityitem--high { border-left-color: var(--danger); }
+.qualityitem__mark { width: 1.65rem; height: 1.65rem; flex: 0 0 auto; display: grid; place-items: center;
+	border-radius: 50%; font-weight: 850; color: var(--accent-text); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.qualityitem--high .qualityitem__mark { color: var(--danger-text); background: color-mix(in srgb, var(--danger) 15%, transparent); }
+.qualityitem__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: .12rem; }
+.qualityitem__body strong, .qualityitem__body span { overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+	.qualityitem { align-items: flex-start; flex-wrap: wrap; }
+	.qualityitem .btn { margin-left: 2.35rem; }
+}
 
 /* ---- Backup-health dot (header status indicator) ---------------------- */
 /* A fine stroked "signal ring", monochrome via currentColor — the status colour

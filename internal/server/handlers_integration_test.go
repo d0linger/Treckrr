@@ -333,6 +333,7 @@ func TestCSRFInvariantEveryPostFormCarriesTokenIntegration(t *testing.T) {
 		fmt.Sprintf("/stats?year=%d", yid),
 		fmt.Sprintf("/mahnwesen?year=%d", yid),
 		"/recurring",
+		"/data-quality",
 		"/entries/import",
 		"/profile",
 		"/account/2fa",

@@ -1,0 +1,26 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/?year={{.Year.ID}}" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
+		<div><h2 class="pagehead__t">Datenqualität {{.Year.Year}}</h2><p class="muted small">Hinweise, keine Sperren: Bestehende Abläufe funktionieren unverändert weiter.</p></div>
+	</div>
+	<div class="kpigrid">
+		<div class="kpi kpi--open"><span class="kpi__label">Wichtig</span><strong class="kpi__value">{{.Quality.High}}</strong></div>
+		<div class="kpi kpi--hours"><span class="kpi__label">Ergänzen</span><strong class="kpi__value">{{.Quality.Medium}}</strong></div>
+		<div class="kpi kpi--paid"><span class="kpi__label">Vollständig</span><strong class="kpi__value">{{if .Quality.Issues}}Nein{{else}}Ja{{end}}</strong></div>
+	</div>
+	{{if .Quality.Issues}}
+	<ol class="qualitylist">
+		{{range .Quality.Issues}}
+		<li class="qualityitem qualityitem--{{.Severity}}">
+			<span class="qualityitem__mark" aria-hidden="true">{{if eq .Severity "high"}}!{{else}}i{{end}}</span>
+			<div class="qualityitem__body"><span class="eyebrow">{{.Group}}</span><strong>{{.Title}}</strong><span class="muted small">{{.Detail}}</span></div>
+			{{if .Href}}<a class="btn btn--ghost btn--sm" href="{{.Href}}">Ergänzen</a>{{else}}<span class="muted small">Administrator erforderlich</span>{{end}}
+		</li>
+		{{end}}
+	</ol>
+	{{else}}
+	<div class="empty"><span class="empty__title">Alles vollständig</span><span class="muted small">Für dieses Jahr wurden keine Lücken in Nachbar-, Betriebs- oder Preisgrundlagen gefunden.</span></div>
+	{{end}}
+</section>
+{{end}}
