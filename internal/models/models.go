@@ -214,6 +214,20 @@ type BelegShare struct {
 	LastUsedAt    *time.Time
 }
 
+// BelegFeedback is a read-only neighbor response tied to one frozen invoice
+// hash. It never changes the invoice or any booking.
+type BelegFeedback struct {
+	ID            int64
+	InvoiceID     int64
+	NeighborID    int64
+	BillingYearID int64
+	ContentHash   string
+	Status        string
+	LinePosition  *int
+	Message       string
+	CreatedAt     time.Time
+}
+
 // PriceBase is a pricing basis (Bemessungsgrundlage). It is published roughly
 // every few years and reused by several billing years. Year documents when the
 // basis becomes valid ("gültig ab"). Locking freezes its values.

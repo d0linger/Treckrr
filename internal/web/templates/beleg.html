@@ -294,6 +294,7 @@
 						<button type="button" class="btn btn--ghost btn--sm" data-copy-src-btn>Kopieren</button>
 					</div>
 					<p class="sharemenu__once">Link jetzt kopieren — er wird aus Sicherheitsgründen nur einmal angezeigt.</p>
+					{{if .ShareQRAvailable}}<div class="qrwrap"><img class="qr" src="/beleg/share-qr.png" alt="QR-Code zum freigegebenen Nachbarportal" width="180" height="180"><a class="btn btn--ghost btn--sm" href="/beleg/share-qr.png?download=1" download>QR als PNG</a></div>{{end}}
 					{{end}}
 					{{range .Shares}}
 					<div class="sharemenu__item">
@@ -320,8 +321,36 @@
 			{{end}}
 		</div>
 		</div>
+		{{if .Shared}}
+		<div class="card stack stack--tight">
+			<strong>Nachbarportal · {{.Year.Year}}</strong>
+			<p class="muted small">Lesender Zugriff auf Rechnung, Saldo und Zahlungen. Dieser Link kann vom Betrieb jederzeit widerrufen werden.</p>
+			<a class="btn btn--ghost btn--sm" href="/s/portal/{{.PortalToken}}/invoice.pdf">Rechnung als PDF herunterladen</a>
+			{{if .PortalFeedbackEnabled}}
+			{{if .PortalFeedbackResult}}<p class="flash flash--success">Danke, deine Rückmeldung wurde unveränderlich zum Rechnungsstand gespeichert.</p>{{end}}
+			<form method="post" action="/s/portal/{{.PortalToken}}/feedback">
+				<input type="hidden" name="status" value="confirmed">
+				<button class="btn btn--primary btn--sm" type="submit" data-confirm="Diesen Rechnungsstand als geprüft bestätigen?">Rechnungsstand bestätigen</button>
+			</form>
+			<details class="disclosure form-details"><summary>Einwand melden</summary>
+				<form method="post" action="/s/portal/{{.PortalToken}}/feedback" class="form">
+					<input type="hidden" name="status" value="disputed">
+					<label class="field"><span>Betroffene Position (optional)</span><select class="select" name="line"><option value="">Gesamtrechnung</option>{{range $i, $line := .Invoice.Content.Lines}}<option value="{{$i}}">{{$line.Label}} · {{date $line.Date}}</option>{{end}}</select></label>
+					<label class="field"><span>Einwand</span><textarea class="input" name="message" rows="3" maxlength="1000" required placeholder="Bitte kurz beschreiben, was geprüft werden soll."></textarea></label>
+					<button class="btn btn--ghost btn--sm" type="submit">Einwand übermitteln</button>
+				</form>
+			</details>
+			{{else}}<p class="muted small">Dieser ältere Freigabelink unterstützt noch keine Rückmeldung.</p>{{end}}
+		</div>
+		{{end}}
 		{{with .LastSend}}
 		<p class="beleg__sent muted small">{{template "ic-check"}} Zuletzt versendet am {{.SentAt.Format "02.01.2006, 15:04"}} Uhr ({{.Channel}})</p>
+		{{end}}
+		{{if .Feedback}}
+		<div class="beleg__doclist">
+			<div class="beleg__doclist-h">Rückmeldungen</div>
+			{{range .Feedback}}<div class="beleg__docrow"><span>{{if eq .Status "confirmed"}}Bestätigt{{else}}Einwand{{with .LinePosition}} · Position {{.}}{{end}}{{end}}</span><span class="muted small">{{pdate .CreatedAt}}{{if .Message}} · {{.Message}}{{end}}</span></div>{{end}}
+		</div>
 		{{end}}
 		{{if and (not .HasInvoice) (not .Shared) (not .Completed)}}
 		<a class="btn btn--primary btn--block" href="/neighbors/{{.Neighbor.ID}}/invoice/confirm?year={{.Year.ID}}">Rechnung ausstellen &amp; festschreiben</a>

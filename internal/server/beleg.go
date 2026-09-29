@@ -534,12 +534,14 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	data["LastSend"], _ = s.store.LastBelegSend(r.Context(), year.ID, neighbor.ID) // best-effort marker
 	data["MailEnabled"] = s.cfg.MailEnabled()
 	data["NeighborEmail"] = neighbor.Email
+	data["Feedback"], _ = s.store.ListBelegFeedback(r.Context(), neighbor.ID, year.ID)
 	// A freshly minted share link arrives via the one-time cookie (never a URL);
 	// read-and-clear so the raw token is shown exactly once.
 	if c, err := s.cookie(r, shareOnceCookie); err == nil && c.Value != "" && len(c.Value) <= maxBelegShareTokenLen {
 		s.setCookie(w, r, &http.Cookie{Name: shareOnceCookie, Value: "", MaxAge: -1})
 		data["ShareToken"] = c.Value
-		data["ShareURL"] = s.absoluteURL(r, "/s/beleg/"+c.Value)
+		data["ShareURL"] = s.absoluteURL(r, "/s/portal/"+c.Value)
+		data["ShareQRAvailable"] = true
 	}
 	// Self-service: list the Beleg's active public links (manage/revoke).
 	if hasInv, _ := data["HasInvoice"].(bool); hasInv {
@@ -581,6 +583,10 @@ const maxBelegShareTokenLen = 200
 // parameter, which would park a bearer credential in browser history and any
 // URL-shaped sink. Read-and-cleared on first use; short-lived either way.
 const shareOnceCookie = "treckrr_share_once"
+
+// shareQRCookie lets the authenticated QR image request encode the newly
+// created raw link without ever putting that bearer token into a request URL.
+const shareQRCookie = "treckrr_share_qr"
 
 // verifyLegacyBelegShare validates a pre-0038 HMAC share token (signature +
 // baked-in expiry). Kept so links minted before the DB-backed scheme keep
@@ -662,7 +668,33 @@ func (s *Server) handleBelegShareCreate(w http.ResponseWriter, r *http.Request) 
 	// One-time cookie, not a query parameter: the raw token must never enter a
 	// URL (browser history, Referer). setCookie enforces HttpOnly + Lax.
 	s.setCookie(w, r, &http.Cookie{Name: shareOnceCookie, Value: raw, MaxAge: 60})
+	s.setCookie(w, r, &http.Cookie{Name: shareQRCookie, Value: raw, MaxAge: 300})
 	redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID))
+}
+
+// handleBelegShareQR renders the freshly created portal link without exposing
+// the raw bearer token in this endpoint's URL or access log.
+func (s *Server) handleBelegShareQR(w http.ResponseWriter, r *http.Request) {
+	c, err := s.cookie(r, shareQRCookie)
+	if err != nil || c.Value == "" || len(c.Value) > maxBelegShareTokenLen {
+		s.notFound(w, r)
+		return
+	}
+	if _, _, ok, err := s.store.ResolveBelegShare(r.Context(), store.HashToken(c.Value)); err != nil || !ok {
+		s.notFound(w, r)
+		return
+	}
+	png, err := qrPNG(s.absoluteURL(r, "/s/portal/"+c.Value))
+	if err != nil {
+		s.serverError(w, "share qr", err)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	if r.URL.Query().Get("download") == "1" {
+		w.Header().Set("Content-Disposition", `attachment; filename="Treckrr-Portal-QR.png"`)
+	}
+	_, _ = w.Write(png)
 }
 
 // handleBelegShareRevoke deletes (revokes) one public link — the self-service
@@ -700,41 +732,8 @@ func (s *Server) handleBelegShareRevoke(w http.ResponseWriter, r *http.Request) 
 // Unauthenticated (so the layout drops all chrome) and gated on a festgeschriebene
 // invoice; anything else 404s so a token can't probe live data.
 func (s *Server) handleSharedBeleg(w http.ResponseWriter, r *http.Request) {
-	token := r.PathValue("token")
-	if len(token) > maxBelegShareTokenLen {
-		s.notFound(w, r)
-		return
-	}
-	// The only unauthenticated route that touches the database, and it runs
-	// several queries per hit. Throttle by counting misses (see shareMaxMisses):
-	// a visitor with a working link is never counted, a scanner is cut off after a
-	// handful of dead tokens. The response is the same 404 either way, so being
-	// throttled is not distinguishable from a bad token.
-	clientIP := s.clientIP(r)
-	if s.logins.shareBlocked(r.Context(), clientIP) {
-		s.notFound(w, r)
-		return
-	}
-	var nID, yID int64
-	var ok bool
-	if strings.Contains(token, ".") {
-		// Legacy pre-0038 HMAC token — honored until it expires. Every legacy
-		// token was minted with a fixed 30-day validity, so this branch is dead
-		// 30 days after 0038 reaches production.
-		// TODO: delete this branch, verifyLegacyBelegShare and its oversized-
-		// token test once all pre-0038 links have expired (deploy date + 30 d).
-		nID, yID, ok = s.verifyLegacyBelegShare(token)
-	} else {
-		var err error
-		nID, yID, ok, err = s.store.ResolveBelegShare(r.Context(), store.HashToken(token))
-		if err != nil {
-			s.serverError(w, "shared beleg: resolve", err)
-			return
-		}
-	}
+	shareID, nID, yID, token, ok := s.resolvePortalShare(w, r)
 	if !ok {
-		s.logins.shareMiss(r.Context(), clientIP)
-		s.notFound(w, r)
 		return
 	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), nID)
@@ -756,7 +755,15 @@ func (s *Server) handleSharedBeleg(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, "shared beleg", err)
 		return
 	}
+	if err := s.store.RecordBelegShareEvent(r.Context(), shareID, nID, yID, "access"); err != nil {
+		s.serverError(w, "shared beleg: event", err)
+		return
+	}
 	data["Shared"] = true
+	data["PortalToken"] = token
+	data["PortalFeedbackEnabled"] = shareID != 0
+	data["PortalFeedbackResult"] = r.URL.Query().Get("feedback")
+	data["Feedback"], _ = s.store.ListBelegFeedback(r.Context(), neighbor.ID, year.ID)
 	w.Header().Set("Cache-Control", "no-store") // per-neighbor PII — don't cache
 	s.render(w, r, "beleg", data)
 }

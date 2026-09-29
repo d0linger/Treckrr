@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -63,6 +64,48 @@ func TestBelegShareIntegration(t *testing.T) {
 		t.Errorf("resolve should have stamped last_used_at")
 	}
 
+	// Portal events and responses are tied to the revocable share and the exact
+	// immutable invoice content hash. They are communication records only.
+	const contentHash = "portal-content-hash"
+	var invoiceID int64
+	if err := pool.QueryRowContext(ctx, `INSERT INTO invoices
+		(billing_year_id,neighbor_id,number,net,vat_rate,vat_amount,gross,issuer,recipient,lines,content_hash)
+		VALUES ($1,$2,$3,10,0,0,10,'{}','{}','[]',$4) RETURNING id`,
+		yearID, nid, fmt.Sprintf("%d-901", yr), contentHash).Scan(&invoiceID); err != nil {
+		t.Fatalf("invoice fixture: %v", err)
+	}
+	resolvedID, _, _, ok, err := st.ResolveBelegShareAccess(ctx, hash)
+	if err != nil || !ok || resolvedID != id {
+		t.Fatalf("resolve with id: got (%d,%v,%v), want (%d,true,nil)", resolvedID, ok, err, id)
+	}
+	if err := st.RecordBelegShareEvent(ctx, id, nid, yearID, "access"); err != nil {
+		t.Fatalf("record access: %v", err)
+	}
+	if err := st.RecordBelegShareEvent(ctx, id, nid, yearID, "invalid"); err == nil {
+		t.Fatal("unsupported portal event must be rejected")
+	}
+	if err := st.CreateBelegFeedback(ctx, id, invoiceID, nid, yearID, contentHash, "confirmed", nil, ""); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	position := 1
+	if err := st.CreateBelegFeedback(ctx, id, invoiceID, nid, yearID, contentHash, "disputed", &position, "Bitte prüfen"); err != nil {
+		t.Fatalf("dispute: %v", err)
+	}
+	if err := st.CreateBelegFeedback(ctx, id, invoiceID, nid, yearID, contentHash, "invalid", nil, ""); err == nil {
+		t.Fatal("unsupported feedback status must be rejected")
+	}
+	if err := st.CreateBelegFeedback(ctx, id, invoiceID, nid, yearID, "changed-hash", "confirmed", nil, ""); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("changed content hash = %v, want ErrNotFound", err)
+	}
+	feedback, err := st.ListBelegFeedback(ctx, nid, yearID)
+	if err != nil || len(feedback) != 2 || feedback[0].Status != "disputed" || feedback[0].Message != "Bitte prüfen" {
+		t.Fatalf("feedback list: %v / %+v", err, feedback)
+	}
+	var eventCount int
+	if err := pool.QueryRowContext(ctx, `SELECT count(*) FROM beleg_share_events WHERE share_id=$1`, id).Scan(&eventCount); err != nil || eventCount != 3 {
+		t.Fatalf("portal events: count=%d err=%v, want 3", eventCount, err)
+	}
+
 	// wrong-neighbor and wrong-YEAR revokes must both be no-ops: the DELETE is
 	// scoped to the exact Beleg the caller is acting on.
 	if revoked, err := st.RevokeBelegShare(ctx, id, nid+999, yearID); err != nil || revoked {
@@ -87,6 +130,9 @@ func TestBelegShareIntegration(t *testing.T) {
 	}
 	if _, _, ok, _ := st.ResolveBelegShare(ctx, hash); ok {
 		t.Errorf("revoked link must not resolve")
+	}
+	if feedback, err := st.ListBelegFeedback(ctx, nid, yearID); err != nil || len(feedback) != 2 {
+		t.Fatalf("revocation must retain communication history: %v / %+v", err, feedback)
 	}
 
 	// expired link never resolves and is not listed

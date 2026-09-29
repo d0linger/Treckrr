@@ -140,6 +140,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /neighbors/{id}/beleg/share", s.auth(s.handleBelegShareCreate))
 	mux.Handle("POST /neighbors/{id}/beleg/share/revoke", s.auth(s.handleBelegShareRevoke))
 	mux.HandleFunc("GET /s/beleg/{token}", s.handleSharedBeleg) // public, token-gated read-only Beleg
+	mux.HandleFunc("GET /s/portal/{token}", s.handleSharedBeleg)
+	mux.HandleFunc("GET /s/portal/{token}/invoice.pdf", s.handleSharedInvoicePDF)
+	mux.HandleFunc("POST /s/portal/{token}/feedback", s.handlePortalFeedback)
 	mux.Handle("GET /years/{id}/issue-all", s.auth(s.handleBatchIssuePreview))
 	mux.Handle("POST /years/{id}/issue-all", s.auth(s.handleBatchIssueCommit))
 	mux.Handle("GET /neighbors/{id}/invoice/confirm", s.auth(s.handleInvoiceConfirm))
@@ -147,6 +150,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /neighbors/{id}/invoice/storno", s.auth(s.handleInvoiceStorno))
 	mux.Handle("POST /neighbors/{id}/invoice/gutschrift", s.auth(s.handleInvoiceGutschrift))
 	mux.Handle("GET /neighbors/{id}/invoice/epc-qr.png", s.auth(s.handleInvoiceEpcQR))
+	mux.Handle("GET /beleg/share-qr.png", s.auth(s.handleBelegShareQR))
 	mux.Handle("GET /neighbors", s.auth(s.handleNeighborsManage))
 	mux.Handle("POST /neighbors/create", s.auth(s.handleNeighborManageCreate))
 	mux.Handle("POST /neighbors/{id}/update", s.auth(s.handleNeighborUpdate))
