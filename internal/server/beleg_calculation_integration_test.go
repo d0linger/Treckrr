@@ -31,7 +31,15 @@ func TestBelegCalculationPathUsesSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := e.get(fmt.Sprintf("/neighbors/%d/beleg?year=%d", e.neighborID, e.yearID64))
-	for _, want := range []string{"Rechenweg", "Gebuchte Formel", "Rundung je Position", "Maschinen-Snapshots", "IT-Maschine"} {
+	wants := []string{
+		"data-beleg-calculation",
+		"Rechenweg",
+		"Gebuchte Formel",
+		"Rundung je Position",
+		"Maschinen-Snapshots",
+		"IT-Maschine",
+	}
+	for _, want := range wants {
 		if !strings.Contains(page, want) {
 			t.Errorf("calculation path missing %q", want)
 		}

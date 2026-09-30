@@ -210,7 +210,7 @@
 	     not weight: eleven buttons in one row gave no clue which of them alters
 	     the view and which sends the document out of the house. */}}
 	<div class="beleg__actions no-print">
-		{{if or .CanBundle .HasGrund .HasInvoice}}
+		{{if or .CanBundle .HasGrund .HasInvoice .HasCalculationPath}}
 		<div class="beleg__actgroup">
 			<span class="beleg__actlabel">Ansicht</span>
 			<div class="beleg__actrow">
@@ -227,6 +227,11 @@
 				{{if .HasInvoice}}
 				<button type="button" class="btn btn--ghost" data-beleg-rechnung aria-pressed="{{if .Rechnung}}true{{else}}false{{end}}">
 					<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Rechnung
+				</button>
+				{{end}}
+				{{if .HasCalculationPath}}
+				<button type="button" class="btn btn--ghost" data-beleg-calculation aria-controls="beleg-items" aria-pressed="false">
+					<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h10M4 19h16"/><path d="m17 10 3 2-3 2"/></svg>Rechenwege
 				</button>
 				{{end}}
 			</div>

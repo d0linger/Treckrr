@@ -1636,10 +1636,12 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .beleg__payinfo-v { font-size: .82rem; }
 .beleg__epcqr { flex: 0 0 auto; width: 118px; height: 118px; image-rendering: pixelated;
 	border: 1px solid var(--card-hairline); border-radius: 8px; background: #fff; padding: 4px; }
-[data-beleg-grund][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
-[data-beleg-grund][aria-pressed="true"] .ic { color: var(--on-primary); }
-[data-beleg-rechnung][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
-[data-beleg-rechnung][aria-pressed="true"] .ic { color: var(--on-primary); }
+[data-beleg-grund][aria-pressed="true"],
+[data-beleg-rechnung][aria-pressed="true"],
+[data-beleg-calculation][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+[data-beleg-grund][aria-pressed="true"] .ic,
+[data-beleg-rechnung][aria-pressed="true"] .ic,
+[data-beleg-calculation][aria-pressed="true"] .ic { color: var(--on-primary); }
 
 /* Invoice (Rechnung) mode — sender/recipient block + tax note, shown only when
    the Rechnung toggle is on (.beleg--rechnung). */
@@ -2496,6 +2498,8 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .beleg__calc-body small { display: block; font-weight: 400; color: var(--muted); }
 .beleg__calc-parts ul { margin: 0; text-align: right; list-style: none; }
 .beleg__calc--total { margin: .4rem 0 0; padding: .55rem .75rem; border: 1px solid var(--border); border-radius: var(--radius); }
+.beleg-page.is-calculation-collapsible .beleg__calc { display: none; }
+.beleg-page.is-calculation-collapsible .beleg--calculation .beleg__calc { display: block; }
 .rollgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .rollgrid h3 { margin: 0; font-size: 1rem; }
 .rollgrid .form { gap: .6rem; }
