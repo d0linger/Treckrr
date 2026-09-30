@@ -8,6 +8,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -91,15 +92,7 @@ func (s *Server) handleYearRollover(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, "year rollover: recurring", err)
 		return
 	}
-	activeRules, blockedRules := 0, 0
-	for _, rule := range rules {
-		if rule.Active {
-			activeRules++
-		}
-		if rule.LastError != "" {
-			blockedRules++
-		}
-	}
+	activeRules, blockedRules := recurringRuleStatusCounts(rules)
 	bases, err := s.store.ListBases(r.Context())
 	if err != nil {
 		s.serverError(w, "year rollover: bases", err)
@@ -119,6 +112,21 @@ func (s *Server) handleYearRollover(w http.ResponseWriter, r *http.Request) {
 	data["ActiveRules"], data["BlockedRules"] = activeRules, blockedRules
 	data["Backup"] = s.backupHealth()
 	s.render(w, r, "year_rollover", data)
+}
+
+// recurringRuleStatusCounts reports active rules and the active subset that is
+// currently blocked. Paused or completed rules can retain historical errors.
+func recurringRuleStatusCounts(rules []models.RecurringEntry) (active, blocked int) {
+	for _, rule := range rules {
+		if !rule.Active {
+			continue
+		}
+		active++
+		if rule.LastError != "" {
+			blocked++
+		}
+	}
+	return active, blocked
 }
 
 // handleYearRolloverCreate creates only the next calendar year. Repeating the

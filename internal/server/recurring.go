@@ -72,10 +72,7 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 	if kind != "weekly" && kind != "monthly" {
 		kind = "weekly"
 	}
-	start, perr := time.Parse("2006-01-02", trimmed(r, "next_run"))
-	if perr != nil {
-		start = time.Now().AddDate(0, 0, 7)
-	}
+	start := recurringStartDate(trimmed(r, "next_run"), time.Now())
 	endsOn, perr := optionalRecurringEnd(r, start)
 	if perr != nil {
 		s.setFlash(w, r, "error", perr.Error())
@@ -121,6 +118,18 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, "recurring_create", "neighbor", entry.NeighborID, tmpl.Summary()+" · "+kind)
 	s.setFlash(w, r, "success", "Serie eingerichtet.")
 	redirect(w, r, "/recurring")
+}
+
+// recurringStartDate parses a calendar date or returns the date seven days
+// after now. The fallback is normalized to midnight like a parsed form date.
+func recurringStartDate(raw string, now time.Time) time.Time {
+	start, err := time.Parse(time.DateOnly, raw)
+	if err == nil {
+		return start
+	}
+	fallback := now.AddDate(0, 0, 7)
+	start, _ = time.Parse(time.DateOnly, fallback.Format(time.DateOnly))
+	return start
 }
 
 // handleRecurringToggle pauses/resumes a rule.

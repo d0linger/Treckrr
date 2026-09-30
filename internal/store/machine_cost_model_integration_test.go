@@ -4,11 +4,13 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 func TestMachineCostModelRequiresExplicitApply(t *testing.T) {
@@ -28,7 +30,10 @@ func TestMachineCostModelRequiresExplicitApply(t *testing.T) {
 		AnnualMaintenance: decimal.NewFromInt(1000), AnnualInsurance: decimal.NewFromInt(500),
 		AnnualOtherCost: decimal.NewFromInt(500),
 	}
-	if err := st.UpdateMachineCostModel(ctx, m, false); err != nil {
+	if err := st.UpdateMachineCostModel(ctx, baseID+1, m, false); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("cross-base update error = %v, want ErrNotFound", err)
+	}
+	if err := st.UpdateMachineCostModel(ctx, baseID, m, false); err != nil {
 		t.Fatal(err)
 	}
 	got, err := st.ListMachines(ctx, baseID)
@@ -38,7 +43,7 @@ func TestMachineCostModelRequiresExplicitApply(t *testing.T) {
 	if !got[0].SelfCostPerH.Equal(decimal.NewFromInt(99)) {
 		t.Fatalf("saving assumptions changed active rate to %s", got[0].SelfCostPerH)
 	}
-	if err := st.UpdateMachineCostModel(ctx, m, true); err != nil {
+	if err := st.UpdateMachineCostModel(ctx, baseID, m, true); err != nil {
 		t.Fatal(err)
 	}
 	got, err = st.ListMachines(ctx, baseID)

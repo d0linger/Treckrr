@@ -386,8 +386,7 @@ var zipNameSafe = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 // handleJournalZip streams the Belegarchiv (Nr. 50): every document of the
 // year as its frozen PDF plus the journal CSV, in one ZIP. A legacy row whose
 // snapshot cannot be reconstructed is listed in a note file instead of being
-// silently dropped. (ebInterface-XML deliberately not included — that format
-// choice is the user's, see Ausbaukarte.)
+// silently dropped. Missing ebInterface exports are reported separately.
 func (s *Server) handleJournalZip(w http.ResponseWriter, r *http.Request) {
 	year, ok := s.resolveYear(w, r)
 	if !ok {
@@ -409,6 +408,7 @@ func (s *Server) handleJournalZip(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	var missing []string
+	var missingEInvoices []string
 	for i := range docs {
 		iv := &docs[i]
 		if iv.Content == nil {
@@ -432,6 +432,12 @@ func (s *Server) handleJournalZip(w http.ResponseWriter, r *http.Request) {
 				if xf, createErr := zw.Create(zipNameSafe.ReplaceAllString(iv.Number, "_") + "_ebinterface-6p1.xml"); createErr == nil {
 					_, _ = xf.Write(xb)
 				}
+			} else {
+				reason := "technischer Exportfehler"
+				if fields := einvoice.MissingFields(*iv); len(fields) > 0 {
+					reason = strings.Join(fields, ", ")
+				}
+				missingEInvoices = append(missingEInvoices, iv.Number+": "+reason)
 			}
 		}
 	}
@@ -448,6 +454,12 @@ func (s *Server) handleJournalZip(w http.ResponseWriter, r *http.Request) {
 		if f, err := zw.Create("HINWEIS-fehlende-snapshots.txt"); err == nil {
 			_, _ = f.Write([]byte("Für folgende Dokumente liegt kein Snapshot vor (Alt-Daten vor der Festschreibung); sie fehlen als PDF:\r\n" +
 				strings.Join(missing, "\r\n") + "\r\n"))
+		}
+	}
+	if len(missingEInvoices) > 0 {
+		if f, err := zw.Create("HINWEIS-fehlende-e-rechnungen.txt"); err == nil {
+			_, _ = f.Write([]byte("Für folgende Rechnungen konnte kein ebInterface-XML erzeugt werden:\r\n" +
+				strings.Join(missingEInvoices, "\r\n") + "\r\n"))
 		}
 	}
 	if err := zw.Close(); err != nil {

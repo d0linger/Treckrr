@@ -182,9 +182,9 @@ func (s *Store) queryMachines(ctx context.Context, query string, args ...any) ([
 	return out, rows.Err()
 }
 
-// UpdateMachineCostModel stores calculation assumptions and optionally applies
-// the resulting proposal to the active self-cost rate in the same statement.
-func (s *Store) UpdateMachineCostModel(ctx context.Context, machine models.Machine, apply bool) error {
+// UpdateMachineCostModel stores calculation assumptions for a machine in the
+// selected base and optionally applies the proposal in the same statement.
+func (s *Store) UpdateMachineCostModel(ctx context.Context, baseID int64, machine models.Machine, apply bool) error {
 	proposal, ok := machine.CalculatedSelfCost()
 	if apply && !ok {
 		return errors.New("machine self-cost assumptions incomplete")
@@ -192,10 +192,10 @@ func (s *Store) UpdateMachineCostModel(ctx context.Context, machine models.Machi
 	res, err := s.db.ExecContext(ctx, `UPDATE machines SET acquisition_cost=$1, residual_value=$2,
 		useful_years=$3, annual_hours=$4, fuel_cost_per_h=$5, annual_maintenance=$6,
 		annual_insurance=$7, annual_other_cost=$8,
-		self_cost_per_h=CASE WHEN $9 THEN $10 ELSE self_cost_per_h END WHERE id=$11`,
+		self_cost_per_h=CASE WHEN $9 THEN $10 ELSE self_cost_per_h END WHERE id=$11 AND base_id=$12`,
 		machine.AcquisitionCost, machine.ResidualValue, machine.UsefulYears, machine.AnnualHours,
 		machine.FuelCostPerH, machine.AnnualMaintenance, machine.AnnualInsurance,
-		machine.AnnualOtherCost, apply, proposal, machine.ID)
+		machine.AnnualOtherCost, apply, proposal, machine.ID, baseID)
 	if err != nil {
 		return err
 	}

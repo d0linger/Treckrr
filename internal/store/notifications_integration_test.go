@@ -3,8 +3,10 @@ package store_test
 import (
 	"context"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
@@ -85,6 +87,17 @@ func TestNotificationsIntegration(t *testing.T) {
 	}
 	if items, err := st.ListNotifications(ctx, adminID, 100); err != nil || len(items) != 0 {
 		t.Fatalf("dismissed notification remains visible: %v / %+v", err, items)
+	}
+	long := *source
+	long.DedupeKey = "backup:long-display:1"
+	long.Title = strings.Repeat("ä", 201)
+	long.Detail = strings.Repeat("ö", 1001)
+	if err := st.RefreshNotifications(ctx, &long); err != nil {
+		t.Fatalf("long display text blocked refresh: %v", err)
+	}
+	items, err = st.ListNotifications(ctx, adminID, 100)
+	if err != nil || len(items) != 1 || utf8.RuneCountInString(items[0].Title) != 200 || utf8.RuneCountInString(items[0].Detail) != 1000 {
+		t.Fatalf("long display text was not safely truncated: %v / %+v", err, items)
 	}
 	bad := *source
 	bad.DedupeKey = "bad-target"

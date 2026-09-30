@@ -428,10 +428,10 @@ func (s *Store) markMailAmbiguous(ctx context.Context, m OutboxMail, attemptSeq 
 	if err != nil {
 		return "", err
 	}
+	defer func() { _ = tx.Rollback() }()
 	if err := finishMailAttemptTx(ctx, tx, m.ID, attemptSeq, "ambiguous", detail); err != nil {
 		return "", err
 	}
-	defer func() { _ = tx.Rollback() }()
 	var status string
 	err = tx.QueryRowContext(ctx, `
 		UPDATE mail_outbox

@@ -59,6 +59,8 @@ func (s *Store) RefreshNotifications(ctx context.Context, backup *NotificationSo
 	}
 	defer func() { _ = tx.Rollback() }()
 	for _, source := range sources {
+		source.Title = truncateNotificationText(source.Title, 200)
+		source.Detail = truncateNotificationText(source.Detail, 1000)
 		if err := validateNotificationSource(source); err != nil {
 			return err
 		}
@@ -79,6 +81,19 @@ func (s *Store) RefreshNotifications(ctx context.Context, backup *NotificationSo
 		}
 	}
 	return tx.Commit()
+}
+
+// truncateNotificationText limits display-only text without splitting UTF-8.
+// Structural fields such as kind, dedupe key and href remain strictly checked.
+func truncateNotificationText(value string, maxRunes int) string {
+	count := 0
+	for byteIndex := range value {
+		if count == maxRunes {
+			return value[:byteIndex]
+		}
+		count++
+	}
+	return value
 }
 
 // validateNotificationSource enforces the storage and same-origin link bounds

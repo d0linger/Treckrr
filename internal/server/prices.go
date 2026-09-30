@@ -132,7 +132,7 @@ func (s *Server) handleMachineCostModel(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	if err := s.store.UpdateMachineCostModel(r.Context(), machine, apply); err != nil {
+	if err := s.store.UpdateMachineCostModel(r.Context(), baseID, machine, apply); err != nil {
 		s.setFlash(w, r, "error", "Kostenmodell konnte nicht gespeichert werden.")
 	} else if apply {
 		proposal, _ := machine.CalculatedSelfCost()

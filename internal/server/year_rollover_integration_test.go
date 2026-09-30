@@ -49,13 +49,16 @@ func TestYearRolloverIntegration(t *testing.T) {
 		"base_mode": {"reuse"}, "base_id": {itoa64(e.baseID64)},
 	})
 	e.post(path+"/neighbors", url.Values{})
-	e.post(path+"/neighbors", url.Values{})
+	secondNeighbors := e.post(path+"/neighbors", url.Values{})
+	if !strings.Contains(secondNeighbors, "Alle aktiven Nachbarn sind bereits enthalten; nichts doppelt angelegt.") {
+		t.Fatal("second neighbor carry did not return its idempotency flash")
+	}
 	members, err := e.st.ListYearNeighbors(e.ctx, target.ID)
 	if err != nil || len(members) != 1 || members[0].ID != e.neighborID {
 		t.Fatalf("target memberships = %+v, %v", members, err)
 	}
 	page = e.get(path)
-	if !strings.Contains(page, "Technischer Jahreswechsel abgeschlossen") || !strings.Contains(page, "Alle aktiven Nachbarn sind bereits enthalten") {
+	if !strings.Contains(page, "Technischer Jahreswechsel abgeschlossen") {
 		t.Fatal("completed/resumed rollover state is not visible")
 	}
 }
