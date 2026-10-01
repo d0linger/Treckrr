@@ -386,19 +386,7 @@ func (s *Server) handleBookingCreateV2(w http.ResponseWriter, r *http.Request) {
 		s.rejectUnifiedBooking(w, r, msg)
 		return
 	}
-	var mainID int64
-	if draft.LedgerInput != nil {
-		mainID, err = s.store.CreateLedgerBooking(r.Context(), *draft.LedgerInput)
-	} else {
-		helpers := bookingHelpers(draft.Entry, draft.BookedPeople)
-		var helperIDs []int64
-		mainID, helperIDs, err = s.store.CreateEntryGroup(r.Context(), draft.Entry, draft.MachineIDs, helpers)
-		if mainID == 0 {
-			for _, id := range helperIDs {
-				mainID = max(mainID, id)
-			}
-		}
-	}
+	result, err := s.createBookingDraft(r.Context(), draft)
 	if ledgerStored && errors.Is(err, store.ErrIdempotencyConflict) {
 		s.rejectStoredReplay(w, r, replayDiffersMsg, neighborURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
 		return
@@ -412,21 +400,9 @@ func (s *Server) handleBookingCreateV2(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	msg = "Buchung gespeichert."
-	if mainID == 0 {
+	if result.MainID == 0 {
 		msg = "Buchung war bereits erfasst."
 	}
 	s.setFlash(w, r, "success", msg)
 	redirect(w, r, neighborURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
-}
-
-// bookingHelpers separates a labor booking's primary person from its companions.
-func bookingHelpers(entry *models.Entry, people []models.BookingPerson) []*models.Entry {
-	if entry.Unit == models.UnitMannstunde && len(people) > 0 {
-		people = people[1:]
-	}
-	helpers := make([]*models.Entry, 0, len(people))
-	for _, p := range people {
-		helpers = append(helpers, bookingEntryPerson(p, entry))
-	}
-	return helpers
 }
