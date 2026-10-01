@@ -200,6 +200,54 @@ func TestHandleUserCreateValidation(t *testing.T) {
 	})
 }
 
+func TestHandleUserPasswordValidation(t *testing.T) {
+	s := testAdminServer(t)
+
+	t.Run("overly long password rejected", func(t *testing.T) {
+		longPassword := strings.Repeat("a", 73)
+		form := url.Values{}
+		form.Set("password", longPassword)
+
+		req := httptest.NewRequest(http.MethodPost, "/admin/users/123/password", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("id", "123")
+		rr := httptest.NewRecorder()
+
+		s.handleUserPassword(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		if loc := rr.Header().Get("Location"); loc != "/admin/users" {
+			t.Errorf("expected Location /admin/users, got %q", loc)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Passwort darf höchstens 72 Byte lang sein.") {
+			t.Errorf("expected long password flash message, got cookie: %q", flashCookie)
+		}
+	})
+
+	t.Run("valid password accepted", func(t *testing.T) {
+		form := url.Values{}
+		form.Set("password", "ValidPassword123")
+
+		req := httptest.NewRequest(http.MethodPost, "/admin/users/123/password", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("id", "123")
+		rr := httptest.NewRecorder()
+
+		s.handleUserPassword(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Passwort gesetzt.") {
+			t.Errorf("expected success flash message, got cookie: %q", flashCookie)
+		}
+	})
+}
+
 func TestHandleUserUpdateValidation(t *testing.T) {
 	s := testAdminServer(t)
 
