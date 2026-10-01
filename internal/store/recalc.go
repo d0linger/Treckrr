@@ -135,7 +135,7 @@ func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int
 		// applying that would wipe every Pauschale/ha/Ballen booking to zero. The
 		// old tractor guard excluded them by accident; this excludes them on purpose.
 		hourly := e.Unit == "" || e.Unit == "h"
-		priceable := hourly && e.TractorID == nil && e.LoadLevelID == nil
+		priceable := hourly && e.TractorID == nil && e.LoadLevelID == nil && len(emMap[e.ID]) > 0
 		var t *models.Tractor
 		var l *models.LoadLevel
 		if hourly && e.TractorID != nil && e.LoadLevelID != nil {
