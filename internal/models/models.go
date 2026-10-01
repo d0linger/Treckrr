@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+
+	"github.com/d0linger/treckrr/internal/money"
 )
 
 // Roles control what a user may do.
@@ -312,6 +314,13 @@ type Machine struct {
 	AnnualMaintenance decimal.Decimal
 	AnnualInsurance   decimal.Decimal
 	AnnualOtherCost   decimal.Decimal
+}
+
+// HourlyRate returns the machine's contribution to a rig's hourly rate. HTML
+// templates invoke this method reflectively; calculation code should use
+// calc.MachineRate so all equipment pricing flows through the catalog model.
+func (m Machine) HourlyRate() decimal.Decimal {
+	return money.Amount(m.WorkingWidth, m.CostPerAB)
 }
 
 // CalculatedSelfCost returns the transparent proposal from the stored
