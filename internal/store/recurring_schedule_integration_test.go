@@ -60,7 +60,10 @@ func TestRecurringScheduleBoundsIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Active || !result.SkippedOn.Equal(start) {
+	// next_run is a PostgreSQL DATE and is scanned at UTC midnight, while start
+	// uses the test host's local midnight. Compare the represented calendar day,
+	// not two location-dependent instants.
+	if result.Active || result.SkippedOn.Format("2006-01-02") != start.Format("2006-01-02") {
 		t.Fatalf("skip result = %+v", result)
 	}
 	var exceptions, entries int
