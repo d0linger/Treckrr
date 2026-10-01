@@ -40,6 +40,36 @@ func MachineRate(m models.Machine) decimal.Decimal {
 	return m.WorkingWidth.Mul(m.CostPerAB).Round(2)
 }
 
+// RateBreakdown is the calculated hourly price of an equipment combination.
+// Each contribution is rounded before HourlyRate is summed, matching the
+// spreadsheet and the historical billing behavior. MachineRates has the same
+// order as the machines supplied to NewRateBreakdown.
+type RateBreakdown struct {
+	TractorRate  decimal.Decimal
+	MachineRates []decimal.Decimal
+	HourlyRate   decimal.Decimal
+}
+
+// NewRateBreakdown calculates the individually rounded contributions and their
+// combined hourly rate. A tractor and load level form one pricing component;
+// callers remain responsible for rejecting a half-set pair.
+func NewRateBreakdown(t *models.Tractor, l *models.LoadLevel, machines []models.Machine) RateBreakdown {
+	breakdown := RateBreakdown{
+		MachineRates: make([]decimal.Decimal, 0, len(machines)),
+	}
+	if t != nil && l != nil {
+		breakdown.TractorRate = TractorRate(*t, *l)
+		breakdown.HourlyRate = breakdown.TractorRate
+	}
+	for _, machine := range machines {
+		rate := MachineRate(machine)
+		breakdown.MachineRates = append(breakdown.MachineRates, rate)
+		breakdown.HourlyRate = breakdown.HourlyRate.Add(rate)
+	}
+	breakdown.HourlyRate = breakdown.HourlyRate.Round(2)
+	return breakdown
+}
+
 // GespannRate sums the tractor rate and all machine rates.
 //
 // A nil tractor or load level contributes nothing: a rig may be machines only,
@@ -51,14 +81,7 @@ func MachineRate(m models.Machine) decimal.Decimal {
 // rather than let it silently drop the tractor from the price. The signature
 // takes pointers so every call site had to be revisited when this changed.
 func GespannRate(t *models.Tractor, l *models.LoadLevel, machines []models.Machine) decimal.Decimal {
-	rate := decimal.Zero
-	if t != nil && l != nil {
-		rate = TractorRate(*t, *l)
-	}
-	for _, m := range machines {
-		rate = rate.Add(MachineRate(m))
-	}
-	return rate.Round(2)
+	return NewRateBreakdown(t, l, machines).HourlyRate
 }
 
 // Cost multiplies hours by the hourly rate.

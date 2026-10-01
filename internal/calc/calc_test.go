@@ -166,6 +166,47 @@ func TestGespannRateMachinesOnlyIsExactlyTheMachineSum(t *testing.T) {
 	}
 }
 
+// TestNewRateBreakdown pins the two-stage rounding contract used by every
+// booking path: component rates are rounded first and the extended cost is
+// rounded only after those components have been summed.
+func TestNewRateBreakdown(t *testing.T) {
+	tractor := models.Tractor{PS: dec("33.333")}
+	load := models.LoadLevel{CostPerPS: dec("0.333")}
+	machines := []models.Machine{
+		{WorkingWidth: dec("1.111"), CostPerAB: dec("2.222")},
+		{WorkingWidth: dec("3.333"), CostPerAB: dec("4.444")},
+	}
+
+	got := NewRateBreakdown(&tractor, &load, machines)
+	if got.TractorRate.StringFixed(2) != "11.10" {
+		t.Fatalf("tractor rate = %s, want 11.10", got.TractorRate)
+	}
+	if len(got.MachineRates) != 2 || got.MachineRates[0].StringFixed(2) != "2.47" ||
+		got.MachineRates[1].StringFixed(2) != "14.81" {
+		t.Fatalf("machine rates = %v, want [2.47 14.81]", got.MachineRates)
+	}
+	if got.HourlyRate.StringFixed(2) != "28.38" {
+		t.Fatalf("hourly rate = %s, want 28.38", got.HourlyRate)
+	}
+	if cost := Cost(dec("1.235"), got.HourlyRate); cost.StringFixed(2) != "35.05" {
+		t.Fatalf("cost = %s, want 35.05", cost)
+	}
+}
+
+// TestNewRateBreakdownHalfPair keeps validation separate from arithmetic: a
+// half-set tractor pair contributes no tractor rate, but machine contributions
+// remain visible so callers can diagnose the incomplete combination.
+func TestNewRateBreakdownHalfPair(t *testing.T) {
+	tractor := models.Tractor{PS: dec("100")}
+	machine := models.Machine{WorkingWidth: dec("2"), CostPerAB: dec("5")}
+
+	got := NewRateBreakdown(&tractor, nil, []models.Machine{machine})
+	if !got.TractorRate.IsZero() || len(got.MachineRates) != 1 ||
+		got.MachineRates[0].StringFixed(2) != "10.00" || got.HourlyRate.StringFixed(2) != "10.00" {
+		t.Fatalf("half-pair breakdown = %+v, want machine-only 10.00", got)
+	}
+}
+
 // A half-set tractor pair is not a machines-only rig. The rate function already
 // contributes nothing for one, but the callers used to hand it through as if the
 // tractor had been left out deliberately, so the rig list advertised the machine
