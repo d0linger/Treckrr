@@ -60,6 +60,17 @@
 				<span class="beleg__h beleg__r">{{if $e.Voided}}—{{else if eq $e.Unit "h"}}{{num $e.Hours}}{{else}}—{{end}}</span>
 				<span class="beleg__b beleg__r">{{money $e.Cost}}</span>
 			</div>
+			{{if $.HasCalculationPath}}<details class="beleg__calc no-print">
+				<summary>Rechenweg</summary>
+				<div class="beleg__calc-body">
+					<div><span>Gebuchte Formel</span><strong>{{num $e.Calculation.Quantity}} {{$e.Calculation.Unit}} × {{num $e.Calculation.UnitPrice}} € = {{num $e.Calculation.Raw}} €</strong></div>
+					<div><span>Rundung je Position</span><strong>{{money $e.Calculation.Rounded}}</strong></div>
+					{{if $e.Calculation.Corrected}}<div><span>Korrektur / historischer Unterschied</span><strong>{{if $e.Calculation.Difference.IsPositive}}+{{end}}{{money $e.Calculation.Difference}}</strong></div>{{end}}
+					<div><span>Gespeicherter Zeilenbetrag</span><strong>{{money $e.Calculation.Stored}}</strong></div>
+					{{if $e.Calculation.MachineParts}}<div class="beleg__calc-parts"><span>Maschinen-Snapshots</span><ul>{{range $e.Calculation.MachineParts}}<li>{{.Label}} · {{money .HourlyRate}}/h</li>{{end}}</ul></div>
+					{{else if $e.Calculation.LegacyMachines}}<div><span>Maschinen</span><strong>{{$e.Calculation.MachineLabels}}<small>Historische Buchung ohne Komponenten-Snapshot; maßgeblich ist der gespeicherte Gesamtsatz.</small></strong></div>{{end}}
+				</div>
+			</details>{{end}}
 			{{end}}
 			{{else}}
 			<div class="beleg__empty">Keine Buchungen in diesem Jahr.</div>
@@ -97,9 +108,9 @@
 		{{range .Payments}}
 		<div class="beleg__lrow beleg__lrow--ver beleg__pay">
 			<span class="beleg__d">{{.PaidOn.Format "02.01."}}</span>
-			<span class="beleg__t">Zahlung{{if .Note}} · {{.Note}}{{end}}</span>
+			<span class="beleg__t">{{if .Reversal}}Korrektur{{else}}Zahlung{{end}}{{if .Note}} · {{.Note}}{{end}}</span>
 			<span class="beleg__h beleg__r"></span>
-			<span class="beleg__b beleg__r beleg__b--neg">−{{money .Amount}}</span>
+			<span class="beleg__b beleg__r {{if not .Reversal}}beleg__b--neg{{end}}">{{if .Reversal}}+{{money .DisplayAmount}}{{else}}−{{money .Amount}}{{end}}</span>
 		</div>
 		{{end}}
 		<div class="beleg__lsub beleg__lsub--total beleg__sum-informal beleg__pay" data-beleg-final-total><span></span><span>{{if .Credit}}Guthaben{{else}}Offener Rest{{end}}</span><span class="beleg__r"></span><span class="beleg__r">{{money .Remaining}}</span></div>
@@ -107,6 +118,25 @@
 		{{if and .Ledger (not .HasPayments)}}
 		<div class="beleg__lsub beleg__lsub--total beleg__sum-informal" data-beleg-final-total><span></span><span>{{if .Credit}}Guthaben{{else}}Saldo{{end}}</span><span class="beleg__r"></span><span class="beleg__r">{{money .Saldo}}</span></div>
 		{{end}}
+		{{if .HasCalculationPath}}<details class="beleg__calc beleg__calc--total no-print">
+			<summary>Rechenweg Gesamtbetrag</summary>
+			<div class="beleg__calc-body">
+				{{if .Rechnung}}
+				<div><span>Leistungen netto</span><strong>{{money .InvNet}}</strong></div>
+				{{if .InvShowVAT}}<div><span>USt {{num .InvRate}} % auf {{money .InvNet}}</span><strong>{{money .InvUSt}}</strong></div>{{end}}
+				<div><span>Rechnung brutto</span><strong>{{money .InvBrutto}}</strong></div>
+				<div><span>Verrechnung</span><strong>{{money .InvLedger}}</strong></div>
+				{{if .InvCredits.IsNegative}}<div><span>Gutschriften</span><strong>{{money .InvCredits}}</strong></div>{{end}}
+				{{if .HasPayments}}<div><span>Zahlungen</span><strong>−{{money .PaidSum}}</strong></div>{{end}}
+				<div><span>Restbetrag zu zahlen</span><strong>{{money .InvRest}}</strong></div>
+				{{else}}
+				<div><span>Leistungen</span><strong>{{money .TotalCost}}</strong></div>
+				<div><span>Verrechnung</span><strong>{{money .LedgerSum}}</strong></div>
+				{{if .HasPayments}}<div><span>Zahlungen</span><strong>−{{money .PaidSum}}</strong></div>{{end}}
+				<div><span>{{if .Credit}}Guthaben{{else}}Gespeicherter Saldo{{end}}</span><strong>{{if .HasPayments}}{{money .Remaining}}{{else}}{{money .Saldo}}{{end}}</strong></div>
+				{{end}}
+			</div>
+		</details>{{end}}
 
 		{{if .HasGrund}}
 		<div class="beleg__grund" id="beleg-grund">
@@ -180,7 +210,7 @@
 	     not weight: eleven buttons in one row gave no clue which of them alters
 	     the view and which sends the document out of the house. */}}
 	<div class="beleg__actions no-print">
-		{{if or .CanBundle .HasGrund .HasInvoice}}
+		{{if or .CanBundle .HasGrund .HasInvoice .HasCalculationPath}}
 		<div class="beleg__actgroup">
 			<span class="beleg__actlabel">Ansicht</span>
 			<div class="beleg__actrow">
@@ -197,6 +227,11 @@
 				{{if .HasInvoice}}
 				<button type="button" class="btn btn--ghost" data-beleg-rechnung aria-pressed="{{if .Rechnung}}true{{else}}false{{end}}">
 					<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Rechnung
+				</button>
+				{{end}}
+				{{if .HasCalculationPath}}
+				<button type="button" class="btn btn--ghost" data-beleg-calculation aria-controls="beleg-items" aria-pressed="false">
+					<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h10M4 19h16"/><path d="m17 10 3 2-3 2"/></svg>Rechenwege
 				</button>
 				{{end}}
 			</div>
@@ -216,10 +251,14 @@
 			{{if .HasInvoice}}
 			{{if not .Shared}}
 			<a class="btn btn--ghost" href="/neighbors/{{.Neighbor.ID}}/beleg.pdf?year={{.Year.ID}}" target="_blank" rel="noopener">{{template "ic-copy"}} Rechnung als PDF</a>
+			{{if not .EInvoiceMissing}}<a class="btn btn--ghost" href="/documents/{{.Invoice.ID}}/ebinterface.xml">E-Rechnung XML</a>{{end}}
 			{{end}}
 			{{end}}
 		</div>
 		</div>
+		{{if and .HasInvoice .EInvoiceMissing (not .Shared)}}
+		<p class="muted small">E-Rechnung nicht verfügbar: {{range $i, $m := .EInvoiceMissing}}{{if $i}}, {{end}}{{$m}}{{end}}. Strukturierte Daten müssen vor der Festschreibung gepflegt sein.</p>
+		{{end}}
 		<div class="beleg__actgroup">
 			<span class="beleg__actlabel">Weitergeben &amp; Versand</span>
 		<div class="beleg__actrow">
@@ -260,6 +299,7 @@
 						<button type="button" class="btn btn--ghost btn--sm" data-copy-src-btn>Kopieren</button>
 					</div>
 					<p class="sharemenu__once">Link jetzt kopieren — er wird aus Sicherheitsgründen nur einmal angezeigt.</p>
+					{{if .ShareQRAvailable}}<div class="qrwrap"><img class="qr" src="/beleg/share-qr.png" alt="QR-Code zum freigegebenen Nachbarportal" width="180" height="180"><a class="btn btn--ghost btn--sm" href="/beleg/share-qr.png?download=1" download>QR als PNG</a></div>{{end}}
 					{{end}}
 					{{range .Shares}}
 					<div class="sharemenu__item">
@@ -286,8 +326,36 @@
 			{{end}}
 		</div>
 		</div>
+		{{if .Shared}}
+		<div class="card stack stack--tight">
+			<strong>Nachbarportal · {{.Year.Year}}</strong>
+			<p class="muted small">Lesender Zugriff auf Rechnung, Saldo und Zahlungen. Dieser Link kann vom Betrieb jederzeit widerrufen werden.</p>
+			<a class="btn btn--ghost btn--sm" href="/s/portal/{{.PortalToken}}/invoice.pdf">Rechnung als PDF herunterladen</a>
+			{{if .PortalFeedbackEnabled}}
+			{{if .PortalFeedbackResult}}<p class="flash flash--success">Danke, deine Rückmeldung wurde unveränderlich zum Rechnungsstand gespeichert.</p>{{end}}
+			<form method="post" action="/s/portal/{{.PortalToken}}/feedback">
+				<input type="hidden" name="status" value="confirmed">
+				<button class="btn btn--primary btn--sm" type="submit" data-confirm="Diesen Rechnungsstand als geprüft bestätigen?">Rechnungsstand bestätigen</button>
+			</form>
+			<details class="disclosure form-details"><summary>Einwand melden</summary>
+				<form method="post" action="/s/portal/{{.PortalToken}}/feedback" class="form">
+					<input type="hidden" name="status" value="disputed">
+					<label class="field"><span>Betroffene Position (optional)</span><select class="select" name="line"><option value="">Gesamtrechnung</option>{{range $i, $line := .Invoice.Content.Lines}}<option value="{{$i}}">{{$line.Label}} · {{date $line.Date}}</option>{{end}}</select></label>
+					<label class="field"><span>Einwand</span><textarea class="input" name="message" rows="3" maxlength="1000" required placeholder="Bitte kurz beschreiben, was geprüft werden soll."></textarea></label>
+					<button class="btn btn--ghost btn--sm" type="submit">Einwand übermitteln</button>
+				</form>
+			</details>
+			{{else}}<p class="muted small">Dieser ältere Freigabelink unterstützt noch keine Rückmeldung.</p>{{end}}
+		</div>
+		{{end}}
 		{{with .LastSend}}
 		<p class="beleg__sent muted small">{{template "ic-check"}} Zuletzt versendet am {{.SentAt.Format "02.01.2006, 15:04"}} Uhr ({{.Channel}})</p>
+		{{end}}
+		{{if .Feedback}}
+		<div class="beleg__doclist">
+			<div class="beleg__doclist-h">Rückmeldungen</div>
+			{{range .Feedback}}<div class="beleg__docrow"><span>{{if eq .Status "confirmed"}}Bestätigt{{else}}Einwand{{with .LinePosition}} · Position {{.}}{{end}}{{end}}</span><span class="muted small">{{pdate .CreatedAt}}{{if .Message}} · {{.Message}}{{end}}</span></div>{{end}}
+		</div>
 		{{end}}
 		{{if and (not .HasInvoice) (not .Shared) (not .Completed)}}
 		<a class="btn btn--primary btn--block" href="/neighbors/{{.Neighbor.ID}}/invoice/confirm?year={{.Year.ID}}">Rechnung ausstellen &amp; festschreiben</a>

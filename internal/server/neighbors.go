@@ -22,6 +22,17 @@ func (s *Server) handleNeighborsManage(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	structured, err := s.store.ListNeighborEInvoiceParties(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	for i := range neighbors {
+		p := structured[neighbors[i].ID]
+		neighbors[i].EInvoiceStreet, neighbors[i].EInvoiceZIP = p.Street, p.ZIP
+		neighbors[i].EInvoiceTown, neighbors[i].EInvoiceCountryCode = p.Town, p.CountryCode
+		neighbors[i].EInvoiceOrderID = p.OrderID
+	}
 	// Scope (Ausbaukarte 78): archived and anonymised neighbors stood in the same
 	// undivided list as the active ones. Default shows the active ones — that is
 	// who gets booked — with the other two a click away.

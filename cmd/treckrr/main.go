@@ -361,6 +361,14 @@ func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store, srv *se
 					}
 				}
 			})
+			// Snapshot actionable states into the per-user notification center.
+			// Stable event keys make every 15-minute refresh idempotent.
+			maintenanceTask(taskCtx, time.Minute, func(bg context.Context) {
+				if err := srv.RefreshNotifications(bg); err != nil {
+					metrics.Inc(metrics.MaintenanceFails)
+					slog.Error("refresh notifications", "err", err)
+				}
+			})
 			// Staggered audit-log retention: pure security/auth/ops noise expires after the
 			// short window (DSGVO Art. 5(1)(e) data minimisation); business- and tax-relevant
 			// events are kept for the long window (§ 132 BAO, 7 years). The classification
@@ -370,6 +378,15 @@ func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store, srv *se
 			// the store stays free of a config dependency; each delivery gets its own
 			// bounded context so one slow SMTP dialog cannot eat the whole tick.
 			if cfg.MailEnabled() {
+				maintenanceTask(taskCtx, time.Minute, func(bg context.Context) {
+					queued, err := st.QueueWeeklyNotificationDigests(bg, time.Now(), cfg.RPOrigin)
+					if err != nil {
+						metrics.Inc(metrics.MaintenanceFails)
+						slog.Error("weekly notification digest", "err", err)
+					} else if queued > 0 {
+						slog.Info("weekly notification digests queued", "count", queued)
+					}
+				})
 				maintenanceTask(taskCtx, time.Minute, func(mailCtx context.Context) {
 					// ProcessMailOutbox observes mailCtx between messages. A message
 					// already accepted for delivery retains its own bounded settlement

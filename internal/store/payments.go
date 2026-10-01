@@ -228,6 +228,9 @@ func (s *Store) UpdatePayment(ctx context.Context, id int64, amount decimal.Deci
 	if err != nil {
 		return false, err
 	}
+	if before.Imported || before.Reversal {
+		return false, ErrImportedPaymentImmutable
+	}
 	if before.DeletedAt != nil {
 		return false, tx.Commit()
 	}
@@ -262,6 +265,7 @@ type paymentMutationRow struct {
 	PaidOn                    time.Time
 	Method                    string
 	DeletedAt                 *time.Time
+	Imported, Reversal        bool
 }
 
 func paymentAccount(ctx context.Context, tx *sql.Tx, id int64) (yearID, neighborID int64, err error) {
@@ -277,14 +281,19 @@ func paymentForUpdate(ctx context.Context, tx *sql.Tx, id int64) (paymentMutatio
 	var row paymentMutationRow
 	var deleted sql.NullTime
 	err := tx.QueryRowContext(ctx, `
-		SELECT billing_year_id, neighbor_id, amount, paid_on, method, deleted_at
-		  FROM payments WHERE id=$1 FOR UPDATE`, id).Scan(
+		SELECT p.billing_year_id, p.neighbor_id, p.amount, p.paid_on, p.method, p.deleted_at,
+		       EXISTS (SELECT 1 FROM payment_import_rows r
+		                WHERE r.payment_id=p.id OR r.reversal_payment_id=p.id),
+		       p.reversal_of_payment_id IS NOT NULL
+		  FROM payments p WHERE p.id=$1 FOR UPDATE`, id).Scan(
 		&row.BillingYearID,
 		&row.NeighborID,
 		&row.Amount,
 		&row.PaidOn,
 		&row.Method,
 		&deleted,
+		&row.Imported,
+		&row.Reversal,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return row, ErrNotFound
@@ -311,7 +320,10 @@ func paymentAuditState(amount decimal.Decimal, paidOn time.Time, method string) 
 func (s *Store) ListPayments(ctx context.Context, yearID, neighborID int64) ([]models.Payment, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT p.id, p.billing_year_id, p.neighbor_id, p.amount, p.paid_on, p.note,
-		        p.method, p.invoice_id, COALESCE(iv.number, ''), p.created_at
+		        p.method, p.invoice_id, COALESCE(iv.number, ''),
+		        (SELECT r.batch_id FROM payment_import_rows r
+		          WHERE r.payment_id=p.id OR r.reversal_payment_id=p.id LIMIT 1),
+		        p.reversal_of_payment_id IS NOT NULL, p.created_at
 		   FROM payments p LEFT JOIN invoices iv ON iv.id = p.invoice_id
 		  WHERE p.billing_year_id=$1 AND p.neighbor_id=$2 AND p.deleted_at IS NULL
 		  ORDER BY p.paid_on, p.id`, yearID, neighborID)
@@ -323,7 +335,7 @@ func (s *Store) ListPayments(ctx context.Context, yearID, neighborID int64) ([]m
 	for rows.Next() {
 		var p models.Payment
 		if err := rows.Scan(&p.ID, &p.BillingYearID, &p.NeighborID, &p.Amount, &p.PaidOn, &p.Note,
-			&p.Method, &p.InvoiceID, &p.InvoiceNumber, &p.Created); err != nil {
+			&p.Method, &p.InvoiceID, &p.InvoiceNumber, &p.ImportBatchID, &p.Reversal, &p.Created); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -337,10 +349,13 @@ func (s *Store) GetPayment(ctx context.Context, id int64) (models.Payment, error
 	var p models.Payment
 	err := s.db.QueryRowContext(ctx,
 		`SELECT p.id, p.billing_year_id, p.neighbor_id, p.amount, p.paid_on, p.note,
-		        p.method, p.invoice_id, COALESCE(iv.number, ''), p.created_at
+		        p.method, p.invoice_id, COALESCE(iv.number, ''),
+		        (SELECT r.batch_id FROM payment_import_rows r
+		          WHERE r.payment_id=p.id OR r.reversal_payment_id=p.id LIMIT 1),
+		        p.reversal_of_payment_id IS NOT NULL, p.created_at
 		   FROM payments p LEFT JOIN invoices iv ON iv.id = p.invoice_id WHERE p.id=$1`, id).
 		Scan(&p.ID, &p.BillingYearID, &p.NeighborID, &p.Amount, &p.PaidOn, &p.Note,
-			&p.Method, &p.InvoiceID, &p.InvoiceNumber, &p.Created)
+			&p.Method, &p.InvoiceID, &p.InvoiceNumber, &p.ImportBatchID, &p.Reversal, &p.Created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -385,6 +400,9 @@ func (s *Store) setPaymentDeleted(ctx context.Context, id int64, deleted bool) (
 	payment, err := paymentForUpdate(ctx, tx, id)
 	if err != nil {
 		return false, err
+	}
+	if payment.Imported || payment.Reversal {
+		return false, ErrImportedPaymentImmutable
 	}
 	wantChange := (deleted && payment.DeletedAt == nil) || (!deleted && payment.DeletedAt != nil)
 	if !wantChange {
@@ -472,7 +490,10 @@ type PaymentRow struct {
 func (s *Store) ListNeighborPayments(ctx context.Context, neighborID int64) ([]PaymentRow, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT p.id, p.billing_year_id, p.neighbor_id, p.amount, p.paid_on, p.note,
-		        p.method, p.invoice_id, COALESCE(iv.number, ''), p.created_at, y.year
+		        p.method, p.invoice_id, COALESCE(iv.number, ''),
+		        (SELECT r.batch_id FROM payment_import_rows r
+		          WHERE r.payment_id=p.id OR r.reversal_payment_id=p.id LIMIT 1),
+		        p.reversal_of_payment_id IS NOT NULL, p.created_at, y.year
 		   FROM payments p
 		   JOIN billing_years y ON y.id = p.billing_year_id
 		   LEFT JOIN invoices iv ON iv.id = p.invoice_id
@@ -486,7 +507,7 @@ func (s *Store) ListNeighborPayments(ctx context.Context, neighborID int64) ([]P
 	for rows.Next() {
 		var r PaymentRow
 		if err := rows.Scan(&r.ID, &r.BillingYearID, &r.NeighborID, &r.Amount, &r.PaidOn, &r.Note,
-			&r.Method, &r.InvoiceID, &r.InvoiceNumber, &r.Created, &r.Year); err != nil {
+			&r.Method, &r.InvoiceID, &r.InvoiceNumber, &r.ImportBatchID, &r.Reversal, &r.Created, &r.Year); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

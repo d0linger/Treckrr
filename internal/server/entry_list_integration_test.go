@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The bookings list with filter, sorting and paging, and the bulk actions on
@@ -192,16 +193,32 @@ func TestRecurringEditAndRunNowIntegration(t *testing.T) {
 
 	// Re-time it: monthly, next run on a different date.
 	e.post(fmt.Sprintf("/recurring/%d/update", ruleID), url.Values{
-		"interval_kind": {"monthly"}, "next_run": {"2099-02-09"},
+		"interval_kind": {"monthly"}, "next_run": {"2099-02-09"}, "ends_on": {"2099-04-09"},
 	})
 	rules, _ = e.st.ListRecurring(e.ctx)
 	for _, r := range rules {
 		if r.ID != ruleID {
 			continue
 		}
-		if r.IntervalKind != "monthly" || r.NextRun.Format("2006-01-02") != "2099-02-09" {
+		if r.IntervalKind != "monthly" || r.NextRun.Format("2006-01-02") != "2099-02-09" ||
+			r.EndsOn == nil || r.EndsOn.Format("2006-01-02") != "2099-04-09" || len(r.Upcoming) != 3 {
 			t.Errorf("rule not re-timed: %s / %s", r.IntervalKind, r.NextRun.Format("2006-01-02"))
 		}
+	}
+	if body := e.get("/recurring"); !strings.Contains(body, "09.04.2099") || !strings.Contains(body, "Nächste Termine") {
+		t.Errorf("recurrence preview or end date missing")
+	}
+	e.post(fmt.Sprintf("/recurring/%d/skip-next", ruleID), url.Values{})
+	var nextAfterSkip time.Time
+	var exceptions int
+	if err := e.pool.QueryRowContext(e.ctx, `SELECT next_run FROM recurring_entries WHERE id=$1`, ruleID).Scan(&nextAfterSkip); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.pool.QueryRowContext(e.ctx, `SELECT count(*) FROM recurring_exceptions WHERE recurring_id=$1`, ruleID).Scan(&exceptions); err != nil {
+		t.Fatal(err)
+	}
+	if nextAfterSkip.Format("2006-01-02") != "2099-03-09" || exceptions != 1 {
+		t.Errorf("skip-next left next=%s exceptions=%d", nextAfterSkip.Format("2006-01-02"), exceptions)
 	}
 
 	// The itEnv year is a synthetic far-future one, so today has no open year

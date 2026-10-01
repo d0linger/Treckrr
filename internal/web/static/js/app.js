@@ -982,6 +982,16 @@
 			rechnungBtn.setAttribute("aria-pressed", on ? "true" : "false");
 		});
 
+		var calculationBtn = scope.querySelector("[data-beleg-calculation]");
+		if (calculationBtn) {
+			scope.classList.add("is-calculation-collapsible");
+			calculationBtn.addEventListener("click", function () {
+				var on = !beleg.classList.contains("beleg--calculation");
+				beleg.classList.toggle("beleg--calculation", on);
+				calculationBtn.setAttribute("aria-pressed", on ? "true" : "false");
+			});
+		}
+
 		var bundleBtn = scope.querySelector("[data-beleg-bundle]");
 		if (bundleBtn) bundleBtn.addEventListener("click", function () {
 			var on = !beleg.classList.contains("beleg--bundle");

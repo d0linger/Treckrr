@@ -107,6 +107,11 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	views, err := s.store.ListSavedViews(r.Context(), userFromCtx(r).ID, "bookings")
+	if err != nil {
+		s.serverError(w, "booking views", err)
+		return
+	}
 	// Only the rows on THIS page — aggregating the whole year hashed every
 	// photo-bearing booking per pager click to decorate 50 rows.
 	pageIDs := make([]int64, 0, len(rows))
@@ -146,6 +151,8 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 	data["LedgerPhotoCounts"] = ledgerPhotoCounts
 	data["HasEntryRows"] = len(pageIDs) > 0
 	data["Completed"] = year.Completed()
+	data["SavedViews"] = views
+	data["SavedQuery"] = savedBookingQuery(r, year.ID)
 	data["Page"] = page
 	data["Pages"] = pages
 	data["HasPrev"] = page > 1
@@ -413,6 +420,11 @@ func (s *Server) handlePaymentCopy(w http.ResponseWriter, r *http.Request) {
 	p, err := s.store.GetPayment(r.Context(), id)
 	if err != nil {
 		s.notFound(w, r)
+		return
+	}
+	if p.ImportBatchID != nil || p.Reversal {
+		s.setFlash(w, r, "error", "Importierte Zahlungen können nicht dupliziert werden. Verwende bei Bedarf die Gegenbuchung im Importjournal.")
+		redirect(w, r, neighborURL(p.NeighborID, p.BillingYearID))
 		return
 	}
 	p.PaidOn = time.Now()

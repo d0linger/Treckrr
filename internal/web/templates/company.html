@@ -86,6 +86,16 @@
 			<input class="input" type="email" name="mail_cc" value="{{.MailCC}}" placeholder="steuerberater@example.at" autocomplete="off"></label>
 		</div>
 		</details>
+		<details class="disclosure form-details" {{if or .EInvoiceStreet .EInvoiceZIP .EInvoiceTown}}open{{end}}>
+			<summary>Strukturierte E-Rechnung <span class="muted small">ebInterface 6.1</span></summary>
+			<p class="muted small">Diese Felder werden bei der nächsten Festschreibung unveränderlich in den Rechnungssnapshot übernommen. Die bisherige Druckadresse bleibt unverändert.</p>
+			<div class="form__grid form__grid--two">
+			<label class="field"><span>Straße und Hausnummer</span><input class="input" name="einvoice_street" value="{{.EInvoiceStreet}}"></label>
+			<label class="field"><span>PLZ</span><input class="input" name="einvoice_zip" value="{{.EInvoiceZIP}}"></label>
+			<label class="field"><span>Ort</span><input class="input" name="einvoice_town" value="{{.EInvoiceTown}}"></label>
+			<label class="field"><span>Ländercode</span><input class="input" name="einvoice_country_code" value="{{.EInvoiceCountryCode}}" maxlength="2" placeholder="AT"></label>
+			</div>
+		</details>
 		<button class="btn btn--primary btn--block" type="submit">Speichern</button>
 	</form>
 	<p class="muted small">Standard ist AT-Pauschalierung (§ 22 UStG). Prüfe den Wortlaut mit deiner Steuerberatung, bevor du echte Rechnungen ausstellst.</p>

@@ -21,28 +21,36 @@ func (s *Store) ListNeighbors(ctx context.Context) ([]models.Neighbor, error) {
 		// email and payment_term_days included: the manage page's edit form renders
 		// both, and a SELECT without them meant the form showed empty values — a
 		// save would then have ERASED the stored e-mail address.
-		`SELECT id, name, note, address, tax_id, email, iban, payment_term_days, archived, anonymized, created_at FROM neighbors ORDER BY archived, name`)
+		`SELECT id, name, note, address, tax_id, email, iban, payment_term_days,
+		        archived, anonymized, created_at FROM neighbors ORDER BY archived, name`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var out []models.Neighbor
 	for rows.Next() {
 		var n models.Neighbor
-		if err := rows.Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Email, &n.IBAN, &n.PaymentTermDays, &n.Archived, &n.Anonymized, &n.Created); err != nil {
+		if err := rows.Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Email, &n.IBAN, &n.PaymentTermDays,
+			&n.Archived, &n.Anonymized, &n.Created); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
 		out = append(out, n)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	return out, rows.Close()
 }
 
 // GetNeighbor returns a neighbor by id.
 func (s *Store) GetNeighbor(ctx context.Context, id int64) (*models.Neighbor, error) {
 	var n models.Neighbor
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, note, address, tax_id, email, iban, payment_term_days, archived, anonymized, created_at FROM neighbors WHERE id=$1`, id).
-		Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Email, &n.IBAN, &n.PaymentTermDays, &n.Archived, &n.Anonymized, &n.Created)
+		`SELECT id, name, note, address, tax_id, email, iban, payment_term_days,
+		        archived, anonymized, created_at FROM neighbors WHERE id=$1`, id).
+		Scan(&n.ID, &n.Name, &n.Note, &n.Address, &n.TaxID, &n.Email, &n.IBAN, &n.PaymentTermDays,
+			&n.Archived, &n.Anonymized, &n.Created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -77,6 +85,8 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 		`UPDATE neighbors
 		    SET name = 'anonymisiert #' || id,
 		        note = '', address = '', tax_id = '', email = '', iban = '',
+		        einvoice_street = '', einvoice_zip = '', einvoice_town = '',
+		        einvoice_country_code = 'AT', einvoice_order_id = '',
 		        archived = TRUE, anonymized = TRUE
 		  WHERE id = $1`, id)
 	if err != nil {
@@ -107,8 +117,12 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 			 END
 			 WHERE neighbor_id = $1 AND (description <> '' OR void_reason <> '' OR booking IS NOT NULL)`,
 			`UPDATE payments SET note = '' WHERE neighbor_id = $1 AND note <> ''`,
+			`UPDATE payment_import_rows SET reference = '', payer_name = '', payer_iban = ''
+			 WHERE neighbor_id = $1 AND (reference <> '' OR payer_name <> '' OR payer_iban <> '')`,
 			`DELETE FROM mail_outbox WHERE neighbor_id = $1`,
 			`DELETE FROM beleg_shares WHERE neighbor_id = $1`,
+			`DELETE FROM beleg_share_events WHERE neighbor_id = $1`,
+			`DELETE FROM beleg_feedback WHERE neighbor_id = $1`,
 			// Ratenplan notes are operator-typed free text about the person
 			// ("zahlt monatlich, Sohn holt das Geld") — the same class as the
 			// booking notes above.
@@ -171,15 +185,26 @@ func (s *Store) CreateNeighbor(ctx context.Context, name, note string) (int64, e
 }
 
 // UpdateNeighbor updates a neighbor.
-func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note, address, taxID, email, iban string, paymentTermDays *int) error {
+func (s *Store) UpdateNeighbor(ctx context.Context, id int64, name, note, address, taxID, email, iban string, paymentTermDays *int, einvoiceData ...models.InvoiceParty) error {
 	// Never re-populate personal fields on an anonymized neighbor (DSGVO Art. 17):
 	// the UI hides the edit form, and this WHERE clause is the server-side backstop
 	// against a crafted POST reviving erased data. A refused update is reported
 	// (ErrNeighborAnonymized, or ErrNotFound for an unknown id) so the caller
 	// does not claim success or audit a change that never happened.
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE neighbors SET name=$1, note=$2, address=$3, tax_id=$4, email=$5, iban=$8, payment_term_days=$7 WHERE id=$6 AND NOT anonymized`,
-		name, note, address, taxID, email, id, paymentTermDays, iban)
+	var res sql.Result
+	var err error
+	if len(einvoiceData) == 0 {
+		res, err = s.db.ExecContext(ctx,
+			`UPDATE neighbors SET name=$1, note=$2, address=$3, tax_id=$4, email=$5, iban=$8, payment_term_days=$7
+			 WHERE id=$6 AND NOT anonymized`, name, note, address, taxID, email, id, paymentTermDays, iban)
+	} else {
+		einvoice := einvoiceData[0]
+		res, err = s.db.ExecContext(ctx,
+			`UPDATE neighbors SET name=$1, note=$2, address=$3, tax_id=$4, email=$5, iban=$8, payment_term_days=$7,
+			 einvoice_street=$9, einvoice_zip=$10, einvoice_town=$11, einvoice_country_code=$12, einvoice_order_id=$13
+			 WHERE id=$6 AND NOT anonymized`, name, note, address, taxID, email, id, paymentTermDays, iban,
+			einvoice.Street, einvoice.ZIP, einvoice.Town, einvoice.CountryCode, einvoice.OrderID)
+	}
 	if err != nil {
 		return err
 	}
@@ -301,7 +326,31 @@ func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 			return 0, err
 		}
 	}
+	if err := replaceEntryMachineSnapshotsTx(ctx, tx, id, machineIDs); err != nil {
+		return 0, err
+	}
 	return id, nil
+}
+
+// replaceEntryMachineSnapshotsTx freezes the selected machines' contribution
+// and self-cost rates in the same transaction as the booking. A later catalog
+// edit therefore cannot rewrite historical margins. Empty machine selections
+// deliberately produce no rows so legacy and non-machine bookings stay distinct.
+func replaceEntryMachineSnapshotsTx(ctx context.Context, tx *sql.Tx, entryID int64, machineIDs []int64) error {
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM entry_machine_snapshots WHERE entry_id=$1`, entryID); err != nil {
+		return err
+	}
+	if len(machineIDs) == 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO entry_machine_snapshots
+		       (entry_id, machine_id, machine_label, hourly_rate, self_cost_per_h)
+		SELECT $1, m.id, m.name, round(m.working_width * m.cost_per_ab, 4), m.self_cost_per_h
+		  FROM machines m
+		 WHERE m.id = ANY($2)`, entryID, machineIDs)
+	return err
 }
 
 func existingEntryForReplay(
@@ -1129,7 +1178,7 @@ func updateEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 			return err
 		}
 	}
-	return nil
+	return replaceEntryMachineSnapshotsTx(ctx, tx, e.ID, machineIDs)
 }
 
 // SetEntryVoided cancels or restores an entry (kept for traceability).

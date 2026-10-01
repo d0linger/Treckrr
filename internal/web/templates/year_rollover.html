@@ -1,0 +1,73 @@
+{{define "content"}}
+<section class="stack rollover">
+	<div class="pagehead">
+		<a class="backbtn" href="/years/{{.Source.ID}}/abschluss" aria-label="Zurück zur Abschluss-Prüfung">{{template "ic-back"}}</a>
+		<div><h2 class="pagehead__t">Jahreswechsel {{.Source.Year}} → {{.TargetYear}}</h2><p class="muted small">Geführt und wiederaufnehmbar: erledigte Schritte werden bei Wiederholung übersprungen.</p></div>
+	</div>
+
+	<div class="rollgrid">
+		<article class="card stack stack--tight">
+			<span class="eyebrow">1 · Sicherung</span>
+			<h3>{{.Backup.Title}}</h3>
+			<p class="muted small">{{with .Backup.AgeLabel}}Letzte erfolgreiche Sicherung {{.}}.{{else}}Vor dem Wechsel eine aktuelle Sicherung erstellen.{{end}}</p>
+			<a class="btn btn--ghost btn--sm" href="/admin/backup">Backup prüfen</a>
+		</article>
+
+		<article class="card stack stack--tight">
+			<span class="eyebrow">2 · Ausgangsjahr</span>
+			<h3>{{if .Source.Completed}}Abgeschlossen{{else}}Noch in Bearbeitung{{end}}</h3>
+			<p class="muted small">{{if .OpenChecks}}{{.OpenChecks}} fachliche Prüfpunkte sind noch offen. Sie bleiben sichtbar und werden nicht automatisch verändert.{{else}}Die Abschluss-Checkliste ist vollständig.{{end}}</p>
+			{{if not .Source.Completed}}
+			<form method="post" action="/years/{{.Source.ID}}/status" data-confirm="Abrechnungsjahr {{.Source.Year}} abschließen? Buchungen und Belege werden gesperrt; Zahlungen bleiben erfassbar.">
+				<input type="hidden" name="status" value="completed"><input type="hidden" name="origin" value="rollover">
+				<button class="btn btn--primary btn--sm" type="submit">Jahr abschließen</button>
+			</form>
+			{{else}}<a class="btn btn--ghost btn--sm" href="/years/{{.Source.ID}}/abschluss">Checkliste ansehen</a>{{end}}
+		</article>
+
+		<article class="card stack stack--tight">
+			<span class="eyebrow">3 · Folgejahr &amp; Preisbasis</span>
+			{{if .Target}}
+			<h3>{{.Target.Year}} ist angelegt</h3>
+			<p class="muted small">Grundlage: {{with .Target.Base}}{{.Year}} · {{.Name}}{{end}}. Dieser Schritt ist idempotent erledigt.</p>
+			<a class="btn btn--ghost btn--sm" href="/?year={{.Target.ID}}">Folgejahr öffnen</a>
+			{{else}}
+			<h3>{{.TargetYear}} anlegen</h3>
+			<form method="post" action="/years/{{.Source.ID}}/wechsel/create" class="form">
+				<label class="choice"><input type="radio" name="base_mode" value="reuse" checked><span>Vorhandene Preisbasis verwenden</span></label>
+				<select class="select" name="base_id" aria-label="Preisbasis">
+					{{range .Bases}}<option value="{{.ID}}" {{if eq .ID $.Source.BaseID}}selected{{end}}>{{.Year}} · {{.Name}}</option>{{end}}
+				</select>
+				<label class="choice"><input type="radio" name="base_mode" value="clone"><span>Preisbasis {{.Source.Year}} als bearbeitbare Kopie für {{.TargetYear}} anlegen</span></label>
+				<button class="btn btn--primary btn--sm" type="submit" {{if not .Source.Completed}}disabled title="Zuerst Ausgangsjahr abschließen"{{end}}>Folgejahr anlegen</button>
+			</form>
+			{{end}}
+		</article>
+
+		<article class="card stack stack--tight">
+			<span class="eyebrow">4 · Nachbarn</span>
+			<h3>{{.SourceMembers}} im Ausgangsjahr · {{.TargetMembers}} im Folgejahr</h3>
+			<p class="muted small">{{if .PendingMembers}}{{.PendingMembers}} aktive Nachbarn können noch übernommen werden. Archivierte Datensätze bleiben außen vor.{{else}}Alle aktiven Nachbarn sind bereits enthalten.{{end}}</p>
+			{{if and .Target .PendingMembers}}<form method="post" action="/years/{{.Source.ID}}/wechsel/neighbors"><button class="btn btn--primary btn--sm" type="submit">Fehlende Nachbarn übernehmen</button></form>{{end}}
+		</article>
+
+		<article class="card stack stack--tight">
+			<span class="eyebrow">5 · Offene Posten</span>
+			<h3>{{.OpenCount}} offen · {{money .OpenAmount}}</h3>
+			<p class="muted small">Zusätzlich {{.CreditCount}} Guthaben · {{money .CreditAmount}}. Überträge bleiben bewusst pro Nachbar bestätigte Einzelaktionen; der Assistent bucht kein Geld automatisch um.</p>
+			<a class="btn btn--ghost btn--sm" href="/?year={{.Source.ID}}#offene-zahlungen">Posten prüfen und übertragen</a>
+		</article>
+
+		<article class="card stack stack--tight">
+			<span class="eyebrow">6 · Serien</span>
+			<h3>{{.ActiveRules}} aktiv{{if .BlockedRules}} · {{.BlockedRules}} blockiert{{end}}</h3>
+			<p class="muted small">Serien sind jahresübergreifend und bleiben unverändert. Der nächste Lauf verwendet wie bisher das zum Termin passende offene Jahr.</p>
+			<a class="btn btn--ghost btn--sm" href="/recurring">Serien prüfen</a>
+		</article>
+	</div>
+
+	{{if and .Source.Completed .Target (not .PendingMembers)}}
+	<div class="flash flash--success"><strong>Technischer Jahreswechsel abgeschlossen.</strong> Preisbasis, Nachbarn und Serienstatus sind geprüft. Offene Beträge bleiben im Ausgangsjahr sichtbar, bis du sie überträgst oder ausgleichst.</div>
+	{{end}}
+</section>
+{{end}}

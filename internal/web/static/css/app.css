@@ -407,6 +407,92 @@ em { font-style: normal; color: var(--muted); }
 }
 .appbar__icon:hover { background: var(--chassis-hover); }
 .appbar__icon svg { display: block; }
+.appbar__notify { position: relative; }
+.appbar__notify-count { position: absolute; top: 2px; right: 1px; min-width: 1.05rem; height: 1.05rem;
+	display: grid; place-items: center; padding: 0 .2rem; border-radius: 999px; background: var(--danger);
+	color: #fff; font: 700 .62rem/1 var(--font-mono); box-shadow: 0 0 0 2px var(--chassis); }
+
+/* Notification center: one compact, actionable stream with state carried by a
+   narrow signal rail instead of large colored surfaces. */
+.noticeprefs { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .7rem 1rem; align-items: center; }
+.noticeprefs p { margin: .2rem 0 0; }
+.noticeprefs__form { display: flex; gap: .65rem; align-items: center; }
+.noticeprefs > .muted { grid-column: 1 / -1; }
+.noticefeed { list-style: none; margin: 0; padding: 0; display: grid; gap: .55rem; }
+.notice { --notice-signal: var(--primary); display: grid; grid-template-columns: 1.5rem minmax(0,1fr) auto;
+	gap: .7rem; align-items: center; padding: .75rem .8rem; background: var(--card-grad);
+	border: 1px solid var(--card-hairline); border-left: 3px solid var(--notice-signal); border-radius: var(--radius); box-shadow: var(--card-shadow); }
+.notice--warn { --notice-signal: var(--accent); }
+.notice--bad { --notice-signal: var(--danger); }
+.notice.is-read { opacity: .72; }
+.notice__mark { width: 1.35rem; height: 1.35rem; display: grid; place-items: center; border-radius: 50%;
+	background: color-mix(in srgb, var(--notice-signal) 14%, transparent); color: var(--notice-signal); font: 800 .76rem/1 var(--font-mono); }
+.notice__body { min-width: 0; display: grid; gap: .18rem; }
+.notice__top { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+.notice__detail { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.notice__actions { display: flex; align-items: center; gap: .35rem; }
+.notice__actions form { margin: 0; }
+@media (max-width: 560px) {
+	.noticeprefs { grid-template-columns: 1fr; }
+	.noticeprefs__form { justify-content: space-between; }
+	.notice { grid-template-columns: 1.5rem minmax(0,1fr); align-items: start; }
+	.notice__actions { grid-column: 2; }
+}
+
+/* QR field capture: the scan page stays one-handed; the print sheet uses real
+   white labels with enough quiet space around every code. */
+.machine-scan__hero { display: flex; align-items: center; gap: .8rem; }
+.machine-scan__hero > div { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: .16rem; }
+.machine-scan__icon { width: 3rem; height: 3rem; display: grid; place-items: center; flex: 0 0 auto;
+	border-radius: var(--radius); background: var(--surface-2); color: var(--primary); }
+.machine-scan__years { display: flex; gap: .4rem; overflow-x: auto; padding-bottom: .15rem; }
+.machine-scan__neighbors { display: grid; gap: .4rem; }
+.machine-scan__neighbor { min-height: var(--tap); display: flex; justify-content: space-between; align-items: center;
+	gap: .7rem; padding: .65rem .75rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
+	background: var(--surface-2); color: var(--text); font-weight: 650; }
+.machine-scan__neighbor:hover { border-color: var(--primary); }
+.machine-label-help { display: flex; gap: 1rem; align-items: center; justify-content: space-between; }
+.machine-label-help p { margin: 0; max-width: 60ch; }
+.machine-labels { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .65rem; }
+.machine-label { min-height: 12rem; display: grid; grid-template-columns: 9rem minmax(0,1fr); align-items: center; gap: .65rem;
+	padding: .7rem; break-inside: avoid; border: 1px dashed var(--border-strong); border-radius: var(--radius); background: #fff; color: #111; }
+.machine-label img { width: 9rem; height: 9rem; display: block; image-rendering: pixelated; }
+.machine-label__copy { min-width: 0; display: flex; flex-direction: column; gap: .28rem; }
+.machine-label__copy strong { font: 750 1.15rem/1.15 var(--font-sans); overflow-wrap: anywhere; }
+.machine-label__copy span, .machine-label__copy small { color: #454545; }
+.machine-label__brand { font: 700 .66rem/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+@media (max-width: 650px) {
+	.machine-labels { grid-template-columns: 1fr; }
+	.machine-label-help { align-items: stretch; flex-direction: column; }
+}
+@media print {
+	.machine-label-page { display: block; }
+	.machine-labels { grid-template-columns: repeat(2, 1fr); gap: 4mm; }
+	.machine-label { min-height: 54mm; grid-template-columns: 42mm 1fr; gap: 4mm; padding: 4mm; border: .3mm dashed #777; border-radius: 2mm; }
+	.machine-label img { width: 42mm; height: 42mm; }
+	.machine-label__copy strong { font-size: 13pt; }
+}
+
+/* ---- Admin operations strip ----------------------------------------- */
+/* Only admin routes render this compact read-only strip. It reuses the same
+   durable signals as the detailed pages and remains horizontally scrollable on
+   phones instead of wrapping into a second dashboard. */
+.opsbar { max-width: var(--maxw); margin: 0 auto; padding: 0 .75rem .55rem;
+	display: flex; gap: .4rem; overflow-x: auto; scrollbar-width: none; }
+.opsbar::-webkit-scrollbar { display: none; }
+.opsbar__item { flex: 1 0 9.5rem; min-width: 0; display: flex; align-items: center; gap: .45rem;
+	padding: .38rem .52rem; border: 1px solid color-mix(in srgb, var(--chassis-text) 16%, transparent);
+	border-radius: 9px; color: var(--chassis-text); background: color-mix(in srgb, #fff 5%, transparent); }
+a.opsbar__item:hover { background: color-mix(in srgb, #fff 10%, transparent); }
+.opsbar__item > span:last-child { min-width: 0; display: flex; flex-direction: column; }
+.opsbar__item strong { font: 700 .66rem/1.2 var(--font-mono); letter-spacing: .04em; text-transform: uppercase; }
+.opsbar__item small { font-size: .69rem; opacity: .78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.opsbar__dot { width: .5rem; height: .5rem; border-radius: 50%; flex: 0 0 auto; background: var(--bk-mark); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-mark) 18%, transparent); }
+.opsbar__item--ok .opsbar__dot { background: var(--bk-ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-ok) 18%, transparent); }
+.opsbar__item--warn .opsbar__dot { background: var(--bk-warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-warn) 18%, transparent); }
+.opsbar__item--bad .opsbar__dot { background: var(--bk-bad); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-bad) 18%, transparent); }
+.opsbar__item--version { flex-basis: 6.5rem; }
+@media (min-width: 760px) { .opsbar__item { flex-basis: 0; } }
 
 /* ---- Side drawer ------------------------------------------------------ */
 .drawer__scrim { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, .45); }
@@ -1260,10 +1346,12 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .attn__row:hover { background: var(--surface-2); }
 .attn__row--warn { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .attn__row--owe { border-color: color-mix(in srgb, var(--owe) 40%, var(--border)); background: color-mix(in srgb, var(--owe) 7%, var(--surface)); }
+.attn__row--bad { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); background: color-mix(in srgb, var(--danger) 7%, var(--surface)); }
 .attn__ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
 	font-size: .9rem; font-weight: 800; flex: 0 0 auto; }
 .attn__ic--warn { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent-text); }
 .attn__ic--owe { background: color-mix(in srgb, var(--owe) 18%, transparent); color: var(--owe); }
+.attn__ic--bad { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger-text); }
 /* Guthaben (I owe the neighbor): same hue as the tile's Guthaben chip. */
 .attn__row--credit { border-color: color-mix(in srgb, var(--owe) 55%, var(--border)); background: color-mix(in srgb, var(--owe) 11%, var(--surface)); }
 .attn__ic--credit { background: color-mix(in srgb, var(--owe) 24%, transparent); color: var(--owe-text); }
@@ -1271,6 +1359,23 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .attn__txt { flex: 1; font-size: .85rem; }
 .attn__txt strong { font-weight: 800; }
 .attn__go { color: var(--muted); font-size: 1.1rem; line-height: 1; }
+
+/* Master-data completeness: compact diagnostic rows, ordered by the server so
+   blockers precede advisory additions. */
+.qualitylist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .55rem; }
+.qualityitem { display: flex; align-items: center; gap: .7rem; padding: .7rem .8rem;
+	background: var(--card-grad); border: 1px solid var(--card-hairline); border-left: 3px solid var(--accent);
+	border-radius: var(--radius); box-shadow: var(--card-shadow); }
+.qualityitem--high { border-left-color: var(--danger); }
+.qualityitem__mark { width: 1.65rem; height: 1.65rem; flex: 0 0 auto; display: grid; place-items: center;
+	border-radius: 50%; font-weight: 850; color: var(--accent-text); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.qualityitem--high .qualityitem__mark { color: var(--danger-text); background: color-mix(in srgb, var(--danger) 15%, transparent); }
+.qualityitem__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: .12rem; }
+.qualityitem__body strong, .qualityitem__body span { overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+	.qualityitem { align-items: flex-start; flex-wrap: wrap; }
+	.qualityitem .btn { margin-left: 2.35rem; }
+}
 
 /* ---- Backup-health dot (header status indicator) ---------------------- */
 /* A fine stroked "signal ring", monochrome via currentColor — the status colour
@@ -1531,10 +1636,12 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .beleg__payinfo-v { font-size: .82rem; }
 .beleg__epcqr { flex: 0 0 auto; width: 118px; height: 118px; image-rendering: pixelated;
 	border: 1px solid var(--card-hairline); border-radius: 8px; background: #fff; padding: 4px; }
-[data-beleg-grund][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
-[data-beleg-grund][aria-pressed="true"] .ic { color: var(--on-primary); }
-[data-beleg-rechnung][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
-[data-beleg-rechnung][aria-pressed="true"] .ic { color: var(--on-primary); }
+[data-beleg-grund][aria-pressed="true"],
+[data-beleg-rechnung][aria-pressed="true"],
+[data-beleg-calculation][aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+[data-beleg-grund][aria-pressed="true"] .ic,
+[data-beleg-rechnung][aria-pressed="true"] .ic,
+[data-beleg-calculation][aria-pressed="true"] .ic { color: var(--on-primary); }
 
 /* Invoice (Rechnung) mode — sender/recipient block + tax note, shown only when
    the Rechnung toggle is on (.beleg--rechnung). */
@@ -1695,7 +1802,7 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 	   even with "background graphics" off — a full-bleed --bg rectangle behind the
 	   document. Paper is the ground when printing. */
 	.app-bg, .login-bg { display: none !important; }
-	.appbar, .yearbar, .tabbar, .drawer, .drawer__scrim, .toast, .fab, .skip { display: none !important; }
+	.appbar, .yearbar, .opsbar, .tabbar, .drawer, .drawer__scrim, .toast, .fab, .skip { display: none !important; }
 	.no-print { display: none !important; }
 	.main { max-width: none; padding: 0; }
 	body { background: #fff; }
@@ -1710,6 +1817,51 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .logcard__time { margin-left: auto; font-size: var(--fs-xs); color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .logcard__detail { font-size: var(--fs-sm); line-height: 1.4; overflow-wrap: break-word; }
 .logcard__meta { font-size: var(--fs-xs); color: var(--muted); overflow-wrap: break-word; }
+
+/* ---- Mail outbox center --------------------------------------------- */
+.mailfilters { display: flex; flex-wrap: wrap; gap: .4rem; }
+.mailcards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .55rem; }
+.mailcard { display: flex; gap: .7rem; align-items: center; padding: .7rem .8rem;
+	background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius);
+	box-shadow: var(--card-shadow); border-left: 3px solid var(--border); }
+.mailcard--failed, .mailcard--ambiguous { border-left-color: var(--danger); }
+.mailcard--held { border-left-color: var(--accent); }
+.mailcard--sent { border-left-color: var(--pay); }
+.mailcard__main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: .22rem; color: var(--text); }
+.mailcard__top { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.mailcard__top > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mailcard__meta { font-size: var(--fs-xs); color: var(--muted); overflow-wrap: anywhere; }
+.mailcard__error { font-size: var(--fs-xs); color: var(--danger-text); overflow-wrap: anywhere; }
+.mailcard__actions { display: flex; gap: .4rem; flex: 0 0 auto; }
+.mailcard__actions form { margin: 0; }
+.maildetail { display: flex; flex-direction: column; gap: 1rem; }
+.maildetail__head { display: flex; justify-content: space-between; align-items: flex-start; gap: .75rem; }
+.maildetail__head > div { min-width: 0; display: flex; flex-direction: column; gap: .18rem; }
+.maildetail__head strong { overflow-wrap: anywhere; }
+.eyebrow { font: 700 var(--fs-xs)/1.2 var(--font-mono); color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.maildetail__facts { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .5rem; }
+.maildetail__facts > div { padding: .55rem .65rem; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); }
+.maildetail__facts dt { font: 700 .62rem/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.maildetail__facts dd { margin: .2rem 0 0; font-size: .86rem; font-weight: 650; overflow-wrap: anywhere; }
+.maildetail__danger { display: flex; flex-direction: column; align-items: flex-start; gap: .55rem;
+	padding: .8rem; border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--border)); border-radius: 10px;
+	background: color-mix(in srgb, var(--danger) 7%, var(--surface)); }
+.maildetail__danger p { margin: 0; font-size: var(--fs-sm); line-height: 1.45; }
+.attempts { list-style: none; margin: .7rem 0 0; padding: 0; display: flex; flex-direction: column; }
+.attempt { display: grid; grid-template-columns: 1rem 1fr; gap: .55rem; min-height: 4rem; }
+.attempt__rail { position: relative; width: 2px; justify-self: center; background: var(--border); }
+.attempt__rail::before { content: ""; position: absolute; top: .2rem; left: 50%; width: .58rem; height: .58rem;
+	border-radius: 50%; transform: translateX(-50%); background: var(--primary); box-shadow: 0 0 0 3px var(--primary-tint); }
+.attempt:last-child .attempt__rail { background: linear-gradient(var(--border) 0 1rem, transparent 1rem); }
+.attempt__body { padding: 0 0 .9rem; min-width: 0; }
+.attempt__top { display: flex; justify-content: space-between; align-items: center; gap: .6rem; }
+.attempt__detail { margin: .35rem 0 0; font-size: var(--fs-sm); line-height: 1.4; overflow-wrap: anywhere; }
+@media (max-width: 620px) {
+	.mailcard { align-items: stretch; flex-direction: column; }
+	.mailcard__actions .btn { flex: 1; }
+	.mailcard__top { align-items: flex-start; }
+	.maildetail__head { flex-direction: column; }
+}
 
 /* ---- Backup status panel (admin) -------------------------------------- */
 .bkp__head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
@@ -2338,7 +2490,36 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .booking-preview__total { border-top: 1px solid var(--border); padding-top: .55rem; margin-top: .55rem !important; font-weight: 650; }
 .booking-preview strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
 [data-pricing-status]:empty { display: none; }
+.beleg__calc { margin: -.25rem 0 .35rem 5.2rem; border-left: 2px solid var(--border); padding: .1rem 0 .1rem .75rem; color: var(--muted); font-size: .78rem; }
+.beleg__calc summary { cursor: pointer; font-weight: 700; color: var(--muted); }
+.beleg__calc-body { display: grid; gap: .35rem; margin-top: .5rem; }
+.beleg__calc-body > div { display: flex; justify-content: space-between; gap: 1rem; }
+.beleg__calc-body strong { text-align: right; color: var(--text); font-weight: 650; }
+.beleg__calc-body small { display: block; font-weight: 400; color: var(--muted); }
+.beleg__calc-parts ul { margin: 0; text-align: right; list-style: none; }
+.beleg__calc--total { margin: .4rem 0 0; padding: .55rem .75rem; border: 1px solid var(--border); border-radius: var(--radius); }
+.beleg-page.is-calculation-collapsible .beleg__calc { display: none; }
+.beleg-page.is-calculation-collapsible .beleg--calculation .beleg__calc { display: block; }
+.rollgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.rollgrid h3 { margin: 0; font-size: 1rem; }
+.rollgrid .form { gap: .6rem; }
+.comtimeline { margin: 0; padding: 0; list-style: none; display: grid; }
+.comtimeline__item { position: relative; display: grid; grid-template-columns: 1rem minmax(0, 1fr) auto; gap: .65rem; align-items: start; padding: .75rem 0; border-bottom: 1px solid var(--border); }
+.comtimeline__dot { width: .65rem; height: .65rem; margin-top: .3rem; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 3px var(--surface-2); }
+.comtimeline__item--mail .comtimeline__dot, .comtimeline__item--delivery .comtimeline__dot { background: var(--primary); }
+.comtimeline__item--dunning .comtimeline__dot { background: var(--danger); }
+.savedviews { display: grid; gap: .65rem; }
+.savedviews > div:first-child { display: flex; justify-content: space-between; gap: 1rem; }
+.savedviews__list { display: flex; flex-wrap: wrap; gap: .4rem; }
+.savedview { display: inline-flex; align-items: center; gap: .15rem; }
+.savedview form { display: inline-flex; }
+.savedview .iconact { width: 1.75rem; height: 1.75rem; }
+.savedviews__save { display: grid; grid-template-columns: minmax(12rem, 1fr) auto; gap: .5rem; }
 @media (max-width: 420px) {
 	.booking-direction__choices { grid-template-columns: minmax(0, 1fr); }
 	.booking-preview__line, .booking-preview__total, .bcard__line { flex-wrap: wrap; gap: .25rem; }
+	.beleg__calc { margin-left: 0; }
+	.beleg__calc-body > div { flex-wrap: wrap; }
 }
+@media (max-width: 720px) { .rollgrid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) { .savedviews__save { grid-template-columns: minmax(0, 1fr); } }

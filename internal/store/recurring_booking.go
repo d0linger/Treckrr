@@ -19,12 +19,16 @@ type LedgerRecurringInput struct {
 	IncludePeople bool
 	IntervalKind  string
 	NextRun       time.Time
+	EndsOn        *time.Time
 }
 
 // CreateLedgerRecurring freezes a structured posting under its account lock.
 func (s *Store) CreateLedgerRecurring(ctx context.Context, in LedgerRecurringInput) error {
 	if in.IntervalKind != "weekly" && in.IntervalKind != "monthly" {
 		return errors.New("invalid recurring cadence")
+	}
+	if in.EndsOn != nil && in.EndsOn.Before(in.NextRun) {
+		return ErrRecurringEndBeforeStart
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -68,8 +72,8 @@ func (s *Store) CreateLedgerRecurring(ctx context.Context, in LedgerRecurringInp
 		return err
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO recurring_entries (neighbor_id,template,interval_kind,next_run) VALUES ($1,$2,$3,$4)`,
-		neighborID, blob, in.IntervalKind, in.NextRun); err != nil {
+		`INSERT INTO recurring_entries (neighbor_id,template,interval_kind,next_run,ends_on) VALUES ($1,$2,$3,$4,$5)`,
+		neighborID, blob, in.IntervalKind, in.NextRun, in.EndsOn); err != nil {
 		return err
 	}
 	return tx.Commit()

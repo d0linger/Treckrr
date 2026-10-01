@@ -41,17 +41,21 @@ func (s *Store) UpdateCompany(ctx context.Context, c models.Company) error {
 	if c.InvoiceStart < 0 {
 		c.InvoiceStart = 1
 	}
+	if c.EInvoiceCountryCode == "" {
+		c.EInvoiceCountryCode = "AT"
+	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE company SET name=$1, address=$2, tax_id=$3, tax_note=$4, tax_mode=$5, vat_rate=$6, iban=$7,
 		        payment_term_days=$8, dunning_fee_1=$9, dunning_fee_2=$10, dunning_grace_days=$11,
 		        skonto_pct=$12, skonto_days=$13, invoice_prefix=$14,
 		        invoice_start=CASE WHEN $15=0 THEN invoice_start ELSE $15 END,
 		        small_business_limit=$16, travel_flat=$17, travel_per_km=$18,
-		        mail_signature=$19, mail_cc=$20 WHERE id=1`,
+		        mail_signature=$19, mail_cc=$20, einvoice_street=$21, einvoice_zip=$22,
+		        einvoice_town=$23, einvoice_country_code=$24 WHERE id=1`,
 		c.Name, c.Address, c.TaxID, c.TaxNote, c.TaxMode, c.VATRate, c.IBAN, c.PaymentTermDays,
 		c.DunningFee1, c.DunningFee2, c.DunningGraceDays, c.SkontoPct, c.SkontoDays,
 		c.InvoicePrefix, c.InvoiceStart, c.SmallBusinessLimit, c.TravelFlat, c.TravelPerKm,
-		c.MailSignature, c.MailCC)
+		c.MailSignature, c.MailCC, c.EInvoiceStreet, c.EInvoiceZIP, c.EInvoiceTown, c.EInvoiceCountryCode)
 	return err
 }
 
@@ -157,6 +161,12 @@ func (s *Store) BuildInvoiceContent(ctx context.Context, yearID, neighborID int6
 	if err != nil {
 		return models.InvoiceContent{}, err
 	}
+	structured, err := s.GetCompanyEInvoiceParty(ctx)
+	if err != nil {
+		return models.InvoiceContent{}, err
+	}
+	company.EInvoiceStreet, company.EInvoiceZIP = structured.Street, structured.ZIP
+	company.EInvoiceTown, company.EInvoiceCountryCode = structured.Town, structured.CountryCode
 	return s.buildInvoiceContentWith(ctx, company, yearID, neighborID)
 }
 
@@ -165,6 +175,13 @@ func (s *Store) buildInvoiceContentWith(ctx context.Context, company models.Comp
 	if err != nil {
 		return models.InvoiceContent{}, err
 	}
+	structured, err := s.GetNeighborEInvoiceParty(ctx, neighborID)
+	if err != nil {
+		return models.InvoiceContent{}, err
+	}
+	neighbor.EInvoiceStreet, neighbor.EInvoiceZIP = structured.Street, structured.ZIP
+	neighbor.EInvoiceTown, neighbor.EInvoiceCountryCode = structured.Town, structured.CountryCode
+	neighbor.EInvoiceOrderID = structured.OrderID
 	entries, err := s.ListEntries(ctx, neighborID, yearID)
 	if err != nil {
 		return models.InvoiceContent{}, err
@@ -182,7 +199,8 @@ func (s *Store) buildInvoiceContentTx(
 		SELECT name, address, tax_id, tax_note, tax_mode, vat_rate, iban, payment_term_days,
 		       dunning_fee_1, dunning_fee_2, dunning_grace_days, skonto_pct, skonto_days,
 		       invoice_prefix, invoice_start, small_business_limit,
-		       travel_flat, travel_per_km, mail_signature, mail_cc
+		       travel_flat, travel_per_km, mail_signature, mail_cc,
+		       einvoice_street, einvoice_zip, einvoice_town, einvoice_country_code
 		  FROM company WHERE id=1
 		  FOR SHARE`).Scan(
 		&company.Name,
@@ -205,12 +223,17 @@ func (s *Store) buildInvoiceContentTx(
 		&company.TravelPerKm,
 		&company.MailSignature,
 		&company.MailCC,
+		&company.EInvoiceStreet,
+		&company.EInvoiceZIP,
+		&company.EInvoiceTown,
+		&company.EInvoiceCountryCode,
 	); err != nil {
 		return models.InvoiceContent{}, err
 	}
 	var neighbor models.Neighbor
 	if err := tx.QueryRowContext(ctx, `
 		SELECT id, name, note, address, tax_id, email, iban, payment_term_days,
+		       einvoice_street, einvoice_zip, einvoice_town, einvoice_country_code, einvoice_order_id,
 		       archived, anonymized, created_at
 		  FROM neighbors WHERE id=$1`, neighborID).Scan(
 		&neighbor.ID,
@@ -221,6 +244,11 @@ func (s *Store) buildInvoiceContentTx(
 		&neighbor.Email,
 		&neighbor.IBAN,
 		&neighbor.PaymentTermDays,
+		&neighbor.EInvoiceStreet,
+		&neighbor.EInvoiceZIP,
+		&neighbor.EInvoiceTown,
+		&neighbor.EInvoiceCountryCode,
+		&neighbor.EInvoiceOrderID,
 		&neighbor.Archived,
 		&neighbor.Anonymized,
 		&neighbor.Created,
@@ -266,8 +294,12 @@ func invoiceContentFromEntries(
 	c := models.InvoiceContent{
 		Net: net, VATRate: company.VATRate, VATAmount: vat, Gross: net.Add(vat),
 		ShowVAT: showVAT, TaxMode: company.TaxMode, TaxNote: company.TaxNote,
-		Issuer:    models.InvoiceParty{Name: company.Name, Address: company.Address, TaxID: company.TaxID, IBAN: company.IBAN},
-		Recipient: models.InvoiceParty{Name: neighbor.Name, Address: neighbor.Address, TaxID: neighbor.TaxID},
+		Issuer:          companyInvoiceParty(company),
+		Recipient:       neighborInvoiceParty(neighbor),
+		PaymentTermDays: company.EffectiveTermDays(),
+	}
+	if neighbor.PaymentTermDays != nil {
+		c.PaymentTermDays = *neighbor.PaymentTermDays
 	}
 	for _, e := range entries {
 		if e.Voided {
@@ -296,6 +328,22 @@ func invoiceContentFromEntries(
 	}
 	c.Hash = invoiceContentHash(c)
 	return c
+}
+
+func companyInvoiceParty(company models.Company) models.InvoiceParty {
+	return models.InvoiceParty{
+		Name: company.Name, Address: company.Address, TaxID: company.TaxID, IBAN: company.IBAN,
+		Street: company.EInvoiceStreet, ZIP: company.EInvoiceZIP, Town: company.EInvoiceTown,
+		CountryCode: company.EInvoiceCountryCode,
+	}
+}
+
+func neighborInvoiceParty(neighbor models.Neighbor) models.InvoiceParty {
+	return models.InvoiceParty{
+		Name: neighbor.Name, Address: neighbor.Address, TaxID: neighbor.TaxID,
+		Street: neighbor.EInvoiceStreet, ZIP: neighbor.EInvoiceZIP, Town: neighbor.EInvoiceTown,
+		CountryCode: neighbor.EInvoiceCountryCode, OrderID: neighbor.EInvoiceOrderID,
+	}
 }
 
 func invoiceContentHash(c models.InvoiceContent) string {

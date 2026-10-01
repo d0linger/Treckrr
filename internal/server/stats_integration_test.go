@@ -50,8 +50,8 @@ func TestStatsPeriodDrilldownExportIntegration(t *testing.T) {
 		t.Errorf("per-unit metric missing (want 25,00 / ha)")
 	}
 
-	// Machine usage: the rig's machine ran 3 × 2 h = 6 h at 2 m × 5 €/m·h = 10 €/h
-	// → 60,00 estimated revenue at current rates, not frozen booked revenue.
+	// Machine usage: the rig's machine ran 3 × 2 h = 6 h at the frozen
+	// component rate 2 m × 5 €/m·h = 10 €/h → 60,00 revenue.
 	usage, err := e.st.MachineUsageForYear(e.ctx, yid, parseDay(""), parseDay(""))
 	if err != nil || len(usage) != 1 {
 		t.Fatalf("machine usage: %v (n=%d)", err, len(usage))
@@ -63,11 +63,14 @@ func TestStatsPeriodDrilldownExportIntegration(t *testing.T) {
 	if u.HasMargin() {
 		t.Errorf("a contribution margin is claimed although no self cost is configured")
 	}
+	if u.Estimated {
+		t.Error("new bookings with component snapshots are marked as estimates")
+	}
 
-	// Configure self costs: 4 €/h → 6 h × 4 = 24,00 cost, 36,00 margin.
+	// A later catalog change must not rewrite those three historical bookings.
 	e.post("/prices/machines", url.Values{
 		"base_id": {itoa64(e.baseID64)}, "id": {itoa64(e.machineID)},
-		"name": {"IT-Maschine"}, "working_width": {"2"}, "cost_per_ab": {"5"},
+		"name": {"IT-Maschine"}, "working_width": {"2"}, "cost_per_ab": {"7"},
 		"category": {"IT"}, "sort_order": {"1"}, "self_cost_per_h": {"4"},
 	})
 	usage, err = e.st.MachineUsageForYear(e.ctx, yid, parseDay(""), parseDay(""))
@@ -75,19 +78,39 @@ func TestStatsPeriodDrilldownExportIntegration(t *testing.T) {
 		t.Fatalf("machine usage after self cost: %v (n=%d)", err, len(usage))
 	}
 	u = usage[0]
-	if !u.HasMargin() || u.Cost.StringFixed(2) != "24.00" || u.Margin.StringFixed(2) != "36.00" {
-		t.Errorf("margin = %s − %s = %s, want 60.00 − 24.00 = 36.00", u.Revenue, u.Cost, u.Margin)
+	if u.Revenue.StringFixed(2) != "60.00" || u.HasMargin() {
+		t.Errorf("catalog edit rewrote frozen usage: revenue=%s cost=%s", u.Revenue, u.Cost)
 	}
-	if page := e.get(fmt.Sprintf("/stats?year=%d", yid)); !strings.Contains(page, "Deckungsbeitrag") {
-		t.Errorf("the statistics page does not show the contribution margin")
+
+	// A booking saved after the change freezes 14 €/h revenue and 4 €/h own
+	// cost. The row has only partial own-cost history, so it must not claim a
+	// complete contribution margin for the earlier zero-cost snapshots.
+	e.post("/entries", url.Values{
+		"year_id": {itoa64(yid)}, "neighbor_id": {itoa64(nid)},
+		"gespann_id": {itoa64(e.gespannID)}, "entry_date": {"2026-08-10"},
+		"hours": {"2"}, "unit": {"h"},
+	})
+	usage, err = e.st.MachineUsageForYear(e.ctx, yid, parseDay(""), parseDay(""))
+	if err != nil || len(usage) != 1 {
+		t.Fatalf("machine usage with new snapshot: %v (n=%d)", err, len(usage))
 	}
-	// Reset for the export below. newItEnv's cleanup removes this test's entire
-	// price base even after Fatal; it is never shared with another test.
+	u = usage[0]
+	if u.HasMargin() || u.Revenue.StringFixed(2) != "88.00" || u.Cost.StringFixed(2) != "8.00" {
+		t.Errorf("partial snapshot coverage = revenue %s, cost %s, complete=%v", u.Revenue, u.Cost, u.HasMargin())
+	}
+	// Resetting the catalog still leaves every saved snapshot unchanged.
 	e.post("/prices/machines", url.Values{
 		"base_id": {itoa64(e.baseID64)}, "id": {itoa64(e.machineID)},
 		"name": {"IT-Maschine"}, "working_width": {"2"}, "cost_per_ab": {"5"},
 		"category": {"IT"}, "sort_order": {"1"}, "self_cost_per_h": {"0"},
 	})
+	usage, err = e.st.MachineUsageForYear(e.ctx, yid, parseDay(""), parseDay(""))
+	if err != nil || len(usage) != 1 {
+		t.Fatalf("machine usage after second catalog edit: %v (n=%d)", err, len(usage))
+	}
+	if usage[0].Revenue.StringFixed(2) != "88.00" || usage[0].Cost.StringFixed(2) != "8.00" {
+		t.Errorf("second catalog edit changed historical snapshots: usage=%+v", usage)
+	}
 
 	// CSV export carries the sections and honors the period.
 	csvBody := e.get(fmt.Sprintf("/stats/export.csv?year=%d&from=2026-03-01&to=2026-03-31", yid))
@@ -102,11 +125,78 @@ func TestStatsPeriodDrilldownExportIntegration(t *testing.T) {
 	if strings.Contains(csvBody, "376,00") {
 		t.Errorf("the filtered CSV contains the whole-year total")
 	}
-	if !strings.Contains(csvBody, "Schätzung zu aktuellen Sätzen") {
-		t.Error("CSV presents current-price machine allocations as historical revenue")
+	if !strings.Contains(csvBody, "historischer Snapshot") {
+		t.Error("CSV does not identify frozen historical component values")
 	}
-	if !strings.Contains(page, "Schätzungen zu aktuellen Sätzen") {
-		t.Error("page does not disclose mutable-rate estimates")
+	if strings.Contains(page, "Altbestand geschätzt") {
+		t.Error("page marks new snapshotted bookings as legacy estimates")
+	}
+}
+
+// A complete own-cost snapshot remains a valid contribution margin after the
+// catalog value changes later.
+func TestMachineUsageSnapshotMarginIntegration(t *testing.T) {
+	e := newItEnv(t)
+	e.post("/prices/machines", url.Values{
+		"base_id": {itoa64(e.baseID64)}, "id": {itoa64(e.machineID)},
+		"name": {"IT-Maschine"}, "working_width": {"2"}, "cost_per_ab": {"5"},
+		"category": {"IT"}, "sort_order": {"1"}, "self_cost_per_h": {"4"},
+	})
+	e.post("/entries", url.Values{
+		"year_id": {itoa64(e.yearID64)}, "neighbor_id": {itoa64(e.neighborID)},
+		"gespann_id": {itoa64(e.gespannID)}, "entry_date": {"2026-06-01"},
+		"hours": {"2"}, "unit": {"h"},
+	})
+	e.post("/prices/machines", url.Values{
+		"base_id": {itoa64(e.baseID64)}, "id": {itoa64(e.machineID)},
+		"name": {"IT-Maschine"}, "working_width": {"2"}, "cost_per_ab": {"7"},
+		"category": {"IT"}, "sort_order": {"1"}, "self_cost_per_h": {"0"},
+	})
+	usage, err := e.st.MachineUsageForYear(e.ctx, e.yearID64, parseDay(""), parseDay(""))
+	if err != nil || len(usage) != 1 {
+		t.Fatalf("snapshot margin usage: %v (n=%d)", err, len(usage))
+	}
+	u := usage[0]
+	if !u.HasMargin() || u.Revenue.StringFixed(2) != "20.00" || u.Cost.StringFixed(2) != "8.00" || u.Margin.StringFixed(2) != "12.00" {
+		t.Errorf("frozen margin = %s − %s = %s complete=%v, want 20.00 − 8.00 = 12.00", u.Revenue, u.Cost, u.Margin, u.HasMargin())
+	}
+	page := e.get(fmt.Sprintf("/stats?year=%d", e.yearID64))
+	if !strings.Contains(page, "Deckungsbeitrag") {
+		t.Error("the statistics page does not show the complete frozen margin")
+	}
+}
+
+// Bookings created before component snapshots remain usable, but their machine
+// allocation is explicitly marked as an estimate at the current catalog rate.
+func TestMachineUsageLegacyFallbackIntegration(t *testing.T) {
+	e := newItEnv(t)
+	e.post("/entries", url.Values{
+		"year_id": {itoa64(e.yearID64)}, "neighbor_id": {itoa64(e.neighborID)},
+		"gespann_id": {itoa64(e.gespannID)}, "entry_date": {"2026-05-01"},
+		"hours": {"2"}, "unit": {"h"},
+	})
+	if _, err := e.pool.ExecContext(e.ctx, `
+		DELETE FROM entry_machine_snapshots
+		 WHERE entry_id IN (
+		       SELECT id FROM entries WHERE billing_year_id=$1 AND neighbor_id=$2
+		 )`, e.yearID64, e.neighborID); err != nil {
+		t.Fatalf("simulate legacy booking: %v", err)
+	}
+	e.post("/prices/machines", url.Values{
+		"base_id": {itoa64(e.baseID64)}, "id": {itoa64(e.machineID)},
+		"name": {"IT-Maschine"}, "working_width": {"2"}, "cost_per_ab": {"7"},
+		"category": {"IT"}, "sort_order": {"1"}, "self_cost_per_h": {"4"},
+	})
+	usage, err := e.st.MachineUsageForYear(e.ctx, e.yearID64, parseDay(""), parseDay(""))
+	if err != nil || len(usage) != 1 {
+		t.Fatalf("legacy machine usage: %v (n=%d)", err, len(usage))
+	}
+	if !usage[0].Estimated || usage[0].Revenue.StringFixed(2) != "28.00" || usage[0].Cost.StringFixed(2) != "8.00" {
+		t.Errorf("legacy fallback = %+v, want current-rate estimate 28.00/8.00", usage[0])
+	}
+	page := e.get(fmt.Sprintf("/stats?year=%d", e.yearID64))
+	if !strings.Contains(page, "Altbestand geschätzt") {
+		t.Error("legacy fallback is not disclosed on the statistics page")
 	}
 }
 

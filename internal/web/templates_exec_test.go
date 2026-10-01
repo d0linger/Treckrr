@@ -162,6 +162,35 @@ func TestBelegPageRenders(t *testing.T) {
 	}
 }
 
+// TestBelegCalculationPathsUseOneGlobalDisclosure keeps the item list compact
+// while leaving every explanation in the document for explicit inspection.
+func TestBelegCalculationPathsUseOneGlobalDisclosure(t *testing.T) {
+	t.Parallel()
+	page := execPage(t, "beleg", map[string]any{
+		"Title":              "Beleg",
+		"Neighbor":           models.Neighbor{ID: 2, Name: "Bio-Hof Steiner"},
+		"Year":               models.BillingYear{ID: 1, Year: 2026},
+		"TotalCost":          decimal.Zero,
+		"TotalHours":         decimal.Zero,
+		"Saldo":              decimal.Zero,
+		"LedgerSum":          decimal.Zero,
+		"HasCalculationPath": true,
+		"Today":              "30.09.2026",
+	})
+
+	for _, want := range []string{
+		`data-beleg-calculation`,
+		`aria-controls="beleg-items"`,
+		`aria-pressed="false"`,
+		`Rechenwege`,
+		`Rechenweg Gesamtbetrag`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("beleg calculation disclosure missing %q", want)
+		}
+	}
+}
+
 // TestBelegCreditLabelsTakePrecedenceOverPayments verifies an overpayment is
 // presented as a Guthaben in both receipt totals, never as an open amount.
 func TestBelegCreditLabelsTakePrecedenceOverPayments(t *testing.T) {

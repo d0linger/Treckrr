@@ -103,7 +103,10 @@ test("Undo remains available and field errors preserve useful instructions", asy
 
   const email = page.locator("#polish-email");
   await email.fill("not-an-address");
-  await email.evaluate((node: HTMLInputElement) => node.reportValidity());
+  await email.evaluate((node: HTMLInputElement) => {
+    if (!node.validity.typeMismatch) throw new Error("email fixture must have a type mismatch");
+    node.dispatchEvent(new Event("invalid", { cancelable: true }));
+  });
   await expect(page.locator("#polish-email-err")).toContainText("gültige E-Mail-Adresse");
   await email.focus();
   await page.keyboard.press("Tab");

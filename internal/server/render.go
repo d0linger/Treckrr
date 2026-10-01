@@ -39,6 +39,14 @@ func (s *Server) newPage(w http.ResponseWriter, r *http.Request, title, active s
 	if u != nil && u.CanWrite() {
 		p["BackupHealth"] = s.backupHealth()
 	}
+	if u != nil {
+		if count, err := s.store.UnreadNotificationCount(r.Context(), u.ID); err == nil {
+			p["UnreadNotifications"] = count
+		}
+	}
+	if u != nil && u.IsAdmin && strings.HasPrefix(r.URL.Path, "/admin/") {
+		p["AdminStatus"] = s.adminStatus(r)
+	}
 	if msg, kind, undoURL := s.readFlash(w, r); msg != "" {
 		p["FlashMessage"] = msg
 		p["FlashKind"] = kind

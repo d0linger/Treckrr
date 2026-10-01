@@ -20,6 +20,13 @@ func (s *Server) handleCompany(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	structured, err := s.store.GetCompanyEInvoiceParty(r.Context())
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	c.EInvoiceStreet, c.EInvoiceZIP = structured.Street, structured.ZIP
+	c.EInvoiceTown, c.EInvoiceCountryCode = structured.Town, structured.CountryCode
 	data := s.newPage(w, r, "Betriebsdaten", "company")
 	data["Company"] = c
 	s.render(w, r, "company", data)
@@ -27,6 +34,8 @@ func (s *Server) handleCompany(w http.ResponseWriter, r *http.Request) {
 
 // prefixShape guards the Nummernkreis prefix (see 0046's CHECK constraint).
 var prefixShape = regexp.MustCompile(`^[A-Za-z0-9]{0,10}$`)
+
+var countryCodeShape = regexp.MustCompile(`^[A-Z]{2}$`)
 
 // handleCompanySave persists the Betriebsdaten.
 func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
@@ -56,13 +65,24 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	c := models.Company{
-		Name:    trimmed(r, "name"),
-		Address: trimmed(r, "address"),
-		TaxID:   trimmed(r, "tax_id"),
-		TaxNote: trimmed(r, "tax_note"),
-		TaxMode: r.FormValue("tax_mode"),
-		VATRate: formDecimal(r, "vat_rate"),
-		IBAN:    trimmed(r, "iban"),
+		Name:           trimmed(r, "name"),
+		Address:        trimmed(r, "address"),
+		TaxID:          trimmed(r, "tax_id"),
+		TaxNote:        trimmed(r, "tax_note"),
+		TaxMode:        r.FormValue("tax_mode"),
+		VATRate:        formDecimal(r, "vat_rate"),
+		IBAN:           trimmed(r, "iban"),
+		EInvoiceStreet: trimmed(r, "einvoice_street"), EInvoiceZIP: trimmed(r, "einvoice_zip"),
+		EInvoiceTown:        trimmed(r, "einvoice_town"),
+		EInvoiceCountryCode: strings.ToUpper(trimmed(r, "einvoice_country_code")),
+	}
+	if c.EInvoiceCountryCode == "" {
+		c.EInvoiceCountryCode = "AT"
+	}
+	if !countryCodeShape.MatchString(c.EInvoiceCountryCode) {
+		s.setFlash(w, r, "error", "E-Rechnungs-Ländercode muss aus zwei Buchstaben bestehen (z. B. AT).")
+		redirect(w, r, "/admin/company")
+		return
 	}
 	switch c.TaxMode {
 	case "kleinunternehmer", "pauschal", "regel":
@@ -144,7 +164,10 @@ func (s *Server) handleCompanySave(w http.ResponseWriter, r *http.Request) {
 		s.tooLong(w, r, "Adresse", c.Address, maxNoteLen) ||
 		s.tooLong(w, r, "UID/Steuernummer", c.TaxID, maxNameLen) ||
 		s.tooLong(w, r, "IBAN", c.IBAN, maxNameLen) ||
-		s.tooLong(w, r, "Steuerhinweis", c.TaxNote, maxNoteLen) {
+		s.tooLong(w, r, "Steuerhinweis", c.TaxNote, maxNoteLen) ||
+		s.tooLong(w, r, "E-Rechnungs-Straße", c.EInvoiceStreet, maxNameLen) ||
+		s.tooLong(w, r, "E-Rechnungs-PLZ", c.EInvoiceZIP, maxNameLen) ||
+		s.tooLong(w, r, "E-Rechnungs-Ort", c.EInvoiceTown, maxNameLen) {
 		redirect(w, r, "/admin/company")
 		return
 	}

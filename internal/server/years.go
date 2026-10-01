@@ -246,6 +246,10 @@ func (s *Server) handleYearStatus(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, dashboardURL(id))
 		return
 	}
+	if r.FormValue("origin") == "rollover" {
+		redirect(w, r, rolloverURL(id))
+		return
+	}
 	redirect(w, r, "/years")
 }
 

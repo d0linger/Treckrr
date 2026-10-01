@@ -45,7 +45,9 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   // open it before filling. The seeded neighbor (id 1) gets an address so § 11 is met.
   await page.locator("details").filter({ has: page.locator('form[action="/neighbors/1/update"]') })
     .locator(":scope > summary").click();
-  const billingDetails = page.locator('form[action="/neighbors/1/update"] details');
+  const billingDetails = page
+    .locator('form[action="/neighbors/1/update"] details')
+    .filter({ has: page.locator('textarea[name="address"]') });
   if (await billingDetails.getAttribute("open") === null) await billingDetails.locator(":scope > summary").click();
   const addr = page.locator('form[action="/neighbors/1/update"] textarea[name="address"]');
   await addr.fill("Ackerstraße 8\n4780 Schärding");
@@ -77,6 +79,12 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
 
   // --- festschreiben: confirm page must allow issuing, then issue ---
   await page.goto("/neighbors/1/beleg?year=1");
+  const calculationPaths = page.locator(".beleg__calc");
+  await expect(calculationPaths.first()).toBeHidden();
+  const calculationToggle = page.getByRole("button", { name: "Rechenwege", exact: true });
+  await calculationToggle.click();
+  await expect(calculationToggle).toHaveAttribute("aria-pressed", "true");
+  await expect(calculationPaths.first()).toBeVisible();
   await page.getByRole("link", { name: /festschreiben/i }).click();
   // The link NAVIGATES to the confirm page. Wait for that page to finish loading so
   // the deferred app.js has attached the data-confirm submit handler BEFORE we click

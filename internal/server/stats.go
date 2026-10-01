@@ -522,14 +522,16 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["To"] = r.URL.Query().Get("to")
 	data["Period"] = period
 	var marginTotal decimal.Decimal
-	var hasMargin bool
+	var hasMargin, hasEstimate bool
 	for _, m := range machineUsage {
+		hasEstimate = hasEstimate || m.Estimated
 		if m.HasMargin() {
 			hasMargin = true
 			marginTotal = marginTotal.Add(m.Margin)
 		}
 	}
 	data["HasMachineMargin"] = hasMargin
+	data["HasMachineEstimate"] = hasEstimate
 	data["MachineMarginTotal"] = marginTotal
 
 	data["PeriodActive"] = periodActive
@@ -638,10 +640,16 @@ func (s *Server) handleStatsExport(w http.ResponseWriter, r *http.Request) {
 	writeAgg("Tätigkeit", byTask)
 	writeAgg("Traktor", byTractor)
 	for _, m := range machines {
-		_ = cw.Write([]string{"Maschine · Schätzung zu aktuellen Sätzen", csvSafe(m.Name), "h", deDecimal(m.Hours), deDecimal(m.Hours),
+		section := "Maschine · historischer Snapshot"
+		marginSection := "Maschine · Deckungsbeitrag · historischer Snapshot"
+		if m.Estimated {
+			section = "Maschine · enthält Altbestandsschätzung zu aktuellen Sätzen"
+			marginSection = "Maschine · Deckungsbeitrag · enthält Altbestandsschätzung zu aktuellen Sätzen"
+		}
+		_ = cw.Write([]string{section, csvSafe(m.Name), "h", deDecimal(m.Hours), deDecimal(m.Hours),
 			deDecimal(m.Revenue), deDecimal(m.Rate)})
 		if m.HasMargin() {
-			_ = cw.Write([]string{"Maschine · Deckungsbeitrag · Schätzung zu aktuellen Sätzen", csvSafe(m.Name), "h", deDecimal(m.Hours), "",
+			_ = cw.Write([]string{marginSection, csvSafe(m.Name), "h", deDecimal(m.Hours), "",
 				deDecimal(m.Margin), deDecimal(m.SelfCost)})
 		}
 	}

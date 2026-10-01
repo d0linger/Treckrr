@@ -181,6 +181,8 @@ type RecurringEntry struct {
 	Template     RecurTemplate
 	IntervalKind string
 	NextRun      time.Time
+	EndsOn       *time.Time
+	Upcoming     []time.Time
 	Active       bool
 	CreatedAt    time.Time
 	LastRunAt    *time.Time
@@ -210,6 +212,20 @@ type BelegShare struct {
 	CreatedAt     time.Time
 	CreatedBy     string
 	LastUsedAt    *time.Time
+}
+
+// BelegFeedback is a read-only neighbor response tied to one frozen invoice
+// hash. It never changes the invoice or any booking.
+type BelegFeedback struct {
+	ID            int64
+	InvoiceID     int64
+	NeighborID    int64
+	BillingYearID int64
+	ContentHash   string
+	Status        string
+	LinePosition  *int
+	Message       string
+	CreatedAt     time.Time
 }
 
 // PriceBase is a pricing basis (Bemessungsgrundlage). It is published roughly
@@ -287,11 +303,34 @@ type Machine struct {
 	// SelfCostPerH is what running this machine COSTS per hour (Ausbaukarte 83).
 	// The rate above is what it earns; without this there is only turnover and
 	// no Deckungsbeitrag. 0 = not configured, and the margin stays hidden.
-	SelfCostPerH decimal.Decimal
+	SelfCostPerH      decimal.Decimal
+	AcquisitionCost   decimal.Decimal
+	ResidualValue     decimal.Decimal
+	UsefulYears       int
+	AnnualHours       decimal.Decimal
+	FuelCostPerH      decimal.Decimal
+	AnnualMaintenance decimal.Decimal
+	AnnualInsurance   decimal.Decimal
+	AnnualOtherCost   decimal.Decimal
 }
 
 // HourlyRate returns the machine's contribution to a Gespann's hourly rate.
 func (m Machine) HourlyRate() decimal.Decimal { return m.WorkingWidth.Mul(m.CostPerAB).Round(2) }
+
+// CalculatedSelfCost returns the transparent proposal from the stored
+// assumptions. It never changes SelfCostPerH; callers must apply it explicitly.
+func (m Machine) CalculatedSelfCost() (decimal.Decimal, bool) {
+	if m.UsefulYears <= 0 || !m.AnnualHours.IsPositive() {
+		return decimal.Zero, false
+	}
+	depreciable := m.AcquisitionCost.Sub(m.ResidualValue)
+	if depreciable.IsNegative() {
+		depreciable = decimal.Zero
+	}
+	annual := depreciable.Div(decimal.NewFromInt(int64(m.UsefulYears))).
+		Add(m.AnnualMaintenance).Add(m.AnnualInsurance).Add(m.AnnualOtherCost)
+	return annual.Div(m.AnnualHours).Add(m.FuelCostPerH).Round(2), true
+}
 
 // Gespann is a named fixed combination of a tractor, a load level and machines.
 type Gespann struct {
@@ -317,8 +356,13 @@ type Neighbor struct {
 	PaymentTermDays *int
 	// IBAN is the neighbor's account, used by the bank-import matcher as the
 	// second key after the invoice reference. Optional.
-	IBAN     string
-	Archived bool
+	IBAN                string
+	EInvoiceStreet      string
+	EInvoiceZIP         string
+	EInvoiceTown        string
+	EInvoiceCountryCode string
+	EInvoiceOrderID     string
+	Archived            bool
 	// Anonymized marks a neighbor whose live personal data was erased (DSGVO
 	// Art. 17) while retained invoice snapshots stay intact. Such rows are also
 	// archived and cannot be edited. Repeated erasure scrubs any legacy live text.
@@ -453,8 +497,15 @@ type Payment struct {
 	// payments recorded before an invoice existed, or from before 0044).
 	InvoiceID     *int64
 	InvoiceNumber string // joined for display; empty when unlinked
+	// ImportBatchID identifies payments and counter-entries controlled by the
+	// immutable bank-import journal. Reversal is true for the counter-entry.
+	ImportBatchID *int64
+	Reversal      bool
 	Created       time.Time
 }
+
+// DisplayAmount returns a positive amount for sign-aware payment templates.
+func (p Payment) DisplayAmount() decimal.Decimal { return p.Amount.Abs() }
 
 // PaymentPlan is one agreed installment (Ratenplan). Planned rows only — actual
 // money flows through payments; the UI derives the state per installment by
@@ -482,13 +533,17 @@ type BackupSettings struct {
 // plus the tax treatment: "pauschal" shows only TaxNote; "regel" adds a VAT
 // breakdown at VATRate.
 type Company struct {
-	Name    string
-	Address string
-	TaxID   string
-	TaxNote string
-	TaxMode string
-	VATRate decimal.Decimal
-	IBAN    string // optional issuer bank account for a payable invoice
+	Name                string
+	Address             string
+	TaxID               string
+	TaxNote             string
+	TaxMode             string
+	VATRate             decimal.Decimal
+	IBAN                string // optional issuer bank account for a payable invoice
+	EInvoiceStreet      string
+	EInvoiceZIP         string
+	EInvoiceTown        string
+	EInvoiceCountryCode string
 	// PaymentTermDays is the Zahlungsziel: an invoice is due this many days after
 	// its issue date. Used only to flag overdue invoices in the dunning list.
 	// A neighbor's own payment_term_days overrides it.
@@ -541,10 +596,15 @@ type Person struct {
 
 // InvoiceParty is a frozen issuer/recipient block on an invoice snapshot.
 type InvoiceParty struct {
-	Name    string `json:"name"`
-	Address string `json:"address"`
-	TaxID   string `json:"tax_id"`         // issuer UID / recipient UID or tax number
-	IBAN    string `json:"iban,omitempty"` // issuer bank account, frozen for payment (recipient: unset)
+	Name        string `json:"name"`
+	Address     string `json:"address"`
+	TaxID       string `json:"tax_id"`         // issuer UID / recipient UID or tax number
+	IBAN        string `json:"iban,omitempty"` // issuer bank account, frozen for payment (recipient: unset)
+	Street      string `json:"street,omitempty"`
+	ZIP         string `json:"zip,omitempty"`
+	Town        string `json:"town,omitempty"`
+	CountryCode string `json:"country_code,omitempty"`
+	OrderID     string `json:"order_id,omitempty"`
 }
 
 // InvoiceLine is one frozen line item of an invoice snapshot.
@@ -562,18 +622,19 @@ type InvoiceLine struct {
 // The settlement side (ledger, payments, remaining) is deliberately NOT part of
 // it — that stays live because it evolves after the invoice is handed over.
 type InvoiceContent struct {
-	Net         decimal.Decimal `json:"net"`
-	VATRate     decimal.Decimal `json:"vat_rate"`
-	VATAmount   decimal.Decimal `json:"vat_amount"`
-	Gross       decimal.Decimal `json:"gross"`
-	ShowVAT     bool            `json:"show_vat"`
-	TaxMode     string          `json:"tax_mode"`
-	TaxNote     string          `json:"tax_note"`
-	ServiceFrom time.Time       `json:"service_from"`
-	ServiceTo   time.Time       `json:"service_to"`
-	Issuer      InvoiceParty    `json:"issuer"`
-	Recipient   InvoiceParty    `json:"recipient"`
-	Lines       []InvoiceLine   `json:"lines"`
+	Net             decimal.Decimal `json:"net"`
+	VATRate         decimal.Decimal `json:"vat_rate"`
+	VATAmount       decimal.Decimal `json:"vat_amount"`
+	Gross           decimal.Decimal `json:"gross"`
+	ShowVAT         bool            `json:"show_vat"`
+	TaxMode         string          `json:"tax_mode"`
+	TaxNote         string          `json:"tax_note"`
+	ServiceFrom     time.Time       `json:"service_from"`
+	ServiceTo       time.Time       `json:"service_to"`
+	Issuer          InvoiceParty    `json:"issuer"`
+	Recipient       InvoiceParty    `json:"recipient"`
+	Lines           []InvoiceLine   `json:"lines"`
+	PaymentTermDays int             `json:"payment_term_days,omitempty"`
 	// Skonto terms FROZEN at issuance (zero = no clause): the discount is part of
 	// the invoice's payment terms, so it must appear identically on the Beleg,
 	// the PDF and the share link, and must never change after Festschreibung.

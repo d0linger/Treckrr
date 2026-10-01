@@ -1,0 +1,54 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/payments/import" aria-label="Zurück">{{template "ic-back"}}</a>
+		<div>
+			<h2 class="pagehead__t">Zahlungsimport #{{.Batch.ID}}</h2>
+			<p class="muted small">Quelle {{.Batch.ShortHash}}… · {{.Batch.CreatedAt.Format "02.01.2006 15:04"}} · {{.Batch.StatusLabel}}{{with .Batch.UploadedBy}} · {{.}}{{end}}</p>
+		</div>
+	</div>
+
+	<div class="kpigrid">
+		<div class="kpi"><span class="kpi__label">Transaktionen</span><strong class="kpi__value">{{.Batch.TotalRows}}</strong></div>
+		<div class="kpi kpi--paid"><span class="kpi__label">Verbucht</span><strong class="kpi__value">{{.Batch.BookedRows}}</strong></div>
+		<div class="kpi kpi--open"><span class="kpi__label">Nicht zugeordnet</span><strong class="kpi__value">{{.Batch.UnmatchedRows}}</strong></div>
+		<div class="kpi kpi--hours"><span class="kpi__label">Duplikate / übersprungen</span><strong class="kpi__value">{{.Batch.DuplicateRows}} / {{.Batch.SkippedRows}}</strong></div>
+	</div>
+
+	<div class="btnrow">
+		<a class="btn btn--ghost btn--sm" href="/payments/import/batches/{{.Batch.ID}}/report.csv">Ergebnisbericht herunterladen</a>
+	</div>
+
+	<div class="card">
+		<div class="tablewrap" role="region" aria-label="Ergebnis des Zahlungsimports" tabindex="0">
+			<table class="dtable">
+				<thead><tr><th>Pos.</th><th>Datum</th><th class="num">Betrag</th><th>Verwendungszweck</th><th>Ergebnis</th><th></th></tr></thead>
+				<tbody>
+					{{range .Rows}}
+					<tr>
+						<td>{{.RowNo}}</td>
+						<td>{{with .TransactionDate}}{{.Format "02.01.2006"}}{{else}}—{{end}}</td>
+						<td class="num">{{money .Amount}}</td>
+						<td>{{with .Reference}}{{.}}{{else}}—{{end}}{{with .PayerName}} <span class="muted small">({{.}})</span>{{end}}</td>
+						<td>
+							<span class="tag {{if eq .Status "booked"}}tag--paid{{else if eq .Status "reversed"}}tag--progress{{else if or (eq .Status "unmatched") (eq .Status "skipped")}}tag--open{{end}}">{{.StatusLabel}}</span>
+							{{with .MatchMethod}} <span class="tag">per {{.}}</span>{{end}}
+							{{with .Reason}}<div class="muted small">{{.}}</div>{{end}}
+						</td>
+						<td class="num">
+							{{if .Correctable}}
+							<form method="post" action="/payments/import/rows/{{.ID}}/reverse" data-confirm-danger data-confirm="Zahlung über {{money .Amount}} durch eine nachvollziehbare Gegenbuchung korrigieren?">
+								<button class="btn btn--ghost btn--sm" type="submit">Gegenbuchen</button>
+							</form>
+							{{end}}
+						</td>
+					</tr>
+					{{else}}
+					<tr><td colspan="6" class="muted">Keine Transaktionen gespeichert.</td></tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+	</div>
+</section>
+{{end}}

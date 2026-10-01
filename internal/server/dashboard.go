@@ -12,19 +12,32 @@ import (
 
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
+	"github.com/d0linger/treckrr/internal/web"
 )
 
 // neighborSummary is a neighbor with its totals for the selected billing year.
 type neighborSummary struct {
-	Neighbor  models.Neighbor
-	Cost      decimal.Decimal
-	Hours     decimal.Decimal
-	Entries   int
-	Paid      bool // fully settled (nothing remaining)
-	Credit    bool // negative rest: the neighbor holds a Guthaben (I owe them)
-	Remaining decimal.Decimal
+	Neighbor      models.Neighbor
+	Cost          decimal.Decimal
+	Hours         decimal.Decimal
+	Entries       int
+	Paid          bool // fully settled (nothing remaining)
+	Credit        bool // negative rest: the neighbor holds a Guthaben (I owe them)
+	Remaining     decimal.Decimal
+	QualityIssues int
 }
 
+// dashboardWorkItem is one actionable signal in the central work queue.
+type dashboardWorkItem struct {
+	Tone   string
+	Icon   string
+	Title  string
+	Detail string
+	Href   string
+}
+
+// handleDashboard renders the selected year's totals, setup state and central
+// advisory work queue without changing any underlying workflow state.
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	year, ok := s.resolveYear(w, r)
 	if !ok {
@@ -109,6 +122,16 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	data["OpenCount"] = openCount
 	data["CreditCost"] = creditCost
 	data["CreditCount"] = creditCount
+	quality, err := s.loadDataQuality(r, year)
+	if err != nil {
+		s.serverError(w, "dashboard: data quality", err)
+		return
+	}
+	for i := range summaries {
+		summaries[i].QualityIssues = quality.NeighborCounts[summaries[i].Neighbor.ID]
+	}
+	// Refresh after attaching per-neighbor completeness counts.
+	data["Summaries"] = summaries
 	// How many bookings are out of sync with the current basis (open years only).
 	// Gate first (0040): one indexed count answers "could anything be stale?".
 	// When it says no — the normal case, since the basis is rarely edited — the
@@ -128,6 +151,54 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["StaleCount"] = staleCount
+
+	work := make([]dashboardWorkItem, 0, 8)
+	if len(quality.Issues) > 0 {
+		tone := "warn"
+		if quality.High > 0 {
+			tone = "bad"
+		}
+		work = append(work, dashboardWorkItem{
+			Tone: tone, Icon: "!", Title: strconv.Itoa(len(quality.Issues)) + " Stammdaten-Hinweis(e)",
+			Detail: strconv.Itoa(quality.High) + " wichtig · " + strconv.Itoa(quality.Medium) + " ergänzen",
+			Href:   "/data-quality?year=" + strconv.FormatInt(year.ID, 10),
+		})
+	}
+	if !year.Completed() && staleCount > 0 {
+		work = append(work, dashboardWorkItem{Tone: "warn", Icon: "↻",
+			Title:  strconv.Itoa(staleCount) + " Buchung(en) neu berechnen",
+			Detail: "Grundlage wurde geändert", Href: "/years/" + strconv.FormatInt(year.ID, 10) + "/recalc"})
+	}
+	if year.Completed() && openCount > 0 {
+		work = append(work, dashboardWorkItem{Tone: "owe", Icon: "€",
+			Title: strconv.Itoa(openCount) + " Nachbar(n)", Detail: "mit offener Zahlung · " + web.Money(openCost), Href: "#offene-zahlungen"})
+	}
+	if year.Completed() && creditCount > 0 {
+		work = append(work, dashboardWorkItem{Tone: "credit", Icon: "€",
+			Title: strconv.Itoa(creditCount) + " Nachbar(n)", Detail: "mit Guthaben – noch auszuzahlen · " + web.Money(creditCost), Href: "#auszuzahlen"})
+	}
+	if user := userFromCtx(r); user != nil && user.CanWrite() {
+		if ops, err := s.store.OperationsStatus(r.Context()); err == nil {
+			if ops.Failed+ops.Ambiguous+ops.Held > 0 && user.IsAdmin {
+				work = append(work, dashboardWorkItem{Tone: "bad", Icon: "✉",
+					Title:  strconv.Itoa(ops.Failed+ops.Ambiguous+ops.Held) + " E-Mail-Entscheidung(en)",
+					Detail: "fehlgeschlagen, unklar oder angehalten", Href: "/admin/mail"})
+			}
+			if ops.RecurringBlocked > 0 {
+				work = append(work, dashboardWorkItem{Tone: "warn", Icon: "↻",
+					Title:  strconv.Itoa(ops.RecurringBlocked) + " blockierte Serie(n)",
+					Detail: "erfordern eine fachliche Korrektur", Href: "/recurring"})
+			}
+		}
+		if user.IsAdmin {
+			backup := s.backupHealth()
+			if backup.Tone != "ok" {
+				work = append(work, dashboardWorkItem{Tone: backup.Tone, Icon: "B", Title: backup.Title,
+					Detail: backup.AgeLabel, Href: "/admin/backup"})
+			}
+		}
+	}
+	data["WorkItems"] = work
 
 	// First-run onboarding: nudge the operator through setup until all steps are
 	// done, then it disappears on its own (no dismiss needed). "Basis" is implicitly
@@ -295,6 +366,28 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
+	einvoice := models.InvoiceParty{
+		Street: trimmed(r, "einvoice_street"), ZIP: trimmed(r, "einvoice_zip"),
+		Town: trimmed(r, "einvoice_town"), CountryCode: strings.ToUpper(trimmed(r, "einvoice_country_code")),
+		OrderID: trimmed(r, "einvoice_order_id"),
+	}
+	if einvoice.CountryCode == "" {
+		einvoice.CountryCode = "AT"
+	}
+	if !countryCodeShape.MatchString(einvoice.CountryCode) {
+		s.setFlash(w, r, "error", "E-Rechnungs-Ländercode muss aus zwei Buchstaben bestehen (z. B. AT).")
+		redirect(w, r, neighborReturnURL(r, id))
+		return
+	}
+	for label, value := range map[string]string{
+		"E-Rechnungs-Straße": einvoice.Street, "E-Rechnungs-PLZ": einvoice.ZIP,
+		"E-Rechnungs-Ort": einvoice.Town, "Auftragsreferenz": einvoice.OrderID,
+	} {
+		if s.tooLong(w, r, label, value, maxNameLen) {
+			redirect(w, r, neighborReturnURL(r, id))
+			return
+		}
+	}
 	// Leeres Feld = Firmenstandard (NULL), sonst 0-365 Tage.
 	var paymentTerm *int
 	if v := strings.TrimSpace(r.FormValue("payment_term_days")); v != "" {
@@ -309,7 +402,7 @@ func (s *Server) handleNeighborUpdate(w http.ResponseWriter, r *http.Request) {
 	// A refused update (anonymized or unknown neighbor) writes nothing, so it is
 	// neither reported as success nor audited: the append-only log must not
 	// record a diff that never reached the database.
-	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email, iban, paymentTerm); errors.Is(err, store.ErrNeighborAnonymized) {
+	if err := s.store.UpdateNeighbor(r.Context(), id, name, note, address, taxID, email, iban, paymentTerm, einvoice); errors.Is(err, store.ErrNeighborAnonymized) {
 		s.setFlash(w, r, "error", "Dieser Nachbar wurde anonymisiert — seine Daten können nicht mehr bearbeitet werden.")
 	} else if errors.Is(err, store.ErrNotFound) {
 		s.setFlash(w, r, "error", "Nachbar nicht gefunden.")

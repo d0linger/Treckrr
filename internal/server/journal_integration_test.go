@@ -1,7 +1,9 @@
 package server
 
 import (
+	"archive/zip"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 	"testing"
@@ -80,6 +82,29 @@ func TestJournalAndArchiveIntegration(t *testing.T) {
 	zipBody := e.get(fmt.Sprintf("/rechnungsjournal/archiv.zip?year=%d", yid))
 	if !strings.HasPrefix(zipBody, "PK") || len(zipBody) < 2000 {
 		t.Errorf("ZIP archive missing or implausibly small (%d bytes)", len(zipBody))
+	}
+	zr, err := zip.NewReader(strings.NewReader(zipBody), int64(len(zipBody)))
+	if err != nil {
+		t.Fatalf("open ZIP archive: %v", err)
+	}
+	var eInvoiceNotice string
+	for _, file := range zr.File {
+		if file.Name != "HINWEIS-fehlende-e-rechnungen.txt" {
+			continue
+		}
+		reader, openErr := file.Open()
+		if openErr != nil {
+			t.Fatalf("open e-invoice notice: %v", openErr)
+		}
+		content, readErr := io.ReadAll(reader)
+		_ = reader.Close()
+		if readErr != nil {
+			t.Fatalf("read e-invoice notice: %v", readErr)
+		}
+		eInvoiceNotice = string(content)
+	}
+	if !strings.Contains(eInvoiceNotice, iv.Number) {
+		t.Fatalf("e-invoice notice does not identify incomplete invoice %q", iv.Number)
 	}
 
 	// Kleinunternehmer ceiling (Nr. 55): with mode + tiny limit set, issuing the

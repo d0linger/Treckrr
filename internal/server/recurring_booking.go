@@ -52,7 +52,8 @@ func (s *Server) handleLedgerRecurringCreate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if s.tooLong(w, r, "Startdatum", r.FormValue("next_run"), maxNameLen) ||
-		s.tooLong(w, r, "Intervall", r.FormValue("interval_kind"), maxNameLen) {
+		s.tooLong(w, r, "Intervall", r.FormValue("interval_kind"), maxNameLen) ||
+		s.tooLong(w, r, "Enddatum", r.FormValue("ends_on"), maxNameLen) {
 		redirect(w, r, "/recurring")
 		return
 	}
@@ -67,8 +68,14 @@ func (s *Server) handleLedgerRecurringCreate(w http.ResponseWriter, r *http.Requ
 		s.badRequest(w, "Unbekannter Rhythmus.")
 		return
 	}
+	endsOn, err := optionalRecurringEnd(r, start)
+	if err != nil {
+		s.setFlash(w, r, "error", recurringEndErrorMessage(err))
+		redirect(w, r, "/recurring")
+		return
+	}
 	err = s.store.CreateLedgerRecurring(r.Context(), store.LedgerRecurringInput{
-		SourceID: id, IncludePeople: r.FormValue("with_person") == "1", IntervalKind: kind, NextRun: start,
+		SourceID: id, IncludePeople: r.FormValue("with_person") == "1", IntervalKind: kind, NextRun: start, EndsOn: endsOn,
 	})
 	if errors.Is(err, store.ErrSourceEntryVoided) {
 		s.setFlash(w, r, "error", "Aus einer stornierten Buchung kann keine Serie eingerichtet werden.")

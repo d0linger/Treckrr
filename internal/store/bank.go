@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"strconv"
 	"time"
 
@@ -136,25 +138,41 @@ func (s *Store) NeighborIBANMap(ctx context.Context) (map[string]int64, error) {
 	return out, rows.Err()
 }
 
-// ImportPayment books a bank credit and records its de-dup hash ATOMICALLY, in one
-// transaction: it inserts the hash (ON CONFLICT DO NOTHING) and — only if that hash
-// was new — inserts the payment. Returns (true, nil) when a payment was booked,
-// (false, nil) when the credit was already imported. This closes the lost-payment
-// window where a marked-imported hash could survive a failed AddPayment and skip
-// the credit forever.
-func (s *Store) ImportPayment(ctx context.Context, hash string, yearID, neighborID, invoiceID int64, amount decimal.Decimal, paidOn time.Time, note string) (bool, error) {
+// ImportPayment books a bank credit and records its de-dup hash, payment and
+// batch-row outcome atomically. Returns false when a concurrent import already
+// booked the hash; that row is retained as a duplicate in its own batch.
+func (s *Store) ImportPayment(ctx context.Context, rowID int64, hash string, yearID, neighborID, invoiceID int64, amount decimal.Decimal, paidOn time.Time, note string) (bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	res, err := tx.ExecContext(ctx,
-		`INSERT INTO payment_imports (hash) VALUES ($1) ON CONFLICT (hash) DO NOTHING`, hash)
+	var batchID int64
+	var rowStatus string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT batch_id, status FROM payment_import_rows
+		 WHERE id=$1 AND transaction_hash=$2 FOR UPDATE`, rowID, hash).Scan(&batchID, &rowStatus); errors.Is(err, sql.ErrNoRows) {
+		return false, ErrNotFound
+	} else if err != nil {
+		return false, err
+	}
+	if rowStatus != PaymentImportPending {
+		return false, ErrNotFound
+	}
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO payment_imports (hash, batch_id, row_id)
+		VALUES ($1,$2,$3) ON CONFLICT (hash) DO NOTHING`, hash, batchID, rowID)
 	if err != nil {
 		return false, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return false, tx.Commit() // already imported → nothing to book
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE payment_import_rows
+			   SET status='duplicate', reason='Bereits in einem anderen Import verbucht'
+			 WHERE id=$1`, rowID); err != nil {
+			return false, err
+		}
+		return false, tx.Commit()
 	}
 	ok, err := lockAccountBoundary(ctx, tx, yearID, neighborID, false, false)
 	if err != nil {
@@ -183,6 +201,15 @@ func (s *Store) ImportPayment(ctx context.Context, hash string, yearID, neighbor
 		 VALUES ($1,$2,$3,$4,$5,'überweisung',$6) RETURNING id`,
 		yearID, neighborID, amount, paidOn, note, nullable(invoiceID)).Scan(&paymentID); err != nil {
 		return false, err // rollback also undoes the hash insert
+	}
+	if _, err := tx.ExecContext(ctx, `
+		WITH linked AS (
+			UPDATE payment_imports SET payment_id=$2 WHERE hash=$1 RETURNING hash
+		)
+		UPDATE payment_import_rows SET status='booked', reason='', payment_id=$2
+		 WHERE id=$3 AND EXISTS (SELECT 1 FROM linked)`,
+		hash, paymentID, rowID); err != nil {
+		return false, err
 	}
 	if err := addAuditTx(ctx, tx, "payment_import", "payment", strconv.FormatInt(paymentID, 10),
 		paymentAuditState(amount, paidOn, "überweisung")); err != nil {

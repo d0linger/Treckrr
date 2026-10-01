@@ -78,8 +78,8 @@ func creditContent(company models.Company, neighbor *models.Neighbor, gross deci
 		ShowVAT: showVAT, TaxMode: company.TaxMode,
 		TaxNote:     strings.TrimSpace(note),
 		ServiceFrom: on, ServiceTo: on,
-		Issuer:    models.InvoiceParty{Name: company.Name, Address: company.Address, TaxID: company.TaxID, IBAN: company.IBAN},
-		Recipient: models.InvoiceParty{Name: neighbor.Name, Address: neighbor.Address, TaxID: neighbor.TaxID},
+		Issuer:    companyInvoiceParty(company),
+		Recipient: neighborInvoiceParty(*neighbor),
 		Lines:     []models.InvoiceLine{{Date: on, Label: label, Cost: net.Neg()}},
 	}
 	c.Hash = invoiceContentHash(c)
@@ -235,8 +235,8 @@ func (s *Store) CreateAnzahlung(ctx context.Context, yearID, neighborID int64, y
 		TaxNote: "Abschlag auf die Schlussrechnung. Keine Rechnung im Sinne des § 11 UStG — " +
 			"kein Vorsteuerabzug. Die Verrechnung erfolgt mit der Schlussrechnung.",
 		ServiceFrom: dueOn, ServiceTo: dueOn,
-		Issuer:    models.InvoiceParty{Name: company.Name, Address: company.Address, TaxID: company.TaxID, IBAN: company.IBAN},
-		Recipient: models.InvoiceParty{Name: neighbor.Name, Address: neighbor.Address, TaxID: neighbor.TaxID},
+		Issuer:    companyInvoiceParty(company),
+		Recipient: neighborInvoiceParty(*neighbor),
 		Lines:     []models.InvoiceLine{{Date: dueOn, Label: label, Cost: gross}},
 	}
 	content.Hash = invoiceContentHash(content)

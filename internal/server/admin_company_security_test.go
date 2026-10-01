@@ -59,6 +59,9 @@ type mockCompanySecRows struct {
 }
 
 func (r *mockCompanySecRows) Columns() []string {
+	if strings.Contains(r.query, "einvoice_street") {
+		return []string{"einvoice_street", "einvoice_zip", "einvoice_town", "einvoice_country_code"}
+	}
 	if strings.Contains(r.query, "company") {
 		return []string{"name", "address", "tax_id", "tax_note", "tax_mode", "vat_rate", "iban", "payment_term_days", "dunning_fee_1", "dunning_fee_2", "dunning_grace_days", "skonto_pct", "skonto_days", "invoice_prefix", "invoice_start", "small_business_limit", "travel_flat", "travel_per_km", "mail_signature", "mail_cc"}
 	}
@@ -72,6 +75,10 @@ func (r *mockCompanySecRows) Next(dest []driver.Value) error {
 		return io.EOF
 	}
 	r.hasRead = true
+	if strings.Contains(r.query, "einvoice_street") {
+		dest[0], dest[1], dest[2], dest[3] = "", "", "", "AT"
+		return nil
+	}
 	if strings.Contains(r.query, "company") {
 		dest[0] = "Test Company"
 		dest[1] = "Test Address"

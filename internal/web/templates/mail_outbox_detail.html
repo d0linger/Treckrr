@@ -1,0 +1,64 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/admin/mail" aria-label="Zurück zum Mailausgang">{{template "ic-back"}}</a>
+		<div>
+			<h2 class="pagehead__t">E-Mail #{{.Mail.Item.ID}}</h2>
+			<p class="muted small">{{.Mail.Item.CreatedAt.Format "02.01.2006 15:04"}} · {{.Mail.Item.Kind}}</p>
+		</div>
+	</div>
+
+	<div class="card maildetail">
+		<div class="maildetail__head">
+			<div><span class="eyebrow">Betreff</span><strong>{{.Mail.Item.Subject}}</strong></div>
+			<span class="chip2 {{if eq .Mail.Item.Status "sent"}}chip2--paid{{else if or (eq .Mail.Item.Status "failed") (eq .Mail.Item.Status "ambiguous")}}chip2--owe{{else if eq .Mail.Item.Status "held"}}chip2--stale{{else}}chip2--prog{{end}}">{{.Mail.Item.StatusLabel}}</span>
+		</div>
+		<dl class="maildetail__facts">
+			<div><dt>Empfänger</dt><dd>{{.Mail.Item.Recipient}}</dd></div>
+			<div><dt>Zuordnung</dt><dd>{{with .Mail.Item.NeighborName}}{{.}}{{else}}—{{end}}{{if .Mail.Item.BillingYear}} · {{.Mail.Item.BillingYear}}{{end}}</dd></div>
+			<div><dt>Versuche</dt><dd>{{.Mail.Item.Attempts}}</dd></div>
+			<div><dt>Inhalt</dt><dd>{{if .Mail.Item.Redacted}}gemäß Aufbewahrung entfernt{{else}}gespeichert{{end}}</dd></div>
+		</dl>
+		{{with .Mail.Item.LastError}}<div class="flash flash--error"><strong>Letzter Fehler:</strong> {{.}}</div>{{end}}
+
+		{{if eq .Mail.Item.Status "failed"}}
+		<form method="post" action="/admin/mail/{{.Mail.Item.ID}}/retry">
+			<button class="btn btn--primary" type="submit" {{if .Mail.Item.Redacted}}disabled{{end}}>Erneut einplanen</button>
+			<p class="muted small">Der vorhandene Inhalt wird beim nächsten Mail-Wartungslauf erneut zugestellt.</p>
+		</form>
+		{{else if eq .Mail.Item.Status "ambiguous"}}
+		<div class="maildetail__danger">
+			<strong>Zustellung kann bereits erfolgt sein</strong>
+			<p>Ein erneuter Versand kann beim Empfänger ein Duplikat erzeugen. Vorher Postfach oder SMTP-Protokoll prüfen.</p>
+			<form method="post" action="/admin/mail/{{.Mail.Item.ID}}/force-resend" data-confirm-danger data-confirm="Zustellung ist unklar. Wirklich erneut senden und ein mögliches Duplikat akzeptieren?">
+				<button class="btn btn--danger" type="submit" {{if .Mail.Item.Redacted}}disabled{{end}}>Trotzdem erneut senden</button>
+			</form>
+		</div>
+		{{else if eq .Mail.Item.Status "held"}}
+		<div class="btnrow">
+			<form method="post" action="/admin/mail/{{.Mail.Item.ID}}/release"><button class="btn btn--primary" type="submit">Zur Zustellung freigeben</button></form>
+			<form method="post" action="/admin/mail/{{.Mail.Item.ID}}/discard" data-confirm-danger data-confirm="Diese E-Mail endgültig verwerfen und nicht senden?"><button class="btn btn--ghost" type="submit">Verwerfen</button></form>
+		</div>
+		{{end}}
+		{{if and (not .MailEnabled) (or (eq .Mail.Item.Status "pending") (eq .Mail.Item.Status "failed"))}}<p class="flash flash--error">SMTP ist nicht konfiguriert; eine eingeplante E-Mail bleibt wartend.</p>{{end}}
+	</div>
+
+	<div>
+		<h3 class="section-title">Versuchshistorie</h3>
+		<ol class="attempts">
+			{{range .Mail.Attempts}}
+			<li class="attempt">
+				<span class="attempt__rail" aria-hidden="true"></span>
+				<div class="attempt__body">
+					<div class="attempt__top"><strong>Versuch {{.AttemptNo}}</strong><span class="chip2 {{if eq .Outcome "sent"}}chip2--paid{{else if or (eq .Outcome "failed") (eq .Outcome "ambiguous")}}chip2--owe{{else}}chip2--prog{{end}}">{{.OutcomeLabel}}</span></div>
+					<time class="muted small" datetime="{{.StartedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.StartedAt.Format "02.01.2006 15:04:05"}}</time>
+					{{with .Detail}}<p class="attempt__detail">{{.}}</p>{{end}}
+				</div>
+			</li>
+			{{else}}
+			<li class="card muted">Für ältere Zustellversuche gibt es nur den zusammengefassten Zähler oben. Neue Versuche werden einzeln protokolliert.</li>
+			{{end}}
+		</ol>
+	</div>
+</section>
+{{end}}

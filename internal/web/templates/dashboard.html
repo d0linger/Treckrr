@@ -30,31 +30,26 @@
 		</div>
 	</div>
 
-	{{if or (and (not .Completed) .StaleCount) (and .Completed (or .OpenCount .CreditCount))}}
+	{{if .WorkItems}}
 	<div>
 		<h2 class="section-title">Zu erledigen</h2>
 		<div class="attn">
-			{{if and (not .Completed) .StaleCount}}
-			<a class="attn__row attn__row--warn" href="/years/{{.Year.ID}}/recalc">
-				<span class="attn__ic attn__ic--warn">{{template "ic-warn"}}</span>
-				<span class="attn__txt"><strong>{{.StaleCount}} Buchung(en)</strong> nach Grundlagen-Änderung neu zu berechnen</span>
+			{{range .WorkItems}}
+			<a class="attn__row attn__row--{{.Tone}}" href="{{.Href}}">
+				<span class="attn__ic attn__ic--{{.Tone}}" aria-hidden="true">{{.Icon}}</span>
+				<span class="attn__txt"><strong>{{.Title}}</strong>{{with .Detail}} · {{.}}{{end}}</span>
 				<span class="attn__go">›</span>
 			</a>
 			{{end}}
-			{{if and .Completed .OpenCount}}
-			<a class="attn__row attn__row--owe" href="#offene-zahlungen">
-				<span class="attn__ic attn__ic--owe">€</span>
-				<span class="attn__txt"><strong>{{.OpenCount}} Nachbar(n)</strong> mit offener Zahlung · {{money .OpenCost}}</span>
-				<span class="attn__go">›</span>
-			</a>
-			{{end}}
-			{{if and .Completed .CreditCount}}
-			<a class="attn__row attn__row--credit" href="#auszuzahlen">
-				<span class="attn__ic attn__ic--credit">€</span>
-				<span class="attn__txt"><strong>{{.CreditCount}} Nachbar(n)</strong> mit Guthaben – noch auszuzahlen · {{money .CreditCost}}</span>
-				<span class="attn__go">›</span>
-			</a>
-			{{end}}
+		</div>
+	</div>
+	{{else if or (and (not .Completed) .StaleCount) (and .Completed (or .OpenCount .CreditCount))}}
+	<div>
+		<h2 class="section-title">Zu erledigen</h2>
+		<div class="attn">
+			{{if and (not .Completed) .StaleCount}}<a class="attn__row attn__row--warn" href="/years/{{.Year.ID}}/recalc"><span class="attn__ic attn__ic--warn">!</span><span class="attn__txt"><strong>{{.StaleCount}} Buchung(en)</strong> nach Grundlagen-Änderung neu zu berechnen</span><span class="attn__go">›</span></a>{{end}}
+			{{if and .Completed .OpenCount}}<a class="attn__row attn__row--owe" href="#offene-zahlungen"><span class="attn__ic attn__ic--owe">€</span><span class="attn__txt"><strong>{{.OpenCount}} Nachbar(n)</strong> mit offener Zahlung · {{money .OpenCost}}</span><span class="attn__go">›</span></a>{{end}}
+			{{if and .Completed .CreditCount}}<a class="attn__row attn__row--credit" href="#auszuzahlen"><span class="attn__ic attn__ic--credit">€</span><span class="attn__txt"><strong>{{.CreditCount}} Nachbar(n)</strong> mit Guthaben – noch auszuzahlen · {{money .CreditCost}}</span><span class="attn__go">›</span></a>{{end}}
 		</div>
 	</div>
 	{{end}}
@@ -111,6 +106,7 @@
 				<span class="list__sub">{{.Entries}} Buchungen · {{num .Hours}} h</span>
 			</a>
 			<div class="list__value">{{money .Cost}}</div>
+			{{if .QualityIssues}}<a class="chip2 chip2--stale" href="/data-quality?year={{$.Year.ID}}" title="{{.QualityIssues}} Stammdaten-Hinweis(e)"><span class="chip2__g" aria-hidden="true">!</span>{{.QualityIssues}}</a>{{end}}
 			{{if $.Completed}}
 			{{if .Paid}}
 				<span class="paychip paychip--paid">{{template "ic-check"}} Bezahlt</span>

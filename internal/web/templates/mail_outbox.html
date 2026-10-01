@@ -1,0 +1,51 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/admin/users" aria-label="Zurück zur Verwaltung">{{template "ic-back"}}</a>
+		<div>
+			<h2 class="pagehead__t">Mailausgang</h2>
+			<p class="muted small">Zustellungen prüfen und nur bei eindeutigem Bedarf erneut einplanen.</p>
+		</div>
+	</div>
+
+	{{if not .MailEnabled}}<div class="flash flash--error" role="alert">SMTP ist nicht konfiguriert. Wartende E-Mails bleiben gespeichert, werden aber nicht zugestellt.</div>{{end}}
+
+	<div class="kpigrid">
+		<a class="kpi kpi--hours" href="/admin/mail?status=pending"><span class="kpi__label">Wartend</span><strong class="kpi__value">{{.Operations.Pending}}</strong></a>
+		<a class="kpi kpi--paid" href="/admin/mail?status=sent"><span class="kpi__label">Gesendet</span><strong class="kpi__value">{{.Operations.Sent}}</strong></a>
+		<a class="kpi kpi--open" href="/admin/mail?status=failed"><span class="kpi__label">Fehlgeschlagen</span><strong class="kpi__value">{{.Operations.Failed}}</strong></a>
+		<a class="kpi kpi--owe" href="/admin/mail?status=ambiguous"><span class="kpi__label">Unklar / angehalten</span><strong class="kpi__value">{{.Operations.Ambiguous}} / {{.Operations.Held}}</strong></a>
+	</div>
+
+	<nav class="mailfilters" aria-label="E-Mail-Status filtern">
+		<a class="chip2 {{if eq .Status ""}}chip2--paid{{else}}chip2--open{{end}}" href="/admin/mail">Alle</a>
+		<a class="chip2 {{if eq .Status "pending"}}chip2--prog{{else}}chip2--open{{end}}" href="/admin/mail?status=pending">Wartend</a>
+		<a class="chip2 {{if eq .Status "sending"}}chip2--prog{{else}}chip2--open{{end}}" href="/admin/mail?status=sending">Im Versand</a>
+		<a class="chip2 {{if eq .Status "sent"}}chip2--paid{{else}}chip2--open{{end}}" href="/admin/mail?status=sent">Gesendet</a>
+		<a class="chip2 {{if eq .Status "failed"}}chip2--owe{{else}}chip2--open{{end}}" href="/admin/mail?status=failed">Fehlgeschlagen</a>
+		<a class="chip2 {{if eq .Status "ambiguous"}}chip2--owe{{else}}chip2--open{{end}}" href="/admin/mail?status=ambiguous">Unklar</a>
+		<a class="chip2 {{if eq .Status "held"}}chip2--stale{{else}}chip2--open{{end}}" href="/admin/mail?status=held">Angehalten</a>
+	</nav>
+
+	<ol class="mailcards" aria-label="E-Mails im Ausgang">
+		{{range .Items}}
+		<li class="mailcard mailcard--{{.Status}}">
+			<a class="mailcard__main" href="/admin/mail/{{.ID}}">
+				<span class="mailcard__top"><strong>{{.Subject}}</strong><span class="chip2 {{if eq .Status "sent"}}chip2--paid{{else if or (eq .Status "failed") (eq .Status "ambiguous")}}chip2--owe{{else if eq .Status "held"}}chip2--stale{{else}}chip2--prog{{end}}"><span class="chip2__g" aria-hidden="true">{{if eq .Status "sent"}}✓{{else if or (eq .Status "failed") (eq .Status "ambiguous")}}!{{else if eq .Status "held"}}Ⅱ{{else}}•{{end}}</span>{{.StatusLabel}}</span></span>
+				<span class="mailcard__meta">{{.Recipient}} · {{.CreatedAt.Format "02.01.2006 15:04"}} · {{.Attempts}} Versuch(e){{with .NeighborName}} · {{.}}{{end}}{{if .BillingYear}} · {{.BillingYear}}{{end}}</span>
+				{{with .LastError}}<span class="mailcard__error">{{.}}</span>{{end}}
+			</a>
+			{{if eq .Status "held"}}
+			<div class="mailcard__actions">
+				<form method="post" action="/admin/mail/{{.ID}}/release"><button class="btn btn--primary btn--sm" type="submit">Freigeben</button></form>
+				<form method="post" action="/admin/mail/{{.ID}}/discard" data-confirm-danger data-confirm="Diese E-Mail endgültig verwerfen und nicht senden?"><button class="btn btn--ghost btn--sm" type="submit">Verwerfen</button></form>
+			</div>
+			{{end}}
+		</li>
+		{{else}}
+		<li class="card muted center">Keine E-Mails für diesen Status.</li>
+		{{end}}
+	</ol>
+	<p class="muted small">Es werden die neuesten 100 Einträge angezeigt. Unklare Zustellungen werden nie automatisch wiederholt.</p>
+</section>
+{{end}}

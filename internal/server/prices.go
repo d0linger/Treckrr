@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/shopspring/decimal"
 
@@ -39,12 +40,17 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type machineView struct {
-		Machine models.Machine
-		Rate    decimal.Decimal
+		Machine     models.Machine
+		Rate        decimal.Decimal
+		Proposal    decimal.Decimal
+		HasProposal bool
 	}
 	var machineViews []machineView
 	for _, m := range machines {
-		machineViews = append(machineViews, machineView{Machine: m, Rate: calc.MachineRate(m)})
+		proposal, hasProposal := m.CalculatedSelfCost()
+		machineViews = append(machineViews, machineView{
+			Machine: m, Rate: calc.MachineRate(m), Proposal: proposal, HasProposal: hasProposal,
+		})
 	}
 
 	cats, _ := s.store.MachineCategories(r.Context(), base.ID)
@@ -57,6 +63,86 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 	data["MachineViews"] = machineViews
 	data["Locked"] = base.Locked
 	s.render(w, r, "prices", data)
+}
+
+// handleMachineCostModel stores transparent calculation assumptions. The
+// current rate changes only when the operator explicitly selects "apply".
+func (s *Server) handleMachineCostModel(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden.")
+		return
+	}
+	baseID := s.baseIDFromForm(r)
+	back := pricesURL(baseID) + "#machine-" + itoa64(id)
+	if s.lockedRedirect(w, r, baseID, back) {
+		return
+	}
+	fields := []struct{ name, label string }{
+		{"acquisition_cost", "Anschaffungskosten"}, {"residual_value", "Restwert"},
+		{"annual_hours", "Jahresstunden"}, {"fuel_cost_per_h", "Treibstoff je Stunde"},
+		{"annual_maintenance", "Wartung"}, {"annual_insurance", "Versicherung"},
+		{"annual_other_cost", "sonstige Jahreskosten"},
+	}
+	values := make(map[string]decimal.Decimal, len(fields))
+	for _, field := range fields {
+		raw := strings.TrimSpace(r.FormValue(field.name))
+		if s.tooLong(w, r, field.label, raw, maxDecimalLen) {
+			redirect(w, r, back)
+			return
+		}
+		if raw == "" {
+			values[field.name] = decimal.Zero
+			continue
+		}
+		value, ok := parseGermanDecimalOK(raw)
+		if !ok || value.IsNegative() {
+			s.setFlash(w, r, "error", field.label+" muss eine nichtnegative Zahl sein.")
+			redirect(w, r, back)
+			return
+		}
+		values[field.name] = value
+	}
+	years := formInt(r, "useful_years")
+	if years < 0 || years > 100 {
+		s.setFlash(w, r, "error", "Nutzungsdauer muss zwischen 0 und 100 Jahren liegen.")
+		redirect(w, r, back)
+		return
+	}
+	if values["residual_value"].GreaterThan(values["acquisition_cost"]) {
+		s.setFlash(w, r, "error", "Der Restwert darf die Anschaffungskosten nicht übersteigen.")
+		redirect(w, r, back)
+		return
+	}
+	machine := models.Machine{
+		ID: id, AcquisitionCost: values["acquisition_cost"], ResidualValue: values["residual_value"],
+		UsefulYears: years, AnnualHours: values["annual_hours"], FuelCostPerH: values["fuel_cost_per_h"],
+		AnnualMaintenance: values["annual_maintenance"], AnnualInsurance: values["annual_insurance"],
+		AnnualOtherCost: values["annual_other_cost"],
+	}
+	apply := r.FormValue("action") == "apply"
+	if apply {
+		if _, ok := machine.CalculatedSelfCost(); !ok {
+			s.setFlash(w, r, "error", "Für die Übernahme sind Nutzungsdauer und Jahresstunden größer 0 erforderlich.")
+			redirect(w, r, back)
+			return
+		}
+	}
+	if err := s.store.UpdateMachineCostModel(r.Context(), baseID, machine, apply); err != nil {
+		s.setFlash(w, r, "error", "Kostenmodell konnte nicht gespeichert werden.")
+	} else if apply {
+		proposal, _ := machine.CalculatedSelfCost()
+		s.audit(r, "apply_cost_model", "machine", id, "Selbstkosten "+proposal.StringFixed(2)+" €/h")
+		s.setFlash(w, r, "success", "Kostenmodell gespeichert und Vorschlag ausdrücklich übernommen.")
+	} else {
+		s.audit(r, "update_cost_model", "machine", id, "Annahmen gespeichert; aktiver Satz unverändert")
+		s.setFlash(w, r, "success", "Annahmen gespeichert. Der aktive Selbstkostensatz bleibt unverändert.")
+	}
+	redirect(w, r, back)
 }
 
 // lockedRedirect reports whether the base is locked; if so it flashes and

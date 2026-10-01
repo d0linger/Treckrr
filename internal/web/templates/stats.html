@@ -75,7 +75,7 @@
 	{{if .ByMachine}}
 	<div class="card">
 		<h2 class="section-title">Stunden je Maschine</h2>
-		<p class="muted small">Erfasste Einsatzstunden je Maschine. Geldbeträge darunter sind Schätzungen zu aktuellen Sätzen, keine historischen Buchungs- oder Rechnungsbeträge.</p>
+		<p class="muted small">Erfasste Einsatzstunden je Maschine. Die Kostenaufteilung darunter verwendet den bei der Buchung gespeicherten Komponentensatz.</p>
 		{{template "bar-chart" (dict "Rows" .ByMachine "Max" .ByMachineMax "Money" false)}}
 	</div>
 	{{end}}
@@ -83,14 +83,14 @@
 	{{if .MachineUsage}}
 	<div class="card">
 		<h2 class="section-title">Maschinen-Auslastung</h2>
-		<p class="muted small">Geschätzter Umsatzanteil und Deckungsbeitrag: erfasste Stunden × heutige Maschinen- bzw. Selbstkostensätze. Änderungen im Preisstamm verändern auch diese Auswertung alter Jahre. Historische Einzelsätze wurden nicht gespeichert. Deckungsbeiträge erscheinen nur bei hinterlegten Selbstkosten.</p>
+		<p class="muted small">Umsatzanteil und Deckungsbeitrag basieren auf den beim Speichern der Buchung eingefrorenen Maschinen- und Selbstkostensätzen. Deckungsbeiträge erscheinen nur bei hinterlegten Selbstkosten.{{if .HasMachineEstimate}} Mit „Altbestand geschätzt“ markierte Zeilen enthalten ältere Buchungen ohne Snapshot und verwenden dafür weiterhin den heutigen Katalogsatz.{{end}}</p>
 		<div class="tablewrap" role="region" aria-label="Maschinen-Auslastung" tabindex="0">
 			<table class="dtable">
-				<thead><tr><th>Maschine</th><th class="num">Stunden</th><th class="num">Aktueller Satz</th><th class="num">Umsatzanteil (geschätzt)</th>{{if .HasMachineMargin}}<th class="num">Selbstkosten (geschätzt)</th><th class="num">Deckungsbeitrag (geschätzt)</th>{{end}}</tr></thead>
+				<thead><tr><th>Maschine</th><th class="num">Stunden</th><th class="num">Ø gebuchter Satz</th><th class="num">Umsatzanteil</th>{{if .HasMachineMargin}}<th class="num">Selbstkosten</th><th class="num">Deckungsbeitrag</th>{{end}}</tr></thead>
 				<tbody>
 					{{range .MachineUsage}}
 					<tr>
-						<td>{{.Name}}</td>
+						<td>{{.Name}}{{if .Estimated}} <span class="badge">Altbestand geschätzt</span>{{end}}</td>
 						<td class="num">{{num .Hours}} h</td>
 						<td class="num">{{money .Rate}}/h</td>
 						<td class="num">{{money .Revenue}}</td>
