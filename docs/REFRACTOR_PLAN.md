@@ -4,7 +4,49 @@ Date: 2026-10-01
 
 Scope: current `dev` branch
 
-Status: diagnostic plan plus visual-only implementation; no billing, persistence, or workflow semantics changed
+Status: implementation in progress; safety-net and booking-core consolidation completed without schema changes
+
+## Implementation progress
+
+Completed on `dev` on 2026-10-01:
+
+- Added a PostgreSQL characterization test proving standard and quick entry
+  freeze the same rig identity, labels, hourly rate, and rounded cost.
+- Added typed equipment rate breakdowns while retaining the existing calculator
+  functions as compatibility entry points.
+- Added `internal/money` as the shared exact-decimal line-amount primitive and
+  migrated equivalent calculations across models, handlers, imports, person and
+  travel surcharges, entry groups, and recurring materialization.
+- Centralized catalog resolution and immutable equipment snapshot assembly for
+  standard and quick-entry workflows.
+- Replaced the booking parser's six positional return values with a typed draft
+  and introduced one application-layer create boundary over the existing atomic
+  `Entry`-group and `LedgerBooking` persistence adapters.
+- Protected explicitly agreed free-equipment rates from catalog recalculation.
+- Applied exact machine-hours storage validation consistently to V2, legacy/
+  offline, and quick-entry paths.
+- Stabilized the recurring schedule integration test across local and UTC time
+  zones by comparing PostgreSQL dates as calendar days.
+
+Deliberately unchanged:
+
+- No database migration, historical rewrite, table merge, route change, or URL
+  change was introduced.
+- Own work, incoming counterclaims, payments, recurring snapshots, and issued
+  invoice snapshots retain their separate persistence and locking semantics.
+- The unified booking form, quick entry, copy workflow, recurring bookings,
+  accounting CSV exports, PDF documents, and e-invoice output remain available.
+
+Deferred to later, separately reviewed slices:
+
+- Typed HTML/PDF statement view models and document assemblers.
+- Native XLSX output and a dedicated Maschinenring/steuer export profile.
+- Standalone named templates detached from a neighbor and schedule; current
+  quick entry, copy, and recurring rules already cover the existing workflows.
+- Diesel-price adjustments. This requires an effective-dated business rule and
+  immutable booking snapshots; a live external price must never rewrite history.
+- Removal of `Machine.HourlyRate`. Templates invoke it reflectively, so it must
+  remain a compatibility projection until machine template data is typed.
 
 ## Executive summary
 
