@@ -20,13 +20,16 @@
 		</div>
 		<div class="summary-card__meta">
 			<span>{{num .GrandHours}} h · Grundlage {{.Year.Base.Year}}</span>
-			<span class="btnrow">
+			<details class="summary-actions">
+				<summary>Auswertungen &amp; Daten</summary>
+				<span class="btnrow">
 				<a class="btn btn--ghost btn--sm" href="/buchungen?year={{.Year.ID}}">Buchungen &amp; Filter</a>
 				<a class="btn btn--ghost btn--sm" href="/stats?year={{.Year.ID}}">Statistik</a>
 				<a class="btn btn--ghost btn--sm" href="/stats/all">Alle Jahre</a>
 				<a class="btn btn--ghost btn--sm" href="/export/year/{{.Year.ID}}">CSV Export</a>
 				{{if not .Completed}}<a class="btn btn--ghost btn--sm" href="/entries/import?year={{.Year.ID}}">Import</a>{{end}}
-			</span>
+				</span>
+			</details>
 		</div>
 	</div>
 
@@ -56,6 +59,7 @@
 
 	<div class="card statusrow">
 		<div class="statusrow__info">
+			<span class="statusrow__label">Jahresablauf</span>
 			<span>Status:
 				{{if .Completed}}<span class="tag tag--done">Abgeschlossen</span>
 				{{else}}<span class="tag tag--progress">In Bearbeitung</span>{{end}}
@@ -68,6 +72,7 @@
 			</span>
 			{{end}}
 		</div>
+		<div class="statusrow__actions">
 		{{if .Completed}}
 		<form method="post" action="/years/{{.Year.ID}}/status"
 			data-confirm="Abrechnungsjahr {{.Year.Year}} wieder öffnen? Buchungen und Belege werden dadurch wieder änderbar."
@@ -81,6 +86,7 @@
 		<a class="btn btn--primary btn--sm" href="/years/{{.Year.ID}}/abschluss">Jahr abschließen …</a>
 		{{end}}
 		<a class="btn btn--ghost btn--sm" href="/years/{{.Year.ID}}/issue-all" title="Alle offenen Nachbarn auf einmal abrechnen">Sammel-Festschreibung</a>
+		</div>
 	</div>
 
 	{{/* Targets of the "Zu erledigen" rows: jumping here rings every tile of
@@ -117,8 +123,9 @@
 					data-confirm="Restbetrag ({{money .Remaining}}) als bezahlt verbuchen?">
 					<input type="hidden" name="year_id" value="{{$.Year.ID}}">
 					<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
-					<button class="paychip paychip--open" type="submit" title="Restbetrag als bezahlt verbuchen">
-						Offen · {{money .Remaining}}
+					<button class="paychip paychip--open paychip--action" type="submit" title="Restbetrag als bezahlt verbuchen">
+						<span>Offen · {{money .Remaining}}</span>
+						<span class="paychip__action">Als bezahlt markieren</span>
 					</button>
 				</form>
 				{{end}}

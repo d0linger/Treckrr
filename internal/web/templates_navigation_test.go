@@ -48,6 +48,10 @@ func TestDashboardBookingNavigation(t *testing.T) {
 					t.Errorf("existing dashboard destination %q was removed", destination)
 				}
 			}
+			if !strings.Contains(main, `<details class="summary-actions">`) ||
+				!strings.Contains(main, "Auswertungen &amp; Daten") {
+				t.Error("secondary dashboard destinations are not grouped under the reporting disclosure")
+			}
 		})
 	}
 }
@@ -84,6 +88,11 @@ func TestDrawerBookingNavigation(t *testing.T) {
 			if len(links) != 1 {
 				t.Fatalf("drawer booking links = %d, want 1", len(links))
 			}
+			for _, label := range []string{"Kernablauf", "Jahre &amp; Abschluss", "Nachbarn &amp; Buchungen", "Grundlagen", "Weitere Funktionen"} {
+				if !strings.Contains(page, label) {
+					t.Errorf("drawer missing consolidated navigation label %q", label)
+				}
+			}
 			link := links[0]
 			if !strings.Contains(link, `href="`+tc.href+`"`) || !strings.Contains(link, "Buchungen &amp; Filter</a>") {
 				t.Errorf("booking link must retain year and consistent label: %s", link)
@@ -91,6 +100,13 @@ func TestDrawerBookingNavigation(t *testing.T) {
 			wantActive := tc.active == "entries"
 			if strings.Contains(link, `aria-current="page"`) != wantActive || strings.Contains(link, "is-active") != wantActive {
 				t.Errorf("booking active state does not match current page %q", tc.active)
+			}
+			advanced := regexp.MustCompile(`(?s)<details class="drawer__group"([^>]*)>.*?Buchungen &amp; Filter</a>`).FindStringSubmatch(page)
+			if len(advanced) != 2 {
+				t.Fatal("booking navigation is not inside the advanced-function disclosure")
+			}
+			if strings.Contains(advanced[1], "open") != wantActive {
+				t.Errorf("advanced-function disclosure open state does not match current page %q", tc.active)
 			}
 		})
 	}

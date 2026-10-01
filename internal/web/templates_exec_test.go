@@ -802,4 +802,7 @@ func TestDashboardDueRowsTargetMatchingTiles(t *testing.T) {
 	if n := strings.Count(page, `data-due="credit"`); n != 1 {
 		t.Errorf(`data-due="credit" tiles = %d, want 1`, n)
 	}
+	if !strings.Contains(page, "Als bezahlt markieren") {
+		t.Error("completed-year open balance lacks the explicit mark-paid action label")
+	}
 }

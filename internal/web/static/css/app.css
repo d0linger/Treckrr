@@ -520,9 +520,24 @@ a.opsbar__item:hover { background: color-mix(in srgb, #fff 10%, transparent); }
 .drawer__id { display: flex; flex-direction: column; gap: .05rem; min-width: 0; }
 .drawer__user { font-weight: 700; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .drawer__role { font-size: .85rem; }
-.drawer__nav { display: flex; flex-direction: column; padding: .5rem; gap: .1rem; }
+.drawer__nav { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; padding: .5rem .5rem max(.5rem, env(safe-area-inset-bottom)); gap: .1rem; overflow-y: auto; overscroll-behavior: contain; }
 .drawer__label { margin: .85rem .7rem .25rem; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
 .drawer__label:first-child { margin-top: .25rem; }
+.drawer__group { margin: .35rem 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.drawer__group-toggle {
+	display: grid; grid-template-columns: 1.4rem minmax(0, 1fr) 1rem; align-items: center; gap: .8rem;
+	min-height: var(--tap); padding: .7rem .85rem; border-radius: 10px;
+	font-family: var(--font-mono); font-size: .85rem; font-weight: 700; color: var(--text); cursor: pointer;
+	list-style: none;
+}
+.drawer__group-toggle::-webkit-details-marker { display: none; }
+.drawer__group-toggle:hover { background: var(--surface-2); }
+.drawer__group-toggle small { display: block; margin-top: .12rem; font-family: var(--font-body); font-size: .72rem; font-weight: 500; color: var(--muted); }
+.drawer__chev { width: 1rem; height: 1rem; color: var(--muted); transition: transform .15s ease; }
+.drawer__group[open] .drawer__chev { transform: rotate(90deg); }
+.drawer__group-items { display: grid; gap: .1rem; padding: 0 0 .35rem 1rem; }
+.drawer__group-items .drawer__item { font-size: .8rem; }
+.drawer__group--admin { margin-top: .15rem; }
 .drawer__sep { height: 1px; background: var(--border); margin: .3rem .4rem; }
 .drawer__logout { margin: 0; }
 .drawer__item {
@@ -596,8 +611,19 @@ a.opsbar__item:hover { background: color-mix(in srgb, #fff 10%, transparent); }
 	.summary-card__meta { align-items: flex-end; text-align: right; }
 }
 /* Keep the Statistik / CSV-Export buttons on one line, sized to their text. */
-.summary-card__meta .btnrow { display: flex; flex-wrap: wrap; gap: .4rem; }
+.summary-card__meta .btnrow { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .45rem; }
 .summary-card__meta .btnrow .btn { flex: 0 0 auto; }
+.summary-actions { width: 100%; }
+.summary-actions > summary {
+	display: inline-flex; align-items: center; gap: .45rem; min-height: 36px; padding: .35rem .7rem;
+	border: 1px solid rgba(255, 255, 255, .5); border-radius: 8px; color: #fff;
+	font-family: var(--font-display); font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+	cursor: pointer; list-style: none;
+}
+.summary-actions > summary::-webkit-details-marker { display: none; }
+.summary-actions > summary::after { content: "+"; font-size: 1rem; line-height: 1; }
+.summary-actions[open] > summary::after { content: "−"; }
+.summary-actions > summary:hover { background: rgba(255, 255, 255, .1); }
 
 /* ---- Lists ------------------------------------------------------------ */
 .list { display: flex; flex-direction: column; gap: .6rem; }
@@ -933,13 +959,13 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 @media (prefers-reduced-motion: reduce) { .modal[open] { animation: none; } }
 
 /* ---- Status / payment tags ------------------------------------------- */
-.tag { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; font-weight: 700;
-	border-radius: 999px; padding: .12rem .55rem; white-space: nowrap; }
-.tag--progress { background: color-mix(in srgb, #d89b00 20%, transparent); color: var(--accent-text); }
-.tag--done { background: var(--primary-tint); color: var(--primary-strong); }
-.tag--paid { background: var(--primary-tint); color: var(--primary-strong); }
-.tag--open { background: var(--danger-tint); color: var(--danger-text); }
-.tag--credit { background: color-mix(in srgb, var(--owe) 16%, transparent); color: var(--owe-text); }
+.tag { display: inline-flex; align-items: center; gap: .3rem; font-family: var(--font-mono); font-size: .68rem; font-weight: 700;
+	letter-spacing: .04em; text-transform: uppercase; border: 1px solid transparent;
+	border-radius: 999px; padding: .16rem .55rem; white-space: nowrap; }
+.tag--progress { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.tag--done, .tag--paid { background: var(--primary-tint); color: var(--primary-strong); border-color: color-mix(in srgb, var(--primary) 30%, transparent); }
+.tag--open { background: var(--danger-tint); color: var(--danger-text); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+.tag--credit { background: color-mix(in srgb, var(--owe) 16%, transparent); color: var(--owe-text); border-color: color-mix(in srgb, var(--owe) 30%, transparent); }
 
 /* ---- Flash ------------------------------------------------------------ */
 .flash { padding: .7rem 1rem; border-radius: var(--radius-sm); font-size: .9rem; font-weight: 500; }
@@ -1077,6 +1103,8 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .statusrow { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
 .statusrow--warn { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .statusrow__info { display: flex; flex-direction: column; gap: .25rem; }
+.statusrow__label { font-family: var(--font-mono); font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.statusrow__actions { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; flex-wrap: wrap; margin-left: auto; }
 .statusrow form { margin: 0; }
 .paysummary { display: flex; gap: .4rem; flex-wrap: wrap; }
 .secretkey { display: block; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -1111,6 +1139,11 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 /* Only the CLICKABLE toggle keeps the 44-px tap target; the read-only status
    display is a compact chip like every other badge. */
 button.paychip { min-height: var(--tap); padding: .35rem .8rem; }
+.paychip--action { border-radius: 8px; flex-direction: column; align-items: flex-start; gap: .1rem; text-align: left; }
+.paychip--action::before { display: none; }
+.paychip--action > span:first-child { display: inline-flex; align-items: center; gap: .4rem; }
+.paychip--action > span:first-child::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.paychip__action { font-family: var(--font-body); font-size: .72rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
 .paychip--paid { background: var(--primary-tint); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 30%, transparent); }
 .paychip--open { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
 .paychip--open::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
@@ -2520,6 +2553,9 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 	.booking-preview__line, .booking-preview__total, .bcard__line { flex-wrap: wrap; gap: .25rem; }
 	.beleg__calc { margin-left: 0; }
 	.beleg__calc-body > div { flex-wrap: wrap; }
+	.statusrow__actions, .statusrow__actions .btn, .statusrow__actions form { width: 100%; }
+	.summary-actions > summary { width: 100%; justify-content: space-between; min-height: var(--tap); }
+	[data-nb-item] .paytoggle, [data-nb-item] .paychip--action { width: 100%; }
 }
 @media (max-width: 720px) { .rollgrid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 560px) { .savedviews__save { grid-template-columns: minmax(0, 1fr); } }
