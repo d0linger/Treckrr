@@ -3,6 +3,7 @@ package einvoice
 import (
 	"encoding/xml"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -47,10 +48,14 @@ func TestRenderEbInterface(t *testing.T) {
 			t.Errorf("generated XML missing %q", want)
 		}
 	}
-	if path := os.Getenv("EBINTERFACE_TEST_OUTPUT"); path != "" {
+	// The environment variable is an opt-in only; its value never controls the
+	// destination. Test artifacts stay inside testing's managed directory.
+	if os.Getenv("EBINTERFACE_TEST_OUTPUT") != "" {
+		path := filepath.Join(t.ArtifactDir(), "ebinterface.xml")
 		if err := os.WriteFile(path, b, 0o600); err != nil {
 			t.Fatal(err)
 		}
+		t.Logf("ebInterface artifact: %s", path)
 	}
 }
 

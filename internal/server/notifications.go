@@ -69,7 +69,9 @@ func (s *Server) handleNotificationOpen(w http.ResponseWriter, r *http.Request) 
 		s.serverError(w, "notifications: open", err)
 		return
 	}
-	if !strings.HasPrefix(href, "/") || strings.HasPrefix(href, "//") || strings.Contains(href, `\`) {
+	if len(href) == 0 || href[0] != '/' ||
+		(len(href) > 1 && (href[1] == '/' || href[1] == '\\')) ||
+		strings.Contains(href[1:], `\`) || hasControlChar(href) {
 		s.serverError(w, "notifications: invalid stored target", fmt.Errorf("notification %d has unsafe target", id))
 		return
 	}

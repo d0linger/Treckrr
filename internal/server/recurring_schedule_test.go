@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -14,21 +15,21 @@ func TestOptionalRecurringEnd(t *testing.T) {
 	for _, tc := range []struct {
 		name, value string
 		wantNil     bool
-		wantErr     string
+		wantErr     error
 	}{
 		{name: "unbounded", wantNil: true},
 		{name: "inclusive", value: "2026-10-01"},
-		{name: "malformed", value: "01.10.2026", wantErr: "gültiges Enddatum"},
-		{name: "before next", value: "2026-09-30", wantErr: "nicht vor"},
+		{name: "malformed", value: "01.10.2026", wantErr: errInvalidRecurringEnd},
+		{name: "before next", value: "2026-09-30", wantErr: errRecurringEndBeforeRun},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest("POST", "/recurring/1/update", strings.NewReader(url.Values{"ends_on": {tc.value}}.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			_ = req.ParseForm()
 			got, err := optionalRecurringEnd(req, next)
-			if tc.wantErr != "" {
-				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
-					t.Fatalf("error = %v, want %q", err, tc.wantErr)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("error = %v, want %v", err, tc.wantErr)
 				}
 				return
 			}

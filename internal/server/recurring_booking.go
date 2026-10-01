@@ -70,7 +70,7 @@ func (s *Server) handleLedgerRecurringCreate(w http.ResponseWriter, r *http.Requ
 	}
 	endsOn, err := optionalRecurringEnd(r, start)
 	if err != nil {
-		s.setFlash(w, r, "error", err.Error())
+		s.setFlash(w, r, "error", recurringEndErrorMessage(err))
 		redirect(w, r, "/recurring")
 		return
 	}

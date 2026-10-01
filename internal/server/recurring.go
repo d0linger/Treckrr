@@ -9,6 +9,11 @@ import (
 	"github.com/d0linger/treckrr/internal/store"
 )
 
+var (
+	errInvalidRecurringEnd   = errors.New("invalid recurring end date")
+	errRecurringEndBeforeRun = errors.New("recurring end date before next run")
+)
+
 // handleRecurringList shows all recurring-booking rules.
 func (s *Server) handleRecurringList(w http.ResponseWriter, r *http.Request) {
 	rules, err := s.store.ListRecurring(r.Context())
@@ -75,7 +80,7 @@ func (s *Server) handleRecurringCreate(w http.ResponseWriter, r *http.Request) {
 	start := recurringStartDate(trimmed(r, "next_run"), time.Now())
 	endsOn, perr := optionalRecurringEnd(r, start)
 	if perr != nil {
-		s.setFlash(w, r, "error", perr.Error())
+		s.setFlash(w, r, "error", recurringEndErrorMessage(perr))
 		redirect(w, r, "/recurring")
 		return
 	}
@@ -212,7 +217,7 @@ func (s *Server) handleRecurringUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	endsOn, perr := optionalRecurringEnd(r, next)
 	if perr != nil {
-		s.setFlash(w, r, "error", perr.Error())
+		s.setFlash(w, r, "error", recurringEndErrorMessage(perr))
 		redirect(w, r, "/recurring")
 		return
 	}
@@ -275,12 +280,24 @@ func optionalRecurringEnd(r *http.Request, next time.Time) (*time.Time, error) {
 	}
 	end, err := time.Parse("2006-01-02", raw)
 	if err != nil {
-		return nil, errors.New("Bitte ein gültiges Enddatum angeben")
+		return nil, errInvalidRecurringEnd
 	}
 	if end.Before(next) {
-		return nil, errors.New("Das Enddatum darf nicht vor dem nächsten Lauf liegen")
+		return nil, errRecurringEndBeforeRun
 	}
 	return &end, nil
+}
+
+// recurringEndErrorMessage translates internal validation errors for the UI.
+func recurringEndErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, errInvalidRecurringEnd):
+		return "Bitte ein gültiges Enddatum angeben."
+	case errors.Is(err, errRecurringEndBeforeRun):
+		return "Das Enddatum darf nicht vor dem nächsten Lauf liegen."
+	default:
+		return "Das Enddatum ist ungültig."
+	}
 }
 
 // handleRecurringRunNow books one extra occurrence for today (Ausbaukarte 68).

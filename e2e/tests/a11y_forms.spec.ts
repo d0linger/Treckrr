@@ -111,12 +111,12 @@ test("invalid fields open closed disclosures and receive keyboard focus", async 
   await expect(page).toHaveURL(/\/admin\/company$/);
 });
 
-/** Round-trips all twenty settings through the real CSRF-protected save with details collapsed. */
+/** Round-trips all current settings through the real CSRF-protected save with details collapsed. */
 test("collapsed company settings retain every field through an actual save", async ({ page }) => {
   await page.goto("/admin/company");
   const form = page.locator('form[action="/admin/company"]');
   const before = await form.evaluate(el => Array.from(new FormData(el as HTMLFormElement).entries()).filter(([key]) => !key.includes("csrf")).sort());
-  expect(before).toHaveLength(20);
+  expect(before).toHaveLength(24);
   const saved = page.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/admin/company"));
   await form.getByRole("button", { name: "Speichern", exact: true }).click();
   expect((await saved).status()).toBe(303);

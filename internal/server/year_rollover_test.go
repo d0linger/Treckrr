@@ -12,7 +12,7 @@ func TestRecurringRuleStatusCountsIgnoresInactiveErrors(t *testing.T) {
 	active, blocked := recurringRuleStatusCounts([]models.RecurringEntry{
 		{Active: true},
 		{Active: true, LastError: "wartet"},
-		{Active: false, LastError: "historisch"},
+		{Active: false, LastError: "historic error"},
 	})
 	if active != 2 || blocked != 1 {
 		t.Fatalf("counts = active %d, blocked %d; want 2, 1", active, blocked)
