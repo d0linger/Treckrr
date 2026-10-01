@@ -3,7 +3,9 @@
 package server
 
 import (
+	"html"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -69,5 +71,56 @@ func TestEquipmentPricingConsistentAcrossEntryWorkflows(t *testing.T) {
 	if standard.GespannID == nil || quick.GespannID == nil ||
 		*standard.GespannID != e.gespannID || *quick.GespannID != e.gespannID {
 		t.Fatalf("fixed rig identity not preserved: standard=%v quick=%v", standard.GespannID, quick.GespannID)
+	}
+}
+
+// TestCatalogHoursPrecisionConsistentAcrossEntryWorkflows ensures all catalog-
+// backed form adapters reject hours PostgreSQL cannot store exactly. Otherwise
+// the database could round hours independently from the already-calculated cost.
+func TestCatalogHoursPrecisionConsistentAcrossEntryWorkflows(t *testing.T) {
+	e := newItEnv(t)
+	base := url.Values{
+		"year_id":     {itoa64(e.yearID64)},
+		"neighbor_id": {itoa64(e.neighborID)},
+		"entry_date":  {"2026-09-23"},
+		"gespann_id":  {itoa64(e.gespannID)},
+		"hours":       {"1.2345"},
+	}
+
+	legacyBody := html.UnescapeString(e.post("/entries", base))
+	if !strings.Contains(legacyBody, "höchstens drei Nachkommastellen") {
+		t.Fatalf("legacy form did not explain the precision rejection")
+	}
+
+	v2 := url.Values{}
+	for key, values := range base {
+		v2[key] = append([]string(nil), values...)
+	}
+	v2.Set("booking_form_version", "2")
+	v2.Set("booking_kind", "equipment")
+	v2.Set("booking_direction", "out")
+	v2.Set("mode", "gespann")
+	v2Body := html.UnescapeString(e.post("/entries", v2))
+	if !strings.Contains(v2Body, "höchstens drei Nachkommastellen") {
+		t.Fatalf("unified form did not explain the precision rejection")
+	}
+
+	quickBody := html.UnescapeString(e.post("/entries/quick", url.Values{
+		"year_id":     {itoa64(e.yearID64)},
+		"neighbor_id": {itoa64(e.neighborID)},
+		"q_date":      {"2026-09-23"},
+		"q_gespann":   {itoa64(e.gespannID)},
+		"q_hours":     {"1.2345"},
+	}))
+	if !strings.Contains(quickBody, "höchstens drei Nachkommastellen") {
+		t.Fatalf("quick entry did not explain the precision rejection")
+	}
+
+	entries, err := e.st.ListEntries(e.ctx, e.neighborID, e.yearID64)
+	if err != nil {
+		t.Fatalf("list entries: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("unrepresentable hours created %d entries", len(entries))
 	}
 }

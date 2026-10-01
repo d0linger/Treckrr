@@ -808,6 +808,9 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	if !hours.IsPositive() {
 		return nil, nil, "Stunden müssen größer als 0 sein.", nil
 	}
+	if !store.MachineHoursRepresentable(hours) {
+		return nil, nil, "Maschinenstunden aus dem gepflegten Pool erlauben höchstens drei Nachkommastellen.", nil
+	}
 	if dateErr != nil {
 		return nil, nil, invalidDate, nil
 	}
@@ -1677,6 +1680,8 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 			// silently dropping it reported "N Buchungen gespeichert" while a
 			// day of work vanished. Count it and say so.
 			row.status, row.message = quickInvalid, "Gespann und gültige Stunden erforderlich."
+		case !store.MachineHoursRepresentable(row.hours):
+			row.status, row.message = quickInvalid, "Maschinenstunden erlauben höchstens drei Nachkommastellen."
 		case err != nil:
 			// A replay may run days later: never book "today" instead.
 			row.status, row.message = quickInvalid, "Bitte ein gültiges Datum angeben."
