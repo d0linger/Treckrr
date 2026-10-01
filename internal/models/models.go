@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+
+	"github.com/d0linger/treckrr/internal/money"
 )
 
 // Roles control what a user may do.
@@ -315,7 +317,7 @@ type Machine struct {
 }
 
 // HourlyRate returns the machine's contribution to a Gespann's hourly rate.
-func (m Machine) HourlyRate() decimal.Decimal { return m.WorkingWidth.Mul(m.CostPerAB).Round(2) }
+func (m Machine) HourlyRate() decimal.Decimal { return money.Amount(m.WorkingWidth, m.CostPerAB) }
 
 // CalculatedSelfCost returns the transparent proposal from the stored
 // assumptions. It never changes SelfCostPerH; callers must apply it explicitly.

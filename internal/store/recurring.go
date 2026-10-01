@@ -11,6 +11,7 @@ import (
 
 	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 )
 
 // ErrSourceEntryVoided reports that the booking a series was to be created from
@@ -486,7 +487,7 @@ func companionEntry(c *models.RecurCompanion, e *models.Entry) *models.Entry {
 		TaskLabel: "Mannstunden " + c.Name,
 		Unit:      models.UnitMannstunde,
 		Quantity:  hours, UnitPrice: c.Rate,
-		Cost:     hours.Mul(c.Rate).Round(2),
+		Cost:     money.Amount(hours, c.Rate),
 		PersonID: &personID,
 		// Derived from the occurrence's own key, so a re-run no-ops on both
 		// halves exactly as it does for a replayed offline pair.

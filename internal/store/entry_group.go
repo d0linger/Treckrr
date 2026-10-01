@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 )
 
 // MaxEntryCompanions bounds one booking's additional people and transaction size.
@@ -67,7 +68,7 @@ func entryGroupCopies(e *models.Entry, machineIDs []int64, helpers []*models.Ent
 	people := make([]*models.Entry, len(helpers))
 	for i, helper := range helpers {
 		copy := *helper
-		copy.Cost = copy.Quantity.Mul(copy.UnitPrice).Round(2)
+		copy.Cost = money.Amount(copy.Quantity, copy.UnitPrice)
 		people[i] = &copy
 	}
 	if main.IdempotencyKey == "" {
@@ -283,7 +284,7 @@ func (s *Store) UpdateEntryGroup(ctx context.Context, e *models.Entry, machineID
 	for _, helper := range helpers {
 		person := *helper
 		person.LinkedEntryID = &e.ID
-		person.Cost = person.Quantity.Mul(person.UnitPrice).Round(2)
+		person.Cost = money.Amount(person.Quantity, person.UnitPrice)
 		if person.ID == 0 {
 			// Additions during edits are not offline creations. Retrying an edit
 			// replaces/voids its previous additions; it must never claim an old key.

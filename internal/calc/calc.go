@@ -16,6 +16,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 )
 
 // DaysBetween returns the whole-day difference from `from` to `to`, counted by
@@ -32,12 +33,12 @@ func DaysBetween(from, to time.Time) int {
 
 // TractorRate returns the hourly rate for a tractor at a given load level.
 func TractorRate(t models.Tractor, l models.LoadLevel) decimal.Decimal {
-	return t.PS.Mul(l.CostPerPS).Round(2)
+	return money.Amount(t.PS, l.CostPerPS)
 }
 
 // MachineRate returns the hourly rate contribution of a machine.
 func MachineRate(m models.Machine) decimal.Decimal {
-	return m.WorkingWidth.Mul(m.CostPerAB).Round(2)
+	return money.Amount(m.WorkingWidth, m.CostPerAB)
 }
 
 // RateBreakdown is the calculated hourly price of an equipment combination.
@@ -86,5 +87,5 @@ func GespannRate(t *models.Tractor, l *models.LoadLevel, machines []models.Machi
 
 // Cost multiplies hours by the hourly rate.
 func Cost(hours, hourlyRate decimal.Decimal) decimal.Decimal {
-	return hours.Mul(hourlyRate).Round(2)
+	return money.Amount(hours, hourlyRate)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 )
 
 // LedgerRecurringInput captures a source booking rather than accepting new prices.
@@ -217,7 +218,7 @@ func (s *Store) materializeRecurring(ctx context.Context, occurrence recurringOc
 		helper := &models.Entry{
 			NeighborID: entry.NeighborID, BillingYearID: entry.BillingYearID, Date: entry.Date,
 			Unit: models.UnitMannstunde, Quantity: hours, UnitPrice: companion.Rate,
-			Cost: hours.Mul(companion.Rate).Round(2), TaskLabel: "Mannstunden " + companion.Name,
+			Cost: money.Amount(hours, companion.Rate), TaskLabel: "Mannstunden " + companion.Name,
 			PersonName: companion.Name,
 		}
 		if companion.PersonID > 0 {

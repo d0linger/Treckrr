@@ -11,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -99,7 +100,7 @@ func (s *Server) bookingPeopleFromForm(r *http.Request, kind, _ string, previous
 			rate = defaultRate.String()
 		}
 		p.Rate, err = bookingDecimal(rate)
-		if err != nil || !p.Hours.Mul(p.Rate).Round(2).IsPositive() {
+		if err != nil || !money.Amount(p.Hours, p.Rate).IsPositive() {
 			return nil, "Bitte für jede Person einen positiven vereinbarten Stundensatz angeben.", nil
 		}
 		people = append(people, p)
@@ -128,7 +129,7 @@ func bookingEntryPerson(p models.BookingPerson, main *models.Entry) *models.Entr
 	return &models.Entry{
 		ID: p.ID, NeighborID: main.NeighborID, BillingYearID: main.BillingYearID,
 		Date: main.Date, TaskLabel: "Mannstunden " + p.Name, Unit: models.UnitMannstunde,
-		Quantity: p.Hours, UnitPrice: p.Rate, Cost: p.Hours.Mul(p.Rate).Round(2),
+		Quantity: p.Hours, UnitPrice: p.Rate, Cost: money.Amount(p.Hours, p.Rate),
 		PersonID: p.PersonID, PersonName: p.Name, Voided: p.Voided,
 		RequestFingerprint: main.RequestFingerprint,
 	}
@@ -212,7 +213,7 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 		}
 		b.Unit, b.Quantity, b.UnitPrice = ledger.Booking.Unit, ledger.Booking.Quantity, ledger.Booking.UnitPrice
 		main.Unit, main.Quantity, main.UnitPrice = b.Unit, b.Quantity, b.UnitPrice
-		main.Cost = b.Quantity.Mul(b.UnitPrice).Round(2)
+		main.Cost = money.Amount(b.Quantity, b.UnitPrice)
 	case "equipment":
 		mode := trimmed(r, "mode")
 		if mode != "gespann" && mode != "manual" && mode != "free" {
@@ -266,7 +267,7 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			}
 		}
 		main.Unit, main.Hours, main.Quantity, main.HourlyRate, main.UnitPrice = "h", hours, hours, rate, rate
-		main.Cost = hours.Mul(rate).Round(2)
+		main.Cost = money.Amount(hours, rate)
 		b.Mode, b.Unit, b.Quantity, b.UnitPrice = mode, "h", hours, rate
 	}
 	if !b.Total().IsPositive() || b.Total().GreaterThanOrEqual(decimal.NewFromInt(10_000_000_000)) {

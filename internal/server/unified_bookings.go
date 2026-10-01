@@ -14,6 +14,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -411,7 +412,7 @@ func (s *Server) resolveLaborFromForm(r *http.Request) (*models.Entry, string, e
 	if msg := lenError("Notiz", note, maxNoteLen); msg != "" {
 		return nil, msg, nil
 	}
-	cost := hours.Mul(rate).Round(2)
+	cost := money.Amount(hours, rate)
 	if !cost.IsPositive() || cost.GreaterThanOrEqual(decimal.NewFromInt(10_000_000_000)) {
 		return nil, "Der Gesamtbetrag liegt außerhalb des zulässigen Bereichs.", nil
 	}

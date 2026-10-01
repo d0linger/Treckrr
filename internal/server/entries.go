@@ -13,6 +13,7 @@ import (
 
 	"github.com/d0linger/treckrr/internal/calc"
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
 )
@@ -641,7 +642,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 				*field.target = value
 			}
 		}
-		personCost := personHours.Mul(personRate).Round(2)
+		personCost := money.Amount(personHours, personRate)
 		if !personCost.IsPositive() || personCost.GreaterThanOrEqual(decimal.NewFromInt(10_000_000_000)) {
 			reject(http.StatusUnprocessableEntity, "Der Mannstundenbetrag liegt außerhalb des zulässigen Bereichs.", neighborURL(neighborID, yearID))
 			return
@@ -1928,7 +1929,7 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 				NeighborID: neighborID, BillingYearID: year.ID,
 				Date: entry.Date, TaskLabel: "Mannstunden " + p.person.Name,
 				Unit: unitMannstunde, Quantity: row.hours, UnitPrice: p.person.HourlyRate,
-				Cost:     row.hours.Mul(p.person.HourlyRate).Round(2),
+				Cost:     money.Amount(row.hours, p.person.HourlyRate),
 				PersonID: &personID,
 				// Derived from the row's own key, so a replayed row no-ops on
 				// both halves (see models.CompanionKey).

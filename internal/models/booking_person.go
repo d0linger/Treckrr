@@ -1,6 +1,10 @@
 package models
 
-import "github.com/shopspring/decimal"
+import (
+	"github.com/shopspring/decimal"
+
+	"github.com/d0linger/treckrr/internal/money"
+)
 
 // BookingPerson freezes one person's attribution and independently agreed price.
 // ID identifies a component within its booking, never a master-data person.
@@ -18,5 +22,5 @@ func (p BookingPerson) Cost() decimal.Decimal {
 	if p.Voided {
 		return decimal.Zero
 	}
-	return p.Hours.Mul(p.Rate).Round(2)
+	return money.Amount(p.Hours, p.Rate)
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -141,7 +142,7 @@ func parseImportCSV(text string, members map[string]int64) ([]importRow, error) 
 		if row.Unit == "" {
 			row.Unit = "h"
 		}
-		row.Cost = row.Qty.Mul(row.Price).Round(2)
+		row.Cost = money.Amount(row.Qty, row.Price)
 		amountErr := importAmountError(qtyOK, priceOK, row)
 
 		switch {

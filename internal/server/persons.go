@@ -9,6 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -291,7 +292,7 @@ func (s *Server) handleMannstundenAdd(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, back)
 		return
 	}
-	cost := hours.Mul(rate).Round(2)
+	cost := money.Amount(hours, rate)
 	s.bookExtra(w, r, neighborID, yearID, &models.Entry{
 		Date:      parsePaidOn(r.FormValue("entry_date")),
 		TaskLabel: "Mannstunden " + person.Name,
@@ -366,7 +367,7 @@ func (s *Server) handleAnfahrtAdd(w http.ResponseWriter, r *http.Request) {
 			redirect(w, r, back)
 			return
 		}
-		cost := km.Mul(company.TravelPerKm).Round(2)
+		cost := money.Amount(km, company.TravelPerKm)
 		e = &models.Entry{
 			Date: date, TaskLabel: "Anfahrt", Unit: unitKm,
 			Quantity: km, UnitPrice: company.TravelPerKm, Cost: cost, Note: note,

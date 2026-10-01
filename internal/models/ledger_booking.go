@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/shopspring/decimal"
+
+	"github.com/d0linger/treckrr/internal/money"
 )
 
 // LedgerBooking preserves the entered service separately from its signed account
@@ -54,7 +56,7 @@ func (b LedgerBooking) ServiceCost() decimal.Decimal {
 	if b.Kind == "labor" {
 		return decimal.Zero
 	}
-	return b.Quantity.Mul(b.UnitPrice).Round(2)
+	return money.Amount(b.Quantity, b.UnitPrice)
 }
 
 // BookingPeople reads both current component lists and historical single-person
