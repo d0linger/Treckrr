@@ -205,7 +205,7 @@ func (s *Server) updateBookingEntryV2(w http.ResponseWriter, r *http.Request, ex
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	entry, ids, ledger, people, msg, err := s.parseBookingV2(r, previous, false)
+	draft, msg, err := s.parseBookingV2(r, previous, false)
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return
@@ -214,20 +214,20 @@ func (s *Server) updateBookingEntryV2(w http.ResponseWriter, r *http.Request, ex
 		s.rejectUnifiedBooking(w, r, msg)
 		return
 	}
-	if ledger != nil || entry == nil {
+	if draft.LedgerInput != nil || draft.Entry == nil {
 		s.rejectUnifiedBooking(w, r, "Diese Buchung ist keine eigene Leistung.")
 		return
 	}
-	entry.ID = existing.ID
-	helpers := bookingHelpers(entry, people)
+	draft.Entry.ID = existing.ID
+	helpers := bookingHelpers(draft.Entry, draft.BookedPeople)
 	if existing.LinkedEntryID != nil {
 		if len(helpers) > 0 {
 			s.rejectUnifiedBooking(w, r, "Weitere Personen bitte über die zugehörige Hauptbuchung hinzufügen.")
 			return
 		}
-		err = s.store.UpdateEntry(r.Context(), entry, ids)
+		err = s.store.UpdateEntry(r.Context(), draft.Entry, draft.MachineIDs)
 	} else {
-		err = s.store.UpdateEntryGroup(r.Context(), entry, ids, helpers)
+		err = s.store.UpdateEntryGroup(r.Context(), draft.Entry, draft.MachineIDs, helpers)
 	}
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
@@ -245,7 +245,7 @@ func (s *Server) updateBookingLedgerV2(w http.ResponseWriter, r *http.Request, e
 		s.rejectUnifiedBooking(w, r, "Art und Richtung bleiben beim Bearbeiten erhalten.")
 		return
 	}
-	_, _, ledger, _, msg, err := s.parseBookingV2(r, existing.Booking.BookingPeople(), false)
+	draft, msg, err := s.parseBookingV2(r, existing.Booking.BookingPeople(), false)
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return
@@ -254,12 +254,12 @@ func (s *Server) updateBookingLedgerV2(w http.ResponseWriter, r *http.Request, e
 		s.rejectUnifiedBooking(w, r, msg)
 		return
 	}
-	if ledger == nil {
+	if draft.LedgerInput == nil {
 		s.rejectUnifiedBooking(w, r, "Diese Buchung ist eine Verrechnungsposition.")
 		return
 	}
-	preserveLegacyEquipmentSnapshot(&ledger.Booking, existing.Booking)
-	if err := s.store.UpdateLedgerBooking(r.Context(), existing.ID, *ledger); err != nil {
+	preserveLegacyEquipmentSnapshot(&draft.LedgerInput.Booking, existing.Booking)
+	if err := s.store.UpdateLedgerBooking(r.Context(), existing.ID, *draft.LedgerInput); err != nil {
 		s.unifiedBookingError(w, r, err)
 		return
 	}

@@ -147,40 +147,51 @@ func entryBookingPerson(e models.Entry) models.BookingPerson {
 		Hours: e.Quantity, Rate: e.UnitPrice, Voided: e.Voided}
 }
 
+// bookingDraft is the resolved application-layer command produced by the shared
+// form. Exactly one of Entry and LedgerInput is set; persistence remains in the
+// handler so replay checks and transaction boundaries do not move during this
+// structural refactor.
+type bookingDraft struct {
+	Entry        *models.Entry
+	MachineIDs   []int64
+	LedgerInput  *store.LedgerBookingInput
+	BookedPeople []models.BookingPerson
+}
+
 // parseBookingV2 resolves shared controls for all types without conflating own
 // invoice-bearing entries with signed account counterclaims. creating marks a new
 // booking, which may not pick a deactivated tractor or machine by hand.
-func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson, creating bool) (*models.Entry, []int64, *store.LedgerBookingInput, []models.BookingPerson, string, error) {
+func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson, creating bool) (bookingDraft, string, error) {
 	kind, direction, msg := unifiedBookingSelection(r)
 	if msg != "" {
-		return nil, nil, nil, nil, msg, nil
+		return bookingDraft{}, msg, nil
 	}
 	date, err := time.Parse("2006-01-02", trimmed(r, "entry_date"))
 	if err != nil {
-		return nil, nil, nil, nil, "Bitte ein gültiges Datum angeben.", nil
+		return bookingDraft{}, "Bitte ein gültiges Datum angeben.", nil
 	}
 	task, note := trimmed(r, "task_label"), trimmed(r, "note")
 	if msg := lenError("Tätigkeit", task, maxNameLen); msg != "" {
-		return nil, nil, nil, nil, msg, nil
+		return bookingDraft{}, msg, nil
 	}
 	if msg := lenError("Notiz", note, maxNoteLen); msg != "" {
-		return nil, nil, nil, nil, msg, nil
+		return bookingDraft{}, msg, nil
 	}
 	people, msg, err := s.bookingPeopleFromForm(r, kind, direction, previous)
 	if msg != "" || err != nil {
-		return nil, nil, nil, nil, msg, err
+		return bookingDraft{}, msg, err
 	}
 	year, err := s.store.GetBillingYear(r.Context(), formInt64(r, "year_id"))
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, nil, nil, nil, "Unbekanntes Abrechnungsjahr.", nil
+		return bookingDraft{}, "Unbekanntes Abrechnungsjahr.", nil
 	}
 	if err != nil {
-		return nil, nil, nil, nil, "", err
+		return bookingDraft{}, "", err
 	}
 	main := &models.Entry{Date: date, TaskLabel: task, Note: note, NeighborID: formInt64(r, "neighbor_id"),
 		BillingYearID: year.ID, IdempotencyKey: trimmed(r, "idempotency_key"), RequestFingerprint: unifiedRequestFingerprint(r)}
 	if lenError("Buchungskennung", main.IdempotencyKey, maxNameLen) != "" {
-		return nil, nil, nil, nil, "Die Buchungskennung ist zu lang.", nil
+		return bookingDraft{}, "Die Buchungskennung ist zu lang.", nil
 	}
 	b := models.LedgerBooking{Version: 1, Kind: kind, TaskLabel: task, Note: note, People: people}
 	var machines []int64
@@ -197,7 +208,7 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 	case "quantity", "fixed":
 		ledger, message := ledgerBookingFromForm(r, kind, direction)
 		if message != "" {
-			return nil, nil, nil, nil, message, nil
+			return bookingDraft{}, message, nil
 		}
 		b.Unit, b.Quantity, b.UnitPrice = ledger.Booking.Unit, ledger.Booking.Quantity, ledger.Booking.UnitPrice
 		main.Unit, main.Quantity, main.UnitPrice = b.Unit, b.Quantity, b.UnitPrice
@@ -205,20 +216,20 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 	case "equipment":
 		mode := trimmed(r, "mode")
 		if mode != "gespann" && mode != "manual" && mode != "free" {
-			return nil, nil, nil, nil, "Bitte eine gültige Zusammenstellung wählen.", nil
+			return bookingDraft{}, "Bitte eine gültige Zusammenstellung wählen.", nil
 		}
 		hours, valid := positiveBookingDecimal(r, "hours")
 		if !valid || (mode != "free" && !store.MachineHoursRepresentable(hours)) {
-			return nil, nil, nil, nil, "Bitte gültige Stunden angeben. Maschinenstunden aus dem gepflegten Pool erlauben höchstens drei Nachkommastellen.", nil
+			return bookingDraft{}, "Bitte gültige Stunden angeben. Maschinenstunden aus dem gepflegten Pool erlauben höchstens drei Nachkommastellen.", nil
 		}
 		if mode != "free" {
 			resolved, ids, message, err := s.resolveEntryFromForm(r)
 			if message != "" || err != nil {
-				return nil, nil, nil, nil, message, err
+				return bookingDraft{}, message, err
 			}
 			requireActive := creating && resolved.GespannID == nil
 			if message, err := s.checkBookingCatalog(r, resolved, ids, year.Base.ID, requireActive); message != "" || err != nil {
-				return nil, nil, nil, nil, message, err
+				return bookingDraft{}, message, err
 			}
 			resolved.NeighborID, resolved.BillingYearID = main.NeighborID, main.BillingYearID
 			resolved.IdempotencyKey, resolved.RequestFingerprint = main.IdempotencyKey, main.RequestFingerprint
@@ -228,17 +239,17 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			if main.GespannID != nil {
 				g, err := s.store.GetGespann(r.Context(), *main.GespannID)
 				if errors.Is(err, store.ErrNotFound) {
-					return nil, nil, nil, nil, "Die gewählte Auswahl ist nicht mehr vorhanden. Bitte neu wählen.", nil
+					return bookingDraft{}, "Die gewählte Auswahl ist nicht mehr vorhanden. Bitte neu wählen.", nil
 				}
 				if err != nil {
-					return nil, nil, nil, nil, "", err
+					return bookingDraft{}, "", err
 				}
 				b.PartnerLabel = g.Name
 			}
 		} else {
 			b.PartnerLabel = trimmed(r, "partner_label")
 			if b.PartnerLabel == "" || lenError("Fahrzeug", b.PartnerLabel, maxNameLen) != "" {
-				return nil, nil, nil, nil, "Bitte das Fahrzeug oder Gespann mit höchstens 100 Zeichen beschreiben.", nil
+				return bookingDraft{}, "Bitte das Fahrzeug oder Gespann mit höchstens 100 Zeichen beschreiben.", nil
 			}
 			main.MachineLabels = b.PartnerLabel
 		}
@@ -251,7 +262,7 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			var valid bool
 			rate, valid = positiveBookingDecimal(r, "partner_rate")
 			if !valid {
-				return nil, nil, nil, nil, "Bitte den vereinbarten Maschinensatz angeben.", nil
+				return bookingDraft{}, "Bitte den vereinbarten Maschinensatz angeben.", nil
 			}
 		}
 		main.Unit, main.Hours, main.Quantity, main.HourlyRate, main.UnitPrice = "h", hours, hours, rate, rate
@@ -259,7 +270,7 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 		b.Mode, b.Unit, b.Quantity, b.UnitPrice = mode, "h", hours, rate
 	}
 	if !b.Total().IsPositive() || b.Total().GreaterThanOrEqual(decimal.NewFromInt(10_000_000_000)) {
-		return nil, nil, nil, nil, "Der Gesamtbetrag liegt außerhalb des zulässigen Bereichs.", nil
+		return bookingDraft{}, "Der Gesamtbetrag liegt außerhalb des zulässigen Bereichs.", nil
 	}
 	if direction == "in" || kind == "fixed" {
 		// Component IDs remain stable across edits; new rows get a monotonic local ID.
@@ -275,9 +286,9 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 		}
 		in := &store.LedgerBookingInput{YearID: year.ID, NeighborID: main.NeighborID, Date: date,
 			Incoming: direction == "in", Booking: b, IdempotencyKey: main.IdempotencyKey}
-		return nil, nil, in, people, "", nil
+		return bookingDraft{LedgerInput: in, BookedPeople: people}, "", nil
 	}
-	return main, machines, nil, people, "", nil
+	return bookingDraft{Entry: main, MachineIDs: machines, BookedPeople: people}, "", nil
 }
 
 // checkBookingCatalog keeps every catalog reference of a booking on the year's
@@ -360,7 +371,7 @@ func (s *Server) handleBookingCreateV2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	entry, ids, ledger, people, msg, err := s.parseBookingV2(r, nil, true)
+	draft, msg, err := s.parseBookingV2(r, nil, true)
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return
@@ -375,12 +386,12 @@ func (s *Server) handleBookingCreateV2(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var mainID int64
-	if ledger != nil {
-		mainID, err = s.store.CreateLedgerBooking(r.Context(), *ledger)
+	if draft.LedgerInput != nil {
+		mainID, err = s.store.CreateLedgerBooking(r.Context(), *draft.LedgerInput)
 	} else {
-		helpers := bookingHelpers(entry, people)
+		helpers := bookingHelpers(draft.Entry, draft.BookedPeople)
 		var helperIDs []int64
-		mainID, helperIDs, err = s.store.CreateEntryGroup(r.Context(), entry, ids, helpers)
+		mainID, helperIDs, err = s.store.CreateEntryGroup(r.Context(), draft.Entry, draft.MachineIDs, helpers)
 		if mainID == 0 {
 			for _, id := range helperIDs {
 				mainID = max(mainID, id)
