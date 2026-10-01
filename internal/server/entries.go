@@ -770,73 +770,39 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	if !ok {
 		return nil, nil, "Zu viele Maschinen auf einmal.", nil
 	}
-	var (
-		gespannID   *int64
-		tractorID   = formInt64Ptr(r, "tractor_id")
-		loadLevelID = formInt64Ptr(r, "load_level_id")
-		taskLabel   = trimmed(r, "task_label")
-	)
+	selection := equipmentSelection{
+		TractorID:   formInt64Ptr(r, "tractor_id"),
+		LoadLevelID: formInt64Ptr(r, "load_level_id"),
+		MachineIDs:  machineIDs,
+		TaskLabel:   trimmed(r, "task_label"),
+	}
 	if r.FormValue("mode") != "manual" {
 		if gid := formInt64(r, "gespann_id"); gid != 0 {
-			g, err := s.store.GetGespann(r.Context(), gid)
-			if errors.Is(err, store.ErrNotFound) {
-				return nil, nil, "Das gewählte Gespann ist nicht mehr vorhanden — bitte neu wählen.", nil
-			}
-			if err != nil {
-				return nil, nil, "", err
-			}
-			gespannID = &g.ID
-			tractorID = g.TractorID
-			loadLevelID = g.LoadLevelID
-			machineIDs = g.MachineIDs
-			if taskLabel == "" {
-				taskLabel = g.Name
-			}
+			selection.GespannID = &gid
 		} else {
-			tractorID, loadLevelID = nil, nil
+			selection.TractorID, selection.LoadLevelID = nil, nil
 		}
 	}
-	// The tractor is optional — a booking may be machines only, for work where the
-	// customer supplies the tractor — but the pair is all-or-nothing, because
-	// TractorRate needs both to produce a number.
-	if (tractorID == nil) != (loadLevelID == nil) {
-		return nil, nil, "Traktor und Belastungsstufe gehören zusammen — bitte beides wählen oder beides leer lassen.", nil
-	}
-	if tractorID == nil && len(machineIDs) == 0 {
-		return nil, nil, "Bitte Traktor und Belastungsstufe oder mindestens eine Maschine wählen.", nil
-	}
-	var tractor *models.Tractor
-	var load *models.LoadLevel
-	if tractorID != nil {
-		t, err := s.store.GetTractor(r.Context(), *tractorID)
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, nil, "Traktor nicht gefunden.", nil
-		}
-		if err != nil {
-			return nil, nil, "", err
-		}
-		l, err := s.store.GetLoadLevel(r.Context(), *loadLevelID)
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, nil, "Belastungsstufe nicht gefunden.", nil
-		}
-		if err != nil {
-			return nil, nil, "", err
-		}
-		tractor, load = t, l
-	}
-	machines, err := s.store.MachinesByIDs(r.Context(), machineIDs)
+	resolved, failure, err := s.resolveEquipment(r.Context(), selection)
 	if err != nil {
 		return nil, nil, "", err
 	}
-	// Every submitted machine id must resolve, tractor or not. The machines-only
-	// case priced at 0,00 € (reproduced: 3 h at 0,0000, "gespeichert"); WITH a
-	// tractor the silent drop was subtler and worse — the booking saved at the
-	// bare tractor rate, underbilling by the vanished machine's share without
-	// anyone noticing. A stale form after a machine was deleted is exactly when
-	// the user must be told, not accommodated (Ausbaukarte Nr. 61).
-	if len(machines) != len(machineIDs) {
+	switch failure {
+	case equipmentResolutionIncompletePair:
+		return nil, nil, "Traktor und Belastungsstufe gehören zusammen — bitte beides wählen oder beides leer lassen.", nil
+	case equipmentResolutionEmpty:
+		return nil, nil, "Bitte Traktor und Belastungsstufe oder mindestens eine Maschine wählen.", nil
+	case equipmentResolutionGespannMissing:
+		return nil, nil, "Das gewählte Gespann ist nicht mehr vorhanden — bitte neu wählen.", nil
+	case equipmentResolutionTractorMissing:
+		return nil, nil, "Traktor nicht gefunden.", nil
+	case equipmentResolutionLoadMissing:
+		return nil, nil, "Belastungsstufe nicht gefunden.", nil
+	case equipmentResolutionMachineMissing:
 		return nil, nil, "Die gewählten Maschinen sind nicht mehr verfügbar — bitte die Seite neu laden.", nil
 	}
+	entry, ids := resolved.entrySnapshot()
+	taskLabel := entry.TaskLabel
 	hours := formDecimal(r, "hours")
 	if !hours.IsPositive() {
 		return nil, nil, "Stunden müssen größer als 0 sein.", nil
@@ -851,30 +817,11 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	if msg := lenError("Notiz", note, maxNoteLen); msg != "" {
 		return nil, nil, msg, nil
 	}
-	rate := calc.GespannRate(tractor, load, machines)
-	names := make([]string, 0, len(machines))
-	ids := make([]int64, 0, len(machines))
-	for _, m := range machines {
-		names = append(names, m.Name)
-		ids = append(ids, m.ID)
-	}
-	entry := &models.Entry{
-		Date:          entryDate,
-		TaskLabel:     taskLabel,
-		GespannID:     gespannID,
-		MachineLabels: strings.Join(names, ", "),
-		Hours:         hours,
-		HourlyRate:    rate,
-		Cost:          calc.Cost(hours, rate),
-		Note:          note,
-	}
-	// Left nil/empty on a machines-only booking, which is what the templates and
-	// the recalculation branch on to tell the two shapes apart.
-	if tractor != nil && load != nil {
-		entry.TractorID, entry.LoadLevelID = &tractor.ID, &load.ID
-		entry.TractorLabel, entry.LoadLabel = tractor.Label(), load.Name
-	}
-	return entry, ids, "", nil
+	entry.Date = entryDate
+	entry.Hours = hours
+	entry.Cost = calc.Cost(hours, entry.HourlyRate)
+	entry.Note = note
+	return &entry, ids, "", nil
 }
 
 // entryUpdateDetail renders a per-field old→new summary of an edited booking so
@@ -2026,64 +1973,19 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 // error, so a replay retries instead of rejecting the rows for good.
 func (s *Server) buildGespannEntry(r *http.Request, gespannID int64) (*models.Entry, []int64, string, error) {
 	const gone = "Das gewählte Gespann ist nicht mehr vorhanden."
-	g, err := s.store.GetGespann(r.Context(), gespannID)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, nil, gone, nil
-	}
+	resolved, failure, err := s.resolveEquipment(r.Context(), equipmentSelection{GespannID: &gespannID})
 	if err != nil {
 		return nil, nil, "", err
 	}
-	// A machines-only rig is valid; a half-set tractor pair is not (see
-	// calc.GespannRate), and neither is a rig with nothing in it at all.
-	if (g.TractorID == nil) != (g.LoadLevelID == nil) || (g.TractorID == nil && len(g.MachineIDs) == 0) {
-		return nil, nil, "Das Gespann „" + g.Name + "“ ist unvollständig — bitte in den Gespannen ergänzen.", nil
-	}
-	var tractor *models.Tractor
-	var load *models.LoadLevel
-	if g.TractorID != nil {
-		tractor, err = s.store.GetTractor(r.Context(), *g.TractorID)
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, nil, gone, nil
-		}
-		if err != nil {
-			return nil, nil, "", err
-		}
-		load, err = s.store.GetLoadLevel(r.Context(), *g.LoadLevelID)
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, nil, gone, nil
-		}
-		if err != nil {
-			return nil, nil, "", err
-		}
-	}
-	machines, err := s.store.MachinesByIDs(r.Context(), g.MachineIDs)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	// See resolveEntryFromForm: every stored machine id must resolve, or the row
-	// is priced without the missing machine's share and quietly underbills.
-	if len(machines) != len(g.MachineIDs) {
+	switch failure {
+	case equipmentResolutionIncompletePair, equipmentResolutionEmpty:
+		return nil, nil, "Das Gespann „" + resolved.TaskLabel + "“ ist unvollständig — bitte in den Gespannen ergänzen.", nil
+	case equipmentResolutionGespannMissing, equipmentResolutionTractorMissing,
+		equipmentResolutionLoadMissing, equipmentResolutionMachineMissing:
 		return nil, nil, gone, nil
 	}
-	rate := calc.GespannRate(tractor, load, machines)
-	names := make([]string, 0, len(machines))
-	ids := make([]int64, 0, len(machines))
-	for _, m := range machines {
-		names = append(names, m.Name)
-		ids = append(ids, m.ID)
-	}
-	gid := g.ID
-	entry := &models.Entry{
-		TaskLabel:     g.Name,
-		GespannID:     &gid,
-		MachineLabels: strings.Join(names, ", "),
-		HourlyRate:    rate,
-	}
-	if tractor != nil && load != nil {
-		entry.TractorID, entry.LoadLevelID = &tractor.ID, &load.ID
-		entry.TractorLabel, entry.LoadLabel = tractor.Label(), load.Name
-	}
-	return entry, ids, "", nil
+	entry, ids := resolved.entrySnapshot()
+	return &entry, ids, "", nil
 }
 
 // handleEntryDelete removes a booking only while its year remains open.
