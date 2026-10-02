@@ -149,6 +149,8 @@ func (s *Server) registerCatalogRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /machines/{id}/book", s.auth(s.handleMachineBook))
 	mux.Handle("POST /prices/loadlevels", s.auth(s.handleLoadLevelSave))
 	mux.Handle("POST /prices/loadlevels/{id}/delete", s.auth(s.handleLoadLevelDelete))
+	mux.Handle("POST /prices/fuel-adjustments", s.auth(s.handleFuelAdjustmentSave))
+	mux.Handle("POST /prices/fuel-adjustments/{id}/delete", s.auth(s.handleFuelAdjustmentDelete))
 	mux.Handle("POST /prices/tractors", s.auth(s.handleTractorSave))
 	mux.Handle("POST /prices/tractors/{id}/toggle", s.auth(s.handleTractorToggle))
 	mux.Handle("POST /prices/tractors/{id}/delete", s.auth(s.handleTractorDelete))

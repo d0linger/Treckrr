@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -406,6 +407,7 @@ func (s *Server) handlePricingAPI(w http.ResponseWriter, r *http.Request) {
 	loads, _ := s.store.ListLoadLevels(r.Context(), id)
 	machines, _ := s.store.ListActiveMachines(r.Context(), id)
 	gespanne, _ := s.store.ListGespanne(r.Context(), id)
+	adjustments, _ := s.store.ListFuelAdjustments(r.Context(), id)
 
 	type apiTractor struct {
 		ID int64   `json:"id"`
@@ -425,11 +427,17 @@ func (s *Server) handlePricingAPI(w http.ResponseWriter, r *http.Request) {
 		Load     *int64  `json:"load"`
 		Machines []int64 `json:"machines"`
 	}
+	type apiAdjustment struct {
+		EffectiveFrom string  `json:"effective_from"`
+		Label         string  `json:"label"`
+		Amount        float64 `json:"amount"`
+	}
 	out := struct {
-		Tractors []apiTractor `json:"tractors"`
-		Loads    []apiLoad    `json:"loads"`
-		Machines []apiMachine `json:"machines"`
-		Gespanne []apiGespann `json:"gespanne"`
+		Tractors    []apiTractor    `json:"tractors"`
+		Loads       []apiLoad       `json:"loads"`
+		Machines    []apiMachine    `json:"machines"`
+		Gespanne    []apiGespann    `json:"gespanne"`
+		Adjustments []apiAdjustment `json:"adjustments"`
 	}{}
 	// The pricing API feeds a client-side preview only; float is fine here and
 	// keeps the JSON numeric for the JS. The authoritative cost is computed
@@ -446,6 +454,12 @@ func (s *Server) handlePricingAPI(w http.ResponseWriter, r *http.Request) {
 	for _, g := range gespanne {
 		out.Gespanne = append(out.Gespanne, apiGespann{
 			ID: g.ID, Tractor: g.TractorID, Load: g.LoadLevelID, Machines: g.MachineIDs,
+		})
+	}
+	for _, adjustment := range adjustments {
+		out.Adjustments = append(out.Adjustments, apiAdjustment{
+			EffectiveFrom: adjustment.EffectiveFrom.Format("2006-01-02"),
+			Label:         adjustment.Label, Amount: adjustment.AmountPerH.InexactFloat64(),
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -808,6 +822,9 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 		return nil, nil, msg, nil
 	}
 	entry.Date = entryDate
+	if err := s.applyFuelAdjustment(r.Context(), resolved.baseID(), entryDate, &entry); err != nil {
+		return nil, nil, "", err
+	}
 	entry.Hours = hours
 	entry.Cost = calc.Cost(hours, entry.HourlyRate)
 	entry.Note = note
@@ -1834,6 +1851,10 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 // a store failure stops the batch and is returned (rows already committed keep
 // their audit, which is written in their own transaction).
 func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neighborID int64, rows []*quickRow) (created, paired int, createErr error) {
+	adjustments, err := s.store.ListFuelAdjustments(r.Context(), year.Base.ID)
+	if err != nil {
+		return 0, 0, err
+	}
 	// The same rig repeats across the rows of one submit — that is what quick
 	// entry is FOR — so each distinct Gespann is resolved once (5 queries) and
 	// reused, instead of 5 queries per row (a 100-row submit was ~500 SELECTs).
@@ -1880,6 +1901,7 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 			continue
 		}
 		entry := rig.entry // copy of the resolved template
+		applyEffectiveFuelAdjustment(&entry, store.EffectiveFuelAdjustment(adjustments, row.date))
 		entry.Hours = row.hours
 		entry.Cost = calc.Cost(row.hours, entry.HourlyRate)
 		entry.Quantity, entry.UnitPrice = decimal.Decimal{}, decimal.Decimal{}
@@ -1961,6 +1983,33 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 		}
 	}
 	return created, paired, createErr
+}
+
+// applyFuelAdjustment selects and snapshots the version effective on the
+// booking date. No version is the historical zero-adjustment behavior.
+func (s *Server) applyFuelAdjustment(ctx context.Context, baseID int64, date time.Time, entry *models.Entry) error {
+	adjustment, err := s.store.FuelAdjustmentAt(ctx, baseID, date)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	applyEffectiveFuelAdjustment(entry, adjustment)
+	return nil
+}
+
+// applyEffectiveFuelAdjustment adds one non-cumulative version to a catalog
+// snapshot. A zero version explicitly switches the addition off.
+func applyEffectiveFuelAdjustment(entry *models.Entry, adjustment *models.FuelAdjustment) {
+	entry.FuelAdjustmentLabel = ""
+	entry.FuelAdjustmentPerH = decimal.Zero
+	if adjustment == nil || !adjustment.AmountPerH.IsPositive() {
+		return
+	}
+	entry.FuelAdjustmentLabel = adjustment.Label
+	entry.FuelAdjustmentPerH = adjustment.AmountPerH
+	entry.HourlyRate = entry.HourlyRate.Add(adjustment.AmountPerH).Round(2)
 }
 
 // buildGespannEntry resolves a fixed gespann into a snapshotted entry template

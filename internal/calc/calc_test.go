@@ -207,6 +207,31 @@ func TestNewRateBreakdownHalfPair(t *testing.T) {
 	}
 }
 
+// TestNewAdjustedRateBreakdown verifies that an effective adjustment is added
+// exactly once after the rounded catalog components.
+func TestNewAdjustedRateBreakdown(t *testing.T) {
+	tractor := models.Tractor{PS: decimal.RequireFromString("100")}
+	load := models.LoadLevel{CostPerPS: decimal.RequireFromString("0.3333")}
+	machines := []models.Machine{{
+		WorkingWidth: decimal.RequireFromString("3"),
+		CostPerAB:    decimal.RequireFromString("2.225"),
+	}}
+
+	got := NewAdjustedRateBreakdown(&tractor, &load, machines, decimal.RequireFromString("5.125"))
+	if !got.TractorRate.Equal(decimal.RequireFromString("33.33")) {
+		t.Fatalf("tractor rate = %s, want 33.33", got.TractorRate)
+	}
+	if !got.MachineRates[0].Equal(decimal.RequireFromString("6.68")) {
+		t.Fatalf("machine rate = %s, want 6.68", got.MachineRates[0])
+	}
+	if !got.Adjustment.Equal(decimal.RequireFromString("5.125")) {
+		t.Fatalf("adjustment = %s, want 5.125", got.Adjustment)
+	}
+	if !got.HourlyRate.Equal(decimal.RequireFromString("45.14")) {
+		t.Fatalf("hourly rate = %s, want 45.14", got.HourlyRate)
+	}
+}
+
 // A half-set tractor pair is not a machines-only rig. The rate function already
 // contributes nothing for one, but the callers used to hand it through as if the
 // tractor had been left out deliberately, so the rig list advertised the machine

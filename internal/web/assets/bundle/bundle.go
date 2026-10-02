@@ -57,7 +57,8 @@ func Generate(root string) error {
 		if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("read generated asset %s: %w", output, err)
 		}
-		if err := os.WriteFile(output, want, 0o644); err != nil {
+		// Generated CSS/JS are public web assets, not credentials or private data.
+		if err := os.WriteFile(output, want, 0o644); err != nil { //nolint:gosec
 			return fmt.Errorf("write generated asset %s: %w", output, err)
 		}
 	}

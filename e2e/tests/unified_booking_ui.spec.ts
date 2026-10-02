@@ -50,7 +50,7 @@ function fixture(): string {
 }
 
 /** Intercepts every request so GUI unit scenarios never reach a real app or database. */
-async function mockPage(page: Page, failedPricing = false) {
+async function mockPage(page: Page, failedPricing = false, adjustments: Array<{effective_from: string, label: string, amount: number}> = []) {
   page.on("pageerror", error => { throw error; });
   await page.route("**/*", route => {
     const pathname = new URL(route.request().url()).pathname;
@@ -62,6 +62,7 @@ async function mockPage(page: Page, failedPricing = false) {
       tractors: [{ id: 1, ps: 100 }], loads: [{ id: 1, cost: 0.36 }],
       machines: [{ id: 1, rate: 10 }, { id: 2, rate: 5 }],
       gespanne: [{ id: 1, tractor: 1, load: 1, machines: [1] }],
+	  adjustments,
     } });
     if (pathname === "/api/entries/precheck") return route.fulfill({ json: {} });
     return route.fulfill({ status: 404 });
@@ -150,6 +151,23 @@ test("both directions use the shared machine pool", async ({ page }) => {
   const box = await mobileTile.boundingBox();
   expect(box).not.toBeNull();
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+});
+
+/** Selects the latest non-cumulative adjustment by the booking's calendar date. */
+test("effective fuel adjustment is visible in the catalog preview", async ({ page }) => {
+  const form = await mockPage(page, false, [
+    { effective_from: "2026-01-01", label: "Dieselzuschlag", amount: 3 },
+    { effective_from: "2026-10-01", label: "Dieselzuschlag", amount: 0 },
+  ]);
+  await ownEquipment(form);
+  await expect(form.locator("[data-rate]")).toHaveText(/49,00/);
+  await expect(form.locator("[data-cost]")).toHaveText(/98,00/);
+  await expect(form.locator("[data-booking-preview]")).toContainText("inkl. Dieselzuschlag (+3,00 €/h)");
+
+  await form.locator('[name="entry_date"]').fill("2026-10-01");
+  await expect(form.locator("[data-rate]")).toHaveText(/46,00/);
+  await expect(form.locator("[data-cost]")).toHaveText(/92,00/);
+  await expect(form.locator("[data-booking-preview]")).not.toContainText("Dieselzuschlag");
 });
 
 /** Uses the maintained person rate automatically in both account directions. */

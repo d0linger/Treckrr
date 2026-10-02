@@ -263,6 +263,20 @@ func (s *Store) CloneBase(ctx context.Context, srcBaseID int64, newYear int, nam
 		}
 	}
 
+	// Carry only the adjustment effective at the new year's start. Copying the
+	// complete historical version chain would add irrelevant old dates to every
+	// cloned basis; copying none would contradict CloneBase's "all values"
+	// contract and silently drop the currently active operating-cost addition.
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO fuel_adjustments (base_id, effective_from, label, amount_per_h)
+		SELECT $1, make_date($2, 1, 1), label, amount_per_h
+		  FROM fuel_adjustments
+		 WHERE base_id=$3 AND effective_from <= make_date($2, 1, 1)
+		 ORDER BY effective_from DESC, id DESC
+		 LIMIT 1`, newID, newYear, srcBaseID); err != nil {
+		return 0, fmt.Errorf("copy fuel adjustment: %w", err)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}

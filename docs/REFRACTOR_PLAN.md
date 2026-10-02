@@ -1,14 +1,14 @@
 # Treckrr consolidation and refactoring plan
 
-Date: 2026-10-01
+Date: 2026-10-02
 
 Scope: current `dev` branch
 
-Status: implementation in progress; safety-net and booking-core consolidation completed without schema changes
+Status: planned consolidation phases implemented; expansion ideas remain out of scope
 
 ## Implementation progress
 
-Completed on `dev` on 2026-10-01:
+Completed on `dev` on 2026-10-01 and 2026-10-02:
 
 - Added a PostgreSQL characterization test proving standard and quick entry
   freeze the same rig identity, labels, hourly rate, and rounded cost.
@@ -37,6 +37,17 @@ Completed on `dev` on 2026-10-01:
   calculations, or permissions.
 - Replaced the dashboard and neighbour-detail templates' implicit handler-side
   key assembly with typed view contracts while preserving the rendered maps.
+- Centralized account settlement assembly and typed receipt/invoice document
+  assembly without changing frozen invoice or payment semantics.
+- Split model domains, route registration, stylesheet sources, and shared
+  browser-script sources while preserving generated asset contracts.
+- Added device-local neighbor and rig favorites without server persistence or
+  cross-device coupling.
+- Added effective-dated, non-cumulative fuel/operating-cost adjustments. New
+  catalog bookings snapshot the active version; historical open bookings change
+  only through the existing preview-and-apply recalculation flow.
+- Verified that basis-impact preview, close-and-settle guidance, and typed
+  accounting export profiles already existed and did not duplicate them.
 
 ### Accounting invariants protected by the characterization suite
 
@@ -57,8 +68,9 @@ Completed on `dev` on 2026-10-01:
 
 Deliberately unchanged:
 
-- No database migration, historical rewrite, table merge, route change, or URL
-  change was introduced.
+- No historical rewrite, table merge, removed URL, or compatibility-breaking
+  API change was introduced. Migration 0077 is additive and defaults every
+  existing booking to no adjustment.
 - Own work, incoming counterclaims, payments, recurring snapshots, and issued
   invoice snapshots retain their separate persistence and locking semantics.
 - The unified booking form, quick entry, copy workflow, recurring bookings,
@@ -70,14 +82,12 @@ Deferred to later, separately reviewed slices:
 - Native XLSX output and a dedicated Maschinenring/steuer export profile.
 - Standalone named templates detached from a neighbor and schedule; current
   quick entry, copy, and recurring rules already cover the existing workflows.
-- Diesel-price adjustments. This requires an effective-dated business rule and
-  immutable booking snapshots; a live external price must never rewrite history.
 - Removal of `Machine.HourlyRate`. Templates invoke it reflectively, so it must
   remain a compatibility projection until machine template data is typed.
 
 ## Executive summary
 
-Treckrr is no longer a small CRUD application. It is a mature operational system with 221 registered HTTP routes, 48 server-rendered templates, approximately 18,800 non-test lines in `internal/server`, and approximately 13,600 non-test lines in `internal/store`. The underlying accounting safeguards are stronger than the apparent UI complexity: exact decimal arithmetic is centralized, billing years reference versioned price bases, bookings retain price snapshots, closed years lock business records, payments remain recordable after closure, and invoice snapshots preserve tax-relevant history.
+Treckrr is no longer a small CRUD application. It is a mature operational system with 223 registered HTTP routes, 48 server-rendered templates, approximately 19,500 non-test lines in `internal/server`, and approximately 13,800 non-test lines in `internal/store`. The underlying accounting safeguards are stronger than the apparent UI complexity: exact decimal arithmetic is centralized, billing years reference versioned price bases, bookings retain price snapshots, closed years lock business records, payments remain recordable after closure, and invoice snapshots preserve tax-relevant history.
 
 The main issue is therefore not an incorrect cost model. It is accumulated orchestration complexity:
 
@@ -184,7 +194,7 @@ Recommended target:
 
 Evidence:
 
-- `internal/server/server.go` registers 221 routes.
+- Domain registration functions in `internal/server/routes.go` register 223 routes.
 - `internal/server/entries.go` combines page assembly, booking creation/update, ledger mutation, quick entry, copy/edit, account guards, and deletion.
 - `internal/server/beleg.go` combines receipt assembly, public shares, PDF/email delivery, invoice issue, cancellation, credit notes, and QR output.
 
@@ -343,22 +353,26 @@ Several suggested “missing” features already exist and should be consolidate
 | Payment import | Implemented with batches and reversals | Keep as an advanced workflow; do not surface in the daily path. |
 | Offline field capture | Implemented with replay/idempotency | Preserve as a core non-functional requirement in every booking refactor. |
 
-Recommended future additions:
+Product-extension status:
 
-1. **Versioned fuel adjustment (“Dieselpreis-Joker”)**
-   Add an explicit, effective-dated adjustment to a price basis or rate breakdown. Operators must preview and deliberately apply it. Never fetch a live price and silently recalculate historical bookings.
+1. **Versioned fuel adjustment (“Dieselpreis-Joker”) — implemented**
+   Explicit effective-dated versions live on each basis. New catalog bookings
+   snapshot the effective version; open historical bookings require deliberate
+   preview and apply. No external live-price feed is used.
 
-2. **Operator favorites**
-   Allow a small set of neighbors, rigs, or tasks to appear first in booking capture. Keep it per user/device and compatible with offline operation.
+2. **Operator favorites — implemented**
+   Neighbor and rig favorites are per user/device, capped, and offline-capable.
 
-3. **Basis change impact preview**
-   Before editing an unlocked basis, show affected open years/bookings and the difference that recalculation would produce.
+3. **Basis change impact preview — already present**
+   The existing recalculation preview shows affected bookings and differences
+   before an explicit apply and respects invoice locks.
 
-4. **Close-and-settle cockpit**
-   Build on the existing closing checklist and dashboard payment states to provide a guided sequence, without making non-blocking checks mandatory.
+4. **Close-and-settle cockpit — already present**
+   Existing year-closing checks and dashboard payment actions provide the guided
+   sequence without turning advisory checks into blockers.
 
-5. **Typed export profiles**
-   Consolidate accounting outputs behind named profiles with a preview and validation summary rather than adding standalone export buttons.
+5. **Typed export profiles — already present**
+   Named accounting profiles and validated CSV output are already implemented.
 
 ## Visual changes implemented in this step
 
@@ -389,53 +403,61 @@ The mechanical detector reported one generic “root clips positioned child” w
 
 ## Recommended delivery sequence
 
-### Phase 0 — visual consolidation (implemented here)
+### Phase 0 — visual consolidation (implemented)
 
 - Navigation hierarchy, dashboard action disclosure, workflow grouping, payment-action clarity, responsive polish.
 - Risk: low; template/CSS only.
 
-### Phase 1 — safety net and contracts
+### Phase 1 — safety net and contracts (implemented)
 
 - Add characterization tests for interactive, quick, recurring, and imported bookings using the same scenario matrix.
 - Document rounding, snapshot, account-direction, closure, and payment invariants.
 - Introduce typed view models for dashboard and neighbor detail without changing behavior.
 - Risk: low to medium; no schema change.
 
-### Phase 2 — booking application service
+### Phase 2 — booking application service (implemented)
 
 - Extract catalog resolution, validation, pricing breakdown, and persistence commands.
 - Migrate one input adapter at a time: interactive form, quick entry, recurring, import.
 - Keep the legacy path until every adapter and replay case is green.
 - Risk: medium to high; requires explicit implementation approval and full integration/browser validation.
 
-### Phase 3 — settlement and document assemblers
+### Phase 3 — settlement and document assemblers (implemented)
 
 - Extract account balance/settlement orchestration.
 - Build HTML/PDF/email content from shared typed document models.
 - Keep invoice snapshots and account locks unchanged.
 - Risk: high because tax documents and frozen history are involved.
 
-### Phase 4 — source modularization
+### Phase 4 — source modularization (implemented)
 
 - Split `models.go`, route registration, CSS source layers, and shared JavaScript by responsibility without changing delivered contracts.
 - Remove compatibility code only after production data inventory proves it is no longer required.
 - Risk: medium; mostly structural but broad.
 
-### Phase 5 — optional product extensions
+### Phase 5 — selected product extensions (implemented)
 
-- Versioned fuel adjustment, favorites, basis-impact preview, and close/settle cockpit.
-- Each feature should be a separate decision and PR.
+- Implemented the missing fuel adjustment and favorites; retained the existing
+  basis-impact preview, close/settle cockpit, and export profiles.
+- Expansion features and a four-eyes approval workflow remain excluded by the
+  operator's stated scope.
 
 ## Production impact and manual steps
 
-For the visual implementation in this change:
+For the completed implementation:
 
-- Database impact: none.
-- Migration impact: none.
+- Database impact: additive `fuel_adjustments` table plus two zero-default
+  snapshot columns on `entries`; no row is repriced during migration.
+- Migration impact: migration 0077 runs automatically during normal startup.
 - Configuration impact: none.
 - Data rewrite: none.
-- URL/API impact: none.
+- URL/API impact: two authenticated basis-management POST routes and an additive
+  `adjustments` array in the pricing-preview JSON.
 - Authorization impact: none.
-- Manual production step: none beyond the normal application deployment.
+- Manual production step: none beyond the normal application deployment. A
+  version has no effect until an operator saves it; existing bookings still
+  require explicit recalculation confirmation.
 
-The future refactoring phases are proposals only. They must be implemented as small behavior-preserving changes with explicit review before any schema or accounting behavior is touched.
+Any later expansion remains a separate decision. Existing booking, payment,
+year-close, invoice, export, and offline workflows remain the compatibility
+boundary for future work.

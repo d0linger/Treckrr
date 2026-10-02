@@ -12,17 +12,19 @@ import (
 // LedgerBooking preserves the entered service separately from its signed account
 // amount. A neighbor's service never becomes an outgoing invoice or own usage.
 type LedgerBooking struct {
-	Version       int             `json:"version"`
-	Kind          string          `json:"kind"`
-	TaskLabel     string          `json:"task_label"`
-	Note          string          `json:"note,omitempty"`
-	Unit          string          `json:"unit"`
-	Quantity      decimal.Decimal `json:"quantity"`
-	UnitPrice     decimal.Decimal `json:"unit_price"`
-	PartnerLabel  string          `json:"partner_label,omitempty"`
-	PartnerPerson string          `json:"partner_person,omitempty"`
-	PersonHours   decimal.Decimal `json:"person_hours,omitempty"`
-	PersonRate    decimal.Decimal `json:"person_rate,omitempty"`
+	Version             int             `json:"version"`
+	Kind                string          `json:"kind"`
+	TaskLabel           string          `json:"task_label"`
+	Note                string          `json:"note,omitempty"`
+	Unit                string          `json:"unit"`
+	Quantity            decimal.Decimal `json:"quantity"`
+	UnitPrice           decimal.Decimal `json:"unit_price"`
+	FuelAdjustmentLabel string          `json:"fuel_adjustment_label,omitempty"`
+	FuelAdjustmentPerH  decimal.Decimal `json:"fuel_adjustment_per_h,omitempty"`
+	PartnerLabel        string          `json:"partner_label,omitempty"`
+	PartnerPerson       string          `json:"partner_person,omitempty"`
+	PersonHours         decimal.Decimal `json:"person_hours,omitempty"`
+	PersonRate          decimal.Decimal `json:"person_rate,omitempty"`
 	// Catalog references are descriptive: incoming equipment never creates own usage.
 	Mode        string          `json:"mode,omitempty"`
 	GespannID   *int64          `json:"gespann_id,omitempty"`
@@ -88,6 +90,9 @@ func (b LedgerBooking) Summary() string {
 	}
 	if len(b.People) == 0 || b.Kind != "labor" {
 		parts = append(parts, fmt.Sprintf("%s %s × %s €", ledgerDecimal(b.Quantity), b.Unit, ledgerDecimal(b.UnitPrice)))
+	}
+	if b.FuelAdjustmentPerH.IsPositive() {
+		parts = append(parts, fmt.Sprintf("%s +%s €/h", b.FuelAdjustmentLabel, ledgerDecimal(b.FuelAdjustmentPerH)))
 	}
 	if len(b.People) == 0 && b.Kind == "labor" {
 		if b.PartnerPerson != "" {

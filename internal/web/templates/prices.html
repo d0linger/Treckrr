@@ -5,6 +5,42 @@
 	<div class="flash flash--info">Diese Bemessungsgrundlage ({{.Base.Year}}) ist gesperrt. Werte sind schreibgeschützt.</div>
 	{{end}}
 
+	<section class="card stack" id="fuel-adjustments">
+		<div>
+			<h2 class="section-title">Diesel- & Betriebsmittelanpassung <span class="badge">{{len .FuelAdjustments}}</span></h2>
+			<p class="muted small">Es gilt jeweils die jüngste Version am Buchungsdatum. Der Betrag wird einmal zum Katalogsatz addiert und in der Buchung festgehalten. Bestehende Buchungen ändern sich erst über <strong>Neu berechnen</strong> nach Vorschau und Bestätigung.</p>
+		</div>
+		{{if .FuelAdjustments}}
+		<div class="list list--onecol">
+			{{range .FuelAdjustments}}
+			<div class="list__row">
+				<span class="list__main"><strong>{{.Label}}</strong><span class="muted small">gültig ab {{date .EffectiveFrom}}</span></span>
+				<span class="list__value">{{if .AmountPerH.IsPositive}}+{{end}}{{money .AmountPerH}}/h</span>
+				{{if not $.Locked}}<form method="post" action="/prices/fuel-adjustments/{{.ID}}/delete" data-confirm-danger data-confirm="Diese Version löschen? Bereits gebuchte Sätze bleiben unverändert.">
+					<input type="hidden" name="base_id" value="{{$.Base.ID}}">
+					<button class="btn btn--danger btn--xs" type="submit">Löschen</button>
+				</form>{{end}}
+			</div>
+			{{end}}
+		</div>
+		{{else}}<p class="muted small">Keine Anpassung hinterlegt – die Katalogsätze gelten unverändert.</p>{{end}}
+		{{if not .Locked}}
+		<details class="disclosure form-details">
+			<summary>{{template "ic-plus"}} Version hinzufügen</summary>
+			<form method="post" action="/prices/fuel-adjustments" class="form">
+				<input type="hidden" name="base_id" value="{{.Base.ID}}">
+				<div class="form__grid">
+					<label class="field"><span>Bezeichnung</span><input class="input" name="label" value="Dieselzuschlag" maxlength="100" required></label>
+					<label class="field"><span>Gültig ab</span><input class="input" type="date" name="effective_from" value="{{.Base.Year}}-01-01" required></label>
+					<label class="field"><span>Zuschlag €/h</span><input class="input" name="amount_per_h" inputmode="decimal" placeholder="0,00" required></label>
+				</div>
+				<p class="muted small">Mit 0 €/h lässt sich der Zuschlag ab einem Stichtag ausdrücklich beenden. Versionen werden nicht summiert.</p>
+				<button class="btn btn--primary" type="submit">Version speichern</button>
+			</form>
+		</details>
+		{{end}}
+	</section>
+
 	<!-- Belastungsstufen --------------------------------------------------->
 	<h2 class="section-title">Belastungsstufen <span class="badge">{{len .Loads}}</span> <span class="muted">(€ / PS · h)</span></h2>
 	{{if gt (len .Loads) 5}}

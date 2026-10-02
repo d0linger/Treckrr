@@ -269,6 +269,8 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 		main.Unit, main.Hours, main.Quantity, main.HourlyRate, main.UnitPrice = "h", hours, hours, rate, rate
 		main.Cost = money.Amount(hours, rate)
 		b.Mode, b.Unit, b.Quantity, b.UnitPrice = mode, "h", hours, rate
+		b.FuelAdjustmentLabel = main.FuelAdjustmentLabel
+		b.FuelAdjustmentPerH = main.FuelAdjustmentPerH
 	}
 	if !b.Total().IsPositive() || b.Total().GreaterThanOrEqual(decimal.NewFromInt(10_000_000_000)) {
 		return bookingDraft{}, "Der Gesamtbetrag liegt außerhalb des zulässigen Bereichs.", nil

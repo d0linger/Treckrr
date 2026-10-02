@@ -48,6 +48,7 @@ func MachineRate(m models.Machine) decimal.Decimal {
 type RateBreakdown struct {
 	TractorRate  decimal.Decimal
 	MachineRates []decimal.Decimal
+	Adjustment   decimal.Decimal
 	HourlyRate   decimal.Decimal
 }
 
@@ -55,8 +56,15 @@ type RateBreakdown struct {
 // combined hourly rate. A tractor and load level form one pricing component;
 // callers remain responsible for rejecting a half-set pair.
 func NewRateBreakdown(t *models.Tractor, l *models.LoadLevel, machines []models.Machine) RateBreakdown {
+	return NewAdjustedRateBreakdown(t, l, machines, decimal.Zero)
+}
+
+// NewAdjustedRateBreakdown adds one already-selected effective hourly
+// adjustment after the individually rounded catalog components.
+func NewAdjustedRateBreakdown(t *models.Tractor, l *models.LoadLevel, machines []models.Machine, adjustment decimal.Decimal) RateBreakdown {
 	breakdown := RateBreakdown{
 		MachineRates: make([]decimal.Decimal, 0, len(machines)),
+		Adjustment:   adjustment.Round(4),
 	}
 	if t != nil && l != nil {
 		breakdown.TractorRate = TractorRate(*t, *l)
@@ -67,6 +75,7 @@ func NewRateBreakdown(t *models.Tractor, l *models.LoadLevel, machines []models.
 		breakdown.MachineRates = append(breakdown.MachineRates, rate)
 		breakdown.HourlyRate = breakdown.HourlyRate.Add(rate)
 	}
+	breakdown.HourlyRate = breakdown.HourlyRate.Add(breakdown.Adjustment)
 	breakdown.HourlyRate = breakdown.HourlyRate.Round(2)
 	return breakdown
 }

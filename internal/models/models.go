@@ -63,21 +63,23 @@ type RecurCompanion struct {
 // RecurTemplate is the booking blueprint a recurring rule stores (JSON). It mirrors
 // the fields CreateEntry needs; Cost is stored for display and recomputed on create.
 type RecurTemplate struct {
-	Unit          string          `json:"unit"`
-	Quantity      decimal.Decimal `json:"quantity"`
-	UnitPrice     decimal.Decimal `json:"unit_price"`
-	Hours         decimal.Decimal `json:"hours"`
-	HourlyRate    decimal.Decimal `json:"hourly_rate"`
-	Cost          decimal.Decimal `json:"cost"`
-	GespannID     *int64          `json:"gespann_id,omitempty"`
-	TractorID     *int64          `json:"tractor_id,omitempty"`
-	LoadLevelID   *int64          `json:"load_level_id,omitempty"`
-	MachineIDs    []int64         `json:"machine_ids,omitempty"`
-	TractorLabel  string          `json:"tractor_label"`
-	LoadLabel     string          `json:"load_label"`
-	MachineLabels string          `json:"machine_labels"`
-	TaskLabel     string          `json:"task_label"`
-	Note          string          `json:"note"`
+	Unit                string          `json:"unit"`
+	Quantity            decimal.Decimal `json:"quantity"`
+	UnitPrice           decimal.Decimal `json:"unit_price"`
+	Hours               decimal.Decimal `json:"hours"`
+	HourlyRate          decimal.Decimal `json:"hourly_rate"`
+	FuelAdjustmentLabel string          `json:"fuel_adjustment_label,omitempty"`
+	FuelAdjustmentPerH  decimal.Decimal `json:"fuel_adjustment_per_h,omitempty"`
+	Cost                decimal.Decimal `json:"cost"`
+	GespannID           *int64          `json:"gespann_id,omitempty"`
+	TractorID           *int64          `json:"tractor_id,omitempty"`
+	LoadLevelID         *int64          `json:"load_level_id,omitempty"`
+	MachineIDs          []int64         `json:"machine_ids,omitempty"`
+	TractorLabel        string          `json:"tractor_label"`
+	LoadLabel           string          `json:"load_label"`
+	MachineLabels       string          `json:"machine_labels"`
+	TaskLabel           string          `json:"task_label"`
+	Note                string          `json:"note"`
 	// PersonID attributes the booking ITSELF to a helper — set when the series
 	// was made from a Mannstunden booking. Dropped before this existed, so every
 	// occurrence of such a series lost the attribution the source booking had.
@@ -342,7 +344,11 @@ type Entry struct {
 	MachineLabels string
 	Hours         decimal.Decimal
 	HourlyRate    decimal.Decimal
-	Cost          decimal.Decimal
+	// FuelAdjustmentLabel and FuelAdjustmentPerH snapshot the effective
+	// operating-cost addition used when a catalog equipment rate was booked.
+	FuelAdjustmentLabel string
+	FuelAdjustmentPerH  decimal.Decimal
+	Cost                decimal.Decimal
 	// Unit/Quantity/UnitPrice generalize billing beyond hours: cost = quantity ×
 	// unit price. For hour bookings Unit is "h", Quantity == Hours and UnitPrice
 	// == HourlyRate. Other units: "ha", "Ballen", "m3", "Fuhre", "t" (or custom).

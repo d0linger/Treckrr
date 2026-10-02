@@ -445,20 +445,22 @@ func (s *Store) saveRuleProgress(ctx context.Context, ruleID int64, next time.Ti
 // CreateEntry's callers is not needed — the template already carries Cost).
 func entryFromTemplate(t models.RecurTemplate) *models.Entry {
 	return &models.Entry{
-		TaskLabel:     t.TaskLabel,
-		Note:          t.Note,
-		Unit:          t.Unit,
-		Quantity:      t.Quantity,
-		UnitPrice:     t.UnitPrice,
-		Hours:         t.Hours,
-		HourlyRate:    t.HourlyRate,
-		Cost:          t.Cost,
-		GespannID:     t.GespannID,
-		TractorID:     t.TractorID,
-		LoadLevelID:   t.LoadLevelID,
-		TractorLabel:  t.TractorLabel,
-		LoadLabel:     t.LoadLabel,
-		MachineLabels: t.MachineLabels,
+		TaskLabel:           t.TaskLabel,
+		Note:                t.Note,
+		Unit:                t.Unit,
+		Quantity:            t.Quantity,
+		UnitPrice:           t.UnitPrice,
+		Hours:               t.Hours,
+		HourlyRate:          t.HourlyRate,
+		FuelAdjustmentLabel: t.FuelAdjustmentLabel,
+		FuelAdjustmentPerH:  t.FuelAdjustmentPerH,
+		Cost:                t.Cost,
+		GespannID:           t.GespannID,
+		TractorID:           t.TractorID,
+		LoadLevelID:         t.LoadLevelID,
+		TractorLabel:        t.TractorLabel,
+		LoadLabel:           t.LoadLabel,
+		MachineLabels:       t.MachineLabels,
 		// A series made FROM a Mannstunden booking keeps its attribution: the
 		// template carried the person id but the rebuilt entry dropped it, so
 		// every occurrence booked the helper's hours as nobody's.

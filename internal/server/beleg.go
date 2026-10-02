@@ -53,16 +53,18 @@ type BelegMachine struct {
 // BelegCalculation explains a stored line without recomputing it from current
 // master data. Difference exposes any historical correction to multiplication.
 type BelegCalculation struct {
-	Quantity       decimal.Decimal
-	Unit           string
-	UnitPrice      decimal.Decimal
-	Raw            decimal.Decimal
-	Rounded        decimal.Decimal
-	Stored         decimal.Decimal
-	Difference     decimal.Decimal
-	MachineParts   []store.EntryMachineSnapshot
-	MachineLabels  string
-	LegacyMachines bool
+	Quantity            decimal.Decimal
+	Unit                string
+	UnitPrice           decimal.Decimal
+	Raw                 decimal.Decimal
+	Rounded             decimal.Decimal
+	Stored              decimal.Decimal
+	Difference          decimal.Decimal
+	MachineParts        []store.EntryMachineSnapshot
+	MachineLabels       string
+	LegacyMachines      bool
+	FuelAdjustmentLabel string
+	FuelAdjustmentPerH  decimal.Decimal
 }
 
 // Corrected reports whether the stored amount differs from the rounded formula.
@@ -265,7 +267,9 @@ func (s *Server) buildBelegView(r *http.Request, neighbor *models.Neighbor, year
 			Quantity: qty, Unit: unit, UnitPrice: unitPrice, Raw: raw,
 			Rounded: raw.Round(2), Stored: e.Cost, Difference: e.Cost.Sub(raw.Round(2)),
 			MachineParts: parts, MachineLabels: e.MachineLabels,
-			LegacyMachines: len(parts) == 0 && strings.TrimSpace(e.MachineLabels) != "",
+			LegacyMachines:      len(parts) == 0 && strings.TrimSpace(e.MachineLabels) != "",
+			FuelAdjustmentLabel: e.FuelAdjustmentLabel,
+			FuelAdjustmentPerH:  e.FuelAdjustmentPerH,
 		}
 		view := BelegEntry{Entry: e, Calculation: calculation}
 		d := e.Date.Format("02.01.")

@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -29,6 +30,11 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 	loads, _ := s.store.ListLoadLevels(r.Context(), base.ID)
 	tractors, _ := s.store.ListTractors(r.Context(), base.ID)
 	machines, _ := s.store.ListMachines(r.Context(), base.ID)
+	adjustments, err := s.store.ListFuelAdjustments(r.Context(), base.ID)
+	if err != nil {
+		s.serverError(w, "prices: fuel adjustments", err)
+		return
+	}
 
 	var tractorViews []tractorRateView
 	for _, t := range tractors {
@@ -61,8 +67,77 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 	data["Loads"] = loads
 	data["TractorViews"] = tractorViews
 	data["MachineViews"] = machineViews
+	data["FuelAdjustments"] = adjustments
 	data["Locked"] = base.Locked
 	s.render(w, r, "prices", data)
+}
+
+// handleFuelAdjustmentSave stores one effective-dated, non-cumulative hourly
+// addition. Historical bookings remain untouched until explicit recalculation.
+func (s *Server) handleFuelAdjustmentSave(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden.")
+		return
+	}
+	baseID := s.baseIDFromForm(r)
+	back := pricesURL(baseID) + "#fuel-adjustments"
+	if s.lockedRedirect(w, r, baseID, back) {
+		return
+	}
+	label := trimmed(r, "label")
+	if label == "" || lenError("Bezeichnung", label, maxNameLen) != "" {
+		s.setFlash(w, r, "error", "Bitte eine Bezeichnung mit höchstens 100 Zeichen angeben.")
+		redirect(w, r, back)
+		return
+	}
+	effective, err := time.Parse("2006-01-02", trimmed(r, "effective_from"))
+	if err != nil {
+		s.setFlash(w, r, "error", "Bitte einen gültigen Stichtag angeben.")
+		redirect(w, r, back)
+		return
+	}
+	rawAmount := strings.TrimSpace(r.FormValue("amount_per_h"))
+	amount, ok := parseGermanDecimalOK(rawAmount)
+	if !ok || amount.IsNegative() || amount.GreaterThan(decimal.NewFromInt(1_000_000)) {
+		s.setFlash(w, r, "error", "Der Zuschlag muss zwischen 0 und 1.000.000 €/h liegen.")
+		redirect(w, r, back)
+		return
+	}
+	adjustment := &models.FuelAdjustment{
+		ID: formInt64(r, "id"), BaseID: baseID, EffectiveFrom: effective,
+		Label: label, AmountPerH: amount,
+	}
+	if err := s.store.SaveFuelAdjustment(r.Context(), adjustment); err != nil {
+		s.setFlash(w, r, "error", "Anpassung konnte nicht gespeichert werden. Pro Stichtag ist nur eine Version möglich.")
+		redirect(w, r, back)
+		return
+	}
+	s.audit(r, "save", "fuel_adjustment", adjustment.ID,
+		label+" ab "+effective.Format("02.01.2006")+": "+amount.String()+" €/h")
+	s.setFlash(w, r, "success", "Anpassung gespeichert. Bestehende Buchungen bleiben bis zur ausdrücklichen Neuberechnung unverändert.")
+	redirect(w, r, back)
+}
+
+// handleFuelAdjustmentDelete removes a version without rewriting snapshots.
+func (s *Server) handleFuelAdjustmentDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	baseID := s.baseIDFromForm(r)
+	back := pricesURL(baseID) + "#fuel-adjustments"
+	if s.lockedRedirect(w, r, baseID, back) {
+		return
+	}
+	if err := s.store.DeleteFuelAdjustment(r.Context(), baseID, id); err != nil {
+		s.flashDeleted(w, r, err)
+		redirect(w, r, back)
+		return
+	}
+	s.audit(r, "delete", "fuel_adjustment", id, "")
+	s.setFlash(w, r, "success", "Anpassung gelöscht. Bereits gebuchte Sätze bleiben unverändert.")
+	redirect(w, r, back)
 }
 
 // handleMachineCostModel stores transparent calculation assumptions. The

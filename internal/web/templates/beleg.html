@@ -69,6 +69,7 @@
 					<div><span>Gespeicherter Zeilenbetrag</span><strong>{{money $e.Calculation.Stored}}</strong></div>
 					{{if $e.Calculation.MachineParts}}<div class="beleg__calc-parts"><span>Maschinen-Snapshots</span><ul>{{range $e.Calculation.MachineParts}}<li>{{.Label}} · {{money .HourlyRate}}/h</li>{{end}}</ul></div>
 					{{else if $e.Calculation.LegacyMachines}}<div><span>Maschinen</span><strong>{{$e.Calculation.MachineLabels}}<small>Historische Buchung ohne Komponenten-Snapshot; maßgeblich ist der gespeicherte Gesamtsatz.</small></strong></div>{{end}}
+					{{if $e.Calculation.FuelAdjustmentPerH.IsPositive}}<div><span>{{$e.Calculation.FuelAdjustmentLabel}}</span><strong>+{{money $e.Calculation.FuelAdjustmentPerH}}/h <small>Im gespeicherten Gesamtsatz enthalten.</small></strong></div>{{end}}
 				</div>
 			</details>{{end}}
 			{{end}}
