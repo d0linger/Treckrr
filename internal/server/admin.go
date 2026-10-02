@@ -112,6 +112,10 @@ func (s *Server) handleUserPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	password := r.FormValue("password")
+	if s.passwordTooLong(w, r, password) {
+		redirect(w, r, "/admin/users")
+		return
+	}
 	if msg := passwordPolicyError(password); msg != "" {
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, "/admin/users")
