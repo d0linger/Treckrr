@@ -1956,14 +1956,18 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 			audit.CompanionDetail = fmt.Sprintf("%s · Schnellerfassung: Mannstunden (verknüpft), %s h × %s = %s €",
 				nb, companion.Quantity.String(), companion.UnitPrice.StringFixed(2), companion.Cost.StringFixed(2))
 		}
-		var (
-			id, companionID int64
-			err             error
-		)
+		command := store.BookingCommand{
+			Entry:      &entry,
+			MachineIDs: rig.machineIDs,
+			Audit:      audit,
+		}
 		if companion != nil {
-			id, companionID, err = s.store.CreateEntryPairAudited(r.Context(), &entry, rig.machineIDs, companion, audit)
-		} else {
-			id, err = s.store.CreateEntryAudited(r.Context(), &entry, rig.machineIDs, audit)
+			command.Helpers = []*models.Entry{companion}
+		}
+		result, err := s.store.CreateBooking(r.Context(), command)
+		companionID := int64(0)
+		if len(result.HelperIDs) == 1 {
+			companionID = result.HelperIDs[0]
 		}
 		switch {
 		case errors.Is(err, store.ErrIdempotencyConflict):
@@ -1974,7 +1978,7 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 			createErr = errors.Join(createErr, err)
 		default:
 			row.status = quickSaved
-			if id != 0 {
+			if result.MainID != 0 {
 				created++
 			}
 			if companionID != 0 {
