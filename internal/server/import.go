@@ -83,6 +83,23 @@ type importRow struct {
 
 func (row importRow) OK() bool { return row.Err == "" }
 
+// importEntry converts one validated CSV row into the immutable booking
+// snapshot written by the import adapter. Catalog columns in the CSV remain
+// intentionally ignored; imports preserve only the explicitly supplied rate.
+func importEntry(row importRow, yearID int64, token string) *models.Entry {
+	e := &models.Entry{
+		NeighborID: row.NeighborID, BillingYearID: yearID, Date: row.Date,
+		TaskLabel: row.Task, Note: row.Note, Unit: row.Unit,
+		Quantity: row.Qty, UnitPrice: row.Price, Cost: row.Cost,
+		IdempotencyKey: token + ":" + strconv.Itoa(row.Line),
+	}
+	if row.Unit == "h" {
+		e.Hours = row.Qty
+		e.HourlyRate = row.Price
+	}
+	return e
+}
+
 // parseImportDate accepts the export's ISO date and the common German format.
 func parseImportDate(s string) (time.Time, bool) {
 	s = strings.TrimSpace(s)
@@ -472,16 +489,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		e := &models.Entry{
-			NeighborID: row.NeighborID, BillingYearID: yearID, Date: row.Date,
-			TaskLabel: row.Task, Note: row.Note, Unit: row.Unit,
-			Quantity: row.Qty, UnitPrice: row.Price, Cost: row.Cost,
-			IdempotencyKey: token + ":" + strconv.Itoa(row.Line),
-		}
-		if row.Unit == "h" { // keep the hour-booking convention so it counts as hours
-			e.Hours = row.Qty
-			e.HourlyRate = row.Price
-		}
+		e := importEntry(row, yearID, token)
 		newID, err := s.store.CreateEntry(r.Context(), e, nil)
 		if err != nil {
 			reason, business := importCommitSkipReason(err)

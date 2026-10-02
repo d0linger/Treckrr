@@ -14,6 +14,8 @@ Completed on `dev` on 2026-10-01:
   freeze the same rig identity, labels, hourly rate, and rounded cost.
 - Added typed equipment rate breakdowns while retaining the existing calculator
   functions as compatibility entry points.
+- Characterized the same 2.345-hour, 46.00-rate, 107.87-total snapshot across
+  interactive, quick-entry, CSV-import, and recurring-template adapters.
 - Added `internal/money` as the shared exact-decimal line-amount primitive and
   migrated equivalent calculations across models, handlers, imports, person and
   travel surcharges, entry groups, and recurring materialization.
@@ -33,6 +35,25 @@ Completed on `dev` on 2026-10-01:
 - Added compact in-page navigation for booking, own services, counterclaims,
   and payments on the long neighbour account page without changing its forms,
   calculations, or permissions.
+- Replaced the dashboard and neighbour-detail templates' implicit handler-side
+  key assembly with typed view contracts while preserving the rendered maps.
+
+### Accounting invariants protected by the characterization suite
+
+- Every monetary line uses exact decimals and rounds the final line amount to
+  cents; no adapter may introduce floating-point arithmetic.
+- Catalog-backed bookings freeze catalog identity, labels, component rates,
+  hourly rate, and final cost at creation time. Later catalog edits never alter
+  an existing booking or recurring template.
+- Imported rows use only their explicit quantity and rate. Their descriptive
+  tractor/machine columns and supplied total are not trusted as catalog identity
+  or cost; the total is recomputed as quantity × rate.
+- Incoming counterclaims remain signed ledger bookings and are never persisted
+  as own-work entries. Payments remain separate settlement evidence.
+- Closed years and issued invoice accounts reject new or changed business rows,
+  while an identical idempotent replay remains a no-op success.
+- Year closure never creates a payment, and recording a payment never rewrites
+  a frozen invoice or booking snapshot.
 
 Deliberately unchanged:
 
