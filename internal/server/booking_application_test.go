@@ -17,8 +17,8 @@ func TestCreateBookingDraftRejectsInvalidUnion(t *testing.T) {
 		{},
 		{Entry: &models.Entry{}, LedgerInput: &store.LedgerBookingInput{}},
 	} {
-		if _, err := server.createBookingDraft(context.Background(), draft); !errors.Is(err, errInvalidBookingDraft) {
-			t.Fatalf("createBookingDraft(%+v) error = %v, want %v", draft, err, errInvalidBookingDraft)
+		if _, err := server.createBookingDraft(context.Background(), draft); !errors.Is(err, store.ErrInvalidBookingCommand) {
+			t.Fatalf("createBookingDraft(%+v) error = %v, want %v", draft, err, store.ErrInvalidBookingCommand)
 		}
 	}
 }

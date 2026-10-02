@@ -2,12 +2,10 @@ package server
 
 import (
 	"context"
-	"errors"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
-
-var errInvalidBookingDraft = errors.New("booking draft must contain exactly one persistence target")
 
 // bookingCreateResult reports the primary stored row. A zero ID means the
 // idempotency key already represented the same booking.
@@ -19,18 +17,16 @@ type bookingCreateResult struct {
 // booking workflow. It selects the existing atomic store adapter without
 // merging the intentionally separate own-work and counterclaim models.
 func (s *Server) createBookingDraft(ctx context.Context, draft bookingDraft) (bookingCreateResult, error) {
-	if (draft.Entry == nil) == (draft.LedgerInput == nil) {
-		return bookingCreateResult{}, errInvalidBookingDraft
+	command := store.BookingCommand{Ledger: draft.LedgerInput}
+	if draft.Entry != nil {
+		command.Entry = draft.Entry
+		command.MachineIDs = draft.MachineIDs
+		command.Helpers = bookingHelpers(draft.Entry, draft.BookedPeople)
 	}
-	if draft.LedgerInput != nil {
-		id, err := s.store.CreateLedgerBooking(ctx, *draft.LedgerInput)
-		return bookingCreateResult{MainID: id}, err
-	}
-
-	helpers := bookingHelpers(draft.Entry, draft.BookedPeople)
-	mainID, helperIDs, err := s.store.CreateEntryGroup(ctx, draft.Entry, draft.MachineIDs, helpers)
+	result, err := s.store.CreateBooking(ctx, command)
+	mainID := result.MainID
 	if mainID == 0 {
-		for _, id := range helperIDs {
+		for _, id := range result.HelperIDs {
 			mainID = max(mainID, id)
 		}
 	}
