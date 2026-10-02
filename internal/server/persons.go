@@ -213,12 +213,12 @@ func (s *Server) bookExtra(w http.ResponseWriter, r *http.Request, neighborID, y
 	}
 	e.NeighborID = neighborID
 	e.BillingYearID = yearID
-	id, err := s.store.CreateEntry(r.Context(), e, nil)
+	result, err := s.store.CreateBooking(r.Context(), store.BookingCommand{Entry: e})
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	s.audit(r, "create", "entry", id, s.neighborName(r, neighborID)+" · "+auditDetail)
+	s.audit(r, "create", "entry", result.MainID, s.neighborName(r, neighborID)+" · "+auditDetail)
 	s.setFlash(w, r, "success", "Buchung gespeichert.")
 	redirect(w, r, back)
 }

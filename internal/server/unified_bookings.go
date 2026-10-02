@@ -356,7 +356,7 @@ func (s *Server) handleUnifiedLedgerCreate(w http.ResponseWriter, r *http.Reques
 		s.rejectUnifiedBooking(w, r, msg)
 		return true
 	}
-	id, err := s.store.CreateLedgerBooking(r.Context(), in)
+	result, err := s.store.CreateBooking(r.Context(), store.BookingCommand{Ledger: &in})
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return true
@@ -366,7 +366,7 @@ func (s *Server) handleUnifiedLedgerCreate(w http.ResponseWriter, r *http.Reques
 		return true
 	}
 	msg = "Verrechnung gespeichert."
-	if id == 0 {
+	if result.MainID == 0 {
 		msg = "Verrechnung war bereits erfasst."
 	}
 	s.setFlash(w, r, "success", msg)
