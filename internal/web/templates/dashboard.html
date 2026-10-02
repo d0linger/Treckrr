@@ -142,9 +142,12 @@
 		{{end}}
 	</div>
 	{{end}}
-	<div class="list">
+	<div class="list" data-favorite-list="neighbor">
 		{{range .Summaries}}
-		<div class="list__row card" data-nb-item{{if and $.Completed (not .Paid)}} data-open="1"{{end}}{{if $.Completed}}{{if .Credit}} data-due="credit"{{else if not .Paid}} data-due="open"{{end}}{{end}}>
+		<div class="list__row card" data-nb-item data-favorite-id="{{.Neighbor.ID}}"{{if and $.Completed (not .Paid)}} data-open="1"{{end}}{{if $.Completed}}{{if .Credit}} data-due="credit"{{else if not .Paid}} data-due="open"{{end}}{{end}}>
+			<button class="favorite-toggle" type="button" data-favorite-toggle aria-pressed="false" title="Als Favorit merken" aria-label="Als Favorit merken">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.75 5.57 6.15.9-4.45 4.33 1.05 6.12L12 17.03l-5.5 2.89 1.05-6.12L3.1 9.47l6.15-.9z"/></svg>
+			</button>
 			<a class="list__main list__main--link" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}">
 				<span class="list__title">{{.Neighbor.Name}}</span>
 				<span class="list__sub">{{.Entries}} Buchungen · {{num .Hours}} h</span>

@@ -677,6 +677,11 @@ body:has(#auszuzahlen:target) [data-due="credit"] { outline: 2px solid var(--acc
 .link:hover { text-decoration: underline; }
 
 /* ---- Entries ---------------------------------------------------------- */
+.favorite-toggle { flex: 0 0 auto; width: 2.75rem; height: 2.75rem; display: inline-grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.favorite-toggle svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.favorite-toggle.is-favorite { color: var(--primary); background: var(--primary-tint); }
+.favorite-toggle.is-favorite svg { fill: currentColor; }
+.favorite-select-toggle { margin-top: .35rem; }
 .entry { display: grid; grid-template-columns: 1fr auto; gap: .3rem .6rem; align-items: start; }
 .entry__head { grid-column: 1 / -1; display: flex; justify-content: space-between; font-weight: 600; }
 .entry__cost { color: var(--primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -1523,7 +1528,6 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 	display: grid; place-items: center; font-size: 1.6rem; font-weight: 700; text-decoration: none;
 	box-shadow: 0 6px 18px color-mix(in srgb, var(--signal) 45%, transparent), 0 2px 6px rgba(0, 0, 0, .3); }
 .fab:hover { background: var(--signal-press); }
-
 /* ---- Beleg: shareable statement (Saldo first + compact table) --------- */
 .beleg { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
 	overflow: hidden; box-shadow: var(--card-shadow);
