@@ -490,7 +490,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		e := importEntry(row, yearID, token)
-		newID, err := s.store.CreateEntry(r.Context(), e, nil)
+		result, err := s.store.CreateBooking(r.Context(), store.BookingCommand{Entry: e})
 		if err != nil {
 			reason, business := importCommitSkipReason(err)
 			if !business {
@@ -504,7 +504,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 			failed = append(failed, "Zeile "+itoa(row.Line)+" ("+reason+")")
 			continue
 		}
-		if newID != 0 { // 0 = an already-imported row on a re-submit; don't double-count
+		if result.MainID != 0 { // 0 = an already-imported row on a re-submit; don't double-count
 			created++
 		}
 	}
