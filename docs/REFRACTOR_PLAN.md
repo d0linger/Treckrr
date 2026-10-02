@@ -27,6 +27,9 @@ Completed on `dev` on 2026-10-01:
   offline, and quick-entry paths.
 - Stabilized the recurring schedule integration test across local and UTC time
   zones by comparing PostgreSQL dates as calendar days.
+- Consolidated the dashboard's basis, neighbour, booking, year-close, and
+  settlement state into one live workflow strip, with direct booking entry from
+  each writable open-year neighbour row.
 
 Deliberately unchanged:
 

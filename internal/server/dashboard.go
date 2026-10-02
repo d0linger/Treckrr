@@ -53,7 +53,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	summaries := make([]neighborSummary, 0, len(summaryRows))
 	var grandCost, grandHours, paidCost, openCost, creditCost decimal.Decimal
-	openCount, creditCount := 0, 0
+	bookingCount, openCount, creditCount := 0, 0, 0
 	for _, row := range summaryRows {
 		summaries = append(summaries, neighborSummary{
 			Neighbor: models.Neighbor{ID: row.NeighborID, Name: row.Name},
@@ -62,6 +62,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		})
 		grandCost = grandCost.Add(row.Cost)
 		grandHours = grandHours.Add(row.Hours)
+		bookingCount += row.Entries
 		paidCost = paidCost.Add(row.PaidAmount) // actual money received
 		if row.Remaining.IsPositive() {
 			// "Offen" = what neighbors still owe (net minus payments). Negative
@@ -116,6 +117,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	data["Available"] = available
 	data["GrandCost"] = grandCost
 	data["GrandHours"] = grandHours
+	data["NeighborCount"] = len(summaries)
+	data["BookingCount"] = bookingCount
 	data["Completed"] = year.Completed()
 	data["PaidCost"] = paidCost
 	data["OpenCost"] = openCost

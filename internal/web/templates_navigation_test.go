@@ -56,6 +56,44 @@ func TestDashboardBookingNavigation(t *testing.T) {
 	}
 }
 
+// TestDashboardCoreWorkflow keeps the daily path and its direct booking entry
+// visible without promoting the secondary reporting modules again.
+func TestDashboardCoreWorkflow(t *testing.T) {
+	t.Parallel()
+	page := execPage(t, "dashboard", map[string]any{
+		"User": models.User{ID: 1, Username: "editor", Role: models.RoleEditor},
+		"Year": models.BillingYear{
+			ID: 7, Year: 2026, Base: &models.PriceBase{Year: 2025},
+		},
+		"BookingCount": 4,
+		"GrandCost":    decimal.NewFromInt(120),
+		"GrandHours":   decimal.NewFromInt(3),
+		"PaidCost":     decimal.Zero,
+		"OpenCost":     decimal.NewFromInt(120),
+		"Summaries": []map[string]any{{
+			"Neighbor":  models.Neighbor{ID: 9, Name: "Demo-Hof Leitner"},
+			"Cost":      decimal.NewFromInt(120),
+			"Hours":     decimal.NewFromInt(3),
+			"Entries":   4,
+			"Remaining": decimal.NewFromInt(120),
+		}},
+	})
+	for _, label := range []string{"Grundlage", "Nachbarn", "Buchungen", "Abschluss", "Bezahlt"} {
+		if !strings.Contains(page, ">"+label+"</strong>") {
+			t.Errorf("core workflow missing %q", label)
+		}
+	}
+	if count := strings.Count(page, `<li class="workpath__step`); count != 5 {
+		t.Errorf("workflow steps = %d, want 5", count)
+	}
+	if !strings.Contains(page, `href="/neighbors/9?year=7#neue-buchung">Buchen</a>`) {
+		t.Error("open-year neighbor has no direct booking entry")
+	}
+	if !strings.Contains(page, `<small>4 erfasst</small>`) {
+		t.Error("workflow does not expose the current booking count")
+	}
+}
+
 // TestDrawerBookingNavigation preserves year context, active-page semantics,
 // and the signed-in navigation boundary for the consistently named entry.
 func TestDrawerBookingNavigation(t *testing.T) {
