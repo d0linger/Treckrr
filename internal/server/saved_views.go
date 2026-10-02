@@ -57,13 +57,17 @@ func (s *Server) handleSavedViewCreate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/buchungen")
 		return
 	}
+	raw := r.FormValue("query")
+	if s.tooLong(w, r, "Filter", raw, maxNoteLen) {
+		redirect(w, r, "/buchungen")
+		return
+	}
 	yearID := formInt64(r, "year_id")
 	if _, err := s.store.GetBillingYear(r.Context(), yearID); err != nil {
 		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist nicht verfügbar.")
 		redirect(w, r, "/buchungen")
 		return
 	}
-	raw := r.FormValue("query")
 	values, err := url.ParseQuery(raw)
 	if err != nil {
 		s.badRequest(w, "Der Filter ist ungültig.")
