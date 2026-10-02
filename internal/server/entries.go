@@ -38,40 +38,14 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	base := year.Base
 
-	entries, err := s.store.ListEntries(r.Context(), neighbor.ID, year.ID)
+	settlements := s.settlements()
+	account, err := settlements.Load(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	cost, hours, err := s.store.NeighborTotal(r.Context(), neighbor.ID, year.ID)
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
-	}
-	// Bidirectional ledger: manual postings that net against the bookings.
-	ledger, err := s.store.ListNeighborLedger(r.Context(), year.ID, neighbor.ID)
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
-	}
-	ledgerSum := decimal.Zero
-	for _, l := range ledger {
-		if !l.Voided {
-			ledgerSum = ledgerSum.Add(l.Amount)
-		}
-	}
-
-	// Payments toward this year (dated amounts). The remaining balance is the
-	// saldo minus what was paid; payments are editable regardless of year status.
-	payments, err := s.store.ListPayments(r.Context(), year.ID, neighbor.ID)
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
-	}
-	paidSum := decimal.Zero
-	for _, p := range payments {
-		paidSum = paidSum.Add(p.Amount)
-	}
+	entries := account.Entries
+	ledger := account.Ledger
 
 	// Bookings whose stored price no longer matches the current basis (the basis
 	// was edited after they were booked). Marked in the table; offered for
@@ -136,20 +110,20 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	view.LinkedFrom = linkedFrom
 	view.PairLabel = pairLabel
-	view.TotalCost = cost
-	view.TotalHours = hours
+	view.TotalCost = account.Cost
+	view.TotalHours = account.Hours
 	view.Ledger = ledger
-	view.LedgerSum = ledgerSum
-	view.Saldo = cost.Add(ledgerSum)
-	view.Payments = payments
-	view.PaidSum = paidSum
+	view.LedgerSum = account.LedgerSum
+	view.Saldo = account.Saldo
+	view.Payments = account.Payments
+	view.PaidSum = account.PaidSum
 	plans, err := s.store.ListInstallments(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	view.Installments = installmentViews(plans, paidSum)
-	remaining, err := s.store.AccountRemaining(r.Context(), year.ID, neighbor.ID)
+	view.Installments = installmentViews(plans, account.PaidSum)
+	remaining, err := settlements.PayableRemaining(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
 		s.serverError(w, "neighbor: payable balance", err)
 		return

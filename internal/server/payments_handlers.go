@@ -17,7 +17,7 @@ import (
 // invoice exists this is its frozen gross (plus credits/ledger, less payments),
 // otherwise it falls back to the live booking net.
 func (s *Server) neighborRemaining(ctx context.Context, yearID, neighborID int64) (decimal.Decimal, error) {
-	return s.store.AccountRemaining(ctx, yearID, neighborID)
+	return s.settlements().PayableRemaining(ctx, yearID, neighborID)
 }
 
 // parsePaidOn parses the yyyy-mm-dd payment date, defaulting to today.

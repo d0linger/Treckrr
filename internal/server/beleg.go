@@ -118,24 +118,13 @@ func deu2(d decimal.Decimal) string {
 // Kostengrundlage appendix. Shared by the authenticated Beleg page and the public
 // share link so both render the identical document.
 func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor *models.Neighbor, year *models.BillingYear) (pageData, error) {
-	entries, err := s.store.ListEntries(r.Context(), neighbor.ID, year.ID)
+	account, err := s.settlements().Load(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
 		return nil, err
 	}
-	cost, hours, err := s.store.NeighborTotal(r.Context(), neighbor.ID, year.ID)
-	if err != nil {
-		return nil, err
-	}
-	ledger, err := s.store.ListNeighborLedger(r.Context(), year.ID, neighbor.ID)
-	if err != nil {
-		return nil, err
-	}
-	ledgerSum := decimal.Zero
-	for _, l := range ledger {
-		if !l.Voided {
-			ledgerSum = ledgerSum.Add(l.Amount)
-		}
-	}
+	entries := account.Entries
+	cost, hours := account.Cost, account.Hours
+	ledger, ledgerSum := account.Ledger, account.LedgerSum
 
 	// Basis items (ordered lists + id lookups) for the Kostengrundlage. Errors
 	// are tolerated: without them the appendix simply stays empty.
@@ -318,17 +307,10 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	}
 	sort.SliceStable(groups, func(i, j int) bool { return groups[i].Cost.GreaterThan(groups[j].Cost) })
 
-	// Payments toward this year and the resulting open balance (saldo − paid).
-	payments, err := s.store.ListPayments(r.Context(), year.ID, neighbor.ID)
-	if err != nil {
-		return nil, err
-	}
-	paidSum := decimal.Zero
-	for _, p := range payments {
-		paidSum = paidSum.Add(p.Amount)
-	}
-	saldo := cost.Add(ledgerSum)
-	remaining := saldo.Sub(paidSum)
+	// Payments toward this year and the resulting live open balance. Formal
+	// invoice settlement is reconciled separately below from the frozen gross.
+	payments, paidSum := account.Payments, account.PaidSum
+	saldo, remaining := account.Saldo, account.Remaining
 	paid := remaining.IsZero() // fully settled; a negative rest is a Guthaben I owe
 
 	// Invoice (Rechnung) mode: sender settings + the issued number (if any).
