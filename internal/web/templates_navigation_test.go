@@ -94,6 +94,64 @@ func TestDashboardCoreWorkflow(t *testing.T) {
 	}
 }
 
+// TestNeighborAccountNavigation keeps the long account page directly
+// navigable without changing any of its booking or payment actions.
+func TestNeighborAccountNavigation(t *testing.T) {
+	t.Parallel()
+	base := map[string]any{
+		"Title": "Demo-Hof Leitner",
+		"Year": models.BillingYear{
+			ID: 7, Year: 2026, Base: &models.PriceBase{ID: 2, Year: 2026},
+		},
+		"Base":              models.PriceBase{ID: 2, Year: 2026},
+		"Neighbor":          models.Neighbor{ID: 9, Name: "Demo-Hof Leitner"},
+		"BookingCount":      4,
+		"TotalCost":         decimal.NewFromInt(120),
+		"TotalHours":        decimal.NewFromInt(3),
+		"Saldo":             decimal.NewFromInt(120),
+		"LedgerSum":         decimal.Zero,
+		"PaidSum":           decimal.Zero,
+		"Remaining":         decimal.NewFromInt(120),
+		"CreditAmount":      decimal.Zero,
+		"Today":             "2026-10-02",
+		"Stale":             map[int64]bool{},
+		"PhotoCounts":       map[int64]int{},
+		"LedgerPhotoCounts": map[int64]int{},
+		"PairLabel":         map[int64]string{},
+		"LinkedFrom":        map[int64]int64{},
+	}
+
+	page := execPage(t, "neighbor", base)
+	for _, target := range []string{"neue-buchung", "leistungen", "verrechnung", "zahlungen"} {
+		if !strings.Contains(page, `href="#`+target+`"`) {
+			t.Errorf("neighbor navigation missing target %q", target)
+		}
+		if !strings.Contains(page, `id="`+target+`"`) {
+			t.Errorf("neighbor page missing anchor %q", target)
+		}
+	}
+	for _, label := range []string{"Buchen", "Leistungen", "Verrechnung", "Zahlungen", "Offen 120,00"} {
+		if !strings.Contains(page, label) {
+			t.Errorf("neighbor navigation missing %q", label)
+		}
+	}
+
+	base["Completed"] = true
+	completed := execPage(t, "neighbor", base)
+	navStart := strings.Index(completed, `<nav class="account-nav account-nav--complete"`)
+	if navStart < 0 {
+		t.Fatal("completed neighbor page has no account navigation")
+	}
+	navEnd := strings.Index(completed[navStart:], `</nav>`)
+	if navEnd < 0 {
+		t.Fatal("completed neighbor navigation is not closed")
+	}
+	nav := completed[navStart : navStart+navEnd]
+	if strings.Contains(nav, `href="#neue-buchung"`) || strings.Contains(nav, ">Buchen<") {
+		t.Error("completed neighbor navigation exposes the booking entry")
+	}
+}
+
 // TestDrawerBookingNavigation preserves year context, active-page semantics,
 // and the signed-in navigation boundary for the consistently named entry.
 func TestDrawerBookingNavigation(t *testing.T) {

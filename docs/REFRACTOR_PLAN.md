@@ -30,6 +30,9 @@ Completed on `dev` on 2026-10-01:
 - Consolidated the dashboard's basis, neighbour, booking, year-close, and
   settlement state into one live workflow strip, with direct booking entry from
   each writable open-year neighbour row.
+- Added compact in-page navigation for booking, own services, counterclaims,
+  and payments on the long neighbour account page without changing its forms,
+  calculations, or permissions.
 
 Deliberately unchanged:
 

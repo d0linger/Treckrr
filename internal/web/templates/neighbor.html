@@ -20,6 +20,27 @@
 		</div>
 	</div>
 
+	<nav class="account-nav{{if .Completed}} account-nav--complete{{end}}" aria-label="Bereiche für {{.Neighbor.Name}}">
+		{{if not .Completed}}
+		<a class="account-nav__item account-nav__item--primary" href="#neue-buchung">
+			<strong>Buchen</strong>
+			<small>Neue Leistung</small>
+		</a>
+		{{end}}
+		<a class="account-nav__item" href="#leistungen">
+			<strong>Leistungen</strong>
+			<small>{{.BookingCount}} Positionen</small>
+		</a>
+		<a class="account-nav__item" href="#verrechnung">
+			<strong>Verrechnung</strong>
+			<small>{{if .Ledger}}Positionen vorhanden{{else}}Noch leer{{end}}</small>
+		</a>
+		<a class="account-nav__item" href="#zahlungen">
+			<strong>Zahlungen</strong>
+			<small>{{if .Remaining.IsNegative}}Guthaben {{money .CreditAmount}}{{else if .Remaining.IsZero}}Ausgeglichen{{else}}Offen {{money .Remaining}}{{end}}</small>
+		</a>
+	</nav>
+
 	{{if .Completed}}
 	<div class="flash flash--info">Dieses Abrechnungsjahr ist <strong>abgeschlossen</strong> – neue Buchungen und Löschungen sind gesperrt.</div>
 	{{else}}
@@ -113,7 +134,7 @@
 	{{end}}
 
 	<div class="btnrow btnrow--split">
-		<h2 class="section-title">Meine Leistungen</h2>
+		<h2 class="section-title" id="leistungen">Meine Leistungen</h2>
 		<a class="link small" href="/buchungen?year={{.Year.ID}}&amp;neighbor_id={{.Neighbor.ID}}">Alle Buchungen · beide Richtungen ›</a>
 	</div>
 	<p class="muted small">Diese Positionen zählen zu meiner Leistung, Rechnung und eigenen Nutzung.</p>
@@ -187,7 +208,7 @@
 	<div class="bcard__summary"><span class="muted">Meine Leistungen · {{num .TotalHours}} Maschinen-h</span><span>{{money .TotalCost}}</span></div>
 	{{end}}
 
-	<h2 class="section-title">Nachbarleistungen &amp; Verrechnung</h2>
+	<h2 class="section-title" id="verrechnung">Nachbarleistungen &amp; Verrechnung</h2>
 	<p class="muted small">Leistungen des Nachbarn werden mit Maschinenleistung und Mannstunden vollständig aufgeschlüsselt. Sie reduzieren den Saldo, bleiben aber von meiner Rechnung und eigenen Maschinennutzung getrennt.</p>
 	<div class="bookcards">
 		{{range .Ledger}}
@@ -281,7 +302,7 @@
 	{{end}}
 	{{end}}
 
-	<h2 class="section-title">Zahlungen</h2>
+	<h2 class="section-title" id="zahlungen">Zahlungen</h2>
 	<p class="muted small">Erhaltene Zahlungen — jederzeit erfassbar, auch nach Abschluss des Jahres.</p>
 	<div class="bookcards">
 		{{range .Payments}}

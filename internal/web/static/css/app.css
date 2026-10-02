@@ -1146,7 +1146,24 @@ a.workpath__link:hover { background: var(--surface-2); }
 	font-family: var(--font-mono); font-size: .7rem; font-weight: 700; text-decoration: none;
 }
 .list__book:hover { border-color: var(--primary); background: var(--primary-tint); }
+.account-nav {
+	display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px;
+	overflow: hidden; border: 1px solid var(--card-hairline); border-radius: var(--radius);
+	background: var(--border); box-shadow: var(--card-shadow);
+}
+.account-nav__item {
+	display: flex; min-width: 0; min-height: 64px; flex-direction: column; justify-content: center; gap: .12rem;
+	padding: .65rem .75rem; background: var(--surface); color: var(--text); text-decoration: none;
+}
+.account-nav__item strong { font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.2; }
+.account-nav__item small { overflow: hidden; color: var(--muted); font-size: .72rem; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.account-nav__item:hover { background: var(--surface-2); }
+.account-nav__item--primary { background: var(--primary-tint); color: var(--primary-strong); }
+.account-nav__item--primary small { color: var(--primary-strong); }
+#neue-buchung, #leistungen, #verrechnung, #zahlungen { scroll-margin-top: 8rem; }
 @media (min-width: 600px) {
+	.account-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+	.account-nav--complete { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 	.workpath__link { min-height: 92px; align-items: flex-start; padding: .7rem .65rem; text-align: left; }
 	.workpath__copy strong { font-size: .72rem; }
 	.workpath__copy small { display: block; }
