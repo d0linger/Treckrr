@@ -183,10 +183,12 @@ func (s *Store) materializeRecurring(ctx context.Context, occurrence recurringOc
 	tmpl := occurrence.Template
 	key := fmt.Sprintf("recur:%d:%s", occurrence.RuleID, occurrence.Date.Format("2006-01-02"))
 	if tmpl.LedgerBooking != nil {
-		return s.CreateLedgerBooking(ctx, LedgerBookingInput{
+		ledger := &LedgerBookingInput{
 			YearID: occurrence.YearID, NeighborID: occurrence.NeighborID, Date: occurrence.Date,
 			Incoming: tmpl.Incoming, Booking: *tmpl.LedgerBooking, IdempotencyKey: key,
-		})
+		}
+		result, err := s.CreateBooking(ctx, BookingCommand{Ledger: ledger})
+		return result.MainID, err
 	}
 	entry := entryFromTemplate(tmpl)
 	entry.PersonID = occurrence.PersonID
@@ -197,14 +199,20 @@ func (s *Store) materializeRecurring(ctx context.Context, occurrence recurringOc
 	if tmpl.Companions == nil {
 		if len(occurrence.Companions) > 0 {
 			if helper := companionEntry(&occurrence.Companions[0], entry); helper != nil {
-				id, helperID, err := s.CreateEntryPair(ctx, entry, tmpl.MachineIDs, helper)
-				if id == 0 {
-					id = helperID
+				result, err := s.CreateBooking(ctx, BookingCommand{
+					Entry:      entry,
+					MachineIDs: tmpl.MachineIDs,
+					Helpers:    []*models.Entry{helper},
+				})
+				id := result.MainID
+				if id == 0 && len(result.HelperIDs) > 0 {
+					id = result.HelperIDs[0]
 				}
 				return id, err
 			}
 		}
-		return s.CreateEntry(ctx, entry, tmpl.MachineIDs)
+		result, err := s.CreateBooking(ctx, BookingCommand{Entry: entry, MachineIDs: tmpl.MachineIDs})
+		return result.MainID, err
 	}
 	helpers := []*models.Entry{}
 	for _, companion := range occurrence.Companions {
@@ -227,9 +235,14 @@ func (s *Store) materializeRecurring(ctx context.Context, occurrence recurringOc
 		}
 		helpers = append(helpers, helper)
 	}
-	id, helperIDs, err := s.CreateEntryGroup(ctx, entry, tmpl.MachineIDs, helpers)
+	result, err := s.CreateBooking(ctx, BookingCommand{
+		Entry:      entry,
+		MachineIDs: tmpl.MachineIDs,
+		Helpers:    helpers,
+	})
+	id := result.MainID
 	if id == 0 {
-		for _, helperID := range helperIDs {
+		for _, helperID := range result.HelperIDs {
 			if helperID != 0 {
 				id = helperID
 				break
