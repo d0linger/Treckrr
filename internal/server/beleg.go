@@ -22,7 +22,6 @@ import (
 	"github.com/d0linger/treckrr/internal/mail"
 	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
-	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -113,14 +112,14 @@ func deu2(d decimal.Decimal) string {
 	return s
 }
 
-// buildBelegData assembles the full Beleg view model for a neighbor+year: the
+// buildBelegView assembles the full Beleg view model for a neighbor+year: the
 // bookings table, totals, ledger, payments, invoice/snapshot state, EPC-QR and the
 // Kostengrundlage appendix. Shared by the authenticated Beleg page and the public
 // share link so both render the identical document.
-func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor *models.Neighbor, year *models.BillingYear) (pageData, error) {
+func (s *Server) buildBelegView(r *http.Request, neighbor *models.Neighbor, year *models.BillingYear) (belegView, error) {
 	account, err := s.settlements().Load(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
-		return nil, err
+		return belegView{}, err
 	}
 	entries := account.Entries
 	cost, hours := account.Cost, account.Hours
@@ -248,7 +247,7 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 
 	snapshots, err := s.store.EntryMachineSnapshotsByNeighborYear(r.Context(), neighbor.ID, year.ID)
 	if err != nil {
-		return nil, err
+		return belegView{}, err
 	}
 	// Group bookings by day (date shown once per day) and aggregate identical
 	// Leistungen for the optional "Bündeln" view. Both render the same bookings as
@@ -323,7 +322,7 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	// to pay, so surface it rather than render a wrong total.
 	documents, err := s.store.ListInvoiceDocuments(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
-		return nil, err
+		return belegView{}, err
 	}
 	var invCredits decimal.Decimal // negative: sum of active credit-note gross
 	for _, d := range documents {
@@ -332,35 +331,21 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 		}
 	}
 
-	data := s.newPage(w, r, neighbor.Name+" · Beleg", "dashboard")
-	if err := s.withYearSelector(r, data, year); err != nil {
-		return nil, err
+	view := belegView{
+		Neighbor: neighbor, Days: days, HasCalculationPath: true,
+		Groups: groups, CanBundle: len(groups) > 0 && len(groups) < bookings,
+		Bundle:    r.URL.Query().Get("bundeln") == "1",
+		TotalCost: cost, TotalHours: hours,
+		Ledger: ledger, LedgerSum: ledgerSum, Saldo: saldo,
+		Completed: year.Completed(), Paid: paid, Credit: remaining.IsNegative(),
+		Payments: payments, PaidSum: paidSum, Remaining: remaining,
+		HasPayments: len(payments) > 0,
+		Company:     company, HasInvoice: hasInvoice, Invoice: invoice,
 	}
-	data["Neighbor"] = neighbor
-	data["Days"] = days
-	data["HasCalculationPath"] = true
-	data["Groups"] = groups
-	data["CanBundle"] = len(groups) > 0 && len(groups) < bookings
-	data["Bundle"] = r.URL.Query().Get("bundeln") == "1"
-	data["TotalCost"] = cost
-	data["TotalHours"] = hours
-	data["Ledger"] = ledger
-	data["LedgerSum"] = ledgerSum
-	data["Saldo"] = saldo
-	data["Completed"] = year.Completed()
-	data["Paid"] = paid
-	data["Credit"] = remaining.IsNegative()
-	data["Payments"] = payments
-	data["PaidSum"] = paidSum
-	data["Remaining"] = remaining
-	data["HasPayments"] = len(payments) > 0
-	data["Company"] = company
-	data["HasInvoice"] = hasInvoice
-	data["Invoice"] = invoice
 	if hasInvoice {
-		data["EInvoiceMissing"] = einvoice.MissingFields(invoice)
+		view.EInvoiceMissing = einvoice.MissingFields(invoice)
 	}
-	data["Rechnung"] = hasInvoice && r.URL.Query().Get("rechnung") == "1"
+	view.Rechnung = hasInvoice && r.URL.Query().Get("rechnung") == "1"
 	// Invoice reconciliation. USt is computed on the Leistungsentgelt (the
 	// services actually supplied) — NOT on the mutual-claim-netted saldo — so
 	// the tax base stays correct regardless of any Verrechnung. The Verrechnung
@@ -401,10 +386,10 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 		invTaxNote = c.TaxNote
 		invIBAN = c.Issuer.IBAN // frozen at issuance
 	}
-	data["InvIssuer"] = invIssuer
-	data["InvRecipient"] = invRecipient
-	data["InvTaxNote"] = invTaxNote
-	data["InvIBAN"] = invIBAN
+	view.InvIssuer = invIssuer
+	view.InvRecipient = invRecipient
+	view.InvTaxNote = invTaxNote
+	view.InvIBAN = invIBAN
 	// Integrity anchor of the frozen snapshot (shown short); empty for a legacy
 	// invoice without a snapshot.
 	if hasInvoice && invoice.Content != nil && invoice.Content.Hash != "" {
@@ -412,7 +397,7 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 		if len(h) > 12 {
 			h = h[:8] + "…" + h[len(h)-4:]
 		}
-		data["InvHash"] = h
+		view.InvHash = h
 	}
 	// USt share contained in the (gross) payments already received, at the
 	// invoice's rate.
@@ -421,39 +406,39 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 		rate := invRate.Div(decimal.NewFromInt(100))
 		invPaidUSt = paidSum.Mul(rate).Div(decimal.NewFromInt(1).Add(rate)).Round(2)
 	}
-	data["InvShowVAT"] = invShowVAT
-	data["InvRate"] = invRate
-	data["InvNet"] = invNet
-	data["InvUSt"] = invUSt
-	data["InvBrutto"] = invBrutto
+	view.InvShowVAT = invShowVAT
+	view.InvRate = invRate
+	view.InvNet = invNet
+	view.InvUSt = invUSt
+	view.InvBrutto = invBrutto
 	// Amount still to pay: gross services, less credit notes (invCredits is
 	// negative), less mutual Verrechnung, less payments.
 	invRest := invBrutto.Add(invCredits).Add(ledgerSum).Sub(paidSum)
 	// Scan-to-pay: show the EPC/GiroCode QR only for an issued invoice with an
 	// issuer IBAN and a positive REMAINING amount (the /epc-qr.png endpoint encodes
 	// that same remaining, so a partial payment/credit is reflected in the QR).
-	data["HasEpcQR"] = hasInvoice && strings.TrimSpace(invIBAN) != "" && invRest.IsPositive()
-	data["InvLedger"] = ledgerSum
-	data["InvPaidUSt"] = invPaidUSt
-	data["Documents"] = documents
-	data["HasDocuments"] = len(documents) > 1 // more than the invoice itself
+	view.HasEpcQR = hasInvoice && strings.TrimSpace(invIBAN) != "" && invRest.IsPositive()
+	view.InvLedger = ledgerSum
+	view.InvPaidUSt = invPaidUSt
+	view.Documents = documents
+	view.HasDocuments = len(documents) > 1 // more than the invoice itself
 	// Abschläge (Nr. 54): listed with their own storno action while no
 	// Schlussrechnung exists; afterwards they stay in the Belegverlauf.
 	anzahlungen, err := s.store.ListAnzahlungen(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
-		return nil, err
+		return belegView{}, err
 	}
 	anzSum, err := s.store.AnzahlungSum(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
-		return nil, err
+		return belegView{}, err
 	}
-	data["Anzahlungen"] = anzahlungen
-	data["AnzahlungSum"] = anzSum
+	view.Anzahlungen = anzahlungen
+	view.AnzahlungSum = anzSum
 	// Separate from "Today", which is the German display date on this page.
-	data["TodayISO"] = time.Now().Format("2006-01-02")
-	data["InvCredits"] = invCredits // negative sum of credit notes
-	data["HasCredits"] = invCredits.IsNegative()
-	data["InvRest"] = invRest
+	view.TodayISO = time.Now().Format("2006-01-02")
+	view.InvCredits = invCredits // negative sum of credit notes
+	view.HasCredits = invCredits.IsNegative()
+	view.InvRest = invRest
 	// Skonto clause (Nr. 42): rendered from the FROZEN snapshot, so Beleg, PDF
 	// and share link show the same promise and it never changes after
 	// Festschreibung. No expiry check: what the issued document offered stays on
@@ -461,8 +446,8 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	// midnight DATE with local wall time and dropped the clause hours early.
 	// Pre-snapshot invoices carry no clause (their PDF never had one either).
 	if hasInvoice && invoice.Content != nil && invoice.Content.SkontoPct.IsPositive() && !invoice.Content.SkontoUntil.IsZero() {
-		data["SkontoUntil"] = invoice.Content.SkontoUntil
-		data["SkontoPct"] = invoice.Content.SkontoPct
+		view.SkontoUntil = invoice.Content.SkontoUntil
+		view.SkontoPct = invoice.Content.SkontoPct
 	}
 	// Due date + countdown for the invoice: same definition as the Mahnwesen list
 	// (issue date + company payment term). Only meaningful while something is still
@@ -470,26 +455,26 @@ func (s *Server) buildBelegData(w http.ResponseWriter, r *http.Request, neighbor
 	if hasInvoice && !invoice.IssuedOn.IsZero() && invRest.IsPositive() {
 		term := company.EffectiveTermDays()
 		due := invoice.IssuedOn.AddDate(0, 0, term)
-		data["DueOn"] = due
+		view.DueOn = due
 		// Whole-day, DST-safe difference (shared with the dunning overdue count).
 		days := calc.DaysBetween(time.Now(), due)
-		data["DueDays"] = days // >0 days left, 0 today, <0 overdue
+		view.DueDays = days // >0 days left, 0 today, <0 overdue
 		if days < 0 {
-			data["OverdueDays"] = -days
+			view.OverdueDays = -days
 		}
 	}
 	// § 11: the recipient's UID/tax number is required on invoices over €10,000
 	// gross. Soft reminder only — it never blocks issuing.
-	data["InvNeedRecipientVATID"] = invBrutto.GreaterThan(decimal.NewFromInt(10000)) &&
+	view.InvNeedRecipientVATID = invBrutto.GreaterThan(decimal.NewFromInt(10000)) &&
 		strings.TrimSpace(invRecipient.TaxID) == ""
-	data["GrundTractors"] = gTractors
-	data["GrundMachines"] = gMachines
-	data["GrundCatalogReference"] = grundCatalogReference
-	data["HasGrund"] = len(gTractors) > 0 || len(gMachines) > 0
-	data["Bookings"] = bookings
-	data["ShowGrund"] = r.URL.Query().Get("grundlage") == "1"
-	data["Today"] = time.Now().Format("02.01.2006")
-	return data, nil
+	view.GrundTractors = gTractors
+	view.GrundMachines = gMachines
+	view.GrundCatalogReference = grundCatalogReference
+	view.HasGrund = len(gTractors) > 0 || len(gMachines) > 0
+	view.Bookings = bookings
+	view.ShowGrund = r.URL.Query().Get("grundlage") == "1"
+	view.Today = time.Now().Format("02.01.2006")
+	return view, nil
 }
 
 // handleNeighborBeleg renders the authenticated Beleg page for one neighbor+year.
@@ -508,11 +493,17 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	data, err := s.buildBelegData(w, r, neighbor, year)
+	view, err := s.buildBelegView(r, neighbor, year)
 	if err != nil {
 		s.serverError(w, "beleg", err)
 		return
 	}
+	data := s.newPage(w, r, neighbor.Name+" · Beleg", "dashboard")
+	if err := s.withYearSelector(r, data, year); err != nil {
+		s.serverError(w, "beleg: year selector", err)
+		return
+	}
+	view.bind(data)
 	data["LastSend"], _ = s.store.LastBelegSend(r.Context(), year.ID, neighbor.ID) // best-effort marker
 	data["MailEnabled"] = s.cfg.MailEnabled()
 	data["NeighborEmail"] = neighbor.Email
@@ -526,7 +517,7 @@ func (s *Server) handleNeighborBeleg(w http.ResponseWriter, r *http.Request) {
 		data["ShareQRAvailable"] = true
 	}
 	// Self-service: list the Beleg's active public links (manage/revoke).
-	if hasInv, _ := data["HasInvoice"].(bool); hasInv {
+	if view.HasInvoice {
 		data["Shares"], _ = s.store.ListBelegShares(r.Context(), neighbor.ID, year.ID) // best-effort
 		data["ShareDayOptions"] = belegShareDayOptions
 		data["ShareDefaultDays"] = belegShareDefaultDays
@@ -732,11 +723,17 @@ func (s *Server) handleSharedBeleg(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r) // not festgeschrieben (or gone) → no public view
 		return
 	}
-	data, err := s.buildBelegData(w, r, neighbor, year)
+	view, err := s.buildBelegView(r, neighbor, year)
 	if err != nil {
 		s.serverError(w, "shared beleg", err)
 		return
 	}
+	data := s.newPage(w, r, neighbor.Name+" · Beleg", "dashboard")
+	if err := s.withYearSelector(r, data, year); err != nil {
+		s.serverError(w, "shared beleg: year selector", err)
+		return
+	}
+	view.bind(data)
 	if err := s.store.RecordBelegShareEvent(r.Context(), shareID, nID, yID, "access"); err != nil {
 		s.serverError(w, "shared beleg: event", err)
 		return
@@ -774,7 +771,7 @@ func (s *Server) handleBelegPDF(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/neighbors/"+itoa64(id)+"/beleg?year="+itoa64(year.ID))
 		return
 	}
-	blob, err := pdf.RenderInvoice(&iv)
+	blob, err := s.documents().invoicePDF(iv)
 	if err != nil {
 		s.serverError(w, "beleg pdf", err)
 		return
@@ -835,24 +832,13 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	// PDF render, the intent write and one bounded SMTP attempt must all fit
 	// before the redirect; the global 30s WriteTimeout is shorter than that.
 	extendWriteDeadline(w, 2*store.MailDeliveryBudget)
-	blob, err := pdf.RenderInvoice(&iv)
+	company, _ := s.store.GetCompany(r.Context())
+	document, err := s.documents().invoiceMail(company, *neighbor, year.ID, iv)
 	if err != nil {
-		s.serverError(w, "beleg email: pdf", err)
+		s.serverError(w, "beleg email: document", err)
 		return
 	}
-	company, _ := s.store.GetCompany(r.Context())
-	body := mailBody(company, neighbor.Name, "anbei die Rechnung "+iv.Number+" als PDF.")
-	att := mail.Attachment{Filename: "Rechnung_" + sanitizeFilename(iv.Number) + ".pdf", ContentType: "application/pdf", Data: blob}
-	subject := "Rechnung " + iv.Number
-	messageID := mail.StableMessageID(s.cfg.SMTPFrom, neighbor.Email, subject, body, []mail.Attachment{att})
-	intent, created, err := s.store.CreateMailIntent(r.Context(), store.OutboxMail{
-		Kind: "beleg", NeighborID: neighbor.ID, BillingYearID: year.ID,
-		Recipient: neighbor.Email, Subject: subject, Body: body,
-		AttName: att.Filename, AttType: att.ContentType, AttData: att.Data,
-		DeliveryKey: fmt.Sprintf("beleg:%d:%s", iv.ID,
-			strings.ToLower(strings.TrimSpace(neighbor.Email))),
-		MessageID: messageID, RetryFailed: true, ForceResend: true,
-	})
+	intent, created, err := s.store.CreateMailIntent(r.Context(), document.Outbox)
 	if err != nil {
 		slog.Error("beleg email intent failed", "neighbor", neighbor.ID, "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Versand fehlgeschlagen.")
@@ -877,7 +863,7 @@ func (s *Server) handleBelegEmail(w http.ResponseWriter, r *http.Request) {
 	switch status {
 	case store.MailStatusSent:
 		if created {
-			s.sendMailCopyAsync(r.Context(), company, subject, body, []mail.Attachment{att})
+			s.sendMailCopyAsync(r.Context(), company, document.Subject, document.Body, []mail.Attachment{document.Attachment})
 			s.setFlash(w, r, "success", "Rechnung an "+neighbor.Email+" gesendet.")
 		} else {
 			s.setFlash(w, r, "success", "Rechnung wurde bereits per E-Mail versendet.")
