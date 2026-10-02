@@ -95,18 +95,20 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	gespanne, _ := s.store.ListGespanne(r.Context(), base.ID)
 
 	data := s.newPage(w, r, neighbor.Name, "dashboard")
-	data["Stale"] = stale
-	data["StaleCount"] = len(stale)
-	data["TaskSummary"] = summarizeByTask(entries)
-	data["Completed"] = year.Completed()
 	if err := s.withYearSelector(r, data, year); err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	data["Base"] = base
-	data["Neighbor"] = neighbor
-	data["Entries"] = entries
-	data["BookingCount"] = len(entries) + len(ledger)
+	view := neighborDetailView{
+		Stale:        stale,
+		StaleCount:   len(stale),
+		TaskSummary:  summarizeByTask(entries),
+		Completed:    year.Completed(),
+		Base:         base,
+		Neighbor:     neighbor,
+		Entries:      entries,
+		BookingCount: len(entries) + len(ledger),
+	}
 	// Pair links: LinkedFrom gives each machine booking its companion's id (the
 	// reverse of the stored direction), PairLabel names the OTHER half for each
 	// side — task and hours, so with several pairs on one day the operator sees
@@ -132,33 +134,33 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 		pairLabel[e.ID] = fmt.Sprintf("%s · %s h", machine.TaskLabel, de(machine.Hours))
 		pairLabel[machine.ID] = fmt.Sprintf("%s · %s h", e.TaskLabel, de(e.Quantity))
 	}
-	data["LinkedFrom"] = linkedFrom
-	data["PairLabel"] = pairLabel
-	data["TotalCost"] = cost
-	data["TotalHours"] = hours
-	data["Ledger"] = ledger
-	data["LedgerSum"] = ledgerSum
-	data["Saldo"] = cost.Add(ledgerSum)
-	data["Payments"] = payments
-	data["PaidSum"] = paidSum
+	view.LinkedFrom = linkedFrom
+	view.PairLabel = pairLabel
+	view.TotalCost = cost
+	view.TotalHours = hours
+	view.Ledger = ledger
+	view.LedgerSum = ledgerSum
+	view.Saldo = cost.Add(ledgerSum)
+	view.Payments = payments
+	view.PaidSum = paidSum
 	plans, err := s.store.ListInstallments(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	data["Installments"] = installmentViews(plans, paidSum)
+	view.Installments = installmentViews(plans, paidSum)
 	remaining, err := s.store.AccountRemaining(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
 		s.serverError(w, "neighbor: payable balance", err)
 		return
 	}
-	data["Remaining"] = remaining
+	view.Remaining = remaining
 	// The credit shown on the payout/carry buttons: the negative rest, made
 	// positive for display ("Guthaben (45,00 €)").
-	data["CreditAmount"] = remaining.Neg()
+	view.CreditAmount = remaining.Neg()
 	// An issued invoice enables the Skonto (§16) option on the payment form.
 	_, invErr := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
-	data["HasInvoice"] = invErr == nil
+	view.HasInvoice = invErr == nil
 	// Mannstunden (Nr. 56/57) and Anfahrt (Nr. 58) get their own small forms on
 	// this page rather than extra fields in the main booking form, whose three
 	// stacked submit handlers and pricing fetch are not worth disturbing.
@@ -193,35 +195,37 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	data["PhotoCounts"] = photoCounts
-	data["LedgerPhotoCounts"] = ledgerPhotoCounts
-	data["Photos"] = photos
-	data["Persons"] = persons
-	data["TravelFlat"] = company.TravelFlat
-	data["TravelPerKm"] = company.TravelPerKm
-	data["HasTravelRates"] = company.TravelFlat.IsPositive() || company.TravelPerKm.IsPositive()
-	data["Tractors"] = tractors
-	data["Loads"] = loads
-	data["Machines"] = machines
-	data["Gespanne"] = gespanne
-	data["Today"] = time.Now().Format("2006-01-02")
+	view.PhotoCounts = photoCounts
+	view.LedgerPhotoCounts = ledgerPhotoCounts
+	view.Photos = photos
+	view.Persons = persons
+	view.TravelFlat = company.TravelFlat
+	view.TravelPerKm = company.TravelPerKm
+	view.HasTravelRates = company.TravelFlat.IsPositive() || company.TravelPerKm.IsPositive()
+	view.Tractors = tractors
+	view.Loads = loads
+	view.Machines = machines
+	view.Gespanne = gespanne
+	view.Today = time.Now().Format("2006-01-02")
 	bookingValues := newBookingValues()
 	if raw := r.URL.Query().Get("machine"); raw != "" {
 		if machineID, err := strconv.ParseInt(raw, 10, 64); err == nil && machineID > 0 {
 			for _, machine := range machines {
 				if machine.ID == machineID {
 					bookingValues["mode"] = "manual"
-					data["SelectedMachineIDs"] = []int64{machineID}
-					data["BookingPrefilled"] = true
-					data["PrefilledMachine"] = machine
+					view.SelectedMachineIDs = []int64{machineID}
+					view.BookingPrefilled = true
+					machineCopy := machine
+					view.PrefilledMachine = &machineCopy
 					break
 				}
 			}
 		}
 	}
-	data["BookingValues"] = bookingValues
-	data["BookingLocked"] = data["HasInvoice"]
-	data["BookingAction"] = "/entries"
+	view.BookingValues = bookingValues
+	view.BookingLocked = view.HasInvoice
+	view.BookingAction = "/entries"
+	view.bind(data)
 	s.render(w, r, "neighbor", data)
 }
 
