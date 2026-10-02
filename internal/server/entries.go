@@ -678,17 +678,25 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 			nb, entry.TaskLabel,
 			entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2))
 	}
-	var newID, companionID int64
+	command := store.BookingCommand{
+		Entry:      entry,
+		MachineIDs: machineIDs,
+		Audit:      audit,
+	}
 	if companion != nil {
 		audit.CompanionDetail = fmt.Sprintf("%s · Mannstunden (verknüpft), %s h × %s = %s €",
 			nb, companion.Quantity.String(), companion.UnitPrice.StringFixed(2), companion.Cost.StringFixed(2))
-		newID, companionID, err = s.store.CreateEntryPairAudited(r.Context(), entry, machineIDs, companion, audit)
-	} else {
-		newID, err = s.store.CreateEntryAudited(r.Context(), entry, machineIDs, audit)
+		command.Helpers = []*models.Entry{companion}
 	}
+	result, err := s.store.CreateBooking(r.Context(), command)
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return
+	}
+	newID := result.MainID
+	companionID := int64(0)
+	if len(result.HelperIDs) == 1 {
+		companionID = result.HelperIDs[0]
 	}
 	if newID == 0 && companionID == 0 { // duplicate replay of an offline booking — already recorded
 		s.acceptRecordedReplay(w, r, neighborURL(neighborID, yearID))
