@@ -1,0 +1,94 @@
+/* Treckrr — mobile-first PWA styles. All assets served locally. */
+
+/* Self-hosted brand typefaces (served same-origin, allowed by the CSP).
+   Werkblatt identity: JetBrains Mono LEADS (display/headings/KPIs/labels — the
+   machine-ledger voice), Hanken Grotesk stays on body duty. Manrope retired. */
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:400;font-display:swap;src:url('/static/fonts/hanken-400.woff2') format('woff2');}
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:500;font-display:swap;src:url('/static/fonts/hanken-500.woff2') format('woff2');}
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:600;font-display:swap;src:url('/static/fonts/hanken-600.woff2') format('woff2');}
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/hanken-700.woff2') format('woff2');}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:500;font-display:swap;src:url('/static/fonts/jetbrainsmono-500.woff2') format('woff2');}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:700;font-display:swap;src:url('/static/fonts/jetbrainsmono-700.woff2') format('woff2');}
+
+:root {
+	color-scheme: light;
+	--font-body: 'Hanken Grotesk', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--font-display: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	/* Werkblatt (light): green-tinted technical paper, iron-green ink. */
+	--bg: #edf1ec;
+	--surface: #f9fbf9;
+	--surface-2: #eff2ef;
+	--text: #19211d;
+	--muted: #57645c; /* passes 4.5:1 on the bg */
+	--border: #ccd4ce;
+	--primary: #115638;        /* deep "Treckrr green" — links, nav, paid states */
+	--primary-strong: #2f6f4f; /* mid green — the lighter end of the hero gradients */
+	--primary-tint: #e3efe8;
+	--on-primary: #ffffff; /* text/icon on a solid primary surface (dark in Noir) */
+	/* Signal — safety orange, THE action colour (primary buttons, FAB, active
+	   pill). Ink-on-orange like a stamped machine warning label (~7:1 both
+	   themes); green machine, orange decals. */
+	--signal: #e05910;
+	--signal-press: #c74d0c;
+	--on-signal: #1c1006;
+	--signal-tint: #f9e6da;
+	--signal-text: #b04408; /* orange as TEXT/stroke on light surfaces (AA) */
+	/* danger = CRIMSON, deliberately pulled away from the signal orange so a
+	   destructive control can never be confused with the primary action. */
+	--danger: #a4262e;
+	--danger-text: #a4262e; /* light: the fill already clears AA as text */
+	--danger-tint: #f4dcdd;
+	--accent: #c8891f;
+	/* Darker amber used only where amber is TEXT (links, warn chips, status tags):
+	   passes 4.5:1 in light mode where the vivid --accent does not. In dark mode it
+	   equals --accent, which already passes. */
+	--accent-text: #835911; /* clears 4.5:1 on the accent tint too, not only on paper */
+	/* High-contrast keyboard-focus ring (WCAG 2.4.7). */
+	--focus: #1f6feb;
+	/* chart marks: a touch more chroma than the brand green so a bar doesn't read
+	   grey; owe/pay are the diverging poles for signed (Verrechnung) charts. */
+	--data: #2f8457;
+	--data-track: #e8ece8;
+	--pay: #2f8457;
+	--owe: #c05635;
+	--on-status: #fff;
+	/* Text variants: the fills above sit at ~4.0:1 on the page ground, which is
+	   fine for a bar but under AA's 4.5:1 for text. Measured 4.84 / 4.77 on the
+	   page and better on cards. */
+	--pay-text: #28734b;
+	--owe-text: #ac4d2f;
+	/* Chassis — the machine frame: app bar + nav rail/tab bar stay this dark
+	   green-black in BOTH themes (a deliberate constant, like the white appbar
+	   icons); the orange marker is the only moving part. */
+	--chassis: #fbfaf5;
+	--chassis-text: #1f4d38;   /* 9.23:1 on the chrome */
+	--chassis-muted: #5c6b62;  /* 5.38:1 — #6b7d72 would only reach 4.18 and fail AA */
+	--chassis-line: #1f4d38;   /* the edge does the separating a dark fill used to do */
+	--chassis-active: #85d7a9; /* B: nav marker is a STATE -> mint. Theme-constant. */
+	/* The active nav item is a filled chip rather than coloured text: mint on the
+	   light chrome reaches only 1.63:1, but keeps its full 5.65:1 on this green —
+	   so the marker keeps its colour and its contrast, and only gains a backdrop.
+	   #1f4d38 is deliberately the same green as the edge, the labels and the hero
+	   card; the old chassis #1f2823 reads as black once it is a small block on a
+	   light ground. Lighter is not available: from #2f6b4f on, the mint drops
+	   below 4.5:1. */
+	--chassis-chip: #1f4d38;
+	--chassis-on-chip: #85d7a9;
+	--chassis-pill: #1f4d38;      /* active year segment */
+	--chassis-on-pill: #fbfaf5;
+	/* Overlays that used to be white-on-dark and have to invert with the chrome. */
+	--chassis-fill: rgba(31, 77, 56, .07);
+	--chassis-border: rgba(31, 77, 56, .18);
+	--chassis-hover: rgba(31, 77, 56, .10);
+	/* On the light chrome the edge does the separating, so it needs weight. In dark
+	   the filled bar already separates and a hairline is enough — the dark blocks
+	   below keep it at 1px so that theme renders exactly as before. */
+	--chassis-edge: 2px;
+	/* Backup status glyph. The values below the dark blocks were tuned for a green
+	   bar and collapse on a light one (1.4–2.1:1); these are their light twins. */
+	--bk-mark: #1f4d38;
+	--bk-ok: #1f6b47;
+	--bk-warn: #8a5510;
+	--bk-bad: #b03a20;
+	

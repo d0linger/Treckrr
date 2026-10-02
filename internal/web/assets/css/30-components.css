@@ -1,0 +1,926 @@
+/* ---- Summary card ----------------------------------------------------- */
+/* Mobile-first: stack the value above the meta/actions so nothing overflows;
+   side-by-side layout kicks in on wider screens (see @media below). */
+.summary-card { display: flex; flex-direction: column; gap: 1rem; background: linear-gradient(135deg, var(--primary), var(--primary-strong)); color: #fff; border: none; }
+.summary-card__label { display: block; font-size: .8rem; opacity: .85; }
+.summary-card__value { display: block; font-size: 1.7rem; font-weight: 700; }
+.summary-card__meta { font-size: .85rem; opacity: .95; display: flex; flex-direction: column; gap: .4rem; align-items: flex-start; text-align: left; }
+.summary-card .btn--ghost { color: #fff; border-color: rgba(255, 255, 255, .5); }
+@media (min-width: 560px) {
+	.summary-card { flex-direction: row; align-items: flex-end; justify-content: space-between; }
+	.summary-card__meta { align-items: flex-end; text-align: right; }
+}
+/* Keep the Statistik / CSV-Export buttons on one line, sized to their text. */
+.summary-card__meta .btnrow { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .45rem; }
+.summary-card__meta .btnrow .btn { flex: 0 0 auto; }
+.summary-actions { width: 100%; }
+.summary-actions > summary {
+	display: inline-flex; align-items: center; gap: .45rem; min-height: 36px; padding: .35rem .7rem;
+	border: 1px solid rgba(255, 255, 255, .5); border-radius: 8px; color: #fff;
+	font-family: var(--font-display); font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+	cursor: pointer; list-style: none;
+}
+.summary-actions > summary::-webkit-details-marker { display: none; }
+.summary-actions > summary::after { content: "+"; font-size: 1rem; line-height: 1; }
+.summary-actions[open] > summary::after { content: "−"; }
+.summary-actions > summary:hover { background: rgba(255, 255, 255, .1); }
+
+/* ---- Lists ------------------------------------------------------------ */
+.list { display: flex; flex-direction: column; gap: .6rem; }
+/* flex-wrap: on narrow phones a wide status chip drops to its own line instead
+   of crushing the name/value columns into overlapping fragments. */
+.list__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem .75rem; color: var(--text); }
+.list__main { display: flex; flex-direction: column; min-width: 0; }
+.list__title { font-weight: 600; }
+/* Sub line ellipsizes as a whole ("10 Buchungen · 20,91 h") instead of
+   word-wrapping character-by-character in a squeezed column. */
+.list__sub { font-size: .82rem; color: var(--muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.year-closing .list__sub { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+[data-nb-item] { scroll-margin-top: 6rem; }
+[data-quick-form] [name="q_date"] { min-width: 9rem; }
+[data-quick-form] [name="q_hours"] { min-width: 6rem; max-width: 8rem; }
+[data-quick-form] select { min-width: 12rem; }
+.quick-scroll-hint { display: none; }
+@media (max-width: 48rem) { .quick-scroll-hint { display: block; } }
+/* Money never shrinks and never breaks before its € — the amount is the one
+   thing a row must always show intact. */
+.list__value { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; flex: 0 0 auto; }
+/* When the row wraps, the payment chip/toggle keeps right alignment on its own line. */
+.list__row > .paytoggle, .list__row > .paychip { margin-left: auto; }
+.list__actions { display: flex; gap: .4rem; align-items: center; }
+/* Pair link between a machine booking and its Mannstunden companion (booked in
+   one submit): quiet inline anchor jumping to the other card. */
+.bcard__link { color: var(--accent-text, var(--muted)); text-decoration: none; white-space: nowrap; }
+.bcard__link:hover { text-decoration: underline; }
+/* Jumping between the halves of a pair: the target card gets a visible ring —
+   with several pairs on one day, scrolling alone leaves the operator guessing
+   which card the link meant. scroll-margin keeps it clear of the app bar. */
+.bcard { scroll-margin-top: 4.5rem; }
+.bcard:target { outline: 2px solid var(--accent-text, var(--accent, #8a5e12)); outline-offset: 2px; }
+/* "Zu erledigen" → Nachbarn: the clicked row's hash rings every still-open tile
+   of that kind (open payment / Guthaben to pay out); settled tiles stay plain. */
+.due-anchor { display: block; scroll-margin-top: 4.5rem; }
+body:has(#offene-zahlungen:target) [data-due="open"],
+body:has(#auszuzahlen:target) [data-due="credit"] { outline: 2px solid var(--accent-text, var(--accent, #8a5e12)); outline-offset: 2px; }
+.modal__check { margin-top: .65rem; display: flex; gap: .5rem; align-items: center; }
+.list__actions form { margin: 0; }
+.list__main--link { text-decoration: none; color: inherit; flex: 1 1 auto; min-width: 0; }
+.list__row--plain { padding: 0; }
+.list__remove { margin: 0; }
+.list__remove .btn { color: var(--muted); }
+
+/* Compact stacks and inline helpers */
+.stack--tight { gap: .6rem; }
+.disclosure--plain { border: 0; padding: 0; background: none; }
+.center { text-align: center; }
+.link { color: var(--accent-text); font-weight: 600; text-decoration: none; }
+.link:hover { text-decoration: underline; }
+
+/* ---- Entries ---------------------------------------------------------- */
+.entry { display: grid; grid-template-columns: 1fr auto; gap: .3rem .6rem; align-items: start; }
+.entry__head { grid-column: 1 / -1; display: flex; justify-content: space-between; font-weight: 600; }
+.entry__cost { color: var(--primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.entry__body { display: flex; flex-direction: column; gap: .15rem; }
+.entry__task { font-weight: 600; }
+.entry__detail { font-size: .85rem; }
+.entry__delete { grid-column: 2; grid-row: 2; margin: 0; }
+
+/* ---- Forms ------------------------------------------------------------ */
+.form { display: flex; flex-direction: column; gap: .8rem; margin-top: .5rem; }
+.form:first-child { margin-top: 0; }
+.form__row { display: flex; gap: .6rem; flex-wrap: wrap; }
+.form__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .8rem; }
+/* Toggled elements (hidden attr) must win over .field/.input display rules. */
+[hidden] { display: none !important; }
+/* Booking-form sub-groups that toggle by unit — keep the form's vertical gap
+   so fields inside them are spaced like direct form children. */
+[data-h-only], [data-qty-only] { display: flex; flex-direction: column; gap: .8rem; }
+.field { display: flex; flex-direction: column; gap: .3rem; font-size: .85rem; color: var(--muted); }
+/* Werkblatt F5: field LABELS are stamped plates app-wide — uppercase mono,
+   tracked (formerly only the login had this treatment). Scoped to the FIRST
+   span: a .field may carry further direct spans (e.g. the live pw-match
+   feedback) that must stay body copy, not shouty plates. */
+.field > span { font-weight: 600; }
+.field > span:first-child {
+	font-family: var(--font-mono); font-size: .72rem; font-weight: 700;
+	letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
+}
+
+.input, .select {
+	width: 100%;
+	min-height: var(--tap);
+	padding: .55rem .7rem;
+	font-size: 1rem;
+	color: var(--text);
+	background: var(--surface-2);
+	border: 1px solid var(--border);
+	border-radius: 11px;
+	appearance: none;
+	transition: border-color .15s, box-shadow .15s;
+}
+.input:focus, .select:focus { outline: none; border-color: var(--signal); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal) 22%, transparent); }
+/* Visible keyboard focus for every interactive element (WCAG 2.4.7). Only shows
+   on keyboard navigation — a mouse click does not trigger :focus-visible. Text
+   inputs keep their box-shadow ring above (higher specificity wins). */
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.select {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236b756d' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right .75rem center;
+	background-size: .7rem;
+	padding-right: 2rem;
+}
+
+/* Werkblatt F5: the native file input joins the system — the picker button
+   renders as a small stamped Werkblatt button instead of raw browser chrome. */
+input[type="file"].input { padding: .45rem .55rem; font-size: .85rem; color: var(--muted); }
+input[type="file"].input::file-selector-button {
+	font-family: var(--font-display); font-size: .72rem; font-weight: 700;
+	letter-spacing: .04em; text-transform: uppercase;
+	color: var(--text); background: var(--surface-2);
+	border: 1px solid var(--line-strong, var(--border)); border-radius: 7px;
+	padding: .38rem .75rem; margin-right: .7rem; cursor: pointer;
+	transition: background .15s ease;
+}
+input[type="file"].input::file-selector-button:hover { background: var(--surface); }
+
+.fieldset { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .7rem; margin: 0; }
+/* Legends join the mono plate family (audit F-R2-03) — deliberately one step
+   quieter than .field labels (smaller/lighter/wider-tracked), since a legend
+   captions a GROUP of fields rather than a single input. */
+.fieldset legend { font-family: var(--font-mono); font-size: .68rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding: 0 .3rem; }
+
+/* ---- Buttons (modern) ------------------------------------------------- */
+/* Werkblatt buttons: industrial rectangles, uppercase mono labels, 1-px press
+   displacement. The primary action stamps INK on safety orange (like a machine
+   warning label), not white-on-colour. */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: .4rem;
+	min-height: var(--tap);
+	padding: .6rem 1.05rem;
+	font-size: .82rem;
+	font-weight: 700;
+	font-family: var(--font-display);
+	letter-spacing: .04em;
+	text-transform: uppercase;
+	color: var(--text);
+	background: var(--surface-2);
+	border: 1px solid transparent;
+	border-radius: 8px;
+	cursor: pointer;
+	white-space: nowrap;
+	transition: transform .08s ease, filter .15s ease, background .15s ease;
+	-webkit-tap-highlight-color: transparent;
+}
+.btn:active { transform: translateY(1px); }
+.btn--primary { background: var(--brand-grad); color: var(--on-signal); box-shadow: 0 4px 14px var(--btn-glow); }
+.btn--primary:hover { filter: brightness(1.06); }
+/* Werkblatt danger: crimson OUTLINE by default — a destructive action must never
+   read like the page's signal action. The filled crimson is reserved for the
+   final confirmation step (btn--danger.btn--primary). */
+.btn--danger { color: var(--danger-text); background: transparent; border-color: var(--danger); }
+.btn--danger:hover { background: var(--danger-tint); }
+.btn--danger.btn--primary { background: var(--danger); color: #fff; box-shadow: var(--shadow); }
+.btn--ghost { background: transparent; border-color: var(--border); color: var(--primary); }
+.btn--sm { min-height: 36px; padding: .35rem .8rem; font-size: .75rem; } /* below the .82rem base — small stays small */
+/* Monospace field for raw CSV correction in the import preview. */
+.input--code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .78rem; white-space: pre; overflow-x: auto; }
+
+/* Beleg action bar, grouped by purpose (Ausbaukarte 80): view toggles above,
+   output/handover below, each row under a quiet label. */
+.beleg__actgroup { display: flex; flex-direction: column; gap: .35rem; }
+.beleg__actlabel { font-size: .68rem; font-weight: 700; letter-spacing: .04em;
+	text-transform: uppercase; color: var(--muted); }
+
+.btn--xs { min-height: 30px; padding: .2rem .55rem; font-size: .7rem; }
+.btn--block { width: 100%; }
+.btn--icon { padding: 0; width: var(--tap); min-height: var(--tap); border-radius: 50%; font-size: 1.1rem; }
+
+/* ---- Checkboxes (modern) --------------------------------------------- */
+.checkgroup { display: flex; flex-direction: column; gap: .5rem; }
+.check { display: flex; align-items: center; gap: .6rem; font-size: .95rem; color: var(--text); cursor: pointer; }
+.check input[type="checkbox"] {
+	appearance: none;
+	width: 24px; height: 24px;
+	border: 2px solid var(--border);
+	border-radius: 7px;
+	background: var(--surface);
+	display: grid;
+	place-content: center;
+	cursor: pointer;
+	transition: background .15s, border-color .15s;
+	flex: none;
+}
+.check input[type="checkbox"]::before {
+	content: "";
+	width: 12px; height: 12px;
+	transform: scale(0);
+	transition: transform .12s ease-in-out;
+	box-shadow: inset 1em 1em var(--on-primary);
+	clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+/* B: a checked box is a selection STATE -> green, not signal. */
+.check input[type="checkbox"]:checked { background: var(--primary); border-color: var(--primary); }
+.check input[type="checkbox"]:checked::before { transform: scale(1); }
+.check input[type="checkbox"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* Werkblatt F2: theme picker as a true segmented control. The active option is
+   a selection STATE → green ink on brand tint with a green base edge (the same
+   selection language as subtabs), never the orange signal. */
+.themeseg { display: flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
+.themeseg__item {
+	flex: 1; text-align: center; min-height: var(--tap);
+	display: inline-flex; align-items: center; justify-content: center;
+	font-family: var(--font-display); font-size: .78rem; font-weight: 700;
+	letter-spacing: .04em; text-transform: uppercase;
+	color: var(--muted); text-decoration: none;
+	border-right: 1px solid var(--border); padding: .5rem .4rem;
+	transition: background .15s ease, color .15s ease;
+}
+.themeseg__item:last-child { border-right: 0; }
+.themeseg__item:hover { background: var(--surface-2); color: var(--text); }
+.themeseg__item.is-on { background: var(--primary-tint); color: var(--primary); box-shadow: inset 0 -2px 0 var(--primary); }
+
+/* ---- Segmented control ------------------------------------------------ */
+.segmented { display: flex; background: var(--surface-2); border-radius: 999px; padding: 4px; gap: 4px; }
+.segmented__item { flex: 1; }
+.segmented__item input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented__item span {
+	display: block; text-align: center; padding: .5rem; border-radius: 999px;
+	font-weight: 600; font-size: .9rem; color: var(--muted); transition: background .15s, color .15s;
+}
+.segmented__item input:checked + span { background: var(--surface); color: var(--primary); box-shadow: var(--shadow); }
+.segmented__item input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ---- Rate preview ----------------------------------------------------- */
+/* Live cost result of the booking form — the hero feedback: big cost, small
+   rate. Values are filled in by entry-form.js via [data-cost] / [data-rate]. */
+.rate-preview {
+	display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+	background: linear-gradient(135deg, var(--primary), var(--primary-strong)); color: #fff;
+	border-radius: var(--radius); padding: .65rem .85rem; box-shadow: var(--shadow);
+}
+.rate-preview__main { display: flex; flex-direction: column; gap: .05rem; }
+.rate-preview__lbl { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; font-weight: 800; opacity: .85; }
+.rate-preview__cost { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+.rate-preview__rate { font-size: var(--fs-sm); opacity: .92; text-align: right; }
+.rate-preview strong { font-variant-numeric: tabular-nums; font-weight: 700; }
+/* Informational only: a machines-only booking is a legitimate shape (the customer
+   brings the tractor), so this states what will be billed rather than warning or
+   blocking. It sits under the preview and disappears as soon as a tractor is
+   picked — nothing to dismiss. */
+.rate-preview__note {
+	display: flex; align-items: center; gap: .35rem;
+	margin: .4rem 0 0; font-size: var(--fs-sm); color: var(--muted);
+}
+.rate-preview__note .ic { flex: 0 0 auto; }
+
+/* Skeleton shimmer over the live figures while the pricing table is still being
+   fetched — so the "–" placeholder reads as "loading", not "broken". */
+@keyframes tw-shimmer { 0% { background-position: -160px 0; } 100% { background-position: 160px 0; } }
+.rate-preview.is-loading [data-rate],
+.rate-preview.is-loading [data-cost],
+.rate-preview.is-loading [data-qty-cost] {
+	color: transparent; border-radius: 6px; min-width: 3.5rem; display: inline-block;
+	background: linear-gradient(90deg, rgba(255,255,255,.18) 25%, rgba(255,255,255,.42) 37%, rgba(255,255,255,.18) 63%);
+	background-size: 300px 100%; animation: tw-shimmer 1.1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+	.rate-preview.is-loading [data-rate],
+	.rate-preview.is-loading [data-cost],
+	.rate-preview.is-loading [data-qty-cost] { animation: none; }
+}
+
+/* Dashboard list toolbar: search field + "Nur offene" toggle side by side. */
+.listtools { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .2rem; }
+.listtools .input { flex: 1 1 12rem; }
+.switch { display: inline-flex; align-items: center; gap: .4rem; font-size: var(--fs-sm); color: var(--text-muted); cursor: pointer; white-space: nowrap; user-select: none; }
+.switch input { accent-color: var(--primary); width: 1.05rem; height: 1.05rem; }
+
+/* ---- Chips ------------------------------------------------------------ */
+.ratechips { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .6rem; }
+.chip { background: var(--surface-2); border-radius: 999px; padding: .2rem .6rem; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chip--accent { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent-text); font-weight: 700; }
+
+/* ---- Disclosure ------------------------------------------------------- */
+.disclosure > summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.disclosure > summary::-webkit-details-marker { display: none; }
+.disclosure > summary::after { content: "▾"; color: var(--muted); transition: transform .15s; }
+.disclosure[open] > summary::after { transform: rotate(180deg); }
+.disclosure > *:not(summary) { margin-top: .8rem; }
+.disclosure--row > summary { font-weight: 400; }
+/* Title grows so the value is pushed right, next to the ▾ marker. */
+.disclosure > summary .list__title { flex: 1 1 auto; min-width: 0; }
+.disclosure > summary .list__value { flex: 0 0 auto; text-align: right; white-space: nowrap; }
+/* Deactivated pricing items are dimmed but still visible for traceability. */
+/* Inactive records stay readable; the explicit status badge carries their state. */
+.is-inactive { background: var(--surface-2); }
+.pill-off { font-size: .7rem; font-weight: 700; color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: .05rem .5rem; margin-left: .4rem; }
+.pill-warn { font-size: .7rem; font-weight: 700; color: var(--accent-text); background: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 999px; padding: .05rem .5rem; margin-left: .4rem; white-space: nowrap; }
+
+/* ---- Modal dialog ----------------------------------------------------- */
+.modal {
+	border: none; padding: 0; background: transparent;
+	max-width: min(420px, 92vw); width: 100%;
+	color: var(--text);
+}
+.modal::backdrop { background: rgba(0, 0, 0, .45); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+.modal__card {
+	margin: 0; background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius);
+	padding: 1.25rem; box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+	display: flex; flex-direction: column; gap: 1.1rem;
+}
+.modal__msg { margin: 0; font-size: 1rem; line-height: 1.45; }
+.modal__input { width: 100%; }
+.modal__input[hidden] { display: none; } /* beat .input's display so the gap collapses */
+.modal__actions { display: flex; gap: .6rem; justify-content: flex-end; }
+.modal[open] { animation: modal-in .16s ease-out; }
+@keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+/* Bottom-sheet on phones: dock the confirm dialog to the bottom with a grab
+   handle and slide-up; on wider screens it stays a centered card. */
+@media (max-width: 640px) {
+	.modal { max-width: 100%; width: 100%; margin: auto 0 0; }
+	.modal__card {
+		border-radius: 20px 20px 0 0;
+		padding: .7rem 1.1rem calc(1.1rem + env(safe-area-inset-bottom));
+		box-shadow: 0 -16px 44px rgba(0, 0, 0, .4);
+	}
+	.modal__card::before {
+		content: ""; align-self: center; margin-bottom: -.5rem;
+		width: 36px; height: 4px; border-radius: 4px; background: var(--border);
+	}
+	.modal__actions .btn { flex: 1; }
+	.modal[open] { animation: sheet-up .24s cubic-bezier(.22, .61, .36, 1); }
+}
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) { .modal[open] { animation: none; } }
+
+/* ---- Status / payment tags ------------------------------------------- */
+.tag { display: inline-flex; align-items: center; gap: .3rem; font-family: var(--font-mono); font-size: .68rem; font-weight: 700;
+	letter-spacing: .04em; text-transform: uppercase; border: 1px solid transparent;
+	border-radius: 999px; padding: .16rem .55rem; white-space: nowrap; }
+.tag--progress { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.tag--done, .tag--paid { background: var(--primary-tint); color: var(--primary-strong); border-color: color-mix(in srgb, var(--primary) 30%, transparent); }
+.tag--open { background: var(--danger-tint); color: var(--danger-text); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+.tag--credit { background: color-mix(in srgb, var(--owe) 16%, transparent); color: var(--owe-text); border-color: color-mix(in srgb, var(--owe) 30%, transparent); }
+
+/* ---- Flash ------------------------------------------------------------ */
+.flash { padding: .7rem 1rem; border-radius: var(--radius-sm); font-size: .9rem; font-weight: 500; }
+.flash--success { background: var(--primary-tint); color: var(--primary-strong); }
+.flash--error { background: var(--danger-tint); color: var(--danger-text); }
+.flash--info { background: var(--surface-2); color: var(--muted); }
+
+/* ---- Auth ------------------------------------------------------------- */
+/* Decorative login backdrop (login-bg.js paints it): opaque canvas pinned to
+   the viewport behind the card, pointer-inert. The card sits above via z-index.
+   Without JS it stays transparent, so the plain --bg background shows through. */
+.login-bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.auth { position: relative; z-index: 1; min-height: 100dvh; display: grid; place-items: center; padding: 1.5rem; }
+.auth__card { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 1.2rem; }
+.auth__brand { text-align: center; display: flex; flex-direction: column; align-items: center; gap: .3rem; }
+.auth__brand img { margin-bottom: .3rem; }
+.auth__motion { margin-top: .75rem; font-size: .7rem; color: var(--muted); }
+
+/* ---- Bottom tab bar --------------------------------------------------- */
+.tabbar {
+	position: fixed;
+	left: 0; right: 0; bottom: 0;
+	z-index: 30;
+	display: flex;
+	justify-content: space-around;
+	background: var(--glass);
+	-webkit-backdrop-filter: blur(14px) saturate(1.25);
+	backdrop-filter: blur(14px) saturate(1.25);
+	border-top: var(--chassis-edge) solid var(--chassis-line);
+	padding-bottom: env(safe-area-inset-bottom);
+	box-shadow: var(--chassis-bar-shadow);
+}
+/* The tab bar rides on the chassis (dark in both themes); the orange marker is
+   the only moving part. */
+.tabbar__item {
+	flex: 1;
+	display: flex; flex-direction: column; align-items: center; gap: .12rem;
+	padding: .35rem 0 .5rem;
+	font-size: .68rem;
+	font-family: var(--font-mono);
+	color: var(--chassis-muted);
+	min-height: var(--tap);
+	position: relative;
+}
+.tabbar__pill {
+	display: flex; align-items: center; justify-content: center;
+	width: 46px; height: 28px; border-radius: 8px;
+	transition: background .18s ease, box-shadow .18s ease;
+}
+.tabbar__icon { width: 22px; height: 22px; display: block; }
+.tabbar__item.is-active { color: var(--chassis-accent-bar); font-weight: 700; }
+.tabbar__item.is-active .tabbar__pill { background: var(--chassis-chip); color: var(--chassis-on-chip); }
+.tabbar__item.is-active::before {
+	content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+	width: 20px; height: 3px; border-radius: 3px;
+	background: var(--chassis-accent-bar);
+}
+
+.tabbar__item span:last-child { white-space: nowrap; }
+
+/* Fallback where backdrop-filter is unsupported: opaque bars keep text legible. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+	.tabbar { background: var(--chassis); }
+	.topstack { background: var(--chassis); }
+}
+
+/* ---- Wider screens ---------------------------------------------------- */
+@media (min-width: 640px) {
+	.tabbar__item { font-size: .75rem; }
+}
+
+/* ---- Year pill navigation --------------------------------------------- */
+.yearbar {
+	display: flex; gap: .4rem; align-items: center;
+	overflow-x: auto; -webkit-overflow-scrolling: touch;
+	padding: .5rem 1rem; background: transparent; border-bottom: 1px solid var(--chassis-border);
+	scrollbar-width: none;
+}
+.yearbar::-webkit-scrollbar { display: none; }
+/* Year segments on the chassis: mono, squared, filled when active. The chassis is
+   light in one theme and dark in the other, so the overlays go through tokens
+   instead of the white-on-dark literals this block used to carry. */
+.yearpill {
+	flex: 0 0 auto; padding: .35rem .85rem; border-radius: 7px;
+	background: var(--chassis-fill); color: var(--chassis-text); font-weight: 600;
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums; text-decoration: none; border: 1px solid var(--chassis-border);
+	min-height: 2rem; display: inline-flex; align-items: center;
+}
+.yearpill.is-active { background: var(--chassis-pill); color: var(--chassis-on-pill); border-color: var(--chassis-pill); font-weight: 700; }
+.yearpill--manage { font-weight: 700; color: var(--chassis-muted); }
+
+/* Field use means coarse pointers and narrow phones need forgiving controls.
+   Inline text links remain naturally sized; reusable actions meet the 44px floor. */
+@media (max-width: 640px), (pointer: coarse) {
+	.appbar__brand, .appbar__icon, .appbar__offline, .yearpill,
+	.btn--sm, .btn--xs, .iconact, .backbtn, .subtab,
+	.backlink, .workspace__back, .barchart__label, .switch,
+	.disclosure > summary, .bkp__more > summary, .bkp__seg button {
+		min-height: var(--tap);
+	}
+	.barchart__label { line-height: var(--tap); }
+	.appbar__brand { min-width: var(--tap); justify-content: center; }
+	.appbar__icon, .iconact, .backbtn { width: var(--tap); height: var(--tap); }
+}
+
+/* ---- Basis workspace header ------------------------------------------- */
+.workspace {
+	display: flex; flex-direction: column; gap: .5rem;
+	background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius);
+	box-shadow: var(--card-shadow);
+	padding: .7rem .9rem;
+}
+.workspace__back { text-decoration: none; color: var(--muted); font-weight: 600; font-size: .85rem; align-self: flex-start; }
+.workspace__title { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.subtabs { display: flex; gap: .4rem; }
+.subtab {
+	flex: 1; text-align: center; text-decoration: none; padding: .5rem; border-radius: var(--radius);
+	background: var(--surface-2); color: var(--text); font-weight: 600; border: 1px solid var(--border);
+}
+.subtab.is-active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.badge { font-size: .72rem; color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: .1rem .5rem; }
+
+/* ---- Button rows & carry-over ----------------------------------------- */
+.btnrow { display: flex; gap: .5rem; flex-wrap: wrap; }
+/* Grow to fill, but size to the label (basis auto) and wrap to a new line when
+   the row is too narrow — avoids labels wrapping into tall pill "ovals". */
+.btnrow .btn { flex: 1 1 auto; }
+/* Split row: backlink on the left, action(s) on the right (non-stretching). */
+.btnrow--split { align-items: center; justify-content: space-between; }
+.btnrow--tight { gap: .3rem; margin-top: .3rem; }
+.btnrow--tight .btn { flex: 0 0 auto; }
+.btnrow--split .btn { flex: 0 0 auto; }
+.carryover { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.statusrow { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.statusrow--warn { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.statusrow__info { display: flex; flex-direction: column; gap: .25rem; }
+.statusrow__label { font-family: var(--font-mono); font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.statusrow__actions { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; flex-wrap: wrap; margin-left: auto; }
+.statusrow form { margin: 0; }
+.paysummary { display: flex; gap: .4rem; flex-wrap: wrap; }
+.workpath {
+	background: var(--surface); border: 1px solid var(--card-hairline); border-radius: var(--radius);
+	box-shadow: var(--card-shadow); overflow: hidden;
+}
+.workpath__head, .workpath__footer { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .8rem 1rem; }
+.workpath__title { margin: 0; font-family: var(--font-mono); font-size: var(--fs-md); letter-spacing: -.01em; }
+.workpath__intro { margin: .12rem 0 0; color: var(--muted); font-size: var(--fs-sm); }
+.workpath__steps {
+	display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+	list-style: none; margin: 0; padding: 0; border-block: 1px solid var(--border);
+}
+.workpath__step { min-width: 0; border-right: 1px solid var(--border); }
+.workpath__step:last-child { border-right: 0; }
+.workpath__link {
+	display: flex; min-height: 76px; flex-direction: column; align-items: center; justify-content: center; gap: .32rem;
+	padding: .55rem .3rem; color: var(--text); text-align: center; text-decoration: none;
+}
+a.workpath__link:hover { background: var(--surface-2); }
+.workpath__mark {
+	display: grid; width: 1.55rem; height: 1.55rem; flex: 0 0 auto; place-items: center;
+	border: 1px solid var(--border); border-radius: 50%; color: var(--muted);
+	font-family: var(--font-mono); font-size: .68rem; font-weight: 700;
+}
+.workpath__copy { display: flex; min-width: 0; flex-direction: column; gap: .05rem; }
+.workpath__copy strong { font-family: var(--font-mono); font-size: .64rem; line-height: 1.15; overflow-wrap: anywhere; }
+.workpath__copy small { display: none; color: var(--muted); font-size: .72rem; line-height: 1.2; }
+.workpath__step.is-done .workpath__mark { border-color: var(--primary); background: var(--primary-tint); color: var(--primary-strong); }
+.workpath__step.is-current .workpath__mark { border-color: var(--signal); background: var(--signal); color: var(--on-signal); }
+.workpath__step.is-waiting .workpath__link { color: var(--muted); }
+.workpath__footer { align-items: flex-start; }
+.workpath__status { min-width: 0; }
+.workpath .statusrow__actions { margin-left: auto; }
+.workpath form { margin: 0; }
+.list__book {
+	display: inline-flex; min-height: 36px; align-items: center; justify-content: center; padding: .35rem .65rem;
+	border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--primary);
+	font-family: var(--font-mono); font-size: .7rem; font-weight: 700; text-decoration: none;
+}
+.list__book:hover { border-color: var(--primary); background: var(--primary-tint); }
+.account-nav {
+	display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px;
+	overflow: hidden; border: 1px solid var(--card-hairline); border-radius: var(--radius);
+	background: var(--border); box-shadow: var(--card-shadow);
+}
+.account-nav__item {
+	display: flex; min-width: 0; min-height: 64px; flex-direction: column; justify-content: center; gap: .12rem;
+	padding: .65rem .75rem; background: var(--surface); color: var(--text); text-decoration: none;
+}
+.account-nav__item strong { font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.2; }
+.account-nav__item small { overflow: hidden; color: var(--muted); font-size: .72rem; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.account-nav__item:hover { background: var(--surface-2); }
+.account-nav__item--primary { background: var(--primary-tint); color: var(--primary-strong); }
+.account-nav__item--primary small { color: var(--primary-strong); }
+#neue-buchung, #leistungen, #verrechnung, #zahlungen { scroll-margin-top: 8rem; }
+@media (min-width: 600px) {
+	.account-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+	.account-nav--complete { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+	.workpath__link { min-height: 92px; align-items: flex-start; padding: .7rem .65rem; text-align: left; }
+	.workpath__copy strong { font-size: .72rem; }
+	.workpath__copy small { display: block; }
+}
+@media (max-width: 640px), (pointer: coarse) { .list__book { min-height: var(--tap); } }
+@media (max-width: 560px) {
+	.workpath__intro { display: none; }
+	.workpath__head { align-items: flex-start; }
+	.workpath__footer { flex-direction: column; }
+	.workpath .statusrow__actions { width: 100%; margin-left: 0; }
+	.workpath .statusrow__actions > * { flex: 1 1 auto; }
+	.workpath .statusrow__actions .btn { width: 100%; }
+}
+.secretkey { display: block; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+	background: var(--surface-2); border-radius: var(--radius-sm); padding: .5rem .7rem;
+	word-break: break-all; user-select: all; font-size: .9rem; }
+
+/* 2FA setup QR code */
+.qrwrap { display: flex; justify-content: center; margin: .4rem 0 .8rem; }
+.qr { width: 220px; height: 220px; max-width: 60vw; image-rendering: pixelated;
+	background: #fff; padding: .6rem; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+
+/* 2FA recovery codes */
+.codes { list-style: none; padding: 0; margin: .6rem 0; display: grid;
+	grid-template-columns: repeat(2, 1fr); gap: .5rem; }
+.codes li { background: var(--surface-2); border-radius: var(--radius-sm); padding: .5rem .6rem; text-align: center; }
+.codes code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+	font-size: 1rem; letter-spacing: .05em; user-select: all; }
+@media (max-width: 380px) { .codes { grid-template-columns: 1fr; } }
+
+/* Single clickable payment chip showing the current status (click to toggle).
+   Werkblatt badge language: status dot + uppercase mono + semantic TINT surface —
+   a round tinted plate reads as STATE, a rectangle as action, so the warn amber
+   can never be mistaken for the signal orange by form alone. */
+.paytoggle { margin: 0; }
+.paychip {
+	display: inline-flex; align-items: center; gap: .4rem;
+	border-radius: 999px; padding: .16rem .6rem;
+	font-family: var(--font-mono); font-weight: 700; font-size: .68rem;
+	letter-spacing: .06em; text-transform: uppercase; font-variant-numeric: tabular-nums;
+	cursor: pointer; border: 1px solid transparent; white-space: nowrap;
+}
+/* Only the CLICKABLE toggle keeps the 44-px tap target; the read-only status
+   display is a compact chip like every other badge. */
+button.paychip { min-height: var(--tap); padding: .35rem .8rem; }
+.paychip--action { border-radius: 8px; flex-direction: column; align-items: flex-start; gap: .1rem; text-align: left; }
+.paychip--action::before { display: none; }
+.paychip--action > span:first-child { display: inline-flex; align-items: center; gap: .4rem; }
+.paychip--action > span:first-child::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.paychip__action { font-family: var(--font-body); font-size: .72rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.paychip--paid { background: var(--primary-tint); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 30%, transparent); }
+.paychip--open { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
+.paychip--open::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.paychip--open:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* Read-only status chip (running year): not a button, so no pointer/hover —
+   the hover keeps the base tint (it must not strip the status surface). */
+.paychip--static { cursor: default; }
+.paychip--static.paychip--open:hover { background: color-mix(in srgb, var(--accent) 13%, transparent); }
+span.paychip { cursor: default; }
+/* Guthaben: a negative rest is money I still owe the neighbor — never "Bezahlt". */
+.paychip--credit { background: color-mix(in srgb, var(--owe) 13%, transparent); color: var(--owe-text); border-color: color-mix(in srgb, var(--owe) 38%, transparent); text-decoration: none; }
+.paychip--credit::before { content: "€"; flex: none; }
+a.paychip--credit { min-height: var(--tap); padding: .35rem .8rem; }
+a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transparent); }
+.carryover strong { display: block; white-space: nowrap; }
+.carryover .muted { font-size: .82rem; }
+
+/* ---- Data tables (Excel-like overview) -------------------------------- */
+.tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 0; border-radius: var(--radius-sm); }
+.dtable { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.dtable th, .dtable td { padding: .5rem .6rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.dtable thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); white-space: nowrap; }
+.dtable tbody tr:last-child td { border-bottom: 0; }
+.dtable tfoot th { border-top: 2px solid var(--border); border-bottom: 0; font-weight: 700; background: var(--surface-2); }
+.dtable .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dtable .small { font-size: .78rem; }
+.dtable .nowrap { white-space: nowrap; }
+.dtable form { margin: 0; }
+.dtable--entries td { min-width: 0; }
+.dtable tr.is-voided td { opacity: .5; text-decoration: line-through; }
+.dtable tr.is-voided .pill-off { text-decoration: none; }
+.rowactions { display: inline-flex; gap: .25rem; justify-content: flex-end; }
+.rowactions form { margin: 0; }
+.is-invalid { border-color: var(--danger) !important; box-shadow: 0 0 0 2px var(--danger-tint); }
+/* Inline validation error (created by app.js; wired via aria-describedby). */
+.field__err { display: block; font-size: var(--fs-xs); color: var(--danger-text); font-weight: 600; margin-top: .15rem; }
+/* Required-field marker — CSS-only via :has, no per-template change. */
+/* :required covers input/select/textarea in one selector; scoped to the FIRST
+   span (the label by convention, see .field > span:first-child above) so the
+   pw-match live region cannot grow a stray asterisk. */
+.field:has(:required) > span:first-child::after { content: " *"; color: var(--danger-text); font-weight: 800; }
+/* Submit "saving" state: keeps the label, adds a spinner. currentColor matches
+   the button text (white on a primary button). */
+.btn.is-submitting { opacity: .85; pointer-events: none; }
+.btn.is-submitting::before { content: ""; width: 1em; height: 1em; margin-right: .45rem; flex: 0 0 auto;
+	border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%;
+	display: inline-block; vertical-align: -.15em; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .btn.is-submitting::before { animation: none; } }
+/* ---- KPIs & charts ---------------------------------------------------- */
+/* KPI tiles: a role-coloured accent edge, a larger tabular value, and an
+   optional trend chip. Colour the edge with .kpi--<role>. */
+.kpigrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .6rem; }
+.kpi { position: relative; display: flex; flex-direction: column; gap: .08rem; padding: .85rem .9rem; overflow: hidden;
+	transition: transform .14s ease, box-shadow .14s ease; }
+.kpi:hover { transform: translateY(-2px); box-shadow: 0 2px 4px rgba(0, 0, 0, .07), 0 12px 26px rgba(0, 0, 0, .09); }
+.kpi::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--kpi-accent, var(--data)); }
+.kpi--rev { --kpi-accent: var(--data); }
+.kpi--hours { --kpi-accent: var(--accent); }
+.kpi--owe { --kpi-accent: var(--owe); }
+.kpi--pay { --kpi-accent: var(--pay); }
+.kpi--net { --kpi-accent: var(--primary-strong); }
+.kpi--paid { --kpi-accent: var(--primary); }
+.kpi--open { --kpi-accent: var(--accent); }
+.kpi__label { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
+.kpi__value { font-size: clamp(1rem, 4.2vw, 1.5rem); font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: .12rem; white-space: nowrap; }
+.delta { display: inline-flex; align-items: center; gap: .22rem; align-self: flex-start; font-size: .72rem; font-weight: 700;
+	margin-top: .35rem; padding: .08rem .42rem; border-radius: 999px; }
+.delta--up { color: var(--pay-text); background: color-mix(in srgb, var(--data) 15%, transparent); }
+.delta--down { color: var(--owe-text); background: color-mix(in srgb, var(--owe) 16%, transparent); }
+/* Tile trend sparkline: inline SVG, coloured by the tile's role accent. Stretched
+   to full width (preserveAspectRatio none) with a non-scaling stroke so the line
+   keeps its 2px weight. */
+.spark { display: block; width: 100%; height: 28px; margin-top: .5rem; color: var(--kpi-accent, var(--data)); overflow: visible; }
+.spark__area { fill: currentColor; opacity: .13; stroke: none; }
+.barpair { display: flex; gap: .7rem; align-items: flex-end; margin-top: .5rem; }
+.barpair__col { display: flex; flex-direction: column; align-items: center; gap: .12rem; }
+.barpair__v { font-size: .62rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.barpair__bar { width: 14px; height: 28px; overflow: visible; }
+.barpair__yr { font-size: .58rem; color: var(--muted); font-weight: 700; }
+.bp--prev { fill: color-mix(in srgb, var(--kpi-accent, var(--data)) 38%, var(--surface-2)); }
+.bp--cur { fill: var(--kpi-accent, var(--data)); }
+.spark__line { fill: none; stroke: currentColor; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+.spark__dot { fill: currentColor; pointer-events: none; }
+.spark__hit { fill: transparent; cursor: pointer; }
+.sparktip { position: fixed; z-index: 60; transform: translate(-50%, -100%); background: var(--text); color: var(--bg);
+	font-size: .66rem; font-weight: 800; padding: .15rem .42rem; border-radius: 6px; white-space: nowrap;
+	pointer-events: none; opacity: 0; transition: opacity .1s ease; box-shadow: 0 4px 12px rgba(0, 0, 0, .3); }
+.sparktip.is-on { opacity: 1; }
+
+/* Horizontal bar chart. Rendered as inline SVG so bar widths ride on SVG
+   geometry attributes (CSP-safe) rather than a CSP-blocked inline style; the
+   fill scales in with a gentle staggered grow-in. Magnitude → one hue (green). */
+.barchart { display: flex; flex-direction: column; gap: .6rem; }
+.barchart__row { display: grid; grid-template-columns: minmax(64px, 28%) 1fr auto; align-items: center; gap: .7rem; }
+.barchart__label { font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.barchart__val { font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bchart { display: block; width: 100%; height: 10px; }
+.gradient-defs { position: absolute; width: 0; height: 0; }
+/* Bar-chart gradient stops: a dramatic deep -> bright green sweep (dark base at
+   the left, bright highlight at the value tip) in both themes. */
+.gs-strong { stop-color: #0f5233; }
+.gs-data, .gs-pay { stop-color: #58c286; }
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) .gs-strong { stop-color: #2b6f50; }
+	:root:not([data-theme="light"]) .gs-data, :root:not([data-theme="light"]) .gs-pay { stop-color: #aef4cd; }
+}
+:root[data-theme="dark"] .gs-strong { stop-color: #2b6f50; }
+:root[data-theme="dark"] .gs-data, :root[data-theme="dark"] .gs-pay { stop-color: #aef4cd; }
+.bchart__track { fill: var(--data-track); }
+.bchart__fill { fill: url(#barGrad); transform-box: fill-box; transform-origin: left center;
+	animation: barGrow .7s cubic-bezier(.22, .61, .36, 1) both; transition: filter .15s ease; }
+.barchart__row:hover .bchart__fill { filter: brightness(1.08); }
+.barchart__row:hover .barchart__label { color: var(--text); }
+.barchart__row:nth-child(2) .bchart__fill { animation-delay: .05s; }
+.barchart__row:nth-child(3) .bchart__fill { animation-delay: .1s; }
+.barchart__row:nth-child(4) .bchart__fill { animation-delay: .15s; }
+.barchart__row:nth-child(5) .bchart__fill { animation-delay: .2s; }
+.barchart__row:nth-child(n+6) .bchart__fill { animation-delay: .25s; }
+/* The rect's resting width is its full value; the grow only scales it, so the
+   bar is correct even when the animation is skipped. */
+@keyframes barGrow { from { transform: scaleX(0); } }
+
+/* Diverging bar chart for signed money (Verrechnung): bars grow from a center
+   axis — left = owe (warm), right = receivable (green). The signed value label
+   carries the sign; colour only reinforces. */
+.dchart { display: flex; flex-direction: column; gap: .6rem; }
+.dchart__row { display: grid; grid-template-columns: minmax(64px, 26%) 1fr auto; align-items: center; gap: .7rem; }
+.dchart__label { font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dchart__svg { display: block; width: 100%; height: 12px; }
+.dchart__center { stroke: var(--border); stroke-width: 1; }
+.dchart__fill { transform-box: fill-box; animation: barGrow .7s cubic-bezier(.22, .61, .36, 1) both; transition: filter .15s ease; }
+.dchart__row:hover .dchart__fill { filter: brightness(1.08); }
+.dchart__fill--owe { fill: var(--owe); transform-origin: right center; }
+.dchart__fill--pay { fill: url(#payGrad); transform-origin: left center; }
+.dchart__val { font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dchart__val--owe { color: var(--owe-text); }
+.dchart__val--pay { color: var(--pay-text); }
+.dchart__legend { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: .1rem; font-size: .74rem; color: var(--muted); }
+.dchart__legend span { display: inline-flex; align-items: center; gap: .35rem; }
+.dchart__sw { width: 10px; height: 10px; border-radius: 3px; }
+.dchart__sw--owe { background: var(--owe); }
+.dchart__sw--pay { background: var(--pay); }
+@media (prefers-reduced-motion: reduce) { .bchart__fill, .dchart__fill { animation: none; } }
+
+.diff-up { color: var(--danger-text); font-weight: 700; }
+.diff-down { color: var(--primary-strong); font-weight: 700; }
+.breakdown { list-style: none; margin: .4rem 0 0; padding: 0; }
+.breakdown li { display: flex; justify-content: space-between; gap: 1rem; padding: .15rem 0; font-size: .85rem; }
+.breakdown li.breakdown__total { border-top: 1px solid var(--border); margin-top: .2rem; padding-top: .3rem; font-weight: 700; }
+.dtable--zebra tbody tr:nth-child(even) td { background: var(--surface-2); }
+.dtable .strong { font-weight: 700; }
+.dtable .entry__task { display: block; font-weight: 600; }
+.dtable .entry__detail { display: block; line-height: 1.35; }
+/* A task link beside notes or counterparty details must not rely on color alone. */
+.booking-task-link { text-decoration: underline; text-underline-offset: .18em; }
+/* Keep the numeric/action columns tight so the task column gets the space. */
+.dtable--entries th.num, .dtable--entries td.num { width: 1%; }
+
+/* Audit trail: let the Detail column wrap at word boundaries (not mid-word) so
+   old→new diffs stay readable; each " · "-separated field renders on its own
+   line. Give it a comfortable width; the table scrolls if space is tight. */
+.dtable--audit td.detailcell {
+	white-space: normal;
+	overflow-wrap: break-word;
+	word-break: normal;
+	min-width: 15rem;
+	max-width: 34rem;
+	line-height: 1.45;
+}
+
+/* ---- Unified status chips -------------------------------------------- */
+/* One shape for every state: glyph + colour + label (never colour alone, so
+   it stays legible for colour-blind users and in print). */
+.chip2 { display: inline-flex; align-items: center; gap: .3rem; font-size: .7rem; font-weight: 800;
+	padding: .14rem .5rem; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; line-height: 1.3; }
+.chip2__g { font-size: .74rem; line-height: 1; }
+.chip2--paid { color: var(--pay-text); background: color-mix(in srgb, var(--pay) 14%, transparent); border-color: color-mix(in srgb, var(--pay) 30%, transparent); }
+.chip2--open { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
+.chip2--void { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
+.chip2--stale { color: var(--accent-text); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.chip2--credit { color: var(--owe-text); background: color-mix(in srgb, var(--owe) 14%, transparent); border-color: color-mix(in srgb, var(--owe) 30%, transparent); }
+.chip2--owe { color: var(--owe); background: color-mix(in srgb, var(--owe) 14%, transparent); border-color: color-mix(in srgb, var(--owe) 30%, transparent); }
+.chip2--prog { color: var(--accent-text); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+/* ---- Booking / ledger cards (mobile-first, replace the sideways table) - */
+/* Two compact lines per card: date · task · badges · cost on top, the
+   derivation/details plus small icon actions below. */
+.bookcards { display: flex; flex-direction: column; gap: .45rem; }
+.bcard { background: var(--card-grad); border: 1px solid var(--card-hairline); border-radius: var(--radius);
+	padding: .5rem .7rem; display: flex; flex-direction: column; gap: .25rem; box-shadow: var(--card-shadow);
+	transition: transform .14s ease, box-shadow .14s ease; }
+.bcard--void { background: var(--surface-2); }
+.bcard--void .bcard__task, .bcard--void .bcard__cost { text-decoration: line-through; color: var(--muted); }
+/* The head may wrap on very narrow cards: the task keeps a readable minimum
+   (so it ellipsizes instead of vanishing), badges/cost move to the next line
+   when the fixed parts alone don't fit, and the cost stays right-aligned. */
+.bcard__head { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .5rem; }
+.bcard__date { font-size: .74rem; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bcard__task { flex: 1 1 auto; min-width: 6ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+	font-weight: 700; font-size: .92rem; }
+.bcard__badges { display: flex; gap: .3rem; flex-wrap: wrap; flex: 0 1 auto; min-width: 0; }
+.bcard__cost { flex: 0 0 auto; margin-left: auto; font-weight: 800; font-size: .98rem; font-variant-numeric: tabular-nums; white-space: nowrap; letter-spacing: -.01em; }
+.bcard__foot { display: flex; align-items: center; gap: .5rem; }
+.bcard__detail { flex: 1 1 auto; min-width: 0; font-size: .76rem; color: var(--muted); line-height: 1.4; }
+.bcard__breakdown { flex: 1 1 auto; min-width: 0; display: grid; gap: .2rem; font-size: .76rem; color: var(--muted); line-height: 1.4; }
+.bcard__line { display: flex; align-items: baseline; justify-content: space-between; gap: .65rem; }
+.bcard__line > span { min-width: 0; overflow-wrap: anywhere; }
+.bcard__line > strong { flex: 0 0 auto; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bcard__line--void { text-decoration: line-through; }
+.bcard__note { overflow-wrap: anywhere; }
+.booking-cost-lines { display: grid; gap: .1rem; margin-top: .2rem; color: var(--muted); font-size: var(--fs-xs); font-weight: 400; white-space: nowrap; }
+.bcard__acts { display: flex; gap: .25rem; flex: 0 0 auto; align-self: flex-end; }
+.bcard__acts form { margin: 0; }
+.iconact { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 9px;
+	border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: .95rem;
+	cursor: pointer; text-decoration: none; }
+.iconact:hover { background: var(--surface-2); color: var(--text); }
+.iconact--danger { color: var(--danger-text); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+/* Inline SVG icon (see ic-* partials): inherits colour and follows the text
+   size, so control icons match the theme, hover and focus states. */
+.ic { width: 1.15em; height: 1.15em; display: inline-block; vertical-align: -.18em; flex: 0 0 auto; }
+.iconact .ic { width: 18px; height: 18px; vertical-align: 0; }
+.bcard__summary { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem;
+	padding: .15rem .3rem 0; font-weight: 800; font-variant-numeric: tabular-nums; }
+.bcard__summary .muted { font-weight: 600; }
+
+/* ---- "Zu erledigen" attention strip (dashboard cockpit) --------------- */
+.attn { display: flex; flex-direction: column; gap: .4rem; }
+.attn__row { display: flex; align-items: center; gap: .6rem; text-decoration: none; color: var(--text);
+	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+	padding: .55rem .65rem; box-shadow: var(--shadow); }
+.attn__row:hover { background: var(--surface-2); }
+.attn__row--warn { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.attn__row--owe { border-color: color-mix(in srgb, var(--owe) 40%, var(--border)); background: color-mix(in srgb, var(--owe) 7%, var(--surface)); }
+.attn__row--bad { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); background: color-mix(in srgb, var(--danger) 7%, var(--surface)); }
+.attn__ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
+	font-size: .9rem; font-weight: 800; flex: 0 0 auto; }
+.attn__ic--warn { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent-text); }
+.attn__ic--owe { background: color-mix(in srgb, var(--owe) 18%, transparent); color: var(--owe); }
+.attn__ic--bad { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger-text); }
+/* Guthaben (I owe the neighbor): same hue as the tile's Guthaben chip. */
+.attn__row--credit { border-color: color-mix(in srgb, var(--owe) 55%, var(--border)); background: color-mix(in srgb, var(--owe) 11%, var(--surface)); }
+.attn__ic--credit { background: color-mix(in srgb, var(--owe) 24%, transparent); color: var(--owe-text); }
+.attn__ic--pay { background: color-mix(in srgb, var(--pay) 18%, transparent); color: var(--pay); }
+.attn__txt { flex: 1; font-size: .85rem; }
+.attn__txt strong { font-weight: 800; }
+.attn__go { color: var(--muted); font-size: 1.1rem; line-height: 1; }
+
+/* Master-data completeness: compact diagnostic rows, ordered by the server so
+   blockers precede advisory additions. */
+.qualitylist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .55rem; }
+.qualityitem { display: flex; align-items: center; gap: .7rem; padding: .7rem .8rem;
+	background: var(--card-grad); border: 1px solid var(--card-hairline); border-left: 3px solid var(--accent);
+	border-radius: var(--radius); box-shadow: var(--card-shadow); }
+.qualityitem--high { border-left-color: var(--danger); }
+.qualityitem__mark { width: 1.65rem; height: 1.65rem; flex: 0 0 auto; display: grid; place-items: center;
+	border-radius: 50%; font-weight: 850; color: var(--accent-text); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.qualityitem--high .qualityitem__mark { color: var(--danger-text); background: color-mix(in srgb, var(--danger) 15%, transparent); }
+.qualityitem__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: .12rem; }
+.qualityitem__body strong, .qualityitem__body span { overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+	.qualityitem { align-items: flex-start; flex-wrap: wrap; }
+	.qualityitem .btn { margin-left: 2.35rem; }
+}
+
+/* ---- Backup-health dot (header status indicator) ---------------------- */
+/* A fine stroked "signal ring", monochrome via currentColor — the status colour
+   comes from the tone class. Green checkmark (with a faint glow), amber pulsing
+   exclamation (= needs attention; NOT a spinner, which would imply "running"),
+   red cross. Three distinct shapes so state is never colour-alone. */
+.bkdot { position: relative; display: inline-flex; }
+.bkdot__btn { display: grid; place-items: center; }
+/* The app bar is a green (--primary) surface in BOTH themes, so the page-surface
+   status tokens don't work here — the mid-green --primary-strong is nearly the
+   header colour and vanishes in light mode. Use bright, header-tuned colours (same
+   reason the .appbar icons follow --chassis-text) + a faint shadow so the ring
+   stays readable. The tones go through --bk-* because the bright values below were
+   picked for a green bar and collapse to 1.4–2.1:1 on a light one. */
+.bkdot__mark { display: inline-flex; color: var(--bk-mark); filter: drop-shadow(0 1px 1px rgba(0,0,0,.20)); }
+.bkdot__mark svg { display: block; }
+.bkdot--ok .bkdot__mark { color: var(--bk-ok); }
+.bkdot--warn .bkdot__mark { color: var(--bk-warn); animation: bkdot-pulse 1.7s ease-in-out infinite; }
+.bkdot--bad .bkdot__mark { color: var(--bk-bad); }
+@keyframes bkdot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+/* For a future real "Backup läuft" state, swap the amber icon for the open arc
+   (path "M12 3a9 9 0 1 0 9 9") and use: animation: bkdot-spin .9s linear infinite;
+   @keyframes bkdot-spin { to { transform: rotate(360deg); } } */
+@media (prefers-reduced-motion: reduce) { .bkdot--warn .bkdot__mark { animation: none; } }
+.bkdot__pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; min-width: 220px; max-width: 80vw;
+	display: none; flex-direction: column; gap: .15rem; text-align: left;
+	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+	box-shadow: var(--shadow); padding: .6rem .7rem; }
+/* Hover (desktop) or the JS .is-open toggle (tap/keyboard) reveal the popover — NOT
+   :focus-within, which would keep it open after a click-to-close because the button
+   retains focus. Screen readers get the state from the button's aria-label anyway. */
+.bkdot:hover .bkdot__pop, .bkdot.is-open .bkdot__pop { display: flex; }
+.bkdot__pop-title { font-weight: 700; font-size: .85rem; }
+.bkdot__pop-meta { font-size: .78rem; color: var(--muted); }
+.bkdot__pop-link { font-size: .78rem; margin-top: .2rem; font-weight: 600; }
+
+/* ---- Floating action button (quick-book) ------------------------------ */
+/* Quick-book is THE action — it wears the signal orange. */
+.fab { position: fixed; right: 1rem; z-index: 25;
+	bottom: calc(1rem + 58px + env(safe-area-inset-bottom));
+	width: 52px; height: 52px; border-radius: 50%; background: var(--signal); color: var(--on-signal);
+	display: grid; place-items: center; font-size: 1.6rem; font-weight: 700; text-decoration: none;
+	box-shadow: 0 6px 18px color-mix(in srgb, var(--signal) 45%, transparent), 0 2px 6px rgba(0, 0, 0, .3); }
+.fab:hover { background: var(--signal-press); }
+

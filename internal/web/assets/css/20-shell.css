@@ -1,0 +1,248 @@
+/* ---- Sticky top stack (app bar + year bar move together) -------------- */
+/* The top stack rides on the chassis — dark green-black iron in BOTH themes
+   (the machine frame; a deliberate constant like the white appbar icons). */
+/* App-wide worksheet backdrop (app-bg.js paints it): opaque canvas pinned behind
+   all authenticated chrome. .main is transparent so it shows through in the
+   content gutters; the frosted topstack, the drawer and the opaque cards sit
+   above it. z-index:-1 puts it BELOW body's own background — see the .has-appbg
+   rule further up, which is what makes the canvas visible at all; without JS the
+   class is never set and the static CSS grid stays as the ground. */
+.app-bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
+
+.topstack {
+	position: sticky;
+	top: 0;
+	z-index: 20;
+	background: var(--chassis); /* opaque fallback where color-mix() is unsupported */
+	background: color-mix(in srgb, var(--chassis) 94%, transparent);
+	-webkit-backdrop-filter: blur(14px) saturate(1.3);
+	backdrop-filter: blur(14px) saturate(1.3);
+	border-bottom: var(--chassis-edge) solid var(--chassis-line);
+	box-shadow: 0 4px 20px rgba(0, 0, 0, .18);
+}
+
+/* ---- App bar ---------------------------------------------------------- */
+.appbar {
+	display: flex;
+	align-items: center;
+	gap: .6rem;
+	padding: calc(.6rem + env(safe-area-inset-top)) 1rem .6rem;
+	background: transparent;
+	color: var(--chassis-text);
+}
+.appbar__brand { display: flex; align-items: center; gap: .45rem; color: var(--chassis-text); font-weight: 700; }
+.appbar__brand img { display: block; }
+.appbar__brand-mark { display: block; }
+/* min-width:0 + ellipsis so a long page title (e.g. "Bemessungsgrundlagen")
+   truncates instead of forcing the app bar wider than the screen (which caused
+   a horizontal scroll and pushed the fixed tab bar below the fold). */
+.appbar__title { flex: 1; min-width: 0; text-align: center; font-size: 1.05rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Narrow phones: the brand WORD yields (the tractor mark stays tappable), so
+   the page title gets the width instead of truncating to "Übersic…". */
+@media (max-width: 480px) {
+	.appbar__brand > span { display: none; }
+	.appbar__title { font-size: .98rem; }
+	/* The same theme control remains available in the drawer; remove the duplicate
+	   here so long titles retain breathing room on narrow phones. */
+	.appbar__icon.appbar__theme { display: none; }
+}
+.appbar__icon {
+	flex: none;
+	width: 40px; height: 40px;
+	display: grid; place-items: center;
+	background: transparent; border: 0; border-radius: 10px;
+	color: var(--chassis-text); cursor: pointer;
+}
+.appbar__icon:hover { background: var(--chassis-hover); }
+.appbar__icon svg { display: block; }
+.appbar__notify { position: relative; }
+.appbar__notify-count { position: absolute; top: 2px; right: 1px; min-width: 1.05rem; height: 1.05rem;
+	display: grid; place-items: center; padding: 0 .2rem; border-radius: 999px; background: var(--danger);
+	color: #fff; font: 700 .62rem/1 var(--font-mono); box-shadow: 0 0 0 2px var(--chassis); }
+
+/* Notification center: one compact, actionable stream with state carried by a
+   narrow signal rail instead of large colored surfaces. */
+.noticeprefs { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .7rem 1rem; align-items: center; }
+.noticeprefs p { margin: .2rem 0 0; }
+.noticeprefs__form { display: flex; gap: .65rem; align-items: center; }
+.noticeprefs > .muted { grid-column: 1 / -1; }
+.noticefeed { list-style: none; margin: 0; padding: 0; display: grid; gap: .55rem; }
+.notice { --notice-signal: var(--primary); display: grid; grid-template-columns: 1.5rem minmax(0,1fr) auto;
+	gap: .7rem; align-items: center; padding: .75rem .8rem; background: var(--card-grad);
+	border: 1px solid var(--card-hairline); border-left: 3px solid var(--notice-signal); border-radius: var(--radius); box-shadow: var(--card-shadow); }
+.notice--warn { --notice-signal: var(--accent); }
+.notice--bad { --notice-signal: var(--danger); }
+.notice.is-read { opacity: .72; }
+.notice__mark { width: 1.35rem; height: 1.35rem; display: grid; place-items: center; border-radius: 50%;
+	background: color-mix(in srgb, var(--notice-signal) 14%, transparent); color: var(--notice-signal); font: 800 .76rem/1 var(--font-mono); }
+.notice__body { min-width: 0; display: grid; gap: .18rem; }
+.notice__top { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+.notice__detail { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.notice__actions { display: flex; align-items: center; gap: .35rem; }
+.notice__actions form { margin: 0; }
+@media (max-width: 560px) {
+	.noticeprefs { grid-template-columns: 1fr; }
+	.noticeprefs__form { justify-content: space-between; }
+	.notice { grid-template-columns: 1.5rem minmax(0,1fr); align-items: start; }
+	.notice__actions { grid-column: 2; }
+}
+
+/* QR field capture: the scan page stays one-handed; the print sheet uses real
+   white labels with enough quiet space around every code. */
+.machine-scan__hero { display: flex; align-items: center; gap: .8rem; }
+.machine-scan__hero > div { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: .16rem; }
+.machine-scan__icon { width: 3rem; height: 3rem; display: grid; place-items: center; flex: 0 0 auto;
+	border-radius: var(--radius); background: var(--surface-2); color: var(--primary); }
+.machine-scan__years { display: flex; gap: .4rem; overflow-x: auto; padding-bottom: .15rem; }
+.machine-scan__neighbors { display: grid; gap: .4rem; }
+.machine-scan__neighbor { min-height: var(--tap); display: flex; justify-content: space-between; align-items: center;
+	gap: .7rem; padding: .65rem .75rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
+	background: var(--surface-2); color: var(--text); font-weight: 650; }
+.machine-scan__neighbor:hover { border-color: var(--primary); }
+.machine-label-help { display: flex; gap: 1rem; align-items: center; justify-content: space-between; }
+.machine-label-help p { margin: 0; max-width: 60ch; }
+.machine-labels { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .65rem; }
+.machine-label { min-height: 12rem; display: grid; grid-template-columns: 9rem minmax(0,1fr); align-items: center; gap: .65rem;
+	padding: .7rem; break-inside: avoid; border: 1px dashed var(--border-strong); border-radius: var(--radius); background: #fff; color: #111; }
+.machine-label img { width: 9rem; height: 9rem; display: block; image-rendering: pixelated; }
+.machine-label__copy { min-width: 0; display: flex; flex-direction: column; gap: .28rem; }
+.machine-label__copy strong { font: 750 1.15rem/1.15 var(--font-sans); overflow-wrap: anywhere; }
+.machine-label__copy span, .machine-label__copy small { color: #454545; }
+.machine-label__brand { font: 700 .66rem/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+@media (max-width: 650px) {
+	.machine-labels { grid-template-columns: 1fr; }
+	.machine-label-help { align-items: stretch; flex-direction: column; }
+}
+@media print {
+	.machine-label-page { display: block; }
+	.machine-labels { grid-template-columns: repeat(2, 1fr); gap: 4mm; }
+	.machine-label { min-height: 54mm; grid-template-columns: 42mm 1fr; gap: 4mm; padding: 4mm; border: .3mm dashed #777; border-radius: 2mm; }
+	.machine-label img { width: 42mm; height: 42mm; }
+	.machine-label__copy strong { font-size: 13pt; }
+}
+
+/* ---- Admin operations strip ----------------------------------------- */
+/* Only admin routes render this compact read-only strip. It reuses the same
+   durable signals as the detailed pages and remains horizontally scrollable on
+   phones instead of wrapping into a second dashboard. */
+.opsbar { max-width: var(--maxw); margin: 0 auto; padding: 0 .75rem .55rem;
+	display: flex; gap: .4rem; overflow-x: auto; scrollbar-width: none; }
+.opsbar::-webkit-scrollbar { display: none; }
+.opsbar__item { flex: 1 0 9.5rem; min-width: 0; display: flex; align-items: center; gap: .45rem;
+	padding: .38rem .52rem; border: 1px solid color-mix(in srgb, var(--chassis-text) 16%, transparent);
+	border-radius: 9px; color: var(--chassis-text); background: color-mix(in srgb, #fff 5%, transparent); }
+a.opsbar__item:hover { background: color-mix(in srgb, #fff 10%, transparent); }
+.opsbar__item > span:last-child { min-width: 0; display: flex; flex-direction: column; }
+.opsbar__item strong { font: 700 .66rem/1.2 var(--font-mono); letter-spacing: .04em; text-transform: uppercase; }
+.opsbar__item small { font-size: .69rem; opacity: .78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.opsbar__dot { width: .5rem; height: .5rem; border-radius: 50%; flex: 0 0 auto; background: var(--bk-mark); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-mark) 18%, transparent); }
+.opsbar__item--ok .opsbar__dot { background: var(--bk-ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-ok) 18%, transparent); }
+.opsbar__item--warn .opsbar__dot { background: var(--bk-warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-warn) 18%, transparent); }
+.opsbar__item--bad .opsbar__dot { background: var(--bk-bad); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-bad) 18%, transparent); }
+.opsbar__item--version { flex-basis: 6.5rem; }
+@media (min-width: 760px) { .opsbar__item { flex-basis: 0; } }
+
+/* ---- Side drawer ------------------------------------------------------ */
+.drawer__scrim { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, .45); }
+.drawer__scrim[hidden] { display: none; }
+.drawer {
+	position: fixed; top: 0; right: 0; bottom: 0; z-index: 41;
+	width: min(82vw, 300px);
+	background: var(--surface); color: var(--text);
+	box-shadow: -6px 0 28px rgba(0, 0, 0, .28);
+	transform: translateX(100%);
+	transition: transform .22s ease;
+	display: flex; flex-direction: column;
+	padding-top: env(safe-area-inset-top);
+	overscroll-behavior: contain;
+}
+.drawer.is-open { transform: translateX(0); }
+.drawer__head {
+	display: flex; align-items: center; gap: .7rem;
+	padding: 1rem 1.15rem .85rem;
+	border-bottom: 1px solid var(--border);
+}
+.drawer__avatar { width: 40px; height: 40px; border-radius: 50%; flex: 0 0 auto;
+	display: grid; place-items: center; font-weight: 800; font-size: .95rem;
+	background: var(--primary-tint); color: var(--primary); }
+.drawer__id { display: flex; flex-direction: column; gap: .05rem; min-width: 0; }
+.drawer__user { font-weight: 700; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawer__role { font-size: .85rem; }
+.drawer__nav { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; padding: .5rem .5rem max(.5rem, env(safe-area-inset-bottom)); gap: .1rem; overflow-y: auto; overscroll-behavior: contain; }
+.drawer__label { margin: .85rem .7rem .25rem; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+.drawer__label:first-child { margin-top: .25rem; }
+.drawer__group { margin: .35rem 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.drawer__group-toggle {
+	display: grid; grid-template-columns: 1.4rem minmax(0, 1fr) 1rem; align-items: center; gap: .8rem;
+	min-height: var(--tap); padding: .7rem .85rem; border-radius: 10px;
+	font-family: var(--font-mono); font-size: .85rem; font-weight: 700; color: var(--text); cursor: pointer;
+	list-style: none;
+}
+.drawer__group-toggle::-webkit-details-marker { display: none; }
+.drawer__group-toggle:hover { background: var(--surface-2); }
+.drawer__group-toggle small { display: block; margin-top: .12rem; font-family: var(--font-body); font-size: .72rem; font-weight: 500; color: var(--muted); }
+.drawer__chev { width: 1rem; height: 1rem; color: var(--muted); transition: transform .15s ease; }
+.drawer__group[open] .drawer__chev { transform: rotate(90deg); }
+.drawer__group-items { display: grid; gap: .1rem; padding: 0 0 .35rem 1rem; }
+.drawer__group-items .drawer__item { font-size: .8rem; }
+.drawer__group--admin { margin-top: .15rem; }
+.drawer__sep { height: 1px; background: var(--border); margin: .3rem .4rem; }
+.drawer__logout { margin: 0; }
+.drawer__item {
+	display: flex; align-items: center; gap: .8rem;
+	width: 100%; min-height: var(--tap);
+	padding: .7rem .85rem; border: 0; border-radius: 10px;
+	background: transparent; color: var(--text);
+	/* mono nav voice (audit F-R3-05); weights pinned to the two faces
+	   JetBrains Mono actually ships (500/700) so declared == rendered */
+	font: inherit; font-family: var(--font-mono); font-size: .85rem; font-weight: 500;
+	text-align: left; cursor: pointer;
+}
+.drawer__item:hover { background: var(--surface-2); }
+.drawer__item.is-active { background: var(--primary-tint); color: var(--primary-strong); font-weight: 700; }
+.drawer__item--danger { color: var(--danger-text); }
+.drawer__ico { width: 1.4rem; display: grid; place-items: center; }
+.drawer__ico svg { width: 20px; height: 20px; display: block; color: var(--muted); }
+.drawer__item.is-active .drawer__ico svg { color: var(--primary-strong); }
+.drawer__item--danger .drawer__ico svg { color: var(--danger-text); }
+.backlink { color: var(--primary); font-weight: 600; font-size: .9rem; display: inline-flex; align-items: center; }
+
+/* ---- Base selector ---------------------------------------------------- */
+.basebar {
+	position: sticky;
+	top: 0;
+	z-index: 10;
+	background: var(--surface);
+	border-bottom: 1px solid var(--border);
+	padding: .5rem 1rem;
+}
+.basebar form { max-width: var(--maxw); margin: 0 auto; display: flex; flex-direction: column; gap: .2rem; }
+.basebar__label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+
+/* ---- Layout ----------------------------------------------------------- */
+.main { max-width: var(--maxw); margin: 0 auto; padding: 1rem; }
+/* Micro-interactions: content fades in on load; list cards lift subtly on hover.
+   Both disabled under prefers-reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+	.main { animation: page-in .32s cubic-bezier(.22, .61, .36, 1) both; }
+	.bcard:hover, .logcard:hover, .cmprow:hover, .rcard:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 2px 4px rgba(0, 0, 0, .10), 0 14px 30px rgba(0, 0, 0, .14);
+	}
+}
+/* Fade only — no transform: a transform on .main would make it the containing
+   block for position:fixed descendants (e.g. the quick-book FAB), trapping them
+   at the page bottom instead of pinning them to the viewport. */
+@keyframes page-in { from { opacity: 0; } }
+.stack { display: flex; flex-direction: column; gap: 1rem; }
+/* Section titles as stamped plate labels: uppercase mono, technical spacing. */
+.section-title { font-size: var(--fs-md); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; margin-top: .6rem; }
+
+.card {
+	background: var(--card-grad);
+	border: 1px solid var(--card-hairline);
+	border-radius: var(--radius);
+	box-shadow: var(--card-shadow);
+	padding: 1rem;
+}
+
