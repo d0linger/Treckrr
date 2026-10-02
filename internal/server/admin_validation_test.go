@@ -289,4 +289,34 @@ func TestHandleUserUpdateValidation(t *testing.T) {
 			t.Errorf("expected success flash message, got cookie: %q", flashCookie)
 		}
 	})
+
+	t.Run("malformed form rejected with bad request", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/admin/users/123/update", strings.NewReader("username=%XX"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("id", "123")
+		rr := httptest.NewRecorder()
+
+		s.handleUserUpdate(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status BadRequest (400), got %v", rr.Code)
+		}
+	})
+}
+
+func TestHandleUserRoleValidation(t *testing.T) {
+	s := testAdminServer(t)
+
+	t.Run("malformed form rejected with bad request", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/admin/users/123/role", strings.NewReader("role=%XX"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("id", "123")
+		rr := httptest.NewRecorder()
+
+		s.handleUserRole(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status BadRequest (400), got %v", rr.Code)
+		}
+	})
 }
