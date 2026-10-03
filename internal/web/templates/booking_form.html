@@ -64,6 +64,7 @@
 	<details class="disclosure form-details" data-person-details {{if or .BookingPeople (eq $kind "labor")}}open{{end}}>
 		<summary><span data-person-heading>Personen mitbuchen</span> <span class="muted small" data-person-summary>optional</span></summary>
 		{{if .BookingCopy}}<label class="check"><input type="checkbox" name="copy_people" value="1" checked><span>Personen mitkopieren</span></label>{{end}}
+		<p class="sr-only" data-person-help></p>
 		<div data-person-rows>
 			{{range $i, $person := .BookingPeople}}{{template "booking-person-row" (dict "Form" $ "Person" $person "Existing" true "Primary" (and (eq $kind "labor") (eq $i 0)))}}{{end}}
 			{{range seq 3}}{{template "booking-person-row" (dict "Form" $ "Existing" false "Primary" false)}}{{end}}
@@ -72,7 +73,7 @@
 		<p class="muted small" data-person-status role="status"></p>
 		{{if not .Persons}}<p class="muted small">Noch keine gepflegte Person vorhanden. Freie Namen sind möglich. <a class="link" href="/personen">Personen verwalten</a></p>{{end}}
 	</details>
-	<label class="field"><span>Tätigkeit / Beschreibung</span><input class="input" name="task_label" maxlength="100" value="{{index $v "task_label"}}" placeholder="z. B. Mähen oder Materialkosten" data-booking-task {{if or (eq $kind "quantity") (eq $kind "fixed")}}required{{end}}></label>
+	<label class="field"><span>Tätigkeit / Beschreibung</span><input class="input" name="task_label" maxlength="100" value="{{index $v "task_label"}}" placeholder="z. B. Mähen oder Materialkosten" data-booking-task {{if or (eq $kind "quantity") (eq $kind "fixed")}}required{{end}}><span class="sr-only" data-booking-task-help></span></label>
 	<details class="disclosure form-details" {{if index $v "note"}}open{{end}}><summary>Weitere Angaben <span class="muted small">optional</span></summary><label class="field"><span>Notiz / Belegreferenz</span><input class="input" name="note" maxlength="2000" value="{{index $v "note"}}"></label>{{if and (not .BookingEdit) (not .BookingCopy)}}<button class="btn btn--ghost btn--xs" type="button" data-defaults-reset>Gemerkte Vorgaben löschen</button>{{end}}</details>
 	<div class="booking-preview" data-booking-preview role="status" aria-live="polite" aria-atomic="true"><p class="muted small">Leistung auswählen und positive Stunden oder Beträge eingeben.</p></div>
 	<p class="muted small" data-pricing-status role="status"></p>

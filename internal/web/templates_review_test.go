@@ -48,6 +48,13 @@ func TestNeighborBookingSubmitGuards(t *testing.T) {
 					t.Errorf("%q disabled=%t, want %t", label, disabled, tc.issued)
 				}
 			}
+			if !tc.completed {
+				for _, hook := range []string{"data-booking-task-help", "data-person-help", "data-booking-direction-note"} {
+					if !strings.Contains(page, hook) {
+						t.Errorf("booking form is missing controller hook %q", hook)
+					}
+				}
+			}
 		})
 	}
 }
