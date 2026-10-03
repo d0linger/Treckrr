@@ -22,8 +22,13 @@ func TestYearsKeepsOnePrimaryActionPerRow(t *testing.T) {
 		"Bases":    []models.PriceBase{{ID: 1, Year: 2025, Name: "Standard"}},
 		"HasBases": true,
 	}))
-	if count := strings.Count(page, `class="btn btn--primary btn--sm"`); count != 2 {
-		t.Errorf("year-row primary actions = %d, want 2", count)
+	for _, action := range []string{
+		`href="/years/1/wechsel">Jahreswechsel</a>`,
+		`href="/years/2/abschluss">Abschluss prüfen</a>`,
+	} {
+		if count := strings.Count(page, action); count != 1 {
+			t.Errorf("year-row action %q occurs %d times, want 1", action, count)
+		}
 	}
 	for _, want := range []string{"Jahreswechsel", "Abschluss prüfen", "Weitere Aktionen", "Jahresdaten bearbeiten"} {
 		if !strings.Contains(page, want) {

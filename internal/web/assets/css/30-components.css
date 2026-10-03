@@ -652,6 +652,12 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .closing-all > div > span:first-child { display: grid; gap: .08rem; }
 .closing-action { display: grid; gap: .5rem; padding-top: .5rem; }
 .closing-action p { margin: 0; text-align: center; }
+.neighbor-list { display: grid; border-top: 1px solid var(--border); }
+.neighbor-row { display: grid; gap: .25rem; padding: .65rem 0; border-bottom: 1px solid var(--border); }
+.neighbor-row > .list__row { padding-inline: 0; }
+.neighbor-row > details > summary { min-height: var(--tap); padding-inline: 0; }
+.neighbor-row > details[open] { padding-bottom: .5rem; }
+.neighbor-row > details[open] > .link { display: inline-block; margin-bottom: .75rem; }
 @media (max-width: 640px), (pointer: coarse) { .list__book { min-height: var(--tap); } }
 @media (max-width: 560px) {
 	.account-head { align-items: flex-start; flex-direction: column; }
