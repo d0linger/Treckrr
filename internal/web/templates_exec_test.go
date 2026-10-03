@@ -736,8 +736,8 @@ func TestMahnungPagePreservesDocumentAndPaymentActions(t *testing.T) {
 
 // TestDashboardShowsCreditAsOwedNotPaid pins the reverse of "offene Zahlung":
 // a neighbor with a negative rest (Guthaben) is money I still owe. A completed
-// year must list it under "Zu erledigen" and in the status row, and its tile
-// must say Guthaben — never Bezahlt.
+// year must list it under "Zu erledigen", and its tile must say Guthaben —
+// never Bezahlt.
 func TestDashboardShowsCreditAsOwedNotPaid(t *testing.T) {
 	d := decimal.NewFromFloat
 	page := execPage(t, "dashboard", map[string]any{
@@ -755,7 +755,6 @@ func TestDashboardShowsCreditAsOwedNotPaid(t *testing.T) {
 	})
 	for _, want := range []string{
 		"mit Guthaben – noch auszuzahlen · 60,00 €",
-		"Guthaben 60,00 €",
 		"Guthaben · 60,00 €",
 	} {
 		if !strings.Contains(html.UnescapeString(page), want) {

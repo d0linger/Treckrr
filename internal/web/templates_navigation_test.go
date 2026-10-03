@@ -39,7 +39,7 @@ func TestDashboardBookingNavigation(t *testing.T) {
 				t.Fatal("dashboard has no main landmark")
 			}
 			main, _, _ = strings.Cut(main, "</main>")
-			want := fmt.Sprintf(`href="/buchungen?year=%d">Buchungen &amp; Filter</a>`, tc.yearID)
+			want := fmt.Sprintf(`href="/buchungen?year=%d"`, tc.yearID)
 			if count := strings.Count(main, want); count != 1 {
 				t.Errorf("visible dashboard booking links = %d, want 1 with selected year", count)
 			}
@@ -48,16 +48,16 @@ func TestDashboardBookingNavigation(t *testing.T) {
 					t.Errorf("existing dashboard destination %q was removed", destination)
 				}
 			}
-			if !strings.Contains(main, `<details class="summary-actions">`) ||
-				!strings.Contains(main, "Auswertungen &amp; Daten") {
+			if !strings.Contains(main, `<details class="disclosure disclosure--plain page-more">`) ||
+				!strings.Contains(main, "Weitere Aktionen") {
 				t.Error("secondary dashboard destinations are not grouped under the reporting disclosure")
 			}
 		})
 	}
 }
 
-// TestDashboardCoreWorkflow keeps the daily path and its direct booking entry
-// visible without promoting the secondary reporting modules again.
+// TestDashboardCoreWorkflow keeps one next action and the direct booking entry
+// visible without duplicating the workflow as a second navigation system.
 func TestDashboardCoreWorkflow(t *testing.T) {
 	t.Parallel()
 	page := execPage(t, "dashboard", map[string]any{
@@ -78,19 +78,22 @@ func TestDashboardCoreWorkflow(t *testing.T) {
 			"Remaining": decimal.NewFromInt(120),
 		}},
 	})
-	for _, label := range []string{"Grundlage", "Nachbarn", "Buchungen", "Abschluss", "Bezahlt"} {
-		if !strings.Contains(page, ">"+label+"</strong>") {
-			t.Errorf("core workflow missing %q", label)
-		}
+	if strings.Contains(page, "workpath") {
+		t.Error("dashboard still duplicates the main navigation as a workflow stepper")
 	}
-	if count := strings.Count(page, `<li class="workpath__step`); count != 5 {
-		t.Errorf("workflow steps = %d, want 5", count)
+	if count := strings.Count(page, `class="next-action`); count != 1 {
+		t.Errorf("next actions = %d, want 1", count)
+	}
+	for _, want := range []string{"year-overview", "Abschluss prüfen", "Weitere Aktionen"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("simplified dashboard missing %q", want)
+		}
 	}
 	if !strings.Contains(page, `href="/neighbors/9?year=7#neue-buchung">Buchen</a>`) {
 		t.Error("open-year neighbor has no direct booking entry")
 	}
-	if !strings.Contains(page, `<small>4 erfasst</small>`) {
-		t.Error("workflow does not expose the current booking count")
+	if strings.Contains(page, "favorite-toggle") {
+		t.Error("dashboard still exposes an unnecessary neighbor favorite control")
 	}
 }
 

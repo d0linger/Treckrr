@@ -625,6 +625,68 @@ a.opsbar__item:hover { background: color-mix(in srgb, #fff 10%, transparent); }
 .summary-actions[open] > summary::after { content: "−"; }
 .summary-actions > summary:hover { background: rgba(255, 255, 255, .1); }
 
+.year-overview {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: .25rem 0 1rem;
+	border-bottom: 1px solid var(--border);
+}
+.year-overview__title, .year-overview__facts { display: flex; align-items: center; gap: .75rem; }
+.year-overview__title h2 { margin: 0; font-size: clamp(1.7rem, 5vw, 2.45rem); }
+.year-overview__facts { justify-content: flex-end; flex-wrap: wrap; color: var(--muted); font-size: var(--fs-sm); }
+.year-overview__facts strong { color: var(--text); font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
+.year-overview__facts a { color: var(--primary); font-weight: 700; }
+.status {
+	display: inline-flex;
+	align-items: center;
+	min-height: 1.65rem;
+	padding: .2rem .55rem;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	font: 700 .68rem/1 var(--font-mono);
+}
+.status--done { color: var(--primary); background: var(--primary-tint); border-color: color-mix(in srgb, var(--primary) 30%, var(--border)); }
+.status--neutral { color: var(--muted); background: var(--surface-2); }
+.next-action {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: .85rem 1rem;
+	border-left: 3px solid var(--signal);
+	background: color-mix(in srgb, var(--signal) 7%, var(--surface));
+}
+.next-action > div { display: grid; gap: .15rem; }
+.next-action span { color: var(--muted); font-size: var(--fs-sm); }
+.next-action--payment { border-left-color: var(--owe); background: color-mix(in srgb, var(--owe) 7%, var(--surface)); }
+.page-more { margin-top: .35rem; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.page-more > summary { min-height: var(--tap); padding: .8rem 0; font-weight: 700; }
+.action-list { display: grid; }
+.action-list > a {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	min-height: var(--tap);
+	padding: .65rem 0;
+	border-top: 1px solid var(--border);
+	color: var(--text);
+	text-decoration: none;
+}
+.action-list > a > span:first-child { display: grid; gap: .08rem; }
+.action-list small { color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
+.action-list > a > span:last-child { color: var(--muted); font-size: 1.2rem; }
+.page-more__form { padding: .75rem 0; border-top: 1px solid var(--border); }
+
+@media (max-width: 620px) {
+	.year-overview { align-items: flex-start; flex-direction: column; }
+	.year-overview__facts { justify-content: flex-start; }
+	.next-action { align-items: stretch; flex-direction: column; }
+	.next-action .btn { width: 100%; }
+}
+
 /* ---- Lists ------------------------------------------------------------ */
 .list { display: flex; flex-direction: column; gap: .6rem; }
 /* flex-wrap: on narrow phones a wide status chip drops to its own line instead

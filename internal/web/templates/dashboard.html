@@ -13,25 +13,18 @@
 		</ol>
 	</div>
 	{{end}}
-	<div class="summary-card card">
-		<div>
-			<span class="summary-card__label">Gesamtkosten {{.Year.Year}}</span>
-			<span class="summary-card__value">{{money .GrandCost}}</span>
+	<header class="year-overview">
+		<div class="year-overview__title">
+			<h2>{{.Year.Year}}</h2>
+			{{if .Completed}}<span class="status status--done">Abgeschlossen</span>
+			{{else}}<span class="status status--neutral">In Bearbeitung</span>{{end}}
 		</div>
-		<div class="summary-card__meta">
-			<span>{{num .GrandHours}} h · Grundlage {{.Year.Base.Year}}</span>
-			<details class="summary-actions">
-				<summary>Auswertungen &amp; Daten</summary>
-				<span class="btnrow">
-				<a class="btn btn--ghost btn--sm" href="/buchungen?year={{.Year.ID}}">Buchungen &amp; Filter</a>
-				<a class="btn btn--ghost btn--sm" href="/stats?year={{.Year.ID}}">Statistik</a>
-				<a class="btn btn--ghost btn--sm" href="/stats/all">Alle Jahre</a>
-				<a class="btn btn--ghost btn--sm" href="/export/year/{{.Year.ID}}">CSV Export</a>
-				{{if not .Completed}}<a class="btn btn--ghost btn--sm" href="/entries/import?year={{.Year.ID}}">Import</a>{{end}}
-				</span>
-			</details>
+		<div class="year-overview__facts">
+			<span><strong>{{money .GrandCost}}</strong> Gesamtsaldo</span>
+			<span>{{num .GrandHours}} h</span>
+			<a href="/bases">Grundlage {{.Year.Base.Year}}</a>
 		</div>
-	</div>
+	</header>
 
 	{{if .WorkItems}}
 	<div>
@@ -57,75 +50,18 @@
 	</div>
 	{{end}}
 
-	<section class="workpath" aria-labelledby="workpath-title">
-		<div class="workpath__head">
-			<div>
-				<h2 class="workpath__title" id="workpath-title">Arbeitsablauf {{.Year.Year}}</h2>
-				<p class="workpath__intro">Von der Grundlage bis zum bezahlten Abschluss.</p>
-			</div>
-			{{if .Completed}}<span class="tag tag--done">Abgeschlossen</span>
-			{{else}}<span class="tag tag--progress">In Bearbeitung</span>{{end}}
-		</div>
-		<ol class="workpath__steps">
-			<li class="workpath__step is-done">
-				<a class="workpath__link" href="/bases">
-					<span class="workpath__mark" aria-hidden="true">1</span>
-					<span class="workpath__copy"><strong>Grundlage</strong><small>{{.Year.Base.Year}} · bereit</small></span>
-				</a>
-			</li>
-			<li class="workpath__step {{if .Summaries}}is-done{{else}}is-current{{end}}">
-				<a class="workpath__link" href="#nachbarn">
-					<span class="workpath__mark" aria-hidden="true">2</span>
-					<span class="workpath__copy"><strong>Nachbarn</strong><small>{{with .NeighborCount}}{{.}}{{else}}0{{end}} im Jahr</small></span>
-				</a>
-			</li>
-			<li class="workpath__step {{if or .Completed .BookingCount}}is-done{{else if .Summaries}}is-current{{else}}is-waiting{{end}}">
-				<a class="workpath__link" href="#nachbarn">
-					<span class="workpath__mark" aria-hidden="true">3</span>
-					<span class="workpath__copy"><strong>Buchungen</strong><small>{{with .BookingCount}}{{.}}{{else}}0{{end}} erfasst</small></span>
-				</a>
-			</li>
-			<li class="workpath__step {{if .Completed}}is-done{{else if .BookingCount}}is-current{{else}}is-waiting{{end}}">
-				<a class="workpath__link" href="{{if .Completed}}/years{{else}}/years/{{.Year.ID}}/abschluss{{end}}">
-					<span class="workpath__mark" aria-hidden="true">4</span>
-					<span class="workpath__copy"><strong>Abschluss</strong><small>{{if .Completed}}erledigt{{else}}noch offen{{end}}</small></span>
-				</a>
-			</li>
-			<li class="workpath__step {{if .Completed}}{{if or .OpenCount .CreditCount}}is-current{{else}}is-done{{end}}{{else}}is-waiting{{end}}">
-				{{if .Completed}}<a class="workpath__link" href="{{if .OpenCount}}#offene-zahlungen{{else if .CreditCount}}#auszuzahlen{{else}}#nachbarn{{end}}">
-				{{else}}<span class="workpath__link" aria-disabled="true">{{end}}
-					<span class="workpath__mark" aria-hidden="true">5</span>
-					<span class="workpath__copy"><strong>Bezahlt</strong><small>{{if not .Completed}}nach Abschluss{{else if or .OpenCount .CreditCount}}{{.OpenCount}} offen{{if .CreditCount}} · {{.CreditCount}} Guthaben{{end}}{{else}}alles erledigt{{end}}</small></span>
-				{{if .Completed}}</a>{{else}}</span>{{end}}
-			</li>
-		</ol>
-		<div class="workpath__footer">
-			<div class="workpath__status">
-				{{if .Completed}}
-				<span class="paysummary">
-					<span class="tag tag--paid">Bezahlt {{money .PaidCost}}</span>
-					<span class="tag tag--open">Offen {{money .OpenCost}}</span>
-					{{if .CreditCount}}<span class="tag tag--credit">Guthaben {{money .CreditCost}}</span>{{end}}
-				</span>
-				{{else}}<span class="muted small">Buchungen bleiben bis zum Jahresabschluss änderbar.</span>{{end}}
-			</div>
-			<div class="statusrow__actions">
-			{{if .Completed}}
-			<form method="post" action="/years/{{.Year.ID}}/status"
-				data-confirm="Abrechnungsjahr {{.Year.Year}} wieder öffnen? Buchungen und Belege werden dadurch wieder änderbar."
-				data-confirm-reason="Grund für das Wiederöffnen (wird protokolliert)">
-				<input type="hidden" name="status" value="in_progress">
-				<input type="hidden" name="origin" value="dashboard">
-				<input type="hidden" name="reason" value="">
-				<button class="btn btn--ghost btn--sm" type="submit">Wieder öffnen</button>
-			</form>
-			{{else}}
-			<a class="btn btn--primary btn--sm" href="/years/{{.Year.ID}}/abschluss">Jahr abschließen …</a>
-			{{end}}
-			<a class="btn btn--ghost btn--sm" href="/years/{{.Year.ID}}/issue-all" title="Alle offenen Nachbarn auf einmal abrechnen">Sammel-Festschreibung</a>
-			</div>
-		</div>
-	</section>
+	{{if not .Completed}}
+	<div class="next-action">
+		<div><strong>Nächster Schritt</strong><span>{{if .Summaries}}Buchungen ergänzen oder das Jahr prüfen.{{else}}Nachbarn zum Abrechnungsjahr hinzufügen.{{end}}</span></div>
+		{{if .Summaries}}<a class="btn btn--primary btn--sm" href="/years/{{.Year.ID}}/abschluss">Abschluss prüfen</a>
+		{{else}}<a class="btn btn--primary btn--sm" href="#nachbarn">Nachbarn hinzufügen</a>{{end}}
+	</div>
+	{{else if or .OpenCount .CreditCount}}
+	<div class="next-action next-action--payment">
+		<div><strong>Zahlungen abschließen</strong><span>{{.OpenCount}} offen{{if .CreditCount}} · {{.CreditCount}} Guthaben{{end}}</span></div>
+		<a class="btn btn--primary btn--sm" href="{{if .OpenCount}}#offene-zahlungen{{else}}#auszuzahlen{{end}}">Beträge prüfen</a>
+	</div>
+	{{end}}
 
 	{{/* Targets of the "Zu erledigen" rows: jumping here rings every tile of
 	     that kind (CSS :has(:target)), like the linked booking cards. */}}
@@ -142,12 +78,9 @@
 		{{end}}
 	</div>
 	{{end}}
-	<div class="list" data-favorite-list="neighbor">
+	<div class="list">
 		{{range .Summaries}}
-		<div class="list__row card" data-nb-item data-favorite-id="{{.Neighbor.ID}}"{{if and $.Completed (not .Paid)}} data-open="1"{{end}}{{if $.Completed}}{{if .Credit}} data-due="credit"{{else if not .Paid}} data-due="open"{{end}}{{end}}>
-			<button class="favorite-toggle" type="button" data-favorite-toggle aria-pressed="false" title="Als Favorit merken" aria-label="Als Favorit merken">
-				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.75 5.57 6.15.9-4.45 4.33 1.05 6.12L12 17.03l-5.5 2.89 1.05-6.12L3.1 9.47l6.15-.9z"/></svg>
-			</button>
+		<div class="list__row card" data-nb-item{{if and $.Completed (not .Paid)}} data-open="1"{{end}}{{if $.Completed}}{{if .Credit}} data-due="credit"{{else if not .Paid}} data-due="open"{{end}}{{end}}>
 			<a class="list__main list__main--link" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}">
 				<span class="list__title">{{.Neighbor.Name}}</span>
 				<span class="list__sub">{{.Entries}} Buchungen · {{num .Hours}} h</span>
@@ -241,6 +174,28 @@
 		</form>
 	</details>
 	{{end}}
+
+	<details class="disclosure disclosure--plain page-more">
+		<summary>Weitere Aktionen</summary>
+		<div class="action-list">
+			<a href="/buchungen?year={{.Year.ID}}"><span><strong>Buchungen &amp; Filter</strong><small>Alle Buchungen durchsuchen und filtern</small></span><span aria-hidden="true">›</span></a>
+			<a href="/stats?year={{.Year.ID}}"><span><strong>Statistik {{.Year.Year}}</strong><small>Auswertung für dieses Jahr</small></span><span aria-hidden="true">›</span></a>
+			<a href="/stats/all"><span><strong>Alle Jahre vergleichen</strong><small>Langfristige Auswertung öffnen</small></span><span aria-hidden="true">›</span></a>
+			<a href="/export/year/{{.Year.ID}}"><span><strong>CSV exportieren</strong><small>Buchungsdaten dieses Jahres herunterladen</small></span><span aria-hidden="true">›</span></a>
+			{{if not .Completed}}<a href="/entries/import?year={{.Year.ID}}"><span><strong>Buchungen importieren</strong><small>Mehrere Buchungen aus einer Datei übernehmen</small></span><span aria-hidden="true">›</span></a>{{end}}
+			<a href="/years/{{.Year.ID}}/issue-all"><span><strong>Sammel-Festschreibung</strong><small>Alle offenen Nachbarn gemeinsam abrechnen</small></span><span aria-hidden="true">›</span></a>
+		</div>
+		{{if .Completed}}
+		<form method="post" action="/years/{{.Year.ID}}/status" class="page-more__form"
+			data-confirm="Abrechnungsjahr {{.Year.Year}} wieder öffnen? Buchungen und Belege werden dadurch wieder änderbar."
+			data-confirm-reason="Grund für das Wiederöffnen (wird protokolliert)">
+			<input type="hidden" name="status" value="in_progress">
+			<input type="hidden" name="origin" value="dashboard">
+			<input type="hidden" name="reason" value="">
+			<button class="btn btn--ghost btn--sm" type="submit">Jahr wieder öffnen</button>
+		</form>
+		{{end}}
+	</details>
 
 	<p class="muted center">
 		Neue Nachbarn werden im Reiter <a class="link" href="/neighbors">Nachbarn</a> angelegt
