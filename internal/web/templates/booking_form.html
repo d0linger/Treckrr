@@ -13,8 +13,8 @@
 	<p class="muted small">Art und Richtung bleiben beim Bearbeiten erhalten. Über „Kopieren“ lässt sich eine andere Leistung erfassen.</p>
 	{{else}}
 	<fieldset class="booking-direction"><legend>Wer verrechnet wem?</legend><div class="booking-direction__choices">
-		<label><input type="radio" name="booking_direction" value="out" {{if eq $direction "out"}}checked{{end}}><span>Ich verrechne<small>{{.Neighbor.Name}} schuldet mir</small></span></label>
-		<label><input type="radio" name="booking_direction" value="in" {{if eq $direction "in"}}checked{{end}}><span>Nachbar verrechnet<small>Ich schulde {{.Neighbor.Name}}</small></span></label>
+		<label><input type="radio" name="booking_direction" value="out" {{if eq $direction "out"}}checked{{end}}><span>Ich verrechne</span></label>
+		<label><input type="radio" name="booking_direction" value="in" {{if eq $direction "in"}}checked{{end}}><span>Nachbar verrechnet</span></label>
 	</div></fieldset>
 	{{end}}
 	<div class="form__grid form__grid--two">
@@ -28,15 +28,15 @@
 			<span class="date-shortcuts"><button class="btn btn--ghost btn--xs" type="button" data-days="0" data-target="entry_date">Heute</button><button class="btn btn--ghost btn--xs" type="button" data-days="1" data-target="entry_date">Gestern</button></span>
 		</div>
 	</div>
-	<p class="muted small" data-booking-direction-note>Eigene Forderungen und Gegenleistungen bleiben getrennt nachvollziehbar.</p>
+	<p class="muted small" data-booking-direction-note>Eigene Forderungen und Gegenleistungen bleiben getrennt.</p>
 	<noscript><p class="flash flash--info">Bitte nur die Felder der gewählten Leistungsart ausfüllen. Drei zusätzliche Personenzeilen stehen ohne JavaScript bereit. Leere Zeilen werden ignoriert; die Berechnung erfolgt beim Speichern.</p></noscript>
 	<div class="stack stack--tight" data-booking-panel="equipment:out equipment:in">
 		<label class="field"><span>Gespann / Gefährt auswählen</span><select class="select" name="mode" data-mode-select>
-			<option value="gespann" {{if eq $mode "gespann"}}selected{{end}}>Fixes Gespann</option>
+			<option value="gespann" {{if eq $mode "gespann"}}selected{{end}}>Gespann aus Grundlage</option>
 			<option value="manual" {{if eq $mode "manual"}}selected{{end}}>Frei zusammenstellen</option>
 			<option value="free" {{if eq $mode "free"}}selected{{end}}>Anderes Gefährt / Freitext</option>
 		</select></label>
-		<div data-mode-panel="gespann"><label class="field"><span>Gepflegtes Gespann</span><select class="select" name="gespann_id" data-gespann-select data-favorite-select="gespann"><option value="">— wählen —</option>{{range .Gespanne}}<option value="{{.ID}}" {{if eq (printf "%d" .ID) (index $v "gespann_id")}}selected{{end}}>{{.Name}}</option>{{end}}</select></label><button class="btn btn--ghost btn--xs favorite-select-toggle" type="button" data-favorite-select-toggle="gespann" aria-pressed="false" disabled><span data-favorite-label>Merken</span></button></div>
+		<div data-mode-panel="gespann"><label class="field"><span>Gespann</span><select class="select" name="gespann_id" data-gespann-select><option value="">— wählen —</option>{{range .Gespanne}}<option value="{{.ID}}" {{if eq (printf "%d" .ID) (index $v "gespann_id")}}selected{{end}}>{{.Name}}</option>{{end}}</select></label></div>
 		<div class="equipment-grid" data-mode-panel="manual">
 			<label class="field"><span>Traktor / Gefährt</span><select class="select" name="tractor_id" data-tractor-select><option value="">— keiner —</option>{{range .Tractors}}<option value="{{.ID}}" {{if eq (printf "%d" .ID) (index $v "tractor_id")}}selected{{end}}>{{.Label}}{{if not .Active}} (inaktiv){{end}}</option>{{end}}</select></label>
 			<label class="field"><span>Belastungsstufe</span><select class="select" name="load_level_id" data-load-select><option value="">— keine —</option>{{range .Loads}}<option value="{{.ID}}" {{if eq (printf "%d" .ID) (index $v "load_level_id")}}selected{{end}}>{{.Name}}</option>{{end}}</select></label>
@@ -64,7 +64,6 @@
 	<details class="disclosure form-details" data-person-details {{if or .BookingPeople (eq $kind "labor")}}open{{end}}>
 		<summary><span data-person-heading>Personen mitbuchen</span> <span class="muted small" data-person-summary>optional</span></summary>
 		{{if .BookingCopy}}<label class="check"><input type="checkbox" name="copy_people" value="1" checked><span>Personen mitkopieren</span></label>{{end}}
-		<p class="muted small" data-person-help>Jede Person erhält eigene Stunden und einen eigenen Satz. Namen und vereinbarte Preise bleiben in der Buchung erhalten.</p>
 		<div data-person-rows>
 			{{range $i, $person := .BookingPeople}}{{template "booking-person-row" (dict "Form" $ "Person" $person "Existing" true "Primary" (and (eq $kind "labor") (eq $i 0)))}}{{end}}
 			{{range seq 3}}{{template "booking-person-row" (dict "Form" $ "Existing" false "Primary" false)}}{{end}}
@@ -73,13 +72,11 @@
 		<p class="muted small" data-person-status role="status"></p>
 		{{if not .Persons}}<p class="muted small">Noch keine gepflegte Person vorhanden. Freie Namen sind möglich. <a class="link" href="/personen">Personen verwalten</a></p>{{end}}
 	</details>
-	<label class="field"><span>Tätigkeit / Beschreibung</span><input class="input" name="task_label" maxlength="100" value="{{index $v "task_label"}}" placeholder="z. B. Mähen, Heuarbeit oder Materialkosten" data-booking-task {{if or (eq $kind "quantity") (eq $kind "fixed")}}required{{end}}><span class="muted small" data-booking-task-help>{{if eq $kind "labor"}}Optional – ohne Eingabe wird die gewählte Person übernommen.{{else if eq $kind "equipment"}}Optional – ohne Eingabe wird das gewählte Gespann oder Gefährt übernommen.{{else}}Bitte die Leistung oder Kostenposition beschreiben.{{end}}</span></label>
-	<details class="disclosure form-details" {{if index $v "note"}}open{{end}}><summary>Notiz / Belegreferenz hinzufügen <span class="muted small">optional</span></summary><label class="field"><span>Notiz / Referenz</span><input class="input" name="note" maxlength="2000" value="{{index $v "note"}}"></label></details>
+	<label class="field"><span>Tätigkeit / Beschreibung</span><input class="input" name="task_label" maxlength="100" value="{{index $v "task_label"}}" placeholder="z. B. Mähen oder Materialkosten" data-booking-task {{if or (eq $kind "quantity") (eq $kind "fixed")}}required{{end}}></label>
+	<details class="disclosure form-details" {{if index $v "note"}}open{{end}}><summary>Weitere Angaben <span class="muted small">optional</span></summary><label class="field"><span>Notiz / Belegreferenz</span><input class="input" name="note" maxlength="2000" value="{{index $v "note"}}"></label>{{if and (not .BookingEdit) (not .BookingCopy)}}<button class="btn btn--ghost btn--xs" type="button" data-defaults-reset>Gemerkte Vorgaben löschen</button>{{end}}</details>
 	<div class="booking-preview" data-booking-preview role="status" aria-live="polite" aria-atomic="true"><p class="muted small">Leistung auswählen und positive Stunden oder Beträge eingeben.</p></div>
 	<p class="muted small" data-pricing-status role="status"></p>
 	<button class="btn btn--primary btn--block" type="submit" title="Strg + Enter" {{if or .BookingLocked .HasInvoice}}disabled{{end}}>{{if .BookingEdit}}Änderungen speichern{{else if .BookingCopy}}Kopie speichern{{else}}Buchung speichern{{end}}</button>
-	{{if and (not .BookingEdit) (not .BookingCopy)}}<button class="btn btn--ghost btn--xs" type="button" data-defaults-reset>Gemerkte Vorgaben löschen</button>{{end}}
-	<p class="muted small">Zahlungen bleiben separat. Hier werden Leistungen und Gegenpositionen erfasst, kein Geldeingang.</p>
 	<template data-person-template>{{template "booking-person-row" (dict "Form" . "Existing" false "Primary" false)}}</template>
 </form>
 {{end}}

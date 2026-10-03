@@ -75,6 +75,7 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := neighborDetailView{
+		Section:      neighborDetailSection(r.URL.Query().Get("view")),
 		Stale:        stale,
 		StaleCount:   len(stale),
 		TaskSummary:  summarizeByTask(entries),
@@ -192,6 +193,7 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 					view.BookingPrefilled = true
 					machineCopy := machine
 					view.PrefilledMachine = &machineCopy
+					view.Section = "booking"
 					break
 				}
 			}
@@ -202,6 +204,17 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	view.BookingAction = "/entries"
 	view.bind(data)
 	s.render(w, r, "neighbor", data)
+}
+
+// neighborDetailSection limits the account page to its small set of supported
+// presentation views. Unknown links safely return to the account overview.
+func neighborDetailSection(raw string) string {
+	switch raw {
+	case "booking", "bookings", "payments":
+		return raw
+	default:
+		return "overview"
+	}
 }
 
 // handleNeighborOverview shows one neighbor across all billing years with cost,

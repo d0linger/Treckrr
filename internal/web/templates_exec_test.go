@@ -358,7 +358,8 @@ func TestIncomingBookingBreakdownRendersInBothOverviews(t *testing.T) {
 	neighbor := models.Neighbor{ID: 3, Name: "Bio-Hof Steiner"}
 
 	page := execPage(t, "neighbor", map[string]any{
-		"Title": "Bio-Hof Steiner", "Year": year, "Base": models.PriceBase{ID: 1}, "Neighbor": neighbor,
+		"Section": "bookings",
+		"Title":   "Bio-Hof Steiner", "Year": year, "Base": models.PriceBase{ID: 1}, "Neighbor": neighbor,
 		"Completed": true, "Ledger": []models.LedgerEntry{ledger}, "LedgerSum": ledger.Amount,
 		"Saldo": ledger.Amount, "Remaining": ledger.Amount, "CreditAmount": ledger.Amount.Neg(),
 		"TotalCost": decimal.Zero, "TotalHours": decimal.Zero, "BookingCount": 1, "PaidSum": decimal.Zero,

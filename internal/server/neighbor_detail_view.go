@@ -11,6 +11,7 @@ import (
 // and its booking-form partial. Common layout and year-selector values remain
 // in pageData while page families are migrated independently.
 type neighborDetailView struct {
+	Section            string
 	Stale              map[int64]bool
 	StaleCount         int
 	TaskSummary        []taskSummary
@@ -54,6 +55,7 @@ type neighborDetailView struct {
 
 // bind adds the typed neighbor-detail contract to the common template map.
 func (v neighborDetailView) bind(data pageData) {
+	data["Section"] = v.Section
 	data["Stale"] = v.Stale
 	data["StaleCount"] = v.StaleCount
 	data["TaskSummary"] = v.TaskSummary

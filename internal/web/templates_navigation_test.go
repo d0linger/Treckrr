@@ -89,7 +89,7 @@ func TestDashboardCoreWorkflow(t *testing.T) {
 			t.Errorf("simplified dashboard missing %q", want)
 		}
 	}
-	if !strings.Contains(page, `href="/neighbors/9?year=7#neue-buchung">Buchen</a>`) {
+	if !strings.Contains(page, `href="/neighbors/9?year=7&amp;view=booking">Buchen</a>`) {
 		t.Error("open-year neighbor has no direct booking entry")
 	}
 	if strings.Contains(page, "favorite-toggle") {
@@ -97,8 +97,8 @@ func TestDashboardCoreWorkflow(t *testing.T) {
 	}
 }
 
-// TestNeighborAccountNavigation keeps the long account page directly
-// navigable without changing any of its booking or payment actions.
+// TestNeighborAccountNavigation separates the long account into focused views
+// without removing any booking, ledger, or payment destination.
 func TestNeighborAccountNavigation(t *testing.T) {
 	t.Parallel()
 	base := map[string]any{
@@ -124,24 +124,36 @@ func TestNeighborAccountNavigation(t *testing.T) {
 		"LinkedFrom":        map[int64]int64{},
 	}
 
-	page := execPage(t, "neighbor", base)
-	for _, target := range []string{"neue-buchung", "leistungen", "verrechnung", "zahlungen"} {
-		if !strings.Contains(page, `href="#`+target+`"`) {
-			t.Errorf("neighbor navigation missing target %q", target)
-		}
-		if !strings.Contains(page, `id="`+target+`"`) {
-			t.Errorf("neighbor page missing anchor %q", target)
+	base["Section"] = "overview"
+	overview := execPage(t, "neighbor", base)
+	for _, label := range []string{"Übersicht", "Buchen", "Buchungen", "Zahlungen", "account-summary", "Offen"} {
+		if !strings.Contains(overview, label) {
+			t.Errorf("neighbor overview missing %q", label)
 		}
 	}
-	for _, label := range []string{"Buchen", "Leistungen", "Verrechnung", "Zahlungen", "Offen 120,00"} {
-		if !strings.Contains(page, label) {
-			t.Errorf("neighbor navigation missing %q", label)
+	if strings.Contains(overview, "data-unified-booking") || strings.Contains(overview, `id="zahlungen"`) {
+		t.Error("neighbor overview still renders full booking or payment workflows")
+	}
+	for _, tc := range []struct {
+		section string
+		want    string
+		avoid   string
+	}{
+		{section: "booking", want: "data-unified-booking", avoid: `id="zahlungen"`},
+		{section: "bookings", want: `id="leistungen"`, avoid: "data-unified-booking"},
+		{section: "payments", want: `id="zahlungen"`, avoid: "data-unified-booking"},
+	} {
+		base["Section"] = tc.section
+		page := execPage(t, "neighbor", base)
+		if !strings.Contains(page, tc.want) || strings.Contains(page, tc.avoid) {
+			t.Errorf("neighbor section %q is not isolated", tc.section)
 		}
 	}
 
 	base["Completed"] = true
+	base["Section"] = "overview"
 	completed := execPage(t, "neighbor", base)
-	navStart := strings.Index(completed, `<nav class="account-nav account-nav--complete"`)
+	navStart := strings.Index(completed, `<nav class="section-tabs"`)
 	if navStart < 0 {
 		t.Fatal("completed neighbor page has no account navigation")
 	}
@@ -150,7 +162,7 @@ func TestNeighborAccountNavigation(t *testing.T) {
 		t.Fatal("completed neighbor navigation is not closed")
 	}
 	nav := completed[navStart : navStart+navEnd]
-	if strings.Contains(nav, `href="#neue-buchung"`) || strings.Contains(nav, ">Buchen<") {
+	if strings.Contains(nav, `view=booking"`) || strings.Contains(nav, ">Buchen<") {
 		t.Error("completed neighbor navigation exposes the booking entry")
 	}
 }

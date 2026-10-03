@@ -86,7 +86,7 @@
 				<span class="list__sub">{{.Entries}} Buchungen · {{num .Hours}} h</span>
 			</a>
 			<div class="list__value">{{money .Cost}}</div>
-			{{if and (not $.Completed) $.User.CanWrite}}<a class="list__book" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}#neue-buchung">Buchen</a>{{end}}
+			{{if and (not $.Completed) $.User.CanWrite}}<a class="list__book" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}&amp;view=booking">Buchen</a>{{end}}
 			{{if .QualityIssues}}<a class="chip2 chip2--stale" href="/data-quality?year={{$.Year.ID}}" title="{{.QualityIssues}} Stammdaten-Hinweis(e)"><span class="chip2__g" aria-hidden="true">!</span>{{.QualityIssues}}</a>{{end}}
 			{{if $.Completed}}
 			{{if .Paid}}

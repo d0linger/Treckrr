@@ -25,7 +25,8 @@ func TestNeighborBookingSubmitGuards(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			page := execPage(t, "neighbor", map[string]any{
-				"Base": models.PriceBase{ID: 1}, "Year": models.BillingYear{ID: 1, Year: 2026},
+				"Section": "booking",
+				"Base":    models.PriceBase{ID: 1}, "Year": models.BillingYear{ID: 1, Year: 2026},
 				"Neighbor": models.Neighbor{ID: 1, Name: "Testhof"},
 				"Gespanne": []models.Gespann{{ID: 1, Name: "Testgespann"}},
 				"Entries":  []models.Entry{}, "Saldo": decimal.Zero, "TotalHours": decimal.Zero,
