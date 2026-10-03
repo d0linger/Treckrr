@@ -615,12 +615,28 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .account-summary > a > span { display: grid; gap: .08rem; }
 .account-summary small { color: var(--muted); font-size: var(--fs-xs); }
 .account-summary b { font-size: var(--fs-md); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.catalog-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; padding: .2rem 0 .8rem; border-bottom: 1px solid var(--border); }
+.catalog-head h2, .catalog-head p { margin: 0; }
+.catalog-head h2 { margin-block: .12rem .2rem; font-size: clamp(1.55rem, 5vw, 2.2rem); }
+.catalog-groups { display: grid; gap: 1.6rem; }
+.catalog-groups h3 { display: flex; align-items: center; gap: .45rem; margin: 0 0 .55rem; font-size: var(--fs-md); }
+.catalog-list { display: grid; border-block: 1px solid var(--border); }
+.catalog-list > div { display: flex; min-height: 3.4rem; align-items: center; justify-content: space-between; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--border); }
+.catalog-list > div:last-child { border-bottom: 0; }
+.catalog-list > div > span:first-child { display: grid; gap: .05rem; }
+.catalog-list small { color: var(--muted); font-size: var(--fs-xs); }
+.catalog-list b, .catalog-rates { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; text-align: right; }
+.catalog-rates { color: var(--muted); }
 @media (max-width: 640px), (pointer: coarse) { .list__book { min-height: var(--tap); } }
 @media (max-width: 560px) {
 	.account-head { align-items: flex-start; flex-direction: column; }
 	.account-head__balance { justify-items: start; }
 	.account-overview__heading { align-items: stretch; flex-direction: column; }
 	.account-overview__heading .btn { width: 100%; }
+	.catalog-head { align-items: stretch; flex-direction: column; }
+	.catalog-head .btn { width: 100%; }
+	.catalog-list > div { align-items: flex-start; flex-direction: column; gap: .3rem; }
+	.catalog-list b, .catalog-rates { text-align: left; }
 }
 .secretkey { display: block; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 	background: var(--surface-2); border-radius: var(--radius-sm); padding: .5rem .7rem;

@@ -69,7 +69,20 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 	data["MachineViews"] = machineViews
 	data["FuelAdjustments"] = adjustments
 	data["Locked"] = base.Locked
+	data["EditMode"] = r.URL.Query().Get("mode") == "edit"
+	data["PriceSection"] = priceSection(r.URL.Query().Get("section"))
 	s.render(w, r, "prices", data)
+}
+
+// priceSection keeps the rate editor on one supported catalog area. Unknown
+// links fall back to machines, the most frequently maintained price list.
+func priceSection(raw string) string {
+	switch raw {
+	case "fuel", "loads", "tractors", "machines":
+		return raw
+	default:
+		return "machines"
+	}
 }
 
 // handleFuelAdjustmentSave stores one effective-dated, non-cumulative hourly

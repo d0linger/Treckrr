@@ -4,7 +4,49 @@
 	{{if .Locked}}
 	<div class="flash flash--info">Diese Bemessungsgrundlage ({{.Base.Year}}) ist gesperrt. Werte sind schreibgeschützt.</div>
 	{{end}}
+	{{if not .EditMode}}
+	<header class="catalog-head">
+		<div><p class="eyebrow">Grundlage {{.Base.Year}}</p><h2>Aktive Sätze</h2><p class="muted small">Diese Werte werden für neue Buchungen verwendet.</p></div>
+		{{if not .Locked}}<a class="btn btn--primary btn--sm" href="/prices?base={{.Base.ID}}&amp;mode=edit&amp;section=machines">Grundlage bearbeiten</a>{{end}}
+	</header>
 
+	<div class="catalog-groups">
+		<section aria-labelledby="catalog-tractors">
+			<h3 id="catalog-tractors">Traktoren <span class="badge">{{len .TractorViews}}</span></h3>
+			<div class="catalog-list">
+				{{range .TractorViews}}{{if .Tractor.Active}}<div><span><strong>{{.Tractor.Label}}</strong><small>{{num .Tractor.PS}} PS</small></span><span class="catalog-rates">{{range $i, $r := .Rates}}{{if $i}} · {{end}}{{$r.Load.Name}} {{money $r.Rate}}/h{{end}}</span></div>{{end}}{{else}}<p class="muted small">Keine Traktoren hinterlegt.</p>{{end}}
+			</div>
+		</section>
+		<section aria-labelledby="catalog-machines">
+			<h3 id="catalog-machines">Maschinen <span class="badge">{{len .MachineViews}}</span></h3>
+			{{if gt (len .MachineViews) 8}}<input class="input" type="search" placeholder="Maschine suchen …" aria-label="Maschine suchen" data-search="[data-catalog-machine]" data-search-empty="[data-catalog-empty]">{{end}}
+			<p class="muted small" data-catalog-empty hidden>Keine Maschine passt zur Suche.</p>
+			<div class="catalog-list">
+				{{range .MachineViews}}{{if .Machine.Active}}<div data-catalog-machine><span><strong>{{.Machine.Name}}</strong><small>{{if .Machine.Category}}{{.Machine.Category}} · {{end}}{{num .Machine.WorkingWidth}} m Arbeitsbreite</small></span><b>{{money .Rate}}/h</b></div>{{end}}{{else}}<p class="muted small">Keine Maschinen hinterlegt.</p>{{end}}
+			</div>
+		</section>
+	</div>
+	<details class="disclosure disclosure--plain page-more">
+		<summary>Weitere Grundlagendaten</summary>
+		<div class="action-list">
+			<a href="/prices?base={{.Base.ID}}&amp;mode=edit&amp;section=loads"><span><strong>Belastungsstufen</strong><small>{{len .Loads}} Stufen für Traktorsätze</small></span><span aria-hidden="true">›</span></a>
+			<a href="/prices?base={{.Base.ID}}&amp;mode=edit&amp;section=fuel"><span><strong>Diesel- und Betriebsmittelanpassung</strong><small>{{len .FuelAdjustments}} zeitlich versionierte Anpassungen</small></span><span aria-hidden="true">›</span></a>
+			{{if .MachineViews}}<a href="/prices/machines/labels?base={{.Base.ID}}"><span><strong>QR-Etiketten drucken</strong><small>Maschinen für die mobile Buchung kennzeichnen</small></span><span aria-hidden="true">›</span></a>{{end}}
+		</div>
+	</details>
+	{{else}}
+	<header class="catalog-head catalog-head--edit">
+		<div><p class="eyebrow">Grundlage {{.Base.Year}}</p><h2>Bearbeiten</h2><p class="muted small">Änderungen gelten nur für neue oder ausdrücklich neu berechnete Buchungen.</p></div>
+		<a class="btn btn--ghost btn--sm" href="/prices?base={{.Base.ID}}">Übersicht</a>
+	</header>
+	<nav class="section-tabs" aria-label="Grundlagenbereiche">
+		<a class="section-tabs__item{{if eq .PriceSection "machines"}} is-active{{end}}" href="/prices?base={{.Base.ID}}&amp;mode=edit&amp;section=machines">Maschinen</a>
+		<a class="section-tabs__item{{if eq .PriceSection "tractors"}} is-active{{end}}" href="/prices?base={{.Base.ID}}&amp;mode=edit&amp;section=tractors">Traktoren</a>
+		<a class="section-tabs__item{{if eq .PriceSection "loads"}} is-active{{end}}" href="/prices?base={{.Base.ID}}&amp;mode=edit&amp;section=loads">Belastung</a>
+		<a class="section-tabs__item{{if eq .PriceSection "fuel"}} is-active{{end}}" href="/prices?base={{.Base.ID}}&amp;mode=edit&amp;section=fuel">Anpassungen</a>
+	</nav>
+
+	{{if eq .PriceSection "fuel"}}
 	<section class="card stack" id="fuel-adjustments">
 		<div>
 			<h2 class="section-title">Diesel- & Betriebsmittelanpassung <span class="badge">{{len .FuelAdjustments}}</span></h2>
@@ -40,8 +82,10 @@
 		</details>
 		{{end}}
 	</section>
+	{{end}}
 
 	<!-- Belastungsstufen --------------------------------------------------->
+	{{if eq .PriceSection "loads"}}
 	<h2 class="section-title">Belastungsstufen <span class="badge">{{len .Loads}}</span> <span class="muted">(€ / PS · h)</span></h2>
 	{{if gt (len .Loads) 5}}
 	<input class="input" type="search" placeholder="Stufe suchen …" aria-label="Belastungsstufe suchen"
@@ -90,8 +134,10 @@
 		</form>
 	</details>
 	{{end}}
+	{{end}}
 
 	<!-- Traktoren ---------------------------------------------------------->
+	{{if eq .PriceSection "tractors"}}
 	<h2 class="section-title">Traktoren <span class="badge">{{len .TractorViews}}</span> <span class="muted">(Stundensatz = PS × €/PS·h)</span></h2>
 	{{if gt (len .TractorViews) 5}}
 	<input class="input" type="search" placeholder="Traktor suchen …" aria-label="Traktor suchen"
@@ -156,8 +202,10 @@
 		</form>
 	</details>
 	{{end}}
+	{{end}}
 
 	<!-- Maschinen ---------------------------------------------------------->
+	{{if eq .PriceSection "machines"}}
 	<div class="btnrow btnrow--split"><h2 class="section-title">Maschinen <span class="badge">{{len .MachineViews}}</span> <span class="muted">(Stundensatz = AB × €/AB·h)</span></h2>{{if .MachineViews}}<a class="btn btn--ghost btn--sm" href="/prices/machines/labels?base={{.Base.ID}}">QR-Etiketten drucken</a>{{end}}</div>
 	<datalist id="machine-cats">
 		{{range .Categories}}<option value="{{.}}"></option>{{end}}
@@ -213,7 +261,7 @@
 					<button class="btn btn--primary btn--sm" type="submit">Speichern</button>
 				</div>
 			</form>
-			<details class="disclosure form-details" {{if .HasProposal}}open{{end}}>
+			<details class="disclosure form-details">
 				<summary>Selbstkosten berechnen {{if .HasProposal}}<span class="muted small">Vorschlag {{money .Proposal}}/h · aktiv {{money .Machine.SelfCostPerH}}/h</span>{{else}}<span class="muted small">Annahmen ergänzen</span>{{end}}</summary>
 				<form method="post" action="/prices/machines/{{.Machine.ID}}/cost-model" class="form">
 					<input type="hidden" name="base_id" value="{{$.Base.ID}}">
@@ -268,6 +316,8 @@
 			<button class="btn btn--primary" type="submit">Hinzufügen</button>
 		</form>
 	</details>
+	{{end}}
+	{{end}}
 	{{end}}
 </section>
 {{end}}
