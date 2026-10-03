@@ -57,6 +57,7 @@ func TestPricesSeparatesCatalogFromEditors(t *testing.T) {
 	}
 }
 
+// mainContent isolates page-specific markup from the shared application shell.
 func mainContent(t *testing.T, page string) string {
 	t.Helper()
 	_, main, ok := strings.Cut(page, `<main class="main"`)

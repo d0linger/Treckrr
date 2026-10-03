@@ -74,7 +74,7 @@ for (const colorScheme of ["light", "dark"] as const) {
 test("dashboard booking shortcut opens both directions with working filters and complete CSV details", async ({ page }) => {
   const account = await filterAccount(page);
   await page.goto(`/?year=${account.yearID}`);
-  const reports = page.locator("main details").filter({ hasText: "Auswertungen & Daten" });
+  const reports = page.locator("main details").filter({ hasText: "Weitere Aktionen" });
   await expect(reports).toBeVisible();
   await reports.locator("summary").click();
   await expect(reports).toHaveAttribute("open", "");

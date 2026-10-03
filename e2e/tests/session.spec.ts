@@ -40,7 +40,7 @@ async function confirmModal(page, waitForURL?: RegExp) {
 
 test("record a payment and see it in the cross-year history", async ({ page }) => {
   await login(page);
-  await page.goto("/neighbors/1?year=1");
+  await page.goto("/neighbors/1?year=1&view=payments");
 
   const details = page.locator("details").filter({
     has: page.locator("summary", { hasText: "Zahlung erfassen" }),
@@ -112,5 +112,5 @@ test("year closing review lists what is open, and closing locks documents", asyn
 
   // … and reopening needs a reason, which the form asks for.
   await page.goto("/years");
-  await expect(page.locator("body")).toContainText("Wieder öffnen");
+  await expect(page.locator("body")).toContainText(/wieder öffnen/i);
 });

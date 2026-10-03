@@ -84,7 +84,7 @@ func TestQuickEntriesOverLimitIsRejectedBeforeAnyQuery(t *testing.T) {
 	if rr.Code != http.StatusSeeOther {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusSeeOther)
 	}
-	if loc, want := rr.Header().Get("Location"), neighborURL(7, 3); loc != want {
+	if loc, want := rr.Header().Get("Location"), neighborBookingURL(7, 3); loc != want {
 		t.Errorf("Location = %q, want %q", loc, want)
 	}
 	// Rejected, not truncated: the caller is told, rather than being shown a

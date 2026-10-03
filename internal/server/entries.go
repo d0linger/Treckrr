@@ -1646,7 +1646,7 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	// check sits ahead of every store call so an abusive submit costs no queries
 	// at all.
 	if n := len(r.Form["q_gespann"]); n > maxQuickEntries {
-		reject(http.StatusUnprocessableEntity, fmt.Sprintf("Zu viele Zeilen auf einmal (%d). Es können höchstens %d Zeilen gespeichert werden.", n, maxQuickEntries), neighborURL(neighborID, yearID))
+		reject(http.StatusUnprocessableEntity, fmt.Sprintf("Zu viele Zeilen auf einmal (%d). Es können höchstens %d Zeilen gespeichert werden.", n, maxQuickEntries), neighborBookingURL(neighborID, yearID))
 		return
 	}
 
@@ -1776,7 +1776,7 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 		}
 		if year.Completed() {
 			markPending("Das Abrechnungsjahr ist abgeschlossen.")
-			reject(http.StatusUnprocessableEntity, "Das Abrechnungsjahr ist abgeschlossen.", neighborURL(neighborID, yearID))
+			reject(http.StatusUnprocessableEntity, "Das Abrechnungsjahr ist abgeschlossen.", neighborBookingURL(neighborID, yearID))
 			return
 		}
 		// Inlined rather than routed through a w,r-writing helper (as invoiceLocked
@@ -1798,7 +1798,7 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 		if iv, err := s.store.GetInvoice(r.Context(), year.ID, neighborID); err == nil {
 			msg := "Rechnung " + iv.Number + " ist festgeschrieben – Buchungen und Verrechnungen für diesen Nachbarn sind gesperrt. Für Korrekturen bitte die Rechnung stornieren."
 			markPending(msg)
-			reject(http.StatusUnprocessableEntity, msg, neighborURL(neighborID, yearID))
+			reject(http.StatusUnprocessableEntity, msg, neighborBookingURL(neighborID, yearID))
 			return
 		} else if !errors.Is(err, store.ErrNotFound) {
 			// A real store failure is transient — 500 so a replay retries instead of
@@ -1857,7 +1857,7 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.setFlash(w, r, "success", fmt.Sprintf("%d Buchungen gespeichert.", created))
 	}
-	redirect(w, r, neighborURL(neighborID, yearID))
+	redirect(w, r, neighborBookingsURL(neighborID, yearID))
 }
 
 // createQuickRows books every pending row. Invalid rows are marked on the row;

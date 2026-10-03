@@ -382,7 +382,7 @@ func (s *Server) handleBookingCreateV2(w http.ResponseWriter, r *http.Request) {
 	if msg != "" {
 		if ledgerStored {
 			// Its content can no longer be compared; it is stored all the same.
-			s.rejectStoredReplay(w, r, replayLedgerMsg, neighborURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
+			s.rejectStoredReplay(w, r, replayLedgerMsg, neighborBookingURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
 			return
 		}
 		s.rejectUnifiedBooking(w, r, msg)
@@ -390,7 +390,7 @@ func (s *Server) handleBookingCreateV2(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := s.createBookingDraft(r.Context(), draft)
 	if ledgerStored && errors.Is(err, store.ErrIdempotencyConflict) {
-		s.rejectStoredReplay(w, r, replayDiffersMsg, neighborURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
+		s.rejectStoredReplay(w, r, replayDiffersMsg, neighborBookingURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
 		return
 	}
 	if err != nil {
@@ -406,5 +406,5 @@ func (s *Server) handleBookingCreateV2(w http.ResponseWriter, r *http.Request) {
 		msg = "Buchung war bereits erfasst."
 	}
 	s.setFlash(w, r, "success", msg)
-	redirect(w, r, neighborURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
+	redirect(w, r, neighborBookingsURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
 }

@@ -234,7 +234,7 @@ func (s *Server) updateBookingEntryV2(w http.ResponseWriter, r *http.Request, ex
 		return
 	}
 	s.setFlash(w, r, "success", "Buchung und Personen aktualisiert.")
-	redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
+	redirect(w, r, neighborBookingsURL(existing.NeighborID, existing.BillingYearID))
 }
 
 // updateBookingLedgerV2 preserves direction and every independently priced component.
@@ -264,7 +264,7 @@ func (s *Server) updateBookingLedgerV2(w http.ResponseWriter, r *http.Request, e
 		return
 	}
 	s.setFlash(w, r, "success", "Buchung und Personen aktualisiert.")
-	redirect(w, r, neighborURL(neighborID, yearID))
+	redirect(w, r, neighborBookingsURL(neighborID, yearID))
 }
 
 // preserveLegacyEquipmentSnapshot keeps retired foreign-equipment metadata

@@ -296,7 +296,7 @@ func (s *Server) probeBookingReplay(w http.ResponseWriter, r *http.Request, prob
 			s.unifiedBookingError(w, r, store.ErrIdempotencyConflict)
 			return true, false
 		case store.ReplayDiffers:
-			s.rejectStoredReplay(w, r, replayDiffersMsg, neighborURL(neighborID, yearID))
+			s.rejectStoredReplay(w, r, replayDiffersMsg, neighborBookingURL(neighborID, yearID))
 			return true, false
 		case store.ReplayLedger:
 			ledger = true
@@ -304,7 +304,7 @@ func (s *Server) probeBookingReplay(w http.ResponseWriter, r *http.Request, prob
 		recorded = recorded && state == store.ReplayRecorded
 	}
 	if recorded {
-		s.acceptRecordedReplay(w, r, neighborURL(neighborID, yearID))
+		s.acceptRecordedReplay(w, r, neighborBookingsURL(neighborID, yearID))
 		return true, false
 	}
 	return false, ledger
@@ -318,7 +318,7 @@ func (s *Server) rejectUnifiedBooking(w http.ResponseWriter, r *http.Request, ms
 		return
 	}
 	s.setFlash(w, r, "error", msg)
-	redirect(w, r, neighborURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
+	redirect(w, r, neighborBookingURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
 }
 
 // unifiedBookingError translates account/replay guards without treating a real
@@ -370,7 +370,7 @@ func (s *Server) handleUnifiedLedgerCreate(w http.ResponseWriter, r *http.Reques
 		msg = "Verrechnung war bereits erfasst."
 	}
 	s.setFlash(w, r, "success", msg)
-	redirect(w, r, neighborURL(in.NeighborID, in.YearID))
+	redirect(w, r, neighborBookingsURL(in.NeighborID, in.YearID))
 	return true
 }
 

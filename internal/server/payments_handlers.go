@@ -53,14 +53,14 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	if !member {
 		s.setFlash(w, r, "error", "Nachbar ist in diesem Abrechnungsjahr nicht vorhanden.")
-		redirect(w, r, neighborURL(neighborID, yearID))
+		redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 		return
 	}
 	// Bounded before parsing: this call does not go through parseGermanDecimal, so
 	// it does not inherit that guard, and it runs BEFORE every other check in this
 	// handler — making it the cheapest field to abuse, not the safest.
 	if s.tooLong(w, r, "Betrag", r.FormValue("amount"), maxDecimalLen) {
-		redirect(w, r, neighborURL(neighborID, yearID))
+		redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 		return
 	}
 	// parseGermanDecimalOK carries the exponent/length guards (see there) —
@@ -68,25 +68,25 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 	amount, okAmount := parseGermanDecimalOK(r.FormValue("amount"))
 	if !okAmount || !amount.IsPositive() {
 		s.setFlash(w, r, "error", "Bitte einen gültigen Betrag größer 0 eingeben.")
-		redirect(w, r, neighborURL(neighborID, yearID))
+		redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 		return
 	}
 	if models.HasSubCent(amount) {
 		s.setFlash(w, r, "error", msgMoneyCents)
-		redirect(w, r, neighborURL(neighborID, yearID))
+		redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 		return
 	}
 	if s.tooLong(w, r, "Datum", r.FormValue("paid_on"), 50) {
-		redirect(w, r, neighborURL(neighborID, yearID))
+		redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 		return
 	}
 	note := strings.TrimSpace(r.FormValue("note"))
 	if s.tooLong(w, r, "Notiz", note, maxNoteLen) {
-		redirect(w, r, neighborURL(neighborID, yearID))
+		redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 		return
 	}
 	if s.tooLong(w, r, "Skonto", r.FormValue("skonto"), maxDecimalLen) {
-		redirect(w, r, neighborURL(neighborID, yearID))
+		redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 		return
 	}
 	// Validate the optional Skonto up front (before recording anything): a
@@ -94,12 +94,12 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 	skonto := parseGermanDecimal(r.FormValue("skonto"))
 	if skonto.IsNegative() || skonto.GreaterThan(decimal.NewFromInt(10)) {
 		s.setFlash(w, r, "error", "Skonto muss zwischen 0 und 10 % liegen.")
-		redirect(w, r, neighborURL(neighborID, yearID))
+		redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 		return
 	}
 	key := strings.TrimSpace(r.FormValue("idempotency_key"))
 	if s.tooLong(w, r, "Formularkennung", key, maxNameLen) {
-		redirect(w, r, neighborURL(neighborID, yearID))
+		redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 		return
 	}
 	// Payment and optional Skonto (§ 16 UStG: a percentage of the issued
@@ -130,7 +130,7 @@ func (s *Server) handlePaymentAdd(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.setFlash(w, r, "success", "Zahlung erfasst.")
 	}
-	redirect(w, r, neighborURL(neighborID, yearID))
+	redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 }
 
 // User-facing messages shared by the money forms.
@@ -163,7 +163,7 @@ func (s *Server) handlePaymentDelete(w http.ResponseWriter, r *http.Request) {
 	default: // already deleted (e.g. a double-submit): no state change, no audit
 		s.setFlash(w, r, "info", "Zahlung war bereits gelöscht.")
 	}
-	redirect(w, r, neighborURL(p.NeighborID, p.BillingYearID))
+	redirect(w, r, neighborPaymentsURL(p.NeighborID, p.BillingYearID))
 }
 
 // handlePaymentRestore reverses a soft-deleted payment (the Undo action).
@@ -187,7 +187,7 @@ func (s *Server) handlePaymentRestore(w http.ResponseWriter, r *http.Request) {
 	default: // already active (e.g. a double-submit): no state change, no audit
 		s.setFlash(w, r, "info", "Zahlung war bereits aktiv.")
 	}
-	redirect(w, r, neighborURL(p.NeighborID, p.BillingYearID))
+	redirect(w, r, neighborPaymentsURL(p.NeighborID, p.BillingYearID))
 }
 
 // handleNeighborSettle records a payment for the exact remaining balance — the
@@ -252,13 +252,13 @@ func (s *Server) handleNeighborCarryForward(w http.ResponseWriter, r *http.Reque
 	}
 	if remaining.IsZero() {
 		s.setFlash(w, r, "info", "Kein offener Rest zum Übernehmen.")
-		redirect(w, r, neighborURL(neighborID, yearID))
+		redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 		return
 	}
 	nextID, err := s.store.BillingYearIDForYear(r.Context(), year.Year+1)
 	if errors.Is(err, store.ErrNotFound) {
 		s.setFlash(w, r, "error", "Kein Folgejahr angelegt.")
-		redirect(w, r, neighborURL(neighborID, yearID))
+		redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 		return
 	}
 	if err != nil {
@@ -272,7 +272,7 @@ func (s *Server) handleNeighborCarryForward(w http.ResponseWriter, r *http.Reque
 	}
 	if !member {
 		s.setFlash(w, r, "error", "Nachbar ist im Folgejahr nicht vorhanden — dort zuerst hinzufügen.")
-		redirect(w, r, neighborURL(neighborID, yearID))
+		redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 		return
 	}
 	fromDesc := "Ins Folgejahr übertragen (" + itoa(year.Year+1) + ")"
@@ -288,7 +288,7 @@ func (s *Server) handleNeighborCarryForward(w http.ResponseWriter, r *http.Reque
 	default:
 		s.setFlash(w, r, "success", "Rest ins Folgejahr übernommen.")
 	}
-	redirect(w, r, neighborURL(neighborID, yearID))
+	redirect(w, r, neighborPaymentsURL(neighborID, yearID))
 }
 
 // paymentMethod whitelists the Zahlungsart. Anything unknown collapses to "" —
@@ -321,13 +321,13 @@ func (s *Server) handlePaymentEditForm(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.ImportBatchID != nil || p.Reversal {
 		s.setFlash(w, r, "error", "Importierte Zahlungen werden im Importjournal durch eine Gegenbuchung korrigiert.")
-		redirect(w, r, neighborURL(p.NeighborID, p.BillingYearID))
+		redirect(w, r, neighborPaymentsURL(p.NeighborID, p.BillingYearID))
 		return
 	}
 	data := s.newPage(w, r, "Zahlung bearbeiten", "")
 	data["Payment"] = p
 	data["NeighborName"] = s.neighborName(r, p.NeighborID)
-	data["Back"] = neighborURL(p.NeighborID, p.BillingYearID)
+	data["Back"] = neighborPaymentsURL(p.NeighborID, p.BillingYearID)
 	s.render(w, r, "payment_edit", data)
 }
 
@@ -350,7 +350,7 @@ func (s *Server) handlePaymentUpdate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	back := neighborURL(p.NeighborID, p.BillingYearID)
+	back := neighborPaymentsURL(p.NeighborID, p.BillingYearID)
 	if s.tooLong(
 		w,
 		r,
@@ -447,7 +447,7 @@ func (s *Server) handleInstallmentAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	yearID := s.yearIDFromForm(r)
-	back := neighborURL(neighborID, yearID)
+	back := neighborPaymentsURL(neighborID, yearID)
 	if yearID == 0 {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
@@ -527,7 +527,7 @@ func (s *Server) handleInstallmentDelete(w http.ResponseWriter, r *http.Request)
 	s.audit(r, "installment_delete", "neighbor", p.NeighborID,
 		s.neighborName(r, p.NeighborID)+" · Rate "+p.Amount.StringFixed(2)+" € entfernt")
 	s.setFlash(w, r, "success", "Rate entfernt.")
-	redirect(w, r, neighborURL(p.NeighborID, p.BillingYearID))
+	redirect(w, r, neighborPaymentsURL(p.NeighborID, p.BillingYearID))
 }
 
 // handleCreditPayout books the cash-out of a credit balance (Ausbaukarte 41): a
@@ -545,7 +545,7 @@ func (s *Server) handleCreditPayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	yearID := s.yearIDFromForm(r)
-	back := neighborURL(neighborID, yearID)
+	back := neighborPaymentsURL(neighborID, yearID)
 	if yearID == 0 {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return

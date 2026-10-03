@@ -18,7 +18,7 @@ test("login, create a unit booking, and see it on the Beleg", async ({ page }) =
   await expect(page.locator(".appbar")).toBeVisible();
 
   // --- create a Ballen booking for the seeded neighbor (id 1, year 1) ---
-  await page.goto("/neighbors/1?year=1");
+  await page.goto("/neighbors/1?year=1&view=booking");
   await page.locator('[data-booking-kind]').selectOption("quantity");
   await page.locator('[data-unit]').selectOption("Ballen");
   await page.locator('input[name="quantity"]').fill("10");

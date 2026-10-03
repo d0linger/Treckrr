@@ -54,7 +54,10 @@ async function seriousViolations(page) {
 // full dark theme with its own token set.
 const PAGES: Array<[string, string]> = [
   ["/?year=1", "dashboard"],
-  ["/neighbors/1?year=1", "neighbor detail (booking form)"],
+  ["/neighbors/1?year=1", "neighbor account overview"],
+  ["/neighbors/1?year=1&view=booking", "neighbor booking form"],
+  ["/neighbors/1?year=1&view=bookings", "neighbor bookings"],
+  ["/neighbors/1?year=1&view=payments", "neighbor payments"],
   ["/neighbors/1/beleg?year=1", "Beleg"],
   ["/neighbors/1/overview", "neighbor history"],
   ["/buchungen?year=1", "bookings list"],

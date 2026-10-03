@@ -62,7 +62,7 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   // --- a booking to invoice. Use the UNIT path (Menge × Einzelpreis): the CI seed
   // has no tractors/load levels, so an hours booking (which needs a rig) can't be
   // created, but a unit booking can. ---
-  await page.goto("/neighbors/1?year=1");
+  await page.goto("/neighbors/1?year=1&view=booking");
   await page.getByText("Schnellerfassung (mehrere Zeilen)", { exact: true }).click();
   await expect(page.getByRole("button", { name: "Zeilen speichern", exact: true })).toBeEnabled();
   await page.locator('[data-booking-kind]').selectOption("quantity");
@@ -115,7 +115,7 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   await expect(page.locator(".beleg__inv-due")).toBeVisible();
 
   // Both booking paths remain disabled after their scripts initialize.
-  await page.goto("/neighbors/1?year=1");
+  await page.goto("/neighbors/1?year=1&view=booking");
   await expect(page.getByRole("button", { name: "Buchung speichern", exact: true })).toBeDisabled();
   await page.getByText("Schnellerfassung (mehrere Zeilen)", { exact: true }).click();
   await expect(page.getByRole("button", { name: "Zeilen speichern", exact: true })).toBeDisabled();

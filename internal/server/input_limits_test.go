@@ -290,7 +290,7 @@ func TestPaymentDateLimits(t *testing.T) {
 					s,
 					route.handler,
 					form,
-					neighborURL(1, 1),
+					neighborPaymentsURL(1, 1),
 					message,
 				)
 			})
