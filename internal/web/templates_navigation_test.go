@@ -214,7 +214,7 @@ func TestDrawerBookingNavigation(t *testing.T) {
 			if len(links) != 1 {
 				t.Fatalf("drawer booking links = %d, want 1", len(links))
 			}
-			for _, label := range []string{"Weitere Funktionen", "Konto &amp; Verwaltung"} {
+			for _, label := range []string{"Weitere Funktionen", "Mein Konto &amp; Sicherheit"} {
 				if !strings.Contains(page, label) {
 					t.Errorf("drawer missing consolidated navigation label %q", label)
 				}
@@ -283,7 +283,8 @@ func TestLeanApplicationShell(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Weitere Funktionen",
-		"Konto &amp; Verwaltung",
+		"Mein Konto &amp; Sicherheit",
+		"Hinweise",
 		"data-cmdk-open",
 		"data-theme-toggle",
 		"data-year-select",
@@ -298,6 +299,46 @@ func TestLeanApplicationShell(t *testing.T) {
 	}
 	if strings.Contains(page, "Kernablauf") {
 		t.Error("secondary drawer still duplicates the persistent core navigation")
+	}
+	if strings.Contains(page, ">Verwaltung<") {
+		t.Error("editor drawer exposes the admin-only management group")
+	}
+}
+
+// TestDrawerSeparatesAccountAndAdminNavigation keeps personal settings direct
+// while admin-only destinations remain in one shallow management disclosure.
+func TestDrawerSeparatesAccountAndAdminNavigation(t *testing.T) {
+	t.Parallel()
+	page := execPage(t, "login", map[string]any{
+		"User":   &models.User{Username: "admin", Role: models.RoleAdmin, IsAdmin: true},
+		"Active": "company",
+	})
+
+	for _, want := range []string{
+		`aria-label="Mein Konto und Sicherheit"`,
+		"Mein Konto &amp; Sicherheit",
+		"Hinweise",
+		"Verwaltung",
+		"Betriebsdaten",
+		"Backup",
+		"Benutzer",
+		"Mailausgang",
+		"Audit‑Log",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("admin drawer missing %q", want)
+		}
+	}
+	for _, obsolete := range []string{"Konto &amp; Verwaltung", "Erweiterte Verwaltung"} {
+		if strings.Contains(page, obsolete) {
+			t.Errorf("admin drawer still contains obsolete group %q", obsolete)
+		}
+	}
+	if got := strings.Count(page, `<details class="drawer__group"`); got != 2 {
+		t.Errorf("drawer disclosure depth/count = %d, want 2 top-level groups", got)
+	}
+	if got := strings.Count(page, `href="/profile"`); got != 1 {
+		t.Errorf("profile links = %d, want one direct account entry", got)
 	}
 }
 

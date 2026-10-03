@@ -162,7 +162,10 @@ for (const { scheme, width } of [
       expect(resp?.status(), `${name} (${path}) did not load`).toBeLessThan(400);
       await page.waitForLoadState("networkidle");
       await expect(page.locator("h1"), `${name} (${path}) needs one page-level heading`).toHaveCount(1);
-      const overflow = await page.locator("main").evaluate((node) => node.scrollWidth - node.clientWidth);
+      const main = page.locator("body.has-nav main.main");
+      const background = await main.evaluate((node) => getComputedStyle(node).backgroundColor);
+      expect(background, `${name} (${path}) needs an opaque workspace background`).not.toBe("rgba(0, 0, 0, 0)");
+      const overflow = await main.evaluate((node) => node.scrollWidth - node.clientWidth);
       expect(overflow, `${name} (${path}) overflows the main content`).toBeLessThanOrEqual(1);
       if (process.env.TRECKRR_UI_REVIEW) {
         await page.screenshot({ path: testInfo.outputPath(name.replace(/[^a-z0-9]+/gi, "-") + ".png"), fullPage: true });

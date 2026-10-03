@@ -381,7 +381,7 @@
 	.app-bg, .login-bg { display: none !important; }
 	.appbar, .yearbar, .opsbar, .tabbar, .drawer, .drawer__scrim, .toast, .fab, .skip { display: none !important; }
 	.no-print { display: none !important; }
-	.main { max-width: none; padding: 0; }
+	.main, body.has-nav .main { max-width: none; padding: 0; background: #fff; }
 	body { background: #fff; }
 }
 
@@ -946,4 +946,3 @@
 @media (max-width: 640px), (pointer: coarse) {
 	.photogrid__del { width: var(--tap); height: var(--tap); }
 }
-

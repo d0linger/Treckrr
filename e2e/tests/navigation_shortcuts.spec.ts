@@ -16,7 +16,7 @@ test("theme and reporting shortcuts stay direct on desktop and mobile", async ({
   await login(page);
 
   const themeToggle = page.getByRole("button", { name: "Hell/Dunkel umschalten" });
-  const statistics = page.getByRole("link", { name: /Statistik 2025/ });
+  const statistics = page.getByRole("link", { name: /Statistik \d{4}/ });
   const comparison = page.getByRole("link", { name: "Jahresvergleich" });
 
   await expect(themeToggle).toBeVisible();
@@ -27,11 +27,17 @@ test("theme and reporting shortcuts stay direct on desktop and mobile", async ({
   await page.getByRole("button", { name: "Menü" }).click();
   const drawer = page.locator("#drawer");
   await expect(drawer).toHaveAttribute("aria-hidden", "false");
+  const drawerBackground = await drawer.evaluate((node) => getComputedStyle(node).backgroundColor);
+  expect(drawerBackground).not.toBe("rgba(0, 0, 0, 0)");
   for (const href of ["/", "/years", "/neighbors", "/bases"]) {
     await expect(drawer.locator(`a[href="${href}"]`)).toHaveCount(0);
   }
+  await expect(drawer.getByRole("link", { name: "Mein Konto und Sicherheit" })).toBeVisible();
+  await expect(drawer.getByRole("link", { name: /Hinweise/ })).toBeVisible();
   await expect(drawer.locator("summary.drawer__group-toggle").filter({ hasText: "Weitere Funktionen" })).toBeVisible();
-  await expect(drawer.locator("summary.drawer__group-toggle").filter({ hasText: "Konto & Verwaltung" })).toBeVisible();
+  await expect(drawer.locator("summary.drawer__group-toggle").filter({ hasText: "Verwaltung" })).toBeVisible();
+  await expect(drawer.getByText("Konto & Verwaltung", { exact: true })).toHaveCount(0);
+  await expect(drawer.getByText("Erweiterte Verwaltung", { exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(drawer).toHaveAttribute("aria-hidden", "true");
 
