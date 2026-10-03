@@ -1227,6 +1227,31 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .catalog-list small { color: var(--muted); font-size: var(--fs-xs); }
 .catalog-list b, .catalog-rates { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; text-align: right; }
 .catalog-rates { color: var(--muted); }
+.page-intro h2, .page-intro p { margin: 0; }
+.page-intro h2 { margin-block: .12rem .2rem; font-size: clamp(1.55rem, 5vw, 2.2rem); }
+.year-list { display: grid; border-top: 1px solid var(--border); }
+.year-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .75rem 1rem; padding: .85rem 0; border-bottom: 1px solid var(--border); }
+.year-row__main { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
+.year-row__main > a { display: grid; min-width: 0; gap: .08rem; color: var(--text); text-decoration: none; }
+.year-row__main strong { font-size: var(--fs-md); }
+.year-row__main small { color: var(--muted); font-size: var(--fs-xs); }
+.year-row__more { grid-column: 1 / -1; }
+.year-row__more > form { padding-block: .75rem; border-top: 1px solid var(--border); }
+.year-editor { display: grid; gap: .75rem; padding-top: .9rem; border-top: 1px solid var(--border); }
+.year-editor h3 { margin: 0; font-size: var(--fs-sm); }
+.closing-checks { border-block: 1px solid var(--border); }
+.closing-checks__head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .85rem 0; }
+.closing-checks__head h3, .closing-checks__head p { margin: 0; }
+.closing-check { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: .75rem 0; border-top: 1px solid var(--border); }
+.closing-check > div { display: grid; gap: .15rem; }
+.closing-check > div > span { color: var(--muted); font-size: var(--fs-xs); }
+.closing-ready { display: flex; align-items: center; gap: .75rem; padding: 1rem; border-left: 3px solid var(--primary); background: var(--primary-tint); }
+.closing-ready > span { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: 50%; background: var(--primary); color: var(--on-primary); }
+.closing-ready p { margin: .1rem 0 0; color: var(--muted); font-size: var(--fs-sm); }
+.closing-all > div { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .65rem 0; border-top: 1px solid var(--border); }
+.closing-all > div > span:first-child { display: grid; gap: .08rem; }
+.closing-action { display: grid; gap: .5rem; padding-top: .5rem; }
+.closing-action p { margin: 0; text-align: center; }
 @media (max-width: 640px), (pointer: coarse) { .list__book { min-height: var(--tap); } }
 @media (max-width: 560px) {
 	.account-head { align-items: flex-start; flex-direction: column; }
@@ -1237,6 +1262,10 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 	.catalog-head .btn { width: 100%; }
 	.catalog-list > div { align-items: flex-start; flex-direction: column; gap: .3rem; }
 	.catalog-list b, .catalog-rates { text-align: left; }
+	.year-row { grid-template-columns: 1fr; }
+	.year-row > .btn { width: 100%; }
+	.year-row__more { grid-column: 1; }
+	.year-row__main { align-items: flex-start; flex-direction: column; }
 }
 .secretkey { display: block; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 	background: var(--surface-2); border-radius: var(--radius-sm); padding: .5rem .7rem;

@@ -31,39 +31,34 @@
 	</div>
 	{{end}}
 
-	<p class="muted">Ein <strong>Abrechnungsjahr</strong> legst du selbst an und wählst dazu
-		die passende <strong>Bemessungsgrundlage</strong> (erscheint nur alle paar Jahre neu).
-		Danach fügst du in der Übersicht die Nachbarn hinzu und erfasst die Buchungen.</p>
+	<header class="page-intro"><div><p class="eyebrow">Abrechnung</p><h2>Jahre</h2><p class="muted small">Öffnen, abschließen und ins Folgejahr wechseln.</p></div></header>
 
-	<div class="list">
+	<div class="year-list">
 		{{range .Rows}}
-		<div class="card stack stack--tight">
-			<div class="list__row list__row--plain">
-				<div class="list__main">
-					<span class="list__title">{{.Year}}{{if .Label}} — {{.Label}}{{end}}
-						{{if .Completed}}<span class="tag tag--done">Abgeschlossen</span>{{else}}<span class="tag tag--progress">In Bearbeitung</span>{{end}}
-					</span>
-					<span class="list__sub">Grundlage: {{.Base}} · {{.Entries}} Buchungen</span>
-				</div>
-				<a class="btn btn--ghost btn--sm" href="/?year={{.ID}}">Öffnen</a>
+		<article class="year-row">
+			<div class="year-row__main">
+				<a href="/?year={{.ID}}"><strong>{{.Year}}{{if .Label}} — {{.Label}}{{end}}</strong><small>Grundlage {{.Base}} · {{.Entries}} Buchungen</small></a>
+				{{if .Completed}}<span class="status status--done">Abgeschlossen</span>{{else}}<span class="status status--neutral">In Bearbeitung</span>{{end}}
 			</div>
-			<div class="btnrow">
+			{{if .Completed}}<a class="btn btn--primary btn--sm" href="/years/{{.ID}}/wechsel">Jahreswechsel</a>
+			{{else}}<a class="btn btn--primary btn--sm" href="/years/{{.ID}}/abschluss">Abschluss prüfen</a>{{end}}
+			<details class="disclosure disclosure--plain year-row__more">
+				<summary>Weitere Aktionen</summary>
+				<div class="action-list">
+					<a href="/?year={{.ID}}"><span><strong>Jahr öffnen</strong><small>Nachbarn, Buchungen und Zahlungen</small></span><span aria-hidden="true">›</span></a>
+					{{if .Completed}}<a href="/years/{{.ID}}/abschluss"><span><strong>Abschluss-Prüfung</strong><small>Prüfpunkte erneut ansehen</small></span><span aria-hidden="true">›</span></a>{{end}}
+				</div>
 				{{if .Completed}}
 				<form method="post" action="/years/{{.ID}}/status"
 					data-confirm="Abrechnungsjahr {{.Year}} wieder öffnen? Buchungen und Belege werden dadurch wieder änderbar."
 					data-confirm-reason="Grund für das Wiederöffnen (wird protokolliert)">
 					<input type="hidden" name="status" value="in_progress">
 					<input type="hidden" name="reason" value="">
-					<button class="btn btn--ghost btn--sm" type="submit">Wieder öffnen</button>
+					<button class="btn btn--ghost btn--sm" type="submit">Jahr wieder öffnen</button>
 				</form>
-				<a class="btn btn--ghost btn--sm" href="/years/{{.ID}}/abschluss">Abschluss-Prüfung</a>
-				<a class="btn btn--primary btn--sm" href="/years/{{.ID}}/wechsel">Jahreswechsel</a>
-				{{else}}
-				<a class="btn btn--primary btn--sm" href="/years/{{.ID}}/abschluss">Jahr abschließen …</a>
 				{{end}}
-			</div>
-			<details class="disclosure disclosure--plain">
-				<summary>Bearbeiten</summary>
+				<div class="year-editor">
+				<h3>Jahresdaten bearbeiten</h3>
 				<form method="post" action="/years/{{.ID}}/update" class="form">
 					<label class="field"><span>Bezeichnung</span>
 						<input class="input" type="text" name="label" value="{{.Label}}"></label>
@@ -88,8 +83,9 @@
 				{{else}}
 				<p class="muted">Jahr enthält Buchungen und kann nicht gelöscht werden.</p>
 				{{end}}
+			</div>
 			</details>
-		</div>
+		</article>
 		{{else}}
 		<p class="muted card">Noch kein Abrechnungsjahr angelegt.</p>
 		{{end}}
