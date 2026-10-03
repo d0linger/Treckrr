@@ -143,6 +143,9 @@ func TestNeighborAccountNavigation(t *testing.T) {
 	if strings.Contains(overview, "data-unified-booking") || strings.Contains(overview, `id="zahlungen"`) {
 		t.Error("neighbor overview still renders full booking or payment workflows")
 	}
+	if !strings.Contains(overview, `class="work-surface account-workspace"`) {
+		t.Error("neighbor account is missing its solid work surface")
+	}
 	if count := strings.Count(overview, `href="/neighbors/9/beleg?year=7"`); count != 1 {
 		t.Errorf("direct receipt links = %d, want one navigation entry", count)
 	}

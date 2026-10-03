@@ -14,6 +14,7 @@
 		</div>
 	</header>
 
+	<div class="work-surface account-workspace">
 	<nav class="section-tabs" aria-label="Bereiche für {{.Neighbor.Name}}">
 		<a class="section-tabs__item{{if eq .Section "overview"}} is-active{{end}}" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}"{{if eq .Section "overview"}} aria-current="page"{{end}}>Übersicht</a>
 		{{if not .Completed}}<a class="section-tabs__item section-tabs__item--primary{{if eq .Section "booking"}} is-active{{end}}" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;view=booking"{{if eq .Section "booking"}} aria-current="page"{{end}}>Buchen</a>{{end}}
@@ -431,6 +432,7 @@
 	</div>
 	{{end}}
 	{{end}}
+	</div>
 
 	{{if and (not .Completed) (ne .Section "booking")}}<a class="fab" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;view=booking" aria-label="Neue Buchung" title="Neue Buchung">{{template "ic-plus"}}</a>{{end}}
 </section>

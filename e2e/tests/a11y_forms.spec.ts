@@ -27,6 +27,21 @@ test("neighbor create shortcut reveals and focuses the form", async ({ page }) =
   expect(background).not.toBe("rgba(0, 0, 0, 0)");
 });
 
+/** Keeps the core accounting workspaces readable above the decorative page grid. */
+test("core accounting workspaces use opaque surfaces", async ({ page }) => {
+  for (const [path, selector] of [
+    ["/years", ".years-workspace"],
+    ["/years/1/abschluss", ".closing-workspace"],
+    ["/neighbors/1?year=1", ".account-workspace"],
+  ] as const) {
+    await page.goto(path);
+    const surface = page.locator(selector);
+    await expect(surface).toBeVisible();
+    const background = await surface.evaluate(el => getComputedStyle(el).backgroundColor);
+    expect(background).not.toBe("rgba(0, 0, 0, 0)");
+  }
+});
+
 /** Checks every quantity unit and both hourly modes against the original POST controls. */
 test("combined billing preserves canonical units, modes and quantity calculation", async ({ page }) => {
   await page.goto("/neighbors/1?year=1&view=booking");

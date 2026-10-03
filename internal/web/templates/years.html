@@ -33,6 +33,7 @@
 
 	<header class="page-intro"><div><p class="eyebrow">Abrechnung</p><h2>Jahre</h2><p class="muted small">Öffnen, abschließen und ins Folgejahr wechseln.</p></div></header>
 
+	<div class="work-surface years-workspace">
 	<div class="year-list">
 		{{range .Rows}}
 		<article class="year-row">
@@ -91,7 +92,7 @@
 		{{end}}
 	</div>
 
-	<details class="card disclosure" id="neues-jahr" {{if not .Rows}}open{{end}}>
+	<details class="disclosure work-surface__section" id="neues-jahr" {{if not .Rows}}open{{end}}>
 		<summary>{{template "ic-plus"}} Neues Abrechnungsjahr</summary>
 		{{if .HasBases}}
 		<form method="post" action="/years" class="form">
@@ -116,5 +117,6 @@
 			<a class="link" href="/bases">Zuerst eine Grundlage anlegen →</a></p>
 		{{end}}
 	</details>
+	</div>
 </section>
 {{end}}

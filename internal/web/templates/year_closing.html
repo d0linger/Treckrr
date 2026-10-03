@@ -5,6 +5,7 @@
 		<h2 class="pagehead__t">Jahresabschluss · {{.Year.Year}}</h2>
 	</div>
 	<p class="muted small">Prüfe offene Hinweise und schließe das Jahr anschließend verbindlich ab.</p>
+	<div class="work-surface closing-workspace">
 
 	{{if .Year.Completed}}
 	<div class="card">
@@ -52,5 +53,6 @@
 		<p class="muted small">Danach sind Buchungen und Belege gesperrt; Zahlungen bleiben weiterhin erfassbar.</p>
 	</div>
 	{{end}}
+	</div>
 </section>
 {{end}}

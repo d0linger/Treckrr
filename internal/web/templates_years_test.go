@@ -35,6 +35,9 @@ func TestYearsKeepsOnePrimaryActionPerRow(t *testing.T) {
 			t.Errorf("year list missing %q", want)
 		}
 	}
+	if !strings.Contains(page, `class="work-surface years-workspace"`) {
+		t.Error("year management is missing its solid work surface")
+	}
 }
 
 // TestYearClosingPrioritizesOpenChecks keeps unresolved items above the final
@@ -56,5 +59,8 @@ func TestYearClosingPrioritizesOpenChecks(t *testing.T) {
 	}
 	if strings.Contains(page, `class="list__row card"`) {
 		t.Error("closing checklist still renders every check as a separate card")
+	}
+	if !strings.Contains(page, `class="work-surface closing-workspace"`) {
+		t.Error("year closing is missing its solid work surface")
 	}
 }
