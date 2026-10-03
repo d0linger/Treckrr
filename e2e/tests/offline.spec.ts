@@ -229,11 +229,12 @@ test("online save still reaches exactly one POST after the precheck", async ({ p
     posts++;
     expect(route.request().method()).toBe("POST");
     // The server's answer to every booking form: 303 to the account page.
-    return route.fulfill({ status: 303, headers: { Location: "/neighbors/11?year=22" } });
+    return route.fulfill({ status: 303, headers: { Location: "/neighbors/11?year=22&view=bookings" } });
   });
-  await page.route("**/neighbors/11?year=22", route => route.fulfill({ contentType: "text/html", body: "Buchung gespeichert." }));
+  await page.route("**/neighbors/11?year=22&view=bookings", route => route.fulfill({ contentType: "text/html", body: "Buchung gespeichert." }));
   await page.getByRole("button", { name: "Buchung speichern", exact: true }).click();
   await expect(page.locator("body")).toHaveText("Buchung gespeichert.");
+  await expect(page).toHaveURL("http://offline.test/neighbors/11?year=22&view=bookings");
   expect(prechecks).toBe(1);
   expect(posts).toBe(1);
 });

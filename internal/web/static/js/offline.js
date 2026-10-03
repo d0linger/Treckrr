@@ -348,10 +348,11 @@
 		return flushing;
 	}
 
-	/** Account page the server redirects a booking form to. */
+	/** Booking history shown after a successful booking form submission. */
 	function accountURL(f) {
 		var n = f.querySelector('[name="neighbor_id"]'), y = f.querySelector('[name="year_id"]');
-		return "/neighbors/" + encodeURIComponent(n ? n.value : "") + (y && y.value ? "?year=" + encodeURIComponent(y.value) : "");
+		return "/neighbors/" + encodeURIComponent(n ? n.value : "") +
+			(y && y.value ? "?year=" + encodeURIComponent(y.value) + "&view=bookings" : "?view=bookings");
 	}
 	function rotateKeys(f) {
 		f.querySelectorAll('[name="idempotency_key"], [data-quick-key]').forEach(function (k) { k.value = uuid(); });

@@ -107,7 +107,7 @@
 			}, 180);
 		}
 		function onKey(e) {
-			if (e.key === "Escape") { e.preventDefault(); close(); }
+			if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }
 			else if (e.key === "ArrowDown") { e.preventDefault(); if (items.length) { sel = (sel + 1) % items.length; highlight(); } }
 			else if (e.key === "ArrowUp") { e.preventDefault(); if (items.length) { sel = (sel - 1 + items.length) % items.length; highlight(); } }
 			else if (e.key === "Enter") { e.preventDefault(); if (sel >= 0) go(sel); }
@@ -175,7 +175,7 @@
 			ov.addEventListener("click", function (e) { if (e.target === ov) closeHelp(); });
 			/** Closes help on Escape and keeps Tab navigation inside the dialog. */
 			ov.addEventListener("keydown", function (e) {
-				if (e.key === "Escape") { e.preventDefault(); closeHelp(); }
+				if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeHelp(); }
 				else trapDialogFocus(ov, e);
 			});
 			document.body.appendChild(ov);
