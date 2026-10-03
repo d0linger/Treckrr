@@ -42,9 +42,7 @@
 @media (max-width: 480px) {
 	.appbar__brand > span { display: none; }
 	.appbar__title { font-size: .98rem; }
-	/* The same theme control remains available in the drawer; remove the duplicate
-	   here so long titles retain breathing room on narrow phones. */
-	.appbar__icon.appbar__theme { display: none; }
+	.appbar { gap: .25rem; padding-inline: .6rem; }
 }
 .appbar__icon {
 	flex: none;
@@ -245,4 +243,3 @@ a.opsbar__item:hover { background: color-mix(in srgb, #fff 10%, transparent); }
 	box-shadow: var(--card-shadow);
 	padding: 1rem;
 }
-

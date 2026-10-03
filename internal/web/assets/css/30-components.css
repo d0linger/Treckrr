@@ -513,10 +513,11 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 }
 .yearbar::-webkit-scrollbar { display: none; }
 .yearbar__links { display: flex; gap: .4rem; align-items: center; }
+.yearbar__tools { display: flex; gap: .25rem; align-items: center; margin-left: auto; padding-left: .4rem; border-left: 1px solid var(--chassis-border); }
 .yearselect { display: none; flex: 1 1 auto; min-width: 0; }
 .yearselect select {
 	width: 100%; min-height: var(--tap); padding: .45rem 2.2rem .45rem .7rem;
-	border: 1px solid var(--chassis-border); border-radius: 7px;
+	border: 1px solid var(--chassis-border); border-radius: var(--radius-sm);
 	background: var(--chassis-fill); color: var(--chassis-text);
 	font: 700 .82rem/1.2 var(--font-mono); color-scheme: dark;
 }
@@ -524,7 +525,7 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
    light in one theme and dark in the other, so the overlays go through tokens
    instead of the white-on-dark literals this block used to carry. */
 .yearpill {
-	flex: 0 0 auto; padding: .35rem .85rem; border-radius: 7px;
+	flex: 0 0 auto; padding: .35rem .85rem; border-radius: var(--radius-sm);
 	background: var(--chassis-fill); color: var(--chassis-text); font-weight: 600;
 	font-family: var(--font-mono);
 	font-variant-numeric: tabular-nums; text-decoration: none; border: 1px solid var(--chassis-border);
@@ -532,10 +533,21 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 }
 .yearpill.is-active { background: var(--chassis-pill); color: var(--chassis-on-pill); border-color: var(--chassis-pill); font-weight: 700; }
 .yearpill--manage { font-weight: 700; color: var(--chassis-muted); }
+.yearquick {
+	min-height: 2rem; padding: .35rem .65rem; border: 1px solid transparent; border-radius: var(--radius-sm);
+	display: inline-flex; align-items: center; gap: .35rem; flex: 0 0 auto;
+	color: var(--chassis-muted); font: 700 var(--fs-xs)/1.2 var(--font-mono); text-decoration: none;
+}
+.yearquick:hover { color: var(--chassis-text); background: var(--chassis-hover); }
+.yearquick.is-active { color: var(--chassis-on-pill); background: var(--chassis-pill); }
+.yearquick svg { display: block; }
 @media (max-width: 640px) {
 	.yearbar { overflow: visible; padding-block: .35rem; }
 	.yearbar__links { display: none; }
 	.yearselect { display: block; }
+	.yearbar__tools { margin-left: 0; padding-left: .25rem; }
+	.yearquick { width: var(--tap); min-height: var(--tap); justify-content: center; padding: 0; }
+	.yearquick span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 	.yearpill--manage { min-width: var(--tap); justify-content: center; padding-inline: .7rem; }
 }
 

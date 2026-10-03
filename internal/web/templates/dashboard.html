@@ -179,8 +179,6 @@
 		<summary>Weitere Aktionen</summary>
 		<div class="action-list">
 			<a href="/buchungen?year={{.Year.ID}}"><span><strong>Buchungen &amp; Filter</strong><small>Alle Buchungen durchsuchen und filtern</small></span><span aria-hidden="true">›</span></a>
-			<a href="/stats?year={{.Year.ID}}"><span><strong>Statistik {{.Year.Year}}</strong><small>Auswertung für dieses Jahr</small></span><span aria-hidden="true">›</span></a>
-			<a href="/stats/all"><span><strong>Alle Jahre vergleichen</strong><small>Langfristige Auswertung öffnen</small></span><span aria-hidden="true">›</span></a>
 			<a href="/export/year/{{.Year.ID}}"><span><strong>CSV exportieren</strong><small>Buchungsdaten dieses Jahres herunterladen</small></span><span aria-hidden="true">›</span></a>
 			{{if not .Completed}}<a href="/entries/import?year={{.Year.ID}}"><span><strong>Buchungen importieren</strong><small>Mehrere Buchungen aus einer Datei übernehmen</small></span><span aria-hidden="true">›</span></a>{{end}}
 			<a href="/years/{{.Year.ID}}/issue-all"><span><strong>Sammel-Festschreibung</strong><small>Alle offenen Nachbarn gemeinsam abrechnen</small></span><span aria-hidden="true">›</span></a>

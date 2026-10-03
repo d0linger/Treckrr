@@ -19,6 +19,7 @@
 		{{if not .Completed}}<a class="section-tabs__item section-tabs__item--primary{{if eq .Section "booking"}} is-active{{end}}" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;view=booking"{{if eq .Section "booking"}} aria-current="page"{{end}}>Buchen</a>{{end}}
 		<a class="section-tabs__item{{if eq .Section "bookings"}} is-active{{end}}" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;view=bookings"{{if eq .Section "bookings"}} aria-current="page"{{end}}>Buchungen</a>
 		<a class="section-tabs__item{{if eq .Section "payments"}} is-active{{end}}" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;view=payments"{{if eq .Section "payments"}} aria-current="page"{{end}}>Zahlungen</a>
+		<a class="section-tabs__item" href="/neighbors/{{.Neighbor.ID}}/beleg?year={{.Year.ID}}">Beleg</a>
 	</nav>
 
 	{{if eq .Section "overview"}}
@@ -33,9 +34,8 @@
 			<a href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;view=payments"><span><strong>Zahlungen</strong><small>{{if .Remaining.IsNegative}}Guthaben auszuzahlen{{else if .Remaining.IsZero}}Vollständig ausgeglichen{{else}}Noch offen{{end}}</small></span><b>{{if .Remaining.IsNegative}}{{money .CreditAmount}}{{else}}{{money .Remaining}}{{end}}</b></a>
 		</div>
 		<details class="disclosure disclosure--plain page-more">
-			<summary>Dokumente und Verlauf</summary>
+			<summary>Verlauf und Export</summary>
 			<div class="action-list">
-				<a href="/neighbors/{{.Neighbor.ID}}/beleg?year={{.Year.ID}}"><span><strong>Beleg öffnen</strong><small>Abrechnung ansehen oder drucken</small></span><span aria-hidden="true">›</span></a>
 				<a href="/neighbors/{{.Neighbor.ID}}/overview"><span><strong>Verlauf aller Jahre</strong><small>Jahresübergreifendes Nachbarkonto</small></span><span aria-hidden="true">›</span></a>
 				<a href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}"><span><strong>CSV exportieren</strong><small>Buchungsdaten herunterladen</small></span><span aria-hidden="true">›</span></a>
 			</div>

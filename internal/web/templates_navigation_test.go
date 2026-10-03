@@ -30,6 +30,7 @@ func TestDashboardBookingNavigation(t *testing.T) {
 				"Year": models.BillingYear{
 					ID: tc.yearID, Year: 2026, Base: &models.PriceBase{Year: 2025},
 				},
+				"Years":     []models.BillingYear{{ID: tc.yearID, Year: 2026}},
 				"Completed": tc.completed,
 				"GrandCost": decimal.Zero, "GrandHours": decimal.Zero,
 				"PaidCost": decimal.Zero, "OpenCost": decimal.Zero,
@@ -43,9 +44,17 @@ func TestDashboardBookingNavigation(t *testing.T) {
 			if count := strings.Count(main, want); count != 1 {
 				t.Errorf("visible dashboard booking links = %d, want 1 with selected year", count)
 			}
-			for _, destination := range []string{"/stats?year=", "/stats/all", "/export/year/", "/years"} {
+			for _, destination := range []string{"/export/year/", "/years"} {
 				if !strings.Contains(main, `href="`+destination) {
 					t.Errorf("existing dashboard destination %q was removed", destination)
+				}
+			}
+			for _, destination := range []string{fmt.Sprintf("/stats?year=%d", tc.yearID), "/stats/all"} {
+				if !strings.Contains(page, `href="`+destination+`"`) {
+					t.Errorf("direct yearbar destination %q is missing", destination)
+				}
+				if strings.Contains(main, `href="`+destination+`"`) {
+					t.Errorf("direct yearbar destination %q is still duplicated in the dashboard dropdown", destination)
 				}
 			}
 			if !strings.Contains(main, `<details class="disclosure disclosure--plain page-more">`) ||
@@ -126,13 +135,16 @@ func TestNeighborAccountNavigation(t *testing.T) {
 
 	base["Section"] = "overview"
 	overview := execPage(t, "neighbor", base)
-	for _, label := range []string{"Übersicht", "Buchen", "Buchungen", "Zahlungen", "account-summary", "Offen"} {
+	for _, label := range []string{"Übersicht", "Buchen", "Buchungen", "Zahlungen", "Beleg", "account-summary", "Offen"} {
 		if !strings.Contains(overview, label) {
 			t.Errorf("neighbor overview missing %q", label)
 		}
 	}
 	if strings.Contains(overview, "data-unified-booking") || strings.Contains(overview, `id="zahlungen"`) {
 		t.Error("neighbor overview still renders full booking or payment workflows")
+	}
+	if count := strings.Count(overview, `href="/neighbors/9/beleg?year=7"`); count != 1 {
+		t.Errorf("direct receipt links = %d, want one navigation entry", count)
 	}
 	for _, tc := range []struct {
 		section string
@@ -224,7 +236,8 @@ func TestDrawerBookingNavigation(t *testing.T) {
 }
 
 // TestLeanApplicationShell keeps daily navigation visible while secondary
-// controls stay out of the persistent header and behind explicit disclosures.
+// controls stay focused: theme and year reports are direct, while search and
+// administrative functions remain behind explicit disclosures.
 func TestLeanApplicationShell(t *testing.T) {
 	t.Parallel()
 	page := execPage(t, "login", map[string]any{
@@ -243,10 +256,13 @@ func TestLeanApplicationShell(t *testing.T) {
 		t.Fatal("application shell has no header")
 	}
 	header := page[:headerEnd]
-	for _, unwanted := range []string{"data-cmdk-open", "data-theme-toggle", `class="opsbar`} {
+	for _, unwanted := range []string{"data-cmdk-open", `class="opsbar`} {
 		if strings.Contains(header, unwanted) {
 			t.Errorf("persistent header still exposes %q", unwanted)
 		}
+	}
+	if !strings.Contains(header, "data-theme-toggle") || strings.Count(page, "data-theme-toggle") != 1 {
+		t.Error("theme toggle must appear exactly once in the persistent top bar")
 	}
 	for _, want := range []string{
 		"Kernablauf",
@@ -256,6 +272,9 @@ func TestLeanApplicationShell(t *testing.T) {
 		"data-theme-toggle",
 		"data-year-select",
 		"yearbar__links",
+		"yearbar__tools",
+		"Statistik",
+		"Jahresvergleich",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("lean shell missing %q", want)
