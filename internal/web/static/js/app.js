@@ -5,7 +5,7 @@
 	/** Returns visible, enabled tab stops for custom dialogs that lack native <dialog> focus handling. */
 	function dialogFocusables(root) {
 		return Array.prototype.filter.call(root.querySelectorAll(
-			'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+			'summary, a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 		), function (el) { return !el.hidden && el.getClientRects().length > 0; });
 	}
 	/** Wraps Tab/Shift+Tab at a custom dialog's boundaries; blocks Tab when no focusable control exists. */
@@ -683,7 +683,7 @@
 			// Move focus into the drawer on open, and restore it to the opener on
 			// close, so keyboard/screen-reader users aren't stranded (a11y).
 			if (on) {
-				var first = drawer.querySelector("a, button, [tabindex]:not([tabindex='-1'])");
+				var first = dialogFocusables(drawer)[0];
 				if (first) first.focus();
 			} else if (lastFocus && typeof lastFocus.focus === "function") {
 				lastFocus.focus();

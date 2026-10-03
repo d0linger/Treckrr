@@ -17,7 +17,7 @@
 			// Move focus into the drawer on open, and restore it to the opener on
 			// close, so keyboard/screen-reader users aren't stranded (a11y).
 			if (on) {
-				var first = drawer.querySelector("a, button, [tabindex]:not([tabindex='-1'])");
+				var first = dialogFocusables(drawer)[0];
 				if (first) first.focus();
 			} else if (lastFocus && typeof lastFocus.focus === "function") {
 				lastFocus.focus();

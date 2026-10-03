@@ -5,7 +5,7 @@
 	/** Returns visible, enabled tab stops for custom dialogs that lack native <dialog> focus handling. */
 	function dialogFocusables(root) {
 		return Array.prototype.filter.call(root.querySelectorAll(
-			'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+			'summary, a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 		), function (el) { return !el.hidden && el.getClientRects().length > 0; });
 	}
 	/** Wraps Tab/Shift+Tab at a custom dialog's boundaries; blocks Tab when no focusable control exists. */

@@ -211,9 +211,23 @@ func TestDrawerBookingNavigation(t *testing.T) {
 			if len(links) != 1 {
 				t.Fatalf("drawer booking links = %d, want 1", len(links))
 			}
-			for _, label := range []string{"Kernablauf", "Jahre &amp; Abschluss", "Nachbarn &amp; Buchungen", "Grundlagen", "Weitere Funktionen"} {
+			for _, label := range []string{"Weitere Funktionen", "Konto &amp; Verwaltung"} {
 				if !strings.Contains(page, label) {
 					t.Errorf("drawer missing consolidated navigation label %q", label)
+				}
+			}
+			drawerStart := strings.Index(page, `<aside class="drawer"`)
+			if drawerStart < 0 {
+				t.Fatal("application drawer is missing")
+			}
+			drawerEnd := strings.Index(page[drawerStart:], `</aside>`)
+			if drawerEnd < 0 {
+				t.Fatal("application drawer is not closed")
+			}
+			drawer := page[drawerStart : drawerStart+drawerEnd]
+			for _, duplicate := range []string{`href="/"`, `href="/years"`, `href="/neighbors"`, `href="/bases"`} {
+				if strings.Contains(drawer, duplicate) {
+					t.Errorf("drawer still duplicates persistent navigation destination %q", duplicate)
 				}
 			}
 			link := links[0]
@@ -265,7 +279,6 @@ func TestLeanApplicationShell(t *testing.T) {
 		t.Error("theme toggle must appear exactly once in the persistent top bar")
 	}
 	for _, want := range []string{
-		"Kernablauf",
 		"Weitere Funktionen",
 		"Konto &amp; Verwaltung",
 		"data-cmdk-open",
@@ -279,6 +292,9 @@ func TestLeanApplicationShell(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Errorf("lean shell missing %q", want)
 		}
+	}
+	if strings.Contains(page, "Kernablauf") {
+		t.Error("secondary drawer still duplicates the persistent core navigation")
 	}
 }
 
