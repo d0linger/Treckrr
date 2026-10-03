@@ -12,6 +12,21 @@ async function login(page: Page) {
 
 test.beforeEach(async ({ page }) => { await login(page); });
 
+/** Opens the collapsed create form from the page-level action and puts the user at its first field. */
+test("neighbor create shortcut reveals and focuses the form", async ({ page }) => {
+  await page.goto("/neighbors");
+  const directory = page.locator(".neighbor-directory");
+  const form = page.locator("#neuer-nachbar");
+
+  await expect(directory).toBeVisible();
+  await expect(form).not.toHaveAttribute("open");
+  await page.getByRole("link", { name: "Nachbar anlegen", exact: true }).click();
+  await expect(form).toHaveAttribute("open", "");
+  await expect(form.locator('input[name="name"]')).toBeFocused();
+  const background = await directory.evaluate(el => getComputedStyle(el).backgroundColor);
+  expect(background).not.toBe("rgba(0, 0, 0, 0)");
+});
+
 /** Checks every quantity unit and both hourly modes against the original POST controls. */
 test("combined billing preserves canonical units, modes and quantity calculation", async ({ page }) => {
   await page.goto("/neighbors/1?year=1&view=booking");

@@ -95,3 +95,22 @@ func TestNeighborEmptyStateOnlyOnce(t *testing.T) {
 		}
 	}
 }
+
+func TestNeighborCreateShortcutTargetsDisclosure(t *testing.T) {
+	html := execPage(t, "neighbors_manage", map[string]any{
+		"Stats": []struct {
+			Neighbor models.Neighbor
+			Years    int
+			Entries  int
+		}{{Neighbor: models.Neighbor{ID: 1, Name: "Testhof"}}},
+	})
+	for _, want := range []string{
+		`class="neighbor-directory"`,
+		`href="#neuer-nachbar" data-open-details="#neuer-nachbar"`,
+		`class="neighbor-create disclosure" id="neuer-nachbar"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("neighbor management is missing %q", want)
+		}
+	}
+}

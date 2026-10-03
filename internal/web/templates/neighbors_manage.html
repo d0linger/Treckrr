@@ -2,9 +2,10 @@
 <section class="stack">
 	<header class="catalog-head">
 		<div><p class="eyebrow">Stammdaten</p><h2>Nachbarn</h2><p class="muted small">Nachbarn verwalten und das aktuelle Konto öffnen.</p></div>
-		<a class="btn btn--primary btn--sm" href="#neuer-nachbar">Nachbar anlegen</a>
+		<a class="btn btn--primary btn--sm" href="#neuer-nachbar" data-open-details="#neuer-nachbar">Nachbar anlegen</a>
 	</header>
 
+	<section class="neighbor-directory" aria-label="Nachbarverzeichnis">
 	<nav class="section-tabs" aria-label="Nachbarstatus">
 		{{$sc := .Scope}}
 		<a class="section-tabs__item{{if eq $sc ""}} is-active{{end}}" href="/neighbors"{{if eq $sc ""}} aria-current="page"{{end}}>Aktiv ({{.CountActive}})</a>
@@ -122,7 +123,7 @@
 		{{end}}
 	</div>
 
-	<details class="card disclosure" id="neuer-nachbar" {{if not .Stats}}open{{end}}>
+	<details class="neighbor-create disclosure" id="neuer-nachbar" {{if not .Stats}}open{{end}}>
 		<summary>+ Neuen Nachbarn anlegen</summary>
 		<form method="post" action="/neighbors/create" class="form">
 			<label class="field"><span>Name</span>
@@ -132,5 +133,6 @@
 			<button class="btn btn--primary" type="submit">Anlegen</button>
 		</form>
 	</details>
+	</section>
 </section>
 {{end}}

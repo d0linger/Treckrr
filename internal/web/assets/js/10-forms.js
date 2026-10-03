@@ -59,6 +59,21 @@
 		});
 	});
 
+	// Same-page shortcuts can target a collapsed form disclosure. Open it before
+	// the browser follows the hash, then move focus to the first field so the
+	// action has an immediate, keyboard-accessible result.
+	document.querySelectorAll("[data-open-details]").forEach(function (trigger) {
+		trigger.addEventListener("click", function () {
+			var selector = trigger.getAttribute("data-open-details");
+			if (!selector || selector.charAt(0) !== "#") return;
+			var details = document.getElementById(selector.slice(1));
+			if (!details || details.tagName !== "DETAILS") return;
+			details.open = true;
+			var field = details.querySelector("input:not([type='hidden']), select, textarea");
+			if (field) requestAnimationFrame(function () { field.focus({ preventScroll: true }); });
+		});
+	});
+
 	// Client-side validation: German messages, an inline error element and ARIA
 	// wiring so screen readers announce the problem (not just a transient native
 	// bubble that vanishes on the next click).

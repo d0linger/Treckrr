@@ -1227,6 +1227,8 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 .catalog-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; padding: .2rem 0 .8rem; border-bottom: 1px solid var(--border); }
 .catalog-head h2, .catalog-head p { margin: 0; }
 .catalog-head h2 { margin-block: .12rem .2rem; font-size: clamp(1.55rem, 5vw, 2.2rem); }
+.neighbor-directory { display: grid; gap: .9rem; padding: clamp(.75rem, 2vw, 1rem); background: var(--surface); border: 1px solid var(--card-hairline); border-radius: var(--radius); box-shadow: var(--card-shadow); }
+.neighbor-create { scroll-margin-top: 7rem; padding: .75rem .9rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .catalog-groups { display: grid; gap: 1.6rem; }
 .catalog-groups h3 { display: flex; align-items: center; gap: .45rem; margin: 0 0 .55rem; font-size: var(--fs-md); }
 .catalog-list { display: grid; border-block: 1px solid var(--border); }
