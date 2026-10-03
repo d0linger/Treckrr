@@ -281,3 +281,30 @@ func TestLeanApplicationShell(t *testing.T) {
 		}
 	}
 }
+
+// TestBackupStatusStaysVisible keeps the reassuring healthy state in the app
+// bar instead of showing the indicator only after backups need attention.
+func TestBackupStatusStaysVisible(t *testing.T) {
+	t.Parallel()
+
+	for _, tone := range []string{"ok", "warn", "bad"} {
+		t.Run(tone, func(t *testing.T) {
+			t.Parallel()
+			page := execPage(t, "login", map[string]any{
+				"User": &models.User{Username: "editor", Role: models.RoleEditor},
+				"BackupHealth": map[string]any{
+					"Tone":     tone,
+					"Title":    "Backup aktuell",
+					"AgeLabel": "vor 2 Std.",
+				},
+			})
+
+			if count := strings.Count(page, ` data-bk>`); count != 1 {
+				t.Errorf("backup status indicators for tone %q = %d, want 1", tone, count)
+			}
+			if !strings.Contains(page, `class="bkdot bkdot--`+tone+`"`) {
+				t.Errorf("backup status tone %q is not rendered in the app bar", tone)
+			}
+		})
+	}
+}
