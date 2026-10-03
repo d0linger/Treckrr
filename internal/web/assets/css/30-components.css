@@ -450,6 +450,14 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 	scrollbar-width: none;
 }
 .yearbar::-webkit-scrollbar { display: none; }
+.yearbar__links { display: flex; gap: .4rem; align-items: center; }
+.yearselect { display: none; flex: 1 1 auto; min-width: 0; }
+.yearselect select {
+	width: 100%; min-height: var(--tap); padding: .45rem 2.2rem .45rem .7rem;
+	border: 1px solid var(--chassis-border); border-radius: 7px;
+	background: var(--chassis-fill); color: var(--chassis-text);
+	font: 700 .82rem/1.2 var(--font-mono); color-scheme: dark;
+}
 /* Year segments on the chassis: mono, squared, filled when active. The chassis is
    light in one theme and dark in the other, so the overlays go through tokens
    instead of the white-on-dark literals this block used to carry. */
@@ -462,6 +470,12 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 }
 .yearpill.is-active { background: var(--chassis-pill); color: var(--chassis-on-pill); border-color: var(--chassis-pill); font-weight: 700; }
 .yearpill--manage { font-weight: 700; color: var(--chassis-muted); }
+@media (max-width: 640px) {
+	.yearbar { overflow: visible; padding-block: .35rem; }
+	.yearbar__links { display: none; }
+	.yearselect { display: block; }
+	.yearpill--manage { min-width: var(--tap); justify-content: center; padding-inline: .7rem; }
+}
 
 /* Field use means coarse pointers and narrow phones need forgiving controls.
    Inline text links remain naturally sized; reusable actions meet the 44px floor. */

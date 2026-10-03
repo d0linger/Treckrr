@@ -207,3 +207,43 @@ func TestDrawerBookingNavigation(t *testing.T) {
 		})
 	}
 }
+
+// TestLeanApplicationShell keeps daily navigation visible while secondary
+// controls stay out of the persistent header and behind explicit disclosures.
+func TestLeanApplicationShell(t *testing.T) {
+	t.Parallel()
+	page := execPage(t, "login", map[string]any{
+		"User":   &models.User{Username: "editor", Role: models.RoleEditor},
+		"Active": "dashboard",
+		"Year":   &models.BillingYear{ID: 7, Year: 2026},
+		"Years": []models.BillingYear{
+			{ID: 7, Year: 2026},
+			{ID: 6, Year: 2025},
+		},
+		"BasePath": "/",
+	})
+
+	headerEnd := strings.Index(page, "</header>")
+	if headerEnd < 0 {
+		t.Fatal("application shell has no header")
+	}
+	header := page[:headerEnd]
+	for _, unwanted := range []string{"data-cmdk-open", "data-theme-toggle", `class="opsbar`} {
+		if strings.Contains(header, unwanted) {
+			t.Errorf("persistent header still exposes %q", unwanted)
+		}
+	}
+	for _, want := range []string{
+		"Kernablauf",
+		"Weitere Funktionen",
+		"Konto &amp; Verwaltung",
+		"data-cmdk-open",
+		"data-theme-toggle",
+		"data-year-select",
+		"yearbar__links",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("lean shell missing %q", want)
+		}
+	}
+}
