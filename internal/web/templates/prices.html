@@ -1,6 +1,7 @@
 {{define "content"}}
 <section class="stack">
 	{{template "base-workspace" (dict "Base" .Base "Active" "prices")}}
+	<div class="work-surface pricing-workspace">
 	{{if .Locked}}
 	<div class="flash flash--info">Diese Bemessungsgrundlage ({{.Base.Year}}) ist gesperrt. Werte sind schreibgeschützt.</div>
 	{{end}}
@@ -319,5 +320,6 @@
 	{{end}}
 	{{end}}
 	{{end}}
+	</div>
 </section>
 {{end}}

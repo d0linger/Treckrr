@@ -33,6 +33,7 @@ test("core accounting workspaces use opaque surfaces", async ({ page }) => {
     ["/years", ".years-workspace"],
     ["/years/1/abschluss", ".closing-workspace"],
     ["/neighbors/1?year=1", ".account-workspace"],
+    ["/prices?base=1", ".pricing-workspace"],
   ] as const) {
     await page.goto(path);
     const surface = page.locator(selector);

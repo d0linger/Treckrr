@@ -41,11 +41,17 @@ func TestPricesSeparatesCatalogFromEditors(t *testing.T) {
 	if strings.Contains(overview, `<form`) {
 		t.Error("catalog overview exposes edit forms")
 	}
+	if !strings.Contains(overview, `class="work-surface pricing-workspace"`) {
+		t.Error("catalog overview has no opaque work surface")
+	}
 
 	data["EditMode"] = true
 	editor := mainContent(t, execPage(t, "prices", data))
 	if !strings.Contains(editor, `action="/prices/machines"`) {
 		t.Error("machine editor is missing")
+	}
+	if !strings.Contains(editor, `class="work-surface pricing-workspace"`) {
+		t.Error("catalog editor has no opaque work surface")
 	}
 	for _, unwanted := range []string{`action="/prices/tractors"`, `action="/prices/loadlevels"`, `id="fuel-adjustments"`} {
 		if strings.Contains(editor, unwanted) {
