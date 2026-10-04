@@ -42,8 +42,8 @@ func entryFilterFromQuery(r *http.Request, yearID int64) store.EntryFilter {
 		YearID: yearID,
 		From:   parseDay(q.Get("from")),
 		To:     parseDay(q.Get("to")),
-		Task:   strings.TrimSpace(q.Get("task")),
-		Unit:   strings.TrimSpace(q.Get("unit")),
+		Task:   sanitizeQueryParam(q.Get("task"), maxNameLen),
+		Unit:   sanitizeQueryParam(q.Get("unit"), maxNameLen),
 		Limit:  entryPageSize,
 	}
 	if id, err := strconv.ParseInt(q.Get("neighbor_id"), 10, 64); err == nil && id > 0 {

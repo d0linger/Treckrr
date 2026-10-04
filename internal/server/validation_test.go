@@ -38,6 +38,30 @@ func TestLenError(t *testing.T) {
 	}
 }
 
+func TestEntryFilterFromQuerySanitization(t *testing.T) {
+	longTask := "  " + strings.Repeat("x", 150) + "  "
+	longUnit := "  " + strings.Repeat("u", 150) + "  "
+	params := url.Values{}
+	params.Set("task", longTask)
+	params.Set("unit", longUnit)
+
+	req := httptest.NewRequest(http.MethodGet, "/buchungen?"+params.Encode(), nil)
+	f := entryFilterFromQuery(req, 1)
+
+	if got := utf8.RuneCountInString(f.Task); got != maxNameLen {
+		t.Errorf("f.Task rune count = %d, want %d", got, maxNameLen)
+	}
+	if f.Task != strings.Repeat("x", maxNameLen) {
+		t.Errorf("f.Task = %q, want %q", f.Task, strings.Repeat("x", maxNameLen))
+	}
+	if got := utf8.RuneCountInString(f.Unit); got != maxNameLen {
+		t.Errorf("f.Unit rune count = %d, want %d", got, maxNameLen)
+	}
+	if f.Unit != strings.Repeat("u", maxNameLen) {
+		t.Errorf("f.Unit = %q, want %q", f.Unit, strings.Repeat("u", maxNameLen))
+	}
+}
+
 func TestEntryPrecheckTaskLabelSanitization(t *testing.T) {
 	s := testNeighborServer(t)
 
