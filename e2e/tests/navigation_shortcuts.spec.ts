@@ -79,3 +79,22 @@ test("neighbor account exposes receipt and export in its summary header", async 
   await expect(page.getByText("Verlauf und Export", { exact: true })).toBeVisible();
   await expect(page.locator("details.page-more").getByRole("link", { name: /Beleg/ })).toHaveCount(0);
 });
+
+test("dashboard neighbor cards keep totals and payment status in a stable responsive layout", async ({ page }) => {
+  await login(page);
+
+  const grid = page.locator(".neighbor-account-grid");
+  const cards = grid.locator(".neighbor-account-card");
+  await expect(cards.first()).toBeVisible();
+  await expect(cards.first().getByText("Jahressaldo", { exact: true })).toBeVisible();
+  await expect(cards.first().getByText("Zahlungsstand:", { exact: true })).toHaveCount(1);
+  expect(await grid.evaluate((node) => getComputedStyle(node).alignItems)).toBe("stretch");
+  expect(await cards.first().evaluate((node) => getComputedStyle(node).display)).toBe("grid");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(cards.first()).toBeVisible();
+  expect(await cards.first().locator(".neighbor-account-card__footer").evaluate(
+    (node) => getComputedStyle(node).display,
+  )).toBe("grid");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

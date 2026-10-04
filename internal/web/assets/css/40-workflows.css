@@ -624,6 +624,7 @@
 	   better as a single top-to-bottom column. Placed after the rule above so
 	   it wins the cascade. */
 	.list--onecol, .logcards--onecol { grid-template-columns: 1fr; }
+	.neighbor-account-grid { align-items: stretch; }
 }
 
 /* ---- Account security flows (2FA setup, password, backup codes) -------- */

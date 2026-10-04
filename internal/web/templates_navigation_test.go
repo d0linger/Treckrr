@@ -93,7 +93,10 @@ func TestDashboardCoreWorkflow(t *testing.T) {
 	if count := strings.Count(page, `class="next-action`); count != 1 {
 		t.Errorf("next actions = %d, want 1", count)
 	}
-	for _, want := range []string{"summary-card", "Gesamtsaldo", "Abschluss prüfen", "Weitere Aktionen"} {
+	for _, want := range []string{
+		"summary-card", "Gesamtsaldo", "Abschluss prüfen", "Weitere Aktionen",
+		"neighbor-account-grid", "Jahressaldo", "Zahlungsstand",
+	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("simplified dashboard missing %q", want)
 		}

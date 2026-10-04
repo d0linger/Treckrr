@@ -150,7 +150,9 @@
 	.beleg__calc-body > div { flex-wrap: wrap; }
 	.statusrow__actions, .statusrow__actions .btn, .statusrow__actions form { width: 100%; }
 	.summary-actions > summary { width: 100%; justify-content: space-between; min-height: var(--tap); }
-	[data-nb-item] .paytoggle, [data-nb-item] .paychip--action { width: 100%; }
+	.neighbor-account-card__payment { justify-content: flex-start; }
+	[data-nb-item] .paytoggle { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; }
+	[data-nb-item] .paytoggle__action { width: 100%; }
 }
 @media (max-width: 720px) { .rollgrid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 560px) { .savedviews__save { grid-template-columns: minmax(0, 1fr); } }

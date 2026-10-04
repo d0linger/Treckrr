@@ -101,6 +101,43 @@
 .list__sub { font-size: .82rem; color: var(--muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .year-closing .list__sub { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
 [data-nb-item] { scroll-margin-top: 6rem; }
+.neighbor-account-card {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	grid-template-areas: "main total" "footer footer";
+	align-items: start;
+	gap: .8rem 1rem;
+}
+.neighbor-account-card > .list__main { grid-area: main; }
+.neighbor-account-card__total { grid-area: total; display: grid; justify-items: end; gap: .08rem; text-align: right; }
+.neighbor-account-card__label {
+	font: 700 .64rem/1.2 var(--font-mono);
+	letter-spacing: .05em;
+	text-transform: uppercase;
+	color: var(--muted);
+	white-space: nowrap;
+}
+.neighbor-account-card__footer {
+	grid-area: footer;
+	align-self: end;
+	display: grid;
+	gap: .55rem;
+	padding-top: .65rem;
+	border-top: 1px solid var(--border);
+}
+.neighbor-account-card__tools,
+.paytoggle { display: flex; align-items: center; gap: .45rem; }
+.neighbor-account-card__tools { flex-wrap: wrap; min-width: 0; }
+.neighbor-account-card__payment {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: .45rem;
+	width: 100%;
+}
+.neighbor-account-card__payment .paytoggle { justify-content: space-between; width: 100%; }
+.neighbor-account-card__payment .ic { width: 1em; height: 1em; }
+.paytoggle__action { color: var(--accent-text); }
 [data-quick-form] [name="q_date"] { min-width: 9rem; }
 [data-quick-form] [name="q_hours"] { min-width: 6rem; max-width: 8rem; }
 [data-quick-form] select { min-width: 12rem; }
@@ -710,26 +747,16 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 	font-size: 1rem; letter-spacing: .05em; user-select: all; }
 @media (max-width: 380px) { .codes { grid-template-columns: 1fr; } }
 
-/* Single clickable payment chip showing the current status (click to toggle).
-   Werkblatt badge language: status dot + uppercase mono + semantic TINT surface —
-   a round tinted plate reads as STATE, a rectangle as action, so the warn amber
-   can never be mistaken for the signal orange by form alone. */
+/* Compact payment states. Mutating a completed-year balance stays a separate,
+   explicitly labelled button so state and action cannot be mistaken for each other. */
 .paytoggle { margin: 0; }
 .paychip {
 	display: inline-flex; align-items: center; gap: .4rem;
 	border-radius: 999px; padding: .16rem .6rem;
 	font-family: var(--font-mono); font-weight: 700; font-size: .68rem;
 	letter-spacing: .06em; text-transform: uppercase; font-variant-numeric: tabular-nums;
-	cursor: pointer; border: 1px solid transparent; white-space: nowrap;
+	border: 1px solid transparent; white-space: nowrap;
 }
-/* Only the CLICKABLE toggle keeps the 44-px tap target; the read-only status
-   display is a compact chip like every other badge. */
-button.paychip { min-height: var(--tap); padding: .35rem .8rem; }
-.paychip--action { border-radius: 8px; flex-direction: column; align-items: flex-start; gap: .1rem; text-align: left; }
-.paychip--action::before { display: none; }
-.paychip--action > span:first-child { display: inline-flex; align-items: center; gap: .4rem; }
-.paychip--action > span:first-child::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
-.paychip__action { font-family: var(--font-body); font-size: .72rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
 .paychip--paid { background: var(--primary-tint); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 30%, transparent); }
 .paychip--open { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
 .paychip--open::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }

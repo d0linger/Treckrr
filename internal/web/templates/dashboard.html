@@ -76,17 +76,27 @@
 		{{end}}
 	</div>
 	{{end}}
-	<div class="list">
+	<div class="list neighbor-account-grid">
 		{{range .Summaries}}
-		<div class="list__row card" data-nb-item{{if and $.Completed (not .Paid)}} data-open="1"{{end}}{{if $.Completed}}{{if .Credit}} data-due="credit"{{else if not .Paid}} data-due="open"{{end}}{{end}}>
+		<div class="list__row card neighbor-account-card" data-nb-item{{if and $.Completed (not .Paid)}} data-open="1"{{end}}{{if $.Completed}}{{if .Credit}} data-due="credit"{{else if not .Paid}} data-due="open"{{end}}{{end}}>
 			<a class="list__main list__main--link" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}">
 				<span class="list__title">{{.Neighbor.Name}}</span>
 				<span class="list__sub">{{.Entries}} Buchungen · {{num .Hours}} h</span>
 			</a>
-			<div class="list__value">{{money .Cost}}</div>
-			{{if and (not $.Completed) $.User.CanWrite}}<a class="list__book" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}&amp;view=booking">Buchen</a>{{end}}
-			{{if .QualityIssues}}<a class="chip2 chip2--stale" href="/data-quality?year={{$.Year.ID}}" title="{{.QualityIssues}} Stammdaten-Hinweis(e)"><span class="chip2__g" aria-hidden="true">!</span>{{.QualityIssues}}</a>{{end}}
+			<div class="neighbor-account-card__total">
+				<span class="neighbor-account-card__label">Jahressaldo</span>
+				<strong class="list__value">{{money .Cost}}</strong>
+			</div>
+			<div class="neighbor-account-card__footer">
+				{{if or (and (not $.Completed) $.User.CanWrite) .QualityIssues}}
+				<div class="neighbor-account-card__tools">
+					{{if and (not $.Completed) $.User.CanWrite}}<a class="list__book" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}&amp;view=booking">Buchen</a>{{end}}
+					{{if .QualityIssues}}<a class="chip2 chip2--stale" href="/data-quality?year={{$.Year.ID}}" title="{{.QualityIssues}} Stammdaten-Hinweis(e)"><span class="chip2__g">{{template "ic-warn"}}</span>{{.QualityIssues}} {{if eq .QualityIssues 1}}Hinweis{{else}}Hinweise{{end}}</a>{{end}}
+				</div>
+				{{end}}
 			{{if $.Completed}}
+			<div class="neighbor-account-card__payment">
+				<span class="sr-only">Zahlungsstand:</span>
 			{{if .Paid}}
 				<span class="paychip paychip--paid">{{template "ic-check"}} Bezahlt</span>
 				{{else if .Credit}}
@@ -96,15 +106,16 @@
 					data-confirm="Restbetrag ({{money .Remaining}}) als bezahlt verbuchen?">
 					<input type="hidden" name="year_id" value="{{$.Year.ID}}">
 					<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
-					<button class="paychip paychip--open paychip--action" type="submit" title="Restbetrag als bezahlt verbuchen">
-						<span>Offen · {{money .Remaining}}</span>
-						<span class="paychip__action">Als bezahlt markieren</span>
-					</button>
+					<span class="paychip paychip--open paychip--static" title="Noch offener Betrag">Offen · {{money .Remaining}}</span>
+					<button class="btn btn--ghost btn--sm paytoggle__action" type="submit" title="Restbetrag als bezahlt verbuchen">Als bezahlt markieren</button>
 				</form>
 				{{end}}
+			</div>
 			{{else if or (gt .Entries 0) (not .Remaining.IsZero)}}
 				{{/* Running year: show payment status at a glance (read-only — the
 				     "als bezahlt verbuchen" toggle stays gated to completed years). */}}
+			<div class="neighbor-account-card__payment">
+				<span class="sr-only">Zahlungsstand:</span>
 				{{if .Paid}}
 				<span class="paychip paychip--paid" title="Vollständig bezahlt">{{template "ic-check"}} Bezahlt</span>
 				{{else if .Credit}}
@@ -112,6 +123,7 @@
 				{{else}}
 				<span class="paychip paychip--open paychip--static" title="Noch offener Betrag">Offen · {{money .Remaining}}</span>
 				{{end}}
+			</div>
 			{{else}}
 			<form method="post" action="/years/remove-neighbor" class="list__remove"
 				data-confirm-danger data-confirm="{{.Neighbor.Name}} aus diesem Jahr entfernen?">
@@ -120,6 +132,7 @@
 				<button class="btn btn--ghost btn--icon" type="submit" title="Aus Jahr entfernen" aria-label="Aus Jahr entfernen">{{template "ic-x"}}</button>
 			</form>
 			{{end}}
+			</div>
 		</div>
 		{{else}}
 		<div class="empty">
