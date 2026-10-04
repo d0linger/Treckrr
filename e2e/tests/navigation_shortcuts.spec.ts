@@ -12,14 +12,18 @@ async function login(page: Page) {
   await expect(page.locator(".appbar")).toBeVisible();
 }
 
-test("theme and reporting shortcuts stay direct on desktop and mobile", async ({ page }) => {
+test("global tools and reporting shortcuts stay direct on desktop and mobile", async ({ page }) => {
   await login(page);
 
   const themeToggle = page.getByRole("button", { name: "Hell/Dunkel umschalten" });
+  const quickSearch = page.getByRole("button", { name: "Schnellsuche (Strg+K)" });
+  const notifications = page.getByRole("link", { name: /^Hinweise/ });
   const statistics = page.getByRole("link", { name: /Statistik \d{4}/ });
   const comparison = page.getByRole("link", { name: "Jahresvergleich" });
 
   await expect(themeToggle).toBeVisible();
+  await expect(quickSearch).toBeVisible();
+  await expect(notifications).toBeVisible();
   await expect(statistics).toBeVisible();
   await expect(comparison).toBeVisible();
   await expect(page.locator('main a[href^="/stats"]')).toHaveCount(0);
@@ -33,7 +37,8 @@ test("theme and reporting shortcuts stay direct on desktop and mobile", async ({
     await expect(drawer.locator(`a[href="${href}"]`)).toHaveCount(0);
   }
   await expect(drawer.getByRole("link", { name: "Mein Konto und Sicherheit" })).toBeVisible();
-  await expect(drawer.getByRole("link", { name: /Hinweise/ })).toBeVisible();
+  await expect(drawer.getByRole("link", { name: /Hinweise/ })).toHaveCount(0);
+  await expect(drawer.locator("[data-cmdk-open]")).toHaveCount(0);
   await expect(drawer.locator("summary.drawer__group-toggle").filter({ hasText: "Weitere Funktionen" })).toBeVisible();
   await expect(drawer.locator("summary.drawer__group-toggle").filter({ hasText: "Verwaltung" })).toBeVisible();
   await expect(drawer.getByText("Konto & Verwaltung", { exact: true })).toHaveCount(0);
@@ -47,6 +52,8 @@ test("theme and reporting shortcuts stay direct on desktop and mobile", async ({
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(themeToggle).toBeVisible();
+  await expect(quickSearch).toBeVisible();
+  await expect(notifications).toBeVisible();
   await expect(statistics).toBeVisible();
   await expect(comparison).toBeVisible();
   const shortcutSizes = await page.locator(".yearquick:visible").evaluateAll((links) =>
@@ -59,15 +66,16 @@ test("theme and reporting shortcuts stay direct on desktop and mobile", async ({
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test("neighbor account exposes the receipt without opening a disclosure", async ({ page }) => {
+test("neighbor account exposes receipt and export in its summary header", async ({ page }) => {
   await login(page);
   await page.goto("/neighbors/1?year=1");
 
-  const accountTabs = page.getByRole("navigation", { name: /Bereiche für/ });
-  await expect(accountTabs.getByRole("link", { name: "Beleg", exact: true })).toHaveAttribute(
+  const summary = page.locator(".summary-card");
+  await expect(summary.getByRole("link", { name: "Beleg", exact: true })).toHaveAttribute(
     "href",
     "/neighbors/1/beleg?year=1",
   );
+  await expect(summary.getByRole("link", { name: "CSV Export", exact: true })).toBeVisible();
   await expect(page.getByText("Verlauf und Export", { exact: true })).toBeVisible();
   await expect(page.locator("details.page-more").getByRole("link", { name: /Beleg/ })).toHaveCount(0);
 });

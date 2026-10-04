@@ -13,16 +13,14 @@
 		</ol>
 	</div>
 	{{end}}
-	<header class="year-overview">
-		<div class="year-overview__title">
-			<h2>{{.Year.Year}}</h2>
-			{{if .Completed}}<span class="status status--done">Abgeschlossen</span>
-			{{else}}<span class="status status--neutral">In Bearbeitung</span>{{end}}
+	<header class="summary-card card">
+		<div>
+			<span class="summary-card__label">Abrechnungsjahr {{.Year.Year}} · {{if .Completed}}Abgeschlossen{{else}}In Bearbeitung{{end}}</span>
+			<span class="summary-card__value">{{money .GrandCost}}</span>
+			<span class="summary-card__label">Gesamtsaldo</span>
 		</div>
-		<div class="year-overview__facts">
-			<span><strong>{{money .GrandCost}}</strong> Gesamtsaldo</span>
-			<span>{{num .GrandHours}} h</span>
-			<a href="/bases">Grundlage {{.Year.Base.Year}}</a>
+		<div class="summary-card__meta">
+			<span>{{num .GrandHours}} h · Grundlage {{.Year.Base.Year}}</span>
 		</div>
 	</header>
 

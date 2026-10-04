@@ -29,8 +29,8 @@ func TestNeighborBookingSubmitGuards(t *testing.T) {
 				"Base":    models.PriceBase{ID: 1}, "Year": models.BillingYear{ID: 1, Year: 2026},
 				"Neighbor": models.Neighbor{ID: 1, Name: "Testhof"},
 				"Gespanne": []models.Gespann{{ID: 1, Name: "Testgespann"}},
-				"Entries":  []models.Entry{}, "Saldo": decimal.Zero, "TotalHours": decimal.Zero,
-				"PaidSum": decimal.Zero, "Remaining": decimal.Zero,
+				"Entries":  []models.Entry{}, "Saldo": decimal.Zero, "TotalCost": decimal.Zero, "TotalHours": decimal.Zero,
+				"LedgerSum": decimal.Zero, "PaidSum": decimal.Zero, "Remaining": decimal.Zero,
 				"HasInvoice": tc.issued, "Completed": tc.completed,
 			})
 			for _, label := range []string{"Buchung speichern", "Zeilen speichern"} {

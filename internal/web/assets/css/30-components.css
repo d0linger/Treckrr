@@ -5,6 +5,8 @@
 .summary-card__label { display: block; font-size: .8rem; opacity: .85; }
 .summary-card__value { display: block; font-size: 1.7rem; font-weight: 700; }
 .summary-card__meta { font-size: .85rem; opacity: .95; display: flex; flex-direction: column; gap: .4rem; align-items: flex-start; text-align: left; }
+.summary-card__breakdown { display: flex; flex-wrap: wrap; gap: .1rem .65rem; }
+.summary-card__breakdown > span { white-space: nowrap; }
 .summary-card .btn--ghost { color: #fff; border-color: rgba(255, 255, 255, .5); }
 @media (min-width: 560px) {
 	.summary-card { flex-direction: row; align-items: flex-end; justify-content: space-between; }

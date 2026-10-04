@@ -93,7 +93,7 @@ func TestDashboardCoreWorkflow(t *testing.T) {
 	if count := strings.Count(page, `class="next-action`); count != 1 {
 		t.Errorf("next actions = %d, want 1", count)
 	}
-	for _, want := range []string{"year-overview", "Abschluss prüfen", "Weitere Aktionen"} {
+	for _, want := range []string{"summary-card", "Gesamtsaldo", "Abschluss prüfen", "Weitere Aktionen"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("simplified dashboard missing %q", want)
 		}
@@ -135,7 +135,7 @@ func TestNeighborAccountNavigation(t *testing.T) {
 
 	base["Section"] = "overview"
 	overview := execPage(t, "neighbor", base)
-	for _, label := range []string{"Übersicht", "Buchen", "Buchungen", "Zahlungen", "Beleg", "account-summary", "Offen"} {
+	for _, label := range []string{"Übersicht", "Buchen", "Buchungen", "Zahlungen", "Beleg", "CSV Export", "summary-card", "account-summary", "Offen"} {
 		if !strings.Contains(overview, label) {
 			t.Errorf("neighbor overview missing %q", label)
 		}
@@ -252,9 +252,8 @@ func TestDrawerBookingNavigation(t *testing.T) {
 	}
 }
 
-// TestLeanApplicationShell keeps daily navigation visible while secondary
-// controls stay focused: theme and year reports are direct, while search and
-// administrative functions remain behind explicit disclosures.
+// TestLeanApplicationShell keeps daily navigation and global search/notification
+// controls visible while administrative functions remain behind disclosures.
 func TestLeanApplicationShell(t *testing.T) {
 	t.Parallel()
 	page := execPage(t, "login", map[string]any{
@@ -273,10 +272,18 @@ func TestLeanApplicationShell(t *testing.T) {
 		t.Fatal("application shell has no header")
 	}
 	header := page[:headerEnd]
-	for _, unwanted := range []string{"data-cmdk-open", `class="opsbar`} {
+	for _, unwanted := range []string{`class="opsbar`} {
 		if strings.Contains(header, unwanted) {
 			t.Errorf("persistent header still exposes %q", unwanted)
 		}
+	}
+	for _, want := range []string{"data-cmdk-open", `href="/notifications"`} {
+		if !strings.Contains(header, want) {
+			t.Errorf("persistent header is missing %q", want)
+		}
+	}
+	if strings.Count(page, "data-cmdk-open") != 1 || strings.Count(page, `href="/notifications"`) != 1 {
+		t.Error("search and notifications must each have one direct top-bar entry without drawer duplicates")
 	}
 	if !strings.Contains(header, "data-theme-toggle") || strings.Count(page, "data-theme-toggle") != 1 {
 		t.Error("theme toggle must appear exactly once in the persistent top bar")
@@ -317,7 +324,6 @@ func TestDrawerSeparatesAccountAndAdminNavigation(t *testing.T) {
 	for _, want := range []string{
 		`aria-label="Mein Konto und Sicherheit"`,
 		"Mein Konto &amp; Sicherheit",
-		"Hinweise",
 		"Verwaltung",
 		"Betriebsdaten",
 		"Backup",
@@ -339,6 +345,9 @@ func TestDrawerSeparatesAccountAndAdminNavigation(t *testing.T) {
 	}
 	if got := strings.Count(page, `href="/profile"`); got != 1 {
 		t.Errorf("profile links = %d, want one direct account entry", got)
+	}
+	if got := strings.Count(page, `href="/notifications"`); got != 1 {
+		t.Errorf("notification links = %d, want one direct top-bar entry", got)
 	}
 }
 

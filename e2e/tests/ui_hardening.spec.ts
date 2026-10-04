@@ -92,10 +92,7 @@ test("custom dialogs contain focus and return it to their trigger", async ({ pag
 	await page.keyboard.press("Escape");
 	await expect(menu).toBeFocused();
 
-	await menu.click();
-	const advanced = page.locator("#drawer details").filter({ hasText: "Weitere Funktionen" });
-	await advanced.locator(":scope > summary").click();
-	const search = page.locator("#drawer [data-cmdk-open]");
+	const search = page.locator(".appbar [data-cmdk-open]");
   await search.focus();
   await search.click();
   const commandInput = page.locator('.cmdk input[role="combobox"]');

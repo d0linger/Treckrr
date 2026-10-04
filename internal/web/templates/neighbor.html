@@ -2,15 +2,22 @@
 <section class="stack" data-base-id="{{.Base.ID}}">
 	<a class="backlink" href="/?year={{.Year.ID}}">‹ Nachbarn {{.Year.Year}}</a>
 
-	<header class="account-head">
+	<header class="summary-card card">
 		<div>
-			<p class="eyebrow">Nachbarkonto · {{.Year.Year}}</p>
-			<h2>{{.Neighbor.Name}}</h2>
-			<p>{{.BookingCount}} Positionen · {{num .TotalHours}} Maschinenstunden</p>
+			<span class="summary-card__label">{{.Neighbor.Name}} · {{.Year.Year}} · {{if .Remaining.IsNegative}}Guthaben{{else if .Remaining.IsZero}}Ausgeglichen{{else}}Offen{{end}}</span>
+			<span class="summary-card__value">{{if .Remaining.IsNegative}}{{money .CreditAmount}}{{else}}{{money .Remaining}}{{end}}</span>
+			<span class="summary-card__label summary-card__breakdown">
+				<span>Eigene Leistungen {{money .TotalCost}}</span>
+				<span>Konto {{money .LedgerSum}}</span>
+				<span>Bezahlt {{money .PaidSum}}</span>
+			</span>
 		</div>
-		<div class="account-head__balance">
-			<span>{{if .Remaining.IsNegative}}Guthaben{{else if .Remaining.IsZero}}Ausgeglichen{{else}}Offen{{end}}</span>
-			<strong>{{if .Remaining.IsNegative}}{{money .CreditAmount}}{{else}}{{money .Remaining}}{{end}}</strong>
+		<div class="summary-card__meta">
+			<span>Eigene Maschinenstunden {{num .TotalHours}} h · {{.BookingCount}} Positionen gesamt</span>
+			<span class="btnrow">
+				<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}/beleg?year={{.Year.ID}}">Beleg</a>
+				<a class="btn btn--ghost btn--sm" href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}">CSV Export</a>
+			</span>
 		</div>
 	</header>
 
@@ -20,7 +27,6 @@
 		{{if not .Completed}}<a class="section-tabs__item section-tabs__item--primary{{if eq .Section "booking"}} is-active{{end}}" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;view=booking"{{if eq .Section "booking"}} aria-current="page"{{end}}>Buchen</a>{{end}}
 		<a class="section-tabs__item{{if eq .Section "bookings"}} is-active{{end}}" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;view=bookings"{{if eq .Section "bookings"}} aria-current="page"{{end}}>Buchungen</a>
 		<a class="section-tabs__item{{if eq .Section "payments"}} is-active{{end}}" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;view=payments"{{if eq .Section "payments"}} aria-current="page"{{end}}>Zahlungen</a>
-		<a class="section-tabs__item" href="/neighbors/{{.Neighbor.ID}}/beleg?year={{.Year.ID}}">Beleg</a>
 	</nav>
 
 	{{if eq .Section "overview"}}

@@ -53,12 +53,13 @@
 				<span>Treckrr</span>
 			</a>
 			<h1 class="appbar__title">{{.Title}}</h1>
-			{{if and .User .UnreadNotifications}}
-			<a class="appbar__icon appbar__notify" href="/notifications" aria-label="Hinweise{{if .UnreadNotifications}}: {{.UnreadNotifications}} ungelesen{{end}}" title="Hinweise">
+			<button type="button" class="appbar__icon" data-cmdk-open aria-label="Schnellsuche (Strg+K)" title="Schnellsuche (Strg+K)">
+				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+			</button>
+			<a class="appbar__icon appbar__notify" href="/notifications" aria-label="Hinweise{{if .UnreadNotifications}}: {{.UnreadNotifications}} ungelesen{{end}}" title="Hinweise"{{if eq .Active "notifications"}} aria-current="page"{{end}}>
 				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
 				{{if .UnreadNotifications}}<span class="appbar__notify-count">{{.UnreadNotifications}}</span>{{end}}
 			</a>
-			{{end}}
 			<button type="button" class="appbar__offline" data-offline-badge aria-live="polite" hidden
 				aria-haspopup="dialog" title="Offline erfasste Buchungen ansehen"></button>
 			{{with .BackupHealth}}
@@ -137,8 +138,6 @@
 			<svg class="drawer__head-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
 		</a>
 		<nav class="drawer__nav">
-			<a class="drawer__item {{if eq .Active "notifications"}}is-active{{end}}" href="/notifications" {{if eq .Active "notifications"}}aria-current="page"{{end}}>
-				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></span>Hinweise{{if .UnreadNotifications}}<span class="badge">{{.UnreadNotifications}}</span>{{end}}</a>
 			<details class="drawer__group" {{if or (eq .Active "mahnwesen") (eq .Active "entries") (eq .Active "journal") (eq .Active "payimport") (eq .Active "recurring") (eq .Active "persons")}}open{{end}}>
 				<summary class="drawer__group-toggle">
 					<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg></span>
@@ -146,8 +145,6 @@
 					<svg class="drawer__chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
 				</summary>
 				<div class="drawer__group-items">
-			<button class="drawer__item" type="button" data-cmdk-open>
-				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span>Schnellsuche</button>
 			<a class="drawer__item {{if eq .Active "mahnwesen"}}is-active{{end}}" href="/mahnwesen{{if .Year}}?year={{.Year.ID}}{{end}}" {{if eq .Active "mahnwesen"}}aria-current="page"{{end}}>
 				<span class="drawer__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M5 8h9a3 3 0 0 1 0 6H7"/></svg></span>Mahnwesen</a>
 			<a class="drawer__item {{if eq .Active "entries"}}is-active{{end}}" href="/buchungen{{if .Year}}?year={{.Year.ID}}{{end}}" {{if eq .Active "entries"}}aria-current="page"{{end}}>
