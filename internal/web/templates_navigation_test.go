@@ -307,6 +307,15 @@ func TestLeanApplicationShell(t *testing.T) {
 			t.Errorf("lean shell missing %q", want)
 		}
 	}
+	if !strings.Contains(page, `<form class="yearselect" method="get">`) {
+		t.Error("mobile year selector must submit through a same-page GET form")
+	}
+	if !strings.Contains(page, `name="year"`) || !strings.Contains(page, `value="7"`) {
+		t.Error("mobile year selector must submit only the numeric year ID")
+	}
+	if strings.Contains(page, `value="/?year=7"`) {
+		t.Error("mobile year selector must not store a navigation URL in the DOM")
+	}
 	if strings.Contains(page, "Kernablauf") {
 		t.Error("secondary drawer still duplicates the persistent core navigation")
 	}

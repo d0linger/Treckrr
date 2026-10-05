@@ -50,6 +50,7 @@ func Generate(root string) error {
 			return err
 		}
 		output := filepath.Join(root, spec.Output)
+		// #nosec G304 -- output is selected from the package-owned Specs table.
 		have, err := os.ReadFile(output)
 		if err == nil && bytes.Equal(have, want) {
 			continue
@@ -58,7 +59,8 @@ func Generate(root string) error {
 			return fmt.Errorf("read generated asset %s: %w", output, err)
 		}
 		// Generated CSS/JS are public web assets, not credentials or private data.
-		if err := os.WriteFile(output, want, 0o644); err != nil { //nolint:gosec
+		// #nosec G306 -- browsers and the embedded server must be able to read them.
+		if err := os.WriteFile(output, want, 0o644); err != nil {
 			return fmt.Errorf("write generated asset %s: %w", output, err)
 		}
 	}
@@ -73,6 +75,7 @@ func Verify(root string) error {
 			return err
 		}
 		output := filepath.Join(root, spec.Output)
+		// #nosec G304 -- output is selected from the package-owned Specs table.
 		have, err := os.ReadFile(output)
 		if err != nil {
 			return fmt.Errorf("read generated asset %s: %w", output, err)
@@ -88,6 +91,7 @@ func assemble(root string, spec Spec) ([]byte, error) {
 	var out []byte
 	for _, part := range spec.Parts {
 		path := filepath.Join(root, part)
+		// #nosec G304 -- part is selected from the package-owned Specs table.
 		body, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("read asset source %s: %w", path, err)

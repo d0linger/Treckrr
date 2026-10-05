@@ -88,12 +88,14 @@
 		{{if .Years}}
 		<nav class="yearbar" aria-label="Jahr und Auswertung">
 			{{$active := .Year}}
-			<label class="yearselect">
-				<span class="sr-only">Abrechnungsjahr</span>
-				<select data-year-select aria-label="Abrechnungsjahr wählen">
-					{{range .Years}}<option value="{{$.BasePath}}?year={{.ID}}" {{if and $active (eq .ID $active.ID)}}selected{{end}}>{{.Year}}</option>{{end}}
-				</select>
-			</label>
+			<form class="yearselect" method="get">
+				<label>
+					<span class="sr-only">Abrechnungsjahr</span>
+					<select name="year" data-year-select aria-label="Abrechnungsjahr wählen">
+						{{range .Years}}<option value="{{.ID}}" {{if and $active (eq .ID $active.ID)}}selected{{end}}>{{.Year}}</option>{{end}}
+					</select>
+				</label>
+			</form>
 			<div class="yearbar__links">{{range .Years}}
 				<a class="yearpill {{if and $active (eq .ID $active.ID)}}is-active{{end}}"
 					href="{{$.BasePath}}?year={{.ID}}"

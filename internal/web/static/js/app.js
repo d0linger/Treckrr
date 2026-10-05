@@ -1386,7 +1386,7 @@
 	/** Keeps the compact mobile year selector equivalent to the desktop year links. */
 	document.querySelectorAll("[data-year-select]").forEach(function (select) {
 		select.addEventListener("change", function () {
-			if (select.value) window.location.href = select.value;
+			if (select.form) select.form.requestSubmit();
 		});
 	});
 
