@@ -29,6 +29,7 @@ func MissingFields(iv models.Invoice) []string {
 	c := iv.Content
 	for _, item := range []struct{ label, value string }{
 		{"Absender-UID", c.Issuer.TaxID}, {"Empfänger-UID", c.Recipient.TaxID},
+		{"Absender-IBAN", c.Issuer.IBAN},
 		{"Absender-Straße", c.Issuer.Street}, {"Absender-PLZ", c.Issuer.ZIP},
 		{"Absender-Ort", c.Issuer.Town}, {"Absender-Ländercode", c.Issuer.CountryCode},
 		{"Empfänger-Straße", c.Recipient.Street}, {"Empfänger-PLZ", c.Recipient.ZIP},
@@ -86,7 +87,7 @@ type percent struct {
 type taxItem struct {
 	TaxableAmount amount  `xml:"TaxableAmount"`
 	TaxPercent    percent `xml:"TaxPercent"`
-	TaxAmount     amount  `xml:"TaxAmount"`
+	TaxAmount     *amount `xml:"TaxAmount,omitempty"`
 	Comment       string  `xml:"Comment,omitempty"`
 }
 
@@ -193,42 +194,41 @@ func Render(iv models.Invoice) ([]byte, error) {
 	}
 	c := iv.Content
 	category := "E"
+	taxRate := decimal.Zero
 	if c.ShowVAT && c.VATRate.IsPositive() {
 		category = "S"
+		taxRate = c.VATRate
 	}
 	items := make([]lineItem, 0, len(c.Lines))
 	for i, line := range c.Lines {
-		lineTax := decimal.Zero
-		if c.ShowVAT {
-			lineTax = line.Cost.Mul(c.VATRate).Div(decimal.NewFromInt(100)).Round(2)
-		}
 		items = append(items, lineItem{
 			PositionNumber: i + 1, Description: line.Label,
 			Quantity:  quantity{Unit: unitCode(line.Unit), Value: line.Quantity.String()},
 			UnitPrice: amount{Value: line.UnitPrice.StringFixed(4)},
 			TaxItem: taxItem{TaxableAmount: amount{Value: line.Cost.StringFixed(2)},
-				TaxPercent: percent{Category: category, Value: c.VATRate.String()},
-				TaxAmount:  amount{Value: lineTax.StringFixed(2)}, Comment: c.TaxNote},
+				TaxPercent: percent{Category: category, Value: taxRate.StringFixed(2)},
+				Comment:    c.TaxNote},
 			LineItemAmount: amount{Value: line.Cost.StringFixed(2)},
 		})
 	}
+	taxAmount := amount{Value: c.VATAmount.StringFixed(2)}
 	doc := invoiceXML{
 		XMLNS: Namespace, Generating: "Treckrr", DocumentType: "Invoice", Currency: "EUR",
 		Title: "Rechnung", Language: "de", Number: iv.Number, Date: iv.IssuedOn.Format("2006-01-02"),
 		Biller: xmlParty(c.Issuer, false), Recipient: xmlParty(c.Recipient, true),
 		Details: details{Items: itemList{Items: items}},
 		Tax: tax{Items: []taxItem{{TaxableAmount: amount{Value: c.Net.StringFixed(2)},
-			TaxPercent: percent{Category: category, Value: c.VATRate.String()},
-			TaxAmount:  amount{Value: c.VATAmount.StringFixed(2)}, Comment: c.TaxNote}}},
+			TaxPercent: percent{Category: category, Value: taxRate.StringFixed(2)},
+			TaxAmount:  &taxAmount, Comment: c.TaxNote}}},
 		TotalGross: amount{Value: c.Gross.StringFixed(2)}, Payable: amount{Value: c.Gross.StringFixed(2)},
-		PaymentMethod:     paymentMethod{Comment: "Zahlbar per Überweisung."},
-		PaymentConditions: paymentConditions{DueDate: iv.IssuedOn.AddDate(0, 0, c.PaymentTermDays).Format("2006-01-02")},
-	}
-	if strings.TrimSpace(c.Issuer.IBAN) != "" {
-		doc.PaymentMethod.Bank = &bankTransaction{
-			Account:   beneficiaryAccount{IBAN: strings.ReplaceAll(c.Issuer.IBAN, " ", ""), Owner: c.Issuer.Name},
+		PaymentMethod: paymentMethod{Comment: "Zahlbar per Überweisung.", Bank: &bankTransaction{
+			Account: beneficiaryAccount{
+				IBAN:  strings.ReplaceAll(c.Issuer.IBAN, " ", ""),
+				Owner: c.Issuer.Name,
+			},
 			Reference: iv.PaymentReference,
-		}
+		}},
+		PaymentConditions: paymentConditions{DueDate: iv.IssuedOn.AddDate(0, 0, c.PaymentTermDays).Format("2006-01-02")},
 	}
 	var buf bytes.Buffer
 	buf.WriteString(xml.Header)

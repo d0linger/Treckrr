@@ -232,6 +232,9 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			if message, err := s.checkBookingCatalog(r, resolved, ids, year.Base.ID, requireActive); message != "" || err != nil {
 				return bookingDraft{}, message, err
 			}
+			if err := s.applyResolvedFuelAdjustment(r.Context(), year.Base.ID, resolved, ids); err != nil {
+				return bookingDraft{}, "", err
+			}
 			resolved.NeighborID, resolved.BillingYearID = main.NeighborID, main.BillingYearID
 			resolved.IdempotencyKey, resolved.RequestFingerprint = main.IdempotencyKey, main.RequestFingerprint
 			main, machines = resolved, ids
@@ -402,8 +405,10 @@ func (s *Server) handleBookingCreateV2(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	msg = "Buchung gespeichert."
-	if result.MainID == 0 {
+	if !result.hasCreatedRows() {
 		msg = "Buchung war bereits erfasst."
+	} else if result.MainID == 0 {
+		msg = "Personen zur bereits erfassten Buchung erg\u00e4nzt."
 	}
 	s.setFlash(w, r, "success", msg)
 	redirect(w, r, neighborBookingsURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))

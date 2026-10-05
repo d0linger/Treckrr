@@ -5,9 +5,15 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 const savedViewNameMax = 60
+
+// validSavedViewName limits the user-visible character count, not UTF-8 bytes.
+func validSavedViewName(name string) bool {
+	return name != "" && utf8.RuneCountInString(name) <= savedViewNameMax
+}
 
 // savedBookingQuery rebuilds the booking query from an explicit allowlist. The
 // result can safely be stored and later appended only to /buchungen.
@@ -52,7 +58,7 @@ func (s *Server) handleSavedViewCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := trimmed(r, "name")
-	if name == "" || len(name) > savedViewNameMax {
+	if !validSavedViewName(name) {
 		s.setFlash(w, r, "error", "Bitte einen Namen mit höchstens 60 Zeichen angeben.")
 		redirect(w, r, "/buchungen")
 		return

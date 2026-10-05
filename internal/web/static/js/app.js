@@ -727,7 +727,11 @@
 		toggles.forEach(function (btn) {
 			btn.addEventListener("click", function (e) {
 				e.preventDefault();
-				var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+				var current = document.documentElement.getAttribute("data-theme");
+				if (current !== "dark" && current !== "light") {
+					current = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+				}
+				var next = current === "dark" ? "light" : "dark";
 				document.documentElement.setAttribute("data-theme", next);
 				try { localStorage.setItem("treckrr-theme", next); } catch (err) {}
 				fetch("/theme?set=" + next, { credentials: "same-origin" }).catch(function () {});

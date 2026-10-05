@@ -7,10 +7,15 @@ import (
 	"github.com/d0linger/treckrr/internal/store"
 )
 
-// bookingCreateResult reports the primary stored row. A zero ID means the
-// idempotency key already represented the same booking.
+// bookingCreateResult reports which parts of a booking were newly stored.
 type bookingCreateResult struct {
-	MainID int64
+	MainID    int64
+	HelperIDs []int64
+}
+
+// hasCreatedRows reports whether the command stored a main or helper row.
+func (r bookingCreateResult) hasCreatedRows() bool {
+	return r.MainID != 0 || len(r.HelperIDs) != 0
 }
 
 // createBookingDraft is the application-layer create boundary for the shared
@@ -24,13 +29,7 @@ func (s *Server) createBookingDraft(ctx context.Context, draft bookingDraft) (bo
 		command.Helpers = bookingHelpers(draft.Entry, draft.BookedPeople)
 	}
 	result, err := s.store.CreateBooking(ctx, command)
-	mainID := result.MainID
-	if mainID == 0 {
-		for _, id := range result.HelperIDs {
-			mainID = max(mainID, id)
-		}
-	}
-	return bookingCreateResult{MainID: mainID}, err
+	return bookingCreateResult{MainID: result.MainID, HelperIDs: result.HelperIDs}, err
 }
 
 // bookingHelpers separates a labor booking's primary person from its companions.

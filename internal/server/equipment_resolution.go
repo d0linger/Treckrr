@@ -136,15 +136,3 @@ func (r resolvedEquipment) entrySnapshot() (models.Entry, []int64) {
 	}
 	return entry, ids
 }
-
-// baseID returns the catalog basis represented by this resolved selection.
-// Cross-basis component mixes are rejected by checkBookingCatalog afterwards.
-func (r resolvedEquipment) baseID() int64 {
-	if r.Tractor != nil {
-		return r.Tractor.BaseID
-	}
-	if len(r.Machines) > 0 {
-		return r.Machines[0].BaseID
-	}
-	return 0
-}

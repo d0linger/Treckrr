@@ -59,6 +59,9 @@ type mockCompanySecRows struct {
 }
 
 func (r *mockCompanySecRows) Columns() []string {
+	if strings.Contains(r.query, "SELECT name, address") && strings.Contains(r.query, "einvoice_street") {
+		return []string{"name", "address", "tax_id", "tax_note", "tax_mode", "vat_rate", "iban", "payment_term_days", "dunning_fee_1", "dunning_fee_2", "dunning_grace_days", "skonto_pct", "skonto_days", "invoice_prefix", "invoice_start", "small_business_limit", "travel_flat", "travel_per_km", "mail_signature", "mail_cc", "einvoice_street", "einvoice_zip", "einvoice_town", "einvoice_country_code"}
+	}
 	if strings.Contains(r.query, "einvoice_street") {
 		return []string{"einvoice_street", "einvoice_zip", "einvoice_town", "einvoice_country_code"}
 	}
@@ -75,7 +78,7 @@ func (r *mockCompanySecRows) Next(dest []driver.Value) error {
 		return io.EOF
 	}
 	r.hasRead = true
-	if strings.Contains(r.query, "einvoice_street") {
+	if strings.Contains(r.query, "einvoice_street") && !strings.Contains(r.query, "SELECT name, address") {
 		dest[0], dest[1], dest[2], dest[3] = "", "", "", "AT"
 		return nil
 	}
@@ -100,6 +103,7 @@ func (r *mockCompanySecRows) Next(dest []driver.Value) error {
 		dest[17] = "0.00"
 		dest[18] = "" // mail_signature
 		dest[19] = ""
+		dest[20], dest[21], dest[22], dest[23] = "", "", "", "AT"
 	} else {
 		dest[0] = int64(123)
 		dest[1] = "testuser"

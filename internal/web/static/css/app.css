@@ -453,10 +453,10 @@ em { font-style: normal; color: var(--muted); }
 .machine-label-help p { margin: 0; max-width: 60ch; }
 .machine-labels { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .65rem; }
 .machine-label { min-height: 12rem; display: grid; grid-template-columns: 9rem minmax(0,1fr); align-items: center; gap: .65rem;
-	padding: .7rem; break-inside: avoid; border: 1px dashed var(--border-strong); border-radius: var(--radius); background: #fff; color: #111; }
+	padding: .7rem; break-inside: avoid; border: 1px dashed var(--border); border-radius: var(--radius); background: #fff; color: #111; }
 .machine-label img { width: 9rem; height: 9rem; display: block; image-rendering: pixelated; }
 .machine-label__copy { min-width: 0; display: flex; flex-direction: column; gap: .28rem; }
-.machine-label__copy strong { font: 750 1.15rem/1.15 var(--font-sans); overflow-wrap: anywhere; }
+.machine-label__copy strong { font: 750 1.15rem/1.15 var(--font-body); overflow-wrap: anywhere; }
 .machine-label__copy span, .machine-label__copy small { color: #454545; }
 .machine-label__brand { font: 700 .66rem/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
 @media (max-width: 650px) {

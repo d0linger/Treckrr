@@ -46,9 +46,13 @@ test("global tools and reporting shortcuts stay direct on desktop and mobile", a
   await page.keyboard.press("Escape");
   await expect(drawer).toHaveAttribute("aria-hidden", "true");
 
-  const previousTheme = await page.locator("html").getAttribute("data-theme");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.evaluate(() => {
+    document.documentElement.setAttribute("data-theme", "auto");
+    localStorage.setItem("treckrr-theme", "auto");
+  });
   await themeToggle.click();
-  await expect(page.locator("html")).not.toHaveAttribute("data-theme", previousTheme || "auto");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(themeToggle).toBeVisible();

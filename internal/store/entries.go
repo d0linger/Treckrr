@@ -349,7 +349,7 @@ func replaceEntryMachineSnapshotsTx(ctx context.Context, tx *sql.Tx, entryID int
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO entry_machine_snapshots
 		       (entry_id, machine_id, machine_label, hourly_rate, self_cost_per_h)
-		SELECT $1, m.id, m.name, round(m.working_width * m.cost_per_ab, 4), m.self_cost_per_h
+		SELECT $1, m.id, m.name, round(m.working_width * m.cost_per_ab, 2), m.self_cost_per_h
 		  FROM machines m
 		 WHERE m.id = ANY($2)`, entryID, machineIDs)
 	return err

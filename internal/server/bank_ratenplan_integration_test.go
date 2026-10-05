@@ -205,6 +205,10 @@ func TestBankImportMatchingIntegration(t *testing.T) {
 
 	// Corrections are equal counter-entries. The original row stays immutable
 	// and the batch journal records the reversal.
+	preservedFinished := time.Now().Add(-time.Hour).Truncate(time.Microsecond)
+	if _, err := e.pool.ExecContext(e.ctx, `UPDATE payment_import_batches SET status='failed', finished_at=$2 WHERE id=$1`, batchID, preservedFinished); err != nil {
+		t.Fatalf("prepare terminal batch state: %v", err)
+	}
 	corrected := e.post(fmt.Sprintf("/payments/import/rows/%d/reverse", importRows[0].ID), url.Values{})
 	if !strings.Contains(corrected, "korrigiert") {
 		t.Error("batch detail does not show the corrected outcome")
@@ -221,6 +225,13 @@ func TestBankImportMatchingIntegration(t *testing.T) {
 	}
 	if !reversalFound {
 		t.Error("equal negative counter-entry is missing")
+	}
+	batch, _, err = e.st.GetPaymentImportBatch(e.ctx, batchID)
+	if err != nil {
+		t.Fatalf("batch after reversal: %v", err)
+	}
+	if batch.Status != "failed" || batch.FinishedAt == nil || !batch.FinishedAt.Equal(preservedFinished) || batch.ReversedRows != 1 {
+		t.Errorf("reversal changed terminal batch metadata: %+v", batch)
 	}
 	if changed, err := e.st.DeletePayment(e.ctx, importRows[0].PaymentID); changed || !errors.Is(err, store.ErrImportedPaymentImmutable) {
 		t.Errorf("imported original can be deleted: changed=%v err=%v", changed, err)

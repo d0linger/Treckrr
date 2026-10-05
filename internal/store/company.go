@@ -22,11 +22,14 @@ func (s *Store) GetCompany(ctx context.Context) (models.Company, error) {
 		`SELECT name, address, tax_id, tax_note, tax_mode, vat_rate, iban, payment_term_days,
 		        dunning_fee_1, dunning_fee_2, dunning_grace_days, skonto_pct, skonto_days,
 		        invoice_prefix, invoice_start, small_business_limit,
-		        travel_flat, travel_per_km, mail_signature, mail_cc FROM company WHERE id=1`).
+		        travel_flat, travel_per_km, mail_signature, mail_cc,
+		        einvoice_street, einvoice_zip, einvoice_town, einvoice_country_code
+		   FROM company WHERE id=1`).
 		Scan(&c.Name, &c.Address, &c.TaxID, &c.TaxNote, &c.TaxMode, &c.VATRate, &c.IBAN, &c.PaymentTermDays,
 			&c.DunningFee1, &c.DunningFee2, &c.DunningGraceDays, &c.SkontoPct, &c.SkontoDays,
 			&c.InvoicePrefix, &c.InvoiceStart, &c.SmallBusinessLimit,
-			&c.TravelFlat, &c.TravelPerKm, &c.MailSignature, &c.MailCC)
+			&c.TravelFlat, &c.TravelPerKm, &c.MailSignature, &c.MailCC,
+			&c.EInvoiceStreet, &c.EInvoiceZIP, &c.EInvoiceTown, &c.EInvoiceCountryCode)
 	return c, err
 }
 

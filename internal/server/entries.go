@@ -604,6 +604,10 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		reject(http.StatusUnprocessableEntity, msg, neighborURL(neighborID, yearID))
 		return
 	}
+	if err := s.applyResolvedFuelAdjustment(r.Context(), year.Base.ID, entry, machineIDs); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	entry.NeighborID = neighborID
 	entry.BillingYearID = year.ID
 	entry.IdempotencyKey = idempotencyKey
@@ -835,9 +839,6 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 		return nil, nil, msg, nil
 	}
 	entry.Date = entryDate
-	if err := s.applyFuelAdjustment(r.Context(), resolved.baseID(), entryDate, &entry); err != nil {
-		return nil, nil, "", err
-	}
 	entry.Hours = hours
 	entry.Cost = calc.Cost(hours, entry.HourlyRate)
 	entry.Note = note
@@ -906,6 +907,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	var catalogBaseID int64
 	if msg == "" {
 		// Edits stay on the year's price basis too, but may keep a tractor or
 		// machine that was deactivated after it was booked (as V2 edits do).
@@ -914,6 +916,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
+		catalogBaseID = year.Base.ID
 		if msg, err = s.checkBookingCatalog(r, entry, machineIDs, year.Base.ID, false); err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
@@ -922,6 +925,10 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 	if msg != "" {
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
+		return
+	}
+	if err := s.applyResolvedFuelAdjustment(r.Context(), catalogBaseID, entry, machineIDs); err != nil {
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	// Validate the target column before saving either half. Otherwise a four-
@@ -2009,6 +2016,18 @@ func (s *Server) applyFuelAdjustment(ctx context.Context, baseID int64, date tim
 		return err
 	}
 	applyEffectiveFuelAdjustment(entry, adjustment)
+	return nil
+}
+
+// applyResolvedFuelAdjustment snapshots fuel pricing after catalog validation.
+func (s *Server) applyResolvedFuelAdjustment(ctx context.Context, baseID int64, entry *models.Entry, machineIDs []int64) error {
+	if entry.TractorID == nil && len(machineIDs) == 0 {
+		return nil
+	}
+	if err := s.applyFuelAdjustment(ctx, baseID, entry.Date, entry); err != nil {
+		return err
+	}
+	entry.Cost = calc.Cost(entry.Hours, entry.HourlyRate)
 	return nil
 }
 

@@ -71,3 +71,47 @@ func TestMissingFieldsRejectsLegacyAndIncomplete(t *testing.T) {
 		t.Fatal("legacy invoice without snapshot was exported")
 	}
 }
+
+func TestMissingFieldsRequiresIssuerIBAN(t *testing.T) {
+	iv := testInvoice()
+	iv.Content.Issuer.IBAN = ""
+	missing := MissingFields(iv)
+	if !strings.Contains(strings.Join(missing, ","), "Absender-IBAN") {
+		t.Fatalf("missing fields = %v", missing)
+	}
+	if _, err := Render(iv); err == nil {
+		t.Fatal("invoice without issuer IBAN was exported")
+	}
+}
+
+func TestRenderUsesSummaryTaxAndConsistentExemptionRate(t *testing.T) {
+	iv := testInvoice()
+	iv.Content.Lines = []models.InvoiceLine{
+		{Label: "A", Unit: "Stk", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.RequireFromString("0.03"), Cost: decimal.RequireFromString("0.03")},
+		{Label: "B", Unit: "Stk", Quantity: decimal.NewFromInt(3), UnitPrice: decimal.RequireFromString("0.03"), Cost: decimal.RequireFromString("0.09")},
+	}
+	iv.Content.Net = decimal.RequireFromString("0.12")
+	iv.Content.VATAmount = decimal.RequireFromString("0.02")
+	iv.Content.Gross = decimal.RequireFromString("0.14")
+	b, err := Render(iv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(b), "<TaxAmount>"); got != 1 {
+		t.Fatalf("TaxAmount element count = %d, want one summary amount", got)
+	}
+	if !strings.Contains(string(b), "<TaxAmount>0.02</TaxAmount>") {
+		t.Fatal("summary tax amount is missing")
+	}
+
+	iv.Content.ShowVAT = false
+	iv.Content.VATAmount = decimal.Zero
+	iv.Content.Gross = iv.Content.Net
+	b, err = Render(iv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `TaxCategoryCode="E">0.00</TaxPercent>`) {
+		t.Fatal("VAT-hidden export must use a zero-percent exempt tax item")
+	}
+}
