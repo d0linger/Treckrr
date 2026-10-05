@@ -113,12 +113,12 @@ func (s *Server) handleNotificationPreferences(w http.ResponseWriter, r *http.Re
 		s.badRequest(w, "Die Einstellung konnte nicht verarbeitet werden.")
 		return
 	}
-	if !s.cfg.MailEnabled() {
-		s.setFlash(w, r, "error", "Der Wochenbericht ist ohne SMTP nicht verf\u00fcgbar. Die bisherige Einstellung bleibt unver\u00e4ndert.")
+	weekly := r.FormValue("weekly_email") == "on"
+	if weekly && !s.cfg.MailEnabled() {
+		s.setFlash(w, r, "error", "Der Wochenbericht kann erst aktiviert werden, wenn SMTP konfiguriert ist.")
 		redirect(w, r, "/notifications")
 		return
 	}
-	weekly := r.FormValue("weekly_email") == "on"
 	if weekly && strings.TrimSpace(user.Email) == "" {
 		s.setFlash(w, r, "error", "Für den Wochenbericht muss dein Benutzerkonto eine E-Mail-Adresse haben.")
 		redirect(w, r, "/notifications")

@@ -36,6 +36,36 @@ func execPage(t *testing.T, page string, data map[string]any) string {
 	return buf.String()
 }
 
+func TestNotificationsAllowOptOutWithoutSMTP(t *testing.T) {
+	tests := []struct {
+		name         string
+		weekly       bool
+		wantDisabled bool
+	}{
+		{name: "existing opt in remains operable", weekly: true},
+		{name: "new opt in remains unavailable", wantDisabled: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			page := execPage(t, "notifications", map[string]any{
+				"NotificationPreferences": store.NotificationPreferences{WeeklyEmail: tt.weekly},
+				"MailEnabled":             false,
+			})
+			input := regexp.MustCompile(`<input type="checkbox" name="weekly_email"[^>]*>`).FindString(page)
+			if input == "" {
+				t.Fatal("weekly e-mail checkbox not rendered")
+			}
+			if got := strings.Contains(input, "disabled"); got != tt.wantDisabled {
+				t.Errorf("checkbox disabled = %v, want %v: %s", got, tt.wantDisabled, input)
+			}
+			if got := strings.Contains(input, "checked"); got != tt.weekly {
+				t.Errorf("checkbox checked = %v, want %v: %s", got, tt.weekly, input)
+			}
+		})
+	}
+}
+
 func TestStatsPageRendersWithPreviousYear(t *testing.T) {
 	d := decimal.NewFromFloat
 	rows := []map[string]any{{"Label": "Musterhof", "Hours": d(2.17), "Cost": d(209.88)}}

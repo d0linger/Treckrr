@@ -558,7 +558,7 @@ input[type="file"].input::file-selector-button:hover { background: var(--surface
 	width: 100%; min-height: var(--tap); padding: .45rem 2.2rem .45rem .7rem;
 	border: 1px solid var(--chassis-border); border-radius: var(--radius-sm);
 	background: var(--chassis-fill); color: var(--chassis-text);
-	font: 700 .82rem/1.2 var(--font-mono); color-scheme: dark;
+	font: 700 .82rem/1.2 var(--font-mono);
 }
 /* Year segments on the chassis: mono, squared, filled when active. The chassis is
    light in one theme and dark in the other, so the overlays go through tokens

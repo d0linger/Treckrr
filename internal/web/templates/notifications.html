@@ -11,7 +11,7 @@
 	<div class="card noticeprefs">
 		<div><strong>Wochenübersicht</strong><p class="muted small">Einmal pro Woche gebündelt über den vorhandenen, sicheren Mailausgang.</p></div>
 		<form method="post" action="/account/notifications" class="noticeprefs__form">
-			<label class="switch"><input type="checkbox" name="weekly_email" {{if .NotificationPreferences.WeeklyEmail}}checked{{end}} {{if not .MailEnabled}}disabled{{end}}><span>Per E-Mail</span></label>
+			<label class="switch"><input type="checkbox" name="weekly_email" {{if .NotificationPreferences.WeeklyEmail}}checked{{end}} {{if and (not .MailEnabled) (not .NotificationPreferences.WeeklyEmail)}}disabled{{end}}><span>Per E-Mail</span></label>
 			<button class="btn btn--ghost btn--sm" type="submit">Speichern</button>
 		</form>
 		{{if not .MailEnabled}}<p class="muted small">SMTP ist nicht konfiguriert; In-App-Hinweise funktionieren weiterhin.</p>{{end}}
