@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/d0linger/treckrr/internal/config"
+	"github.com/d0linger/treckrr/internal/models"
 )
 
 // TestInvoiceInputLimits rejects oversized values before any database work.
@@ -295,6 +297,28 @@ func TestPaymentDateLimits(t *testing.T) {
 				)
 			})
 		}
+	}
+}
+
+// TestSavedViewQueryLimit rejects oversized filters before parsing or store access.
+func TestSavedViewQueryLimit(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	form := url.Values{
+		"name":  {"Meine Ansicht"},
+		"query": {strings.Repeat("a", maxSavedViewQueryLen+1)},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/views/bookings", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = req.WithContext(context.WithValue(req.Context(), userCtxKey, &models.User{ID: 1, Username: "testuser"}))
+	rr := httptest.NewRecorder()
+
+	s.handleSavedViewCreate(rr, req)
+
+	if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/buchungen" {
+		t.Fatalf("response = %d %q, want redirect to /buchungen", rr.Code, rr.Header().Get("Location"))
+	}
+	if got := flashText(t, s, rr); !strings.Contains(got, "Filter darf höchstens 1024 Zeichen lang sein.") {
+		t.Fatalf("flash = %q, want over-limit message", got)
 	}
 }
 

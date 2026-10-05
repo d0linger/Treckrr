@@ -8,7 +8,12 @@ import (
 	"unicode/utf8"
 )
 
-const savedViewNameMax = 60
+const (
+	savedViewNameMax = 60
+	// maxSavedViewQueryLen exceeds the largest allowlisted canonical query while
+	// keeping attacker-controlled parsing far below the general request-body cap.
+	maxSavedViewQueryLen = 1 << 10
+)
 
 // validSavedViewName limits the user-visible character count, not UTF-8 bytes.
 func validSavedViewName(name string) bool {
@@ -63,13 +68,17 @@ func (s *Server) handleSavedViewCreate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/buchungen")
 		return
 	}
+	raw := r.FormValue("query")
+	if s.tooLong(w, r, "Filter", raw, maxSavedViewQueryLen) {
+		redirect(w, r, "/buchungen")
+		return
+	}
 	yearID := formInt64(r, "year_id")
 	if _, err := s.store.GetBillingYear(r.Context(), yearID); err != nil {
 		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist nicht verfügbar.")
 		redirect(w, r, "/buchungen")
 		return
 	}
-	raw := r.FormValue("query")
 	values, err := url.ParseQuery(raw)
 	if err != nil {
 		s.badRequest(w, "Der Filter ist ungültig.")

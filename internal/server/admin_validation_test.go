@@ -203,6 +203,19 @@ func TestHandleUserCreateValidation(t *testing.T) {
 func TestHandleUserUpdateValidation(t *testing.T) {
 	s := testAdminServer(t)
 
+	t.Run("malformed form rejected with bad request", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/admin/users/123/update", strings.NewReader("username=%XX"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("id", "123")
+		rr := httptest.NewRecorder()
+
+		s.handleUserUpdate(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+		}
+	})
+
 	t.Run("overly long username rejected", func(t *testing.T) {
 		longUsername := strings.Repeat("a", 101)
 		form := url.Values{}
@@ -289,4 +302,18 @@ func TestHandleUserUpdateValidation(t *testing.T) {
 			t.Errorf("expected success flash message, got cookie: %q", flashCookie)
 		}
 	})
+}
+
+func TestHandleUserRoleValidation(t *testing.T) {
+	s := testAdminServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/admin/users/123/role", strings.NewReader("role=%XX"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", "123")
+	rr := httptest.NewRecorder()
+
+	s.handleUserRole(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
 }

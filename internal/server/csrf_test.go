@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -65,6 +67,20 @@ func TestCSRFMiddleware(t *testing.T) {
 		}
 		return r
 	}
+	newMultipartPost := func() *http.Request {
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		if err := writer.WriteField(csrfFieldName, token); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodPost, "/entries/import", &body)
+		r.Header.Set("Content-Type", writer.FormDataContentType())
+		r.AddCookie(&http.Cookie{Name: sessionCookie, Value: sessionValue})
+		return r
+	}
 
 	// Token for the pending 2FA step.
 	token2FA := func() string {
@@ -80,8 +96,19 @@ func TestCSRFMiddleware(t *testing.T) {
 	}{
 		{"no session passes (pre-login POST)", newPost(false, ""), http.StatusOK},
 		{"session + valid token passes", newPost(true, token), http.StatusOK},
+		{"session + valid multipart token passes", newMultipartPost(), http.StatusOK},
 		{"session + missing token rejected", newPost(true, ""), http.StatusForbidden},
 		{"session + wrong token rejected", newPost(true, "nope"), http.StatusForbidden},
+		{"session + valid token + malformed form rejected", func() *http.Request {
+			r := httptest.NewRequest(
+				http.MethodPost,
+				"/entries",
+				strings.NewReader(csrfFieldName+"="+url.QueryEscape(token)+"&role=%XX"),
+			)
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			r.AddCookie(&http.Cookie{Name: sessionCookie, Value: sessionValue})
+			return r
+		}(), http.StatusBadRequest},
 		{"pending 2FA + valid token passes", func() *http.Request {
 			r := newPost(false, token2FA)
 			r.AddCookie(&http.Cookie{Name: pending2FACookie, Value: "2fa-val"})
