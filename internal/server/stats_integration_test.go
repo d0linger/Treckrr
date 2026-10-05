@@ -7,6 +7,25 @@ import (
 	"testing"
 )
 
+// TestStatsAllKeepsYearNavigationIntegration prevents the cross-year report
+// from dropping the persistent year and reporting shortcuts.
+func TestStatsAllKeepsYearNavigationIntegration(t *testing.T) {
+	e := newItEnv(t)
+	page := e.get(fmt.Sprintf("/stats/all?year=%d", e.yearID64))
+	for _, want := range []string{
+		`class="yearbar"`,
+		`action="/stats"`,
+		fmt.Sprintf(`href="/stats?year=%d"`, e.yearID64),
+		fmt.Sprintf(`href="/stats/all?year=%d"`, e.yearID64),
+		`class="yearquick is-active"`,
+		`aria-current="page"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("cross-year statistics page missing %q", want)
+		}
+	}
+}
+
 // Statistics gained a period filter, drilldown links, a CSV export, the
 // machine contribution margin and per-unit metrics (Ausbaukarte 82-84).
 func TestStatsPeriodDrilldownExportIntegration(t *testing.T) {

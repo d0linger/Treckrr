@@ -280,6 +280,10 @@ func payPct(paid, open decimal.Decimal) string {
 // handleStatsAll renders a cross-year overview: per-year revenue, hours and
 // paid/open split, a revenue-per-year bar chart, and grand totals.
 func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
+	activeYear, ok := s.resolveYear(w, r)
+	if !ok {
+		return
+	}
 	years, err := s.store.ListBillingYears(r.Context())
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
@@ -331,7 +335,10 @@ func (s *Server) handleStatsAll(w http.ResponseWriter, r *http.Request) {
 		grandCredit = grandCredit.Add(credit)
 	}
 
-	data := s.newPage(w, r, "Statistik – Alle Jahre", "stats")
+	data := s.newPage(w, r, "Statistik – Alle Jahre", "stats_all")
+	data["Years"] = years
+	data["Year"] = activeYear
+	data["YearNavPath"] = "/stats"
 	data["Stats"] = stats
 	data["Revenue"] = revenue
 	data["RevenueMax"] = maxCost(revenue)

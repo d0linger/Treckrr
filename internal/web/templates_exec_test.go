@@ -93,6 +93,9 @@ func TestStatsPageRendersWithPreviousYear(t *testing.T) {
 	if !strings.Contains(html, "Guthaben") {
 		t.Errorf("stats page with a positive CreditCost should show the Guthaben KPI")
 	}
+	if !strings.Contains(html, `href="/stats/all?year=3"`) {
+		t.Error("stats page does not preserve the selected year when opening the comparison")
+	}
 }
 
 func TestStatsAllPageRenders(t *testing.T) {
