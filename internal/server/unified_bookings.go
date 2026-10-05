@@ -14,6 +14,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -295,7 +296,7 @@ func (s *Server) probeBookingReplay(w http.ResponseWriter, r *http.Request, prob
 			s.unifiedBookingError(w, r, store.ErrIdempotencyConflict)
 			return true, false
 		case store.ReplayDiffers:
-			s.rejectStoredReplay(w, r, replayDiffersMsg, neighborURL(neighborID, yearID))
+			s.rejectStoredReplay(w, r, replayDiffersMsg, neighborBookingURL(neighborID, yearID))
 			return true, false
 		case store.ReplayLedger:
 			ledger = true
@@ -303,7 +304,7 @@ func (s *Server) probeBookingReplay(w http.ResponseWriter, r *http.Request, prob
 		recorded = recorded && state == store.ReplayRecorded
 	}
 	if recorded {
-		s.acceptRecordedReplay(w, r, neighborURL(neighborID, yearID))
+		s.acceptRecordedReplay(w, r, neighborBookingsURL(neighborID, yearID))
 		return true, false
 	}
 	return false, ledger
@@ -317,7 +318,7 @@ func (s *Server) rejectUnifiedBooking(w http.ResponseWriter, r *http.Request, ms
 		return
 	}
 	s.setFlash(w, r, "error", msg)
-	redirect(w, r, neighborURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
+	redirect(w, r, neighborBookingURL(formInt64(r, "neighbor_id"), formInt64(r, "year_id")))
 }
 
 // unifiedBookingError translates account/replay guards without treating a real
@@ -355,7 +356,7 @@ func (s *Server) handleUnifiedLedgerCreate(w http.ResponseWriter, r *http.Reques
 		s.rejectUnifiedBooking(w, r, msg)
 		return true
 	}
-	id, err := s.store.CreateLedgerBooking(r.Context(), in)
+	result, err := s.store.CreateBooking(r.Context(), store.BookingCommand{Ledger: &in})
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return true
@@ -365,11 +366,11 @@ func (s *Server) handleUnifiedLedgerCreate(w http.ResponseWriter, r *http.Reques
 		return true
 	}
 	msg = "Verrechnung gespeichert."
-	if id == 0 {
+	if result.MainID == 0 {
 		msg = "Verrechnung war bereits erfasst."
 	}
 	s.setFlash(w, r, "success", msg)
-	redirect(w, r, neighborURL(in.NeighborID, in.YearID))
+	redirect(w, r, neighborBookingsURL(in.NeighborID, in.YearID))
 	return true
 }
 
@@ -411,7 +412,7 @@ func (s *Server) resolveLaborFromForm(r *http.Request) (*models.Entry, string, e
 	if msg := lenError("Notiz", note, maxNoteLen); msg != "" {
 		return nil, msg, nil
 	}
-	cost := hours.Mul(rate).Round(2)
+	cost := money.Amount(hours, rate)
 	if !cost.IsPositive() || cost.GreaterThanOrEqual(decimal.NewFromInt(10_000_000_000)) {
 		return nil, "Der Gesamtbetrag liegt außerhalb des zulässigen Bereichs.", nil
 	}

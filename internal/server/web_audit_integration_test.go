@@ -370,7 +370,7 @@ func TestPhotoDedupeAuditAndLedgerLinksIntegration(t *testing.T) {
 	}
 	e.postFiles(fmt.Sprintf("/ledger/%d/photos", lid), "photo", map[string][]byte{"l.png": pngBytesSeed(t, 3)})
 	ledgerPrefix := fmt.Sprintf("/ledger/%d/photos/", lid)
-	if gallery := e.get(fmt.Sprintf("/neighbors/%d?year=%d", nid, yid)); !strings.Contains(gallery, `href="`+ledgerPrefix) {
+	if gallery := e.get(neighborBookingsURL(nid, yid)); !strings.Contains(gallery, `href="`+ledgerPrefix) {
 		t.Errorf("the gallery does not link the ledger receipt under %s", ledgerPrefix)
 	}
 	var export struct {

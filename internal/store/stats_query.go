@@ -50,7 +50,7 @@ func (s *Store) MachineUsageForYear(ctx context.Context, yearID int64, from, to 
 		       AND ($2::date IS NULL OR e.entry_date >= $2)
 		       AND ($3::date IS NULL OR e.entry_date <= $3)
 		    UNION ALL
-		    SELECT m.name, e.hours, round(m.working_width * m.cost_per_ab, 4),
+		    SELECT m.name, e.hours, round(m.working_width * m.cost_per_ab, 2),
 		           m.self_cost_per_h, true
 		      FROM entry_machines em
 		      JOIN entries e ON e.id = em.entry_id

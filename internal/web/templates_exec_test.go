@@ -36,6 +36,36 @@ func execPage(t *testing.T, page string, data map[string]any) string {
 	return buf.String()
 }
 
+func TestNotificationsAllowOptOutWithoutSMTP(t *testing.T) {
+	tests := []struct {
+		name         string
+		weekly       bool
+		wantDisabled bool
+	}{
+		{name: "existing opt in remains operable", weekly: true},
+		{name: "new opt in remains unavailable", wantDisabled: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			page := execPage(t, "notifications", map[string]any{
+				"NotificationPreferences": store.NotificationPreferences{WeeklyEmail: tt.weekly},
+				"MailEnabled":             false,
+			})
+			input := regexp.MustCompile(`<input type="checkbox" name="weekly_email"[^>]*>`).FindString(page)
+			if input == "" {
+				t.Fatal("weekly e-mail checkbox not rendered")
+			}
+			if got := strings.Contains(input, "disabled"); got != tt.wantDisabled {
+				t.Errorf("checkbox disabled = %v, want %v: %s", got, tt.wantDisabled, input)
+			}
+			if got := strings.Contains(input, "checked"); got != tt.weekly {
+				t.Errorf("checkbox checked = %v, want %v: %s", got, tt.weekly, input)
+			}
+		})
+	}
+}
+
 func TestStatsPageRendersWithPreviousYear(t *testing.T) {
 	d := decimal.NewFromFloat
 	rows := []map[string]any{{"Label": "Musterhof", "Hours": d(2.17), "Cost": d(209.88)}}
@@ -358,7 +388,8 @@ func TestIncomingBookingBreakdownRendersInBothOverviews(t *testing.T) {
 	neighbor := models.Neighbor{ID: 3, Name: "Bio-Hof Steiner"}
 
 	page := execPage(t, "neighbor", map[string]any{
-		"Title": "Bio-Hof Steiner", "Year": year, "Base": models.PriceBase{ID: 1}, "Neighbor": neighbor,
+		"Section": "bookings",
+		"Title":   "Bio-Hof Steiner", "Year": year, "Base": models.PriceBase{ID: 1}, "Neighbor": neighbor,
 		"Completed": true, "Ledger": []models.LedgerEntry{ledger}, "LedgerSum": ledger.Amount,
 		"Saldo": ledger.Amount, "Remaining": ledger.Amount, "CreditAmount": ledger.Amount.Neg(),
 		"TotalCost": decimal.Zero, "TotalHours": decimal.Zero, "BookingCount": 1, "PaidSum": decimal.Zero,
@@ -736,8 +767,8 @@ func TestMahnungPagePreservesDocumentAndPaymentActions(t *testing.T) {
 
 // TestDashboardShowsCreditAsOwedNotPaid pins the reverse of "offene Zahlung":
 // a neighbor with a negative rest (Guthaben) is money I still owe. A completed
-// year must list it under "Zu erledigen" and in the status row, and its tile
-// must say Guthaben — never Bezahlt.
+// year must list it under "Zu erledigen", and its tile must say Guthaben —
+// never Bezahlt.
 func TestDashboardShowsCreditAsOwedNotPaid(t *testing.T) {
 	d := decimal.NewFromFloat
 	page := execPage(t, "dashboard", map[string]any{
@@ -755,7 +786,6 @@ func TestDashboardShowsCreditAsOwedNotPaid(t *testing.T) {
 	})
 	for _, want := range []string{
 		"mit Guthaben – noch auszuzahlen · 60,00 €",
-		"Guthaben 60,00 €",
 		"Guthaben · 60,00 €",
 	} {
 		if !strings.Contains(html.UnescapeString(page), want) {
@@ -801,5 +831,8 @@ func TestDashboardDueRowsTargetMatchingTiles(t *testing.T) {
 	}
 	if n := strings.Count(page, `data-due="credit"`); n != 1 {
 		t.Errorf(`data-due="credit" tiles = %d, want 1`, n)
+	}
+	if !strings.Contains(page, "Als bezahlt markieren") {
+		t.Error("completed-year open balance lacks the explicit mark-paid action label")
 	}
 }

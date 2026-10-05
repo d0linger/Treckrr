@@ -8,6 +8,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/d0linger/treckrr/internal/calc"
 	"github.com/d0linger/treckrr/internal/db"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/store"
@@ -67,8 +68,8 @@ func TestMoneyRoundTripIntegration(t *testing.T) {
 			machines[0].WorkingWidth, machines[0].CostPerAB, width, ab)
 	}
 	// Machine hourly rate = 3.06 * 12 = 36.72 exactly.
-	if got := machines[0].HourlyRate(); got.StringFixed(2) != "36.72" {
-		t.Fatalf("HourlyRate = %s, want 36.72", got.StringFixed(2))
+	if got := calc.MachineRate(machines[0]); got.StringFixed(2) != "36.72" {
+		t.Fatalf("MachineRate = %s, want 36.72", got.StringFixed(2))
 	}
 }
 

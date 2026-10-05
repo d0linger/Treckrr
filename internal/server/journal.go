@@ -207,7 +207,7 @@ func (s *Server) handleAccountingProfileSave(w http.ResponseWriter, r *http.Requ
 		ID: formInt64(r, "id"), Name: name, RevenueAccount: trimmed(r, "revenue_account"),
 		ReceivableAccount: trimmed(r, "receivable_account"), TaxCode: trimmed(r, "tax_code"),
 		CostCenter: trimmed(r, "cost_center"), Columns: columns, Delimiter: delimiter,
-		DecimalComma: r.FormValue("decimal_comma") == "true",
+		DecimalComma: r.FormValue("decimal_comma") == "true", DecimalCommaSet: true,
 	}
 	for label, value := range map[string]string{
 		"Erlöskonto": p.RevenueAccount, "Debitorenkonto": p.ReceivableAccount,

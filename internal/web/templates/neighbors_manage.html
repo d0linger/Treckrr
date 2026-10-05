@@ -1,19 +1,18 @@
 {{define "content"}}
 <section class="stack">
-	<p class="muted">Zentrale Nachbarn‑Verwaltung. Diese Nachbarn kannst du in jedem
-		Abrechnungsjahr über die Übersicht hinzufügen oder vom Vorjahr übernehmen.</p>
+	<header class="catalog-head">
+		<div><p class="eyebrow">Stammdaten</p><h2>Nachbarn</h2><p class="muted small">Nachbarn verwalten und das aktuelle Konto öffnen.</p></div>
+		<a class="btn btn--primary btn--sm" href="#neuer-nachbar" data-open-details="#neuer-nachbar">Nachbar anlegen</a>
+	</header>
 
-	<div class="btnrow">
+	<section class="neighbor-directory" aria-label="Nachbarverzeichnis">
+	<nav class="section-tabs" aria-label="Nachbarstatus">
 		{{$sc := .Scope}}
-		{{if eq $sc ""}}<span class="btn btn--sm" aria-current="true">Aktiv ({{.CountActive}})</span>
-		{{else}}<a class="btn btn--ghost btn--sm" href="/neighbors">Aktiv ({{.CountActive}})</a>{{end}}
-		{{if eq $sc "archiviert"}}<span class="btn btn--sm" aria-current="true">Archiviert ({{.CountArchived}})</span>
-		{{else}}<a class="btn btn--ghost btn--sm" href="/neighbors?scope=archiviert">Archiviert ({{.CountArchived}})</a>{{end}}
-		{{if eq $sc "anonymisiert"}}<span class="btn btn--sm" aria-current="true">Anonymisiert ({{.CountAnon}})</span>
-		{{else}}<a class="btn btn--ghost btn--sm" href="/neighbors?scope=anonymisiert">Anonymisiert ({{.CountAnon}})</a>{{end}}
-		{{if eq $sc "alle"}}<span class="btn btn--sm" aria-current="true">Alle ({{.Total}})</span>
-		{{else}}<a class="btn btn--ghost btn--sm" href="/neighbors?scope=alle">Alle ({{.Total}})</a>{{end}}
-	</div>
+		<a class="section-tabs__item{{if eq $sc ""}} is-active{{end}}" href="/neighbors"{{if eq $sc ""}} aria-current="page"{{end}}>Aktiv ({{.CountActive}})</a>
+		<a class="section-tabs__item{{if eq $sc "archiviert"}} is-active{{end}}" href="/neighbors?scope=archiviert"{{if eq $sc "archiviert"}} aria-current="page"{{end}}>Archiviert ({{.CountArchived}})</a>
+		<a class="section-tabs__item{{if eq $sc "anonymisiert"}} is-active{{end}}" href="/neighbors?scope=anonymisiert"{{if eq $sc "anonymisiert"}} aria-current="page"{{end}}>Anonymisiert ({{.CountAnon}})</a>
+		<a class="section-tabs__item{{if eq $sc "alle"}} is-active{{end}}" href="/neighbors?scope=alle"{{if eq $sc "alle"}} aria-current="page"{{end}}>Alle ({{.Total}})</a>
+	</nav>
 	{{if .Stats}}
 	<input class="input" type="search" placeholder="Nachbar suchen …" data-search="[data-nb-item]" aria-label="Nachbar suchen" data-search-empty="[data-nb-empty]">
 	<p class="muted small" data-nb-empty hidden>Kein Nachbar passt zur Suche.</p>
@@ -23,9 +22,9 @@
 		<span class="muted small">Andere Ansicht wählen oder unten einen Nachbarn anlegen.</span>
 	</div>
 	{{end}}
-	<div class="list list--onecol">
+	<div class="neighbor-list">
 		{{range .Stats}}
-		<div class="card stack stack--tight {{if and .Neighbor.Archived (not .Neighbor.Anonymized)}}is-inactive{{end}}" id="neighbor-{{.Neighbor.ID}}" data-nb-item>
+		<article class="neighbor-row {{if and .Neighbor.Archived (not .Neighbor.Anonymized)}}is-inactive{{end}}" id="neighbor-{{.Neighbor.ID}}" data-nb-item>
 			<div class="list__row list__row--plain">
 				<div class="list__main">
 					<span class="list__title">{{.Neighbor.Name}}{{if .Neighbor.Anonymized}}<span class="pill-off">anonymisiert</span>{{else if .Neighbor.Archived}}<span class="pill-off">inaktiv</span>{{end}}</span>
@@ -36,10 +35,10 @@
 				{{if and $.Year (not .Neighbor.Anonymized)}}
 				<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}">Jahr {{$.Year.Year}}</a>
 				{{end}}
-				<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}/overview">Verlauf</a>
 			</div>
 			<details class="disclosure disclosure--plain" {{if eq .Neighbor.ID $.EditNeighborID}}open{{end}}>
-				<summary>Bearbeiten</summary>
+				<summary>Stammdaten &amp; Verlauf</summary>
+				<a class="link small" href="/neighbors/{{.Neighbor.ID}}/overview">Verlauf aller Jahre öffnen ›</a>
 				{{if .Neighbor.Anonymized}}
 				<p class="muted small">Personenbezogene Daten wurden anonymisiert (DSGVO Art. 17). Buchungen und festgeschriebene Rechnungen bleiben aufbewahrungspflichtig erhalten.</p>
 				<form method="post" action="/neighbors/{{.Neighbor.ID}}/anonymize" class="form">
@@ -120,11 +119,11 @@
 				{{end}}
 				{{end}}
 			</details>
-		</div>
+		</article>
 		{{end}}
 	</div>
 
-	<details class="card disclosure" {{if not .Stats}}open{{end}}>
+	<details class="neighbor-create disclosure" id="neuer-nachbar" {{if not .Stats}}open{{end}}>
 		<summary>+ Neuen Nachbarn anlegen</summary>
 		<form method="post" action="/neighbors/create" class="form">
 			<label class="field"><span>Name</span>
@@ -134,5 +133,6 @@
 			<button class="btn btn--primary" type="submit">Anlegen</button>
 		</form>
 	</details>
+	</section>
 </section>
 {{end}}

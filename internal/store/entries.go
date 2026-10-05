@@ -294,16 +294,18 @@ func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 	err := tx.QueryRowContext(ctx,
 		`INSERT INTO entries
 		   (neighbor_id, billing_year_id, entry_date, task_label, gespann_id, tractor_id, load_level_id,
-		    tractor_label, load_label, machine_labels, hours, hourly_rate, cost, note,
+		    tractor_label, load_label, machine_labels, hours, hourly_rate,
+		    fuel_adjustment_label, fuel_adjustment_per_h, cost, note,
 		    unit, quantity, unit_price, idempotency_key, person_id, linked_entry_id, request_fingerprint, person_name)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-		         COALESCE(NULLIF($22,''),(SELECT name FROM persons WHERE id=$19),''))
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,
+		         COALESCE(NULLIF($24,''),(SELECT name FROM persons WHERE id=$21),''))
 		 ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
 		 RETURNING id`,
 		e.NeighborID, e.BillingYearID, e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID),
 		nullInt(e.LoadLevelID), e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours,
-		e.HourlyRate, e.Cost, e.Note, e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey),
-		nullInt(e.PersonID), nullInt(e.LinkedEntryID), nullStr(e.RequestFingerprint), e.PersonName).Scan(&id)
+		e.HourlyRate, e.FuelAdjustmentLabel, e.FuelAdjustmentPerH, e.Cost, e.Note,
+		e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey), nullInt(e.PersonID),
+		nullInt(e.LinkedEntryID), nullStr(e.RequestFingerprint), e.PersonName).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		var neighborID, yearID int64
 		if err := tx.QueryRowContext(ctx,
@@ -347,7 +349,7 @@ func replaceEntryMachineSnapshotsTx(ctx context.Context, tx *sql.Tx, entryID int
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO entry_machine_snapshots
 		       (entry_id, machine_id, machine_label, hourly_rate, self_cost_per_h)
-		SELECT $1, m.id, m.name, round(m.working_width * m.cost_per_ab, 4), m.self_cost_per_h
+		SELECT $1, m.id, m.name, round(m.working_width * m.cost_per_ab, 2), m.self_cost_per_h
 		  FROM machines m
 		 WHERE m.id = ANY($2)`, entryID, machineIDs)
 	return err
@@ -1155,12 +1157,13 @@ func updateEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 	res, err := tx.ExecContext(ctx, `
 		UPDATE entries SET entry_date=$1, task_label=$2, gespann_id=$3, tractor_id=$4,
 			load_level_id=$5, tractor_label=$6, load_label=$7, machine_labels=$8,
-			hours=$9, hourly_rate=$10, cost=$11, note=$12,
-			unit=$13, quantity=$14, unit_price=$15, person_id=$17,
-			person_name=COALESCE(NULLIF($18,''),(SELECT name FROM persons WHERE id=$17),'') WHERE id=$16`,
+			hours=$9, hourly_rate=$10, fuel_adjustment_label=$11, fuel_adjustment_per_h=$12,
+			cost=$13, note=$14, unit=$15, quantity=$16, unit_price=$17, person_id=$19,
+			person_name=COALESCE(NULLIF($20,''),(SELECT name FROM persons WHERE id=$19),'') WHERE id=$18`,
 		e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID), nullInt(e.LoadLevelID),
-		e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours, e.HourlyRate, e.Cost, e.Note,
-		e.Unit, e.Quantity, e.UnitPrice, e.ID, nullInt(e.PersonID), e.PersonName)
+		e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours, e.HourlyRate,
+		e.FuelAdjustmentLabel, e.FuelAdjustmentPerH, e.Cost, e.Note, e.Unit,
+		e.Quantity, e.UnitPrice, e.ID, nullInt(e.PersonID), e.PersonName)
 	if err != nil {
 		return err
 	}
@@ -1211,7 +1214,7 @@ func (s *Store) SetEntryVoided(ctx context.Context, id int64, voided bool, reaso
 // entryCols is the entry column list, in scanEntry's destination order.
 const entryCols = `id, neighbor_id, billing_year_id, entry_date, task_label, gespann_id,
 	tractor_id, load_level_id, tractor_label, load_label, machine_labels,
-	hours, hourly_rate, cost, note, voided, void_reason, created_at,
+	hours, hourly_rate, fuel_adjustment_label, fuel_adjustment_per_h, cost, note, voided, void_reason, created_at,
 	unit, quantity, unit_price, person_id, linked_entry_id, request_fingerprint, person_name`
 
 const entrySelect = `SELECT ` + entryCols + ` FROM entries`
@@ -1242,7 +1245,8 @@ func scanEntry(sc scanner) (models.Entry, error) {
 	)
 	dest := []any{&e.ID, &e.NeighborID, &e.BillingYearID, &date, &e.TaskLabel, &gespann,
 		&tractor, &load, &e.TractorLabel, &e.LoadLabel, &e.MachineLabels,
-		&e.Hours, &e.HourlyRate, &e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created,
+		&e.Hours, &e.HourlyRate, &e.FuelAdjustmentLabel, &e.FuelAdjustmentPerH,
+		&e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created,
 		&e.Unit, &e.Quantity, &e.UnitPrice, &person, &linked, &fingerprint, &e.PersonName}
 	if err := sc.Scan(dest...); err != nil {
 		return e, err

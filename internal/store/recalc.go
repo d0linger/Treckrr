@@ -22,23 +22,25 @@ var (
 )
 
 // RecalcRow is one booking's before/after when re-pricing it against the current
-// values of its billing year's basis. Changed is true only when the money
-// (rate or cost) actually differs — label reordering alone does not count.
+// values of its billing year's basis. Changed covers money or adjustment
+// snapshot changes; unrelated label reordering alone does not count.
 type RecalcRow struct {
-	EntryID       int64
-	Date          time.Time
-	NeighborID    int64
-	NeighborName  string
-	TaskLabel     string
-	Hours         decimal.Decimal
-	OldRate       decimal.Decimal
-	OldCost       decimal.Decimal
-	NewRate       decimal.Decimal
-	NewCost       decimal.Decimal
-	TractorLabel  string
-	LoadLabel     string
-	MachineLabels string
-	Changed       bool
+	EntryID             int64
+	Date                time.Time
+	NeighborID          int64
+	NeighborName        string
+	TaskLabel           string
+	Hours               decimal.Decimal
+	OldRate             decimal.Decimal
+	OldCost             decimal.Decimal
+	NewRate             decimal.Decimal
+	NewCost             decimal.Decimal
+	FuelAdjustmentLabel string
+	FuelAdjustmentPerH  decimal.Decimal
+	TractorLabel        string
+	LoadLabel           string
+	MachineLabels       string
+	Changed             bool
 }
 
 // RecalcPreview recomputes each non-voided booking of a year (optionally a single
@@ -59,6 +61,10 @@ func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int
 		return nil, err
 	}
 	machines, err := s.ListMachines(ctx, year.BaseID)
+	if err != nil {
+		return nil, err
+	}
+	adjustments, err := s.ListFuelAdjustments(ctx, year.BaseID)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +141,7 @@ func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int
 		// applying that would wipe every Pauschale/ha/Ballen booking to zero. The
 		// old tractor guard excluded them by accident; this excludes them on purpose.
 		hourly := e.Unit == "" || e.Unit == "h"
-		priceable := hourly && e.TractorID == nil && e.LoadLevelID == nil
+		priceable := hourly && e.TractorID == nil && e.LoadLevelID == nil && len(emMap[e.ID]) > 0
 		var t *models.Tractor
 		var l *models.LoadLevel
 		if hourly && e.TractorID != nil && e.LoadLevelID != nil {
@@ -154,16 +160,25 @@ func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int
 					mnames = append(mnames, m.Name)
 				}
 			}
-			rate := calc.GespannRate(t, l, ms)
+			adjustment := EffectiveFuelAdjustment(adjustments, e.Date)
+			adjustmentAmount := decimal.Zero
+			adjustmentLabel := ""
+			if adjustment != nil && adjustment.AmountPerH.IsPositive() {
+				adjustmentAmount = adjustment.AmountPerH
+				adjustmentLabel = adjustment.Label
+			}
+			rate := calc.NewAdjustedRateBreakdown(t, l, ms, adjustmentAmount).HourlyRate
 			cost := calc.Cost(e.Hours, rate)
 			row.NewRate, row.NewCost = rate, cost
+			row.FuelAdjustmentLabel, row.FuelAdjustmentPerH = adjustmentLabel, adjustmentAmount
 			if t != nil && l != nil {
 				row.TractorLabel, row.LoadLabel = t.Label(), l.Name
 			} else {
 				row.TractorLabel, row.LoadLabel = "", ""
 			}
 			row.MachineLabels = strings.Join(mnames, ", ")
-			row.Changed = !rate.Equal(e.HourlyRate) || !cost.Equal(e.Cost)
+			row.Changed = !rate.Equal(e.HourlyRate) || !cost.Equal(e.Cost) ||
+				adjustmentLabel != e.FuelAdjustmentLabel || !adjustmentAmount.Equal(e.FuelAdjustmentPerH)
 		}
 		out = append(out, row)
 	}
@@ -304,10 +319,12 @@ func (s *Store) ApplyRecalc(ctx context.Context, yearID int64, neighborID *int64
 		// since then, abort rather than clobber the newer data.
 		res, e := tx.ExecContext(ctx, `
 			UPDATE entries SET hourly_rate=$1, cost=$2, tractor_label=$3, load_label=$4, machine_labels=$5,
+			       fuel_adjustment_label=$6, fuel_adjustment_per_h=$7,
 			       unit_price = CASE WHEN unit='h' THEN $1 ELSE unit_price END,
 			       priced_at = now()
-			 WHERE id=$6 AND hourly_rate=$7 AND cost=$8`,
-			r.NewRate, r.NewCost, r.TractorLabel, r.LoadLabel, r.MachineLabels, r.EntryID, r.OldRate, r.OldCost)
+			 WHERE id=$8 AND hourly_rate=$9 AND cost=$10`,
+			r.NewRate, r.NewCost, r.TractorLabel, r.LoadLabel, r.MachineLabels,
+			r.FuelAdjustmentLabel, r.FuelAdjustmentPerH, r.EntryID, r.OldRate, r.OldCost)
 		if e != nil {
 			return 0, oldTotal, newTotal, e
 		}

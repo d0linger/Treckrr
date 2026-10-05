@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/d0linger/treckrr/internal/calc"
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
 )
@@ -37,40 +39,14 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	base := year.Base
 
-	entries, err := s.store.ListEntries(r.Context(), neighbor.ID, year.ID)
+	settlements := s.settlements()
+	account, err := settlements.Load(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	cost, hours, err := s.store.NeighborTotal(r.Context(), neighbor.ID, year.ID)
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
-	}
-	// Bidirectional ledger: manual postings that net against the bookings.
-	ledger, err := s.store.ListNeighborLedger(r.Context(), year.ID, neighbor.ID)
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
-	}
-	ledgerSum := decimal.Zero
-	for _, l := range ledger {
-		if !l.Voided {
-			ledgerSum = ledgerSum.Add(l.Amount)
-		}
-	}
-
-	// Payments toward this year (dated amounts). The remaining balance is the
-	// saldo minus what was paid; payments are editable regardless of year status.
-	payments, err := s.store.ListPayments(r.Context(), year.ID, neighbor.ID)
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
-	}
-	paidSum := decimal.Zero
-	for _, p := range payments {
-		paidSum = paidSum.Add(p.Amount)
-	}
+	entries := account.Entries
+	ledger := account.Ledger
 
 	// Bookings whose stored price no longer matches the current basis (the basis
 	// was edited after they were booked). Marked in the table; offered for
@@ -94,18 +70,21 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	gespanne, _ := s.store.ListGespanne(r.Context(), base.ID)
 
 	data := s.newPage(w, r, neighbor.Name, "dashboard")
-	data["Stale"] = stale
-	data["StaleCount"] = len(stale)
-	data["TaskSummary"] = summarizeByTask(entries)
-	data["Completed"] = year.Completed()
 	if err := s.withYearSelector(r, data, year); err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	data["Base"] = base
-	data["Neighbor"] = neighbor
-	data["Entries"] = entries
-	data["BookingCount"] = len(entries) + len(ledger)
+	view := neighborDetailView{
+		Section:      neighborDetailSection(r.URL.Query().Get("view")),
+		Stale:        stale,
+		StaleCount:   len(stale),
+		TaskSummary:  summarizeByTask(entries),
+		Completed:    year.Completed(),
+		Base:         base,
+		Neighbor:     neighbor,
+		Entries:      entries,
+		BookingCount: len(entries) + len(ledger),
+	}
 	// Pair links: LinkedFrom gives each machine booking its companion's id (the
 	// reverse of the stored direction), PairLabel names the OTHER half for each
 	// side — task and hours, so with several pairs on one day the operator sees
@@ -131,33 +110,33 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 		pairLabel[e.ID] = fmt.Sprintf("%s · %s h", machine.TaskLabel, de(machine.Hours))
 		pairLabel[machine.ID] = fmt.Sprintf("%s · %s h", e.TaskLabel, de(e.Quantity))
 	}
-	data["LinkedFrom"] = linkedFrom
-	data["PairLabel"] = pairLabel
-	data["TotalCost"] = cost
-	data["TotalHours"] = hours
-	data["Ledger"] = ledger
-	data["LedgerSum"] = ledgerSum
-	data["Saldo"] = cost.Add(ledgerSum)
-	data["Payments"] = payments
-	data["PaidSum"] = paidSum
+	view.LinkedFrom = linkedFrom
+	view.PairLabel = pairLabel
+	view.TotalCost = account.Cost
+	view.TotalHours = account.Hours
+	view.Ledger = ledger
+	view.LedgerSum = account.LedgerSum
+	view.Saldo = account.Saldo
+	view.Payments = account.Payments
+	view.PaidSum = account.PaidSum
 	plans, err := s.store.ListInstallments(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	data["Installments"] = installmentViews(plans, paidSum)
-	remaining, err := s.store.AccountRemaining(r.Context(), year.ID, neighbor.ID)
+	view.Installments = installmentViews(plans, account.PaidSum)
+	remaining, err := settlements.PayableRemaining(r.Context(), year.ID, neighbor.ID)
 	if err != nil {
 		s.serverError(w, "neighbor: payable balance", err)
 		return
 	}
-	data["Remaining"] = remaining
+	view.Remaining = remaining
 	// The credit shown on the payout/carry buttons: the negative rest, made
 	// positive for display ("Guthaben (45,00 €)").
-	data["CreditAmount"] = remaining.Neg()
+	view.CreditAmount = remaining.Neg()
 	// An issued invoice enables the Skonto (§16) option on the payment form.
 	_, invErr := s.store.GetInvoice(r.Context(), year.ID, neighbor.ID)
-	data["HasInvoice"] = invErr == nil
+	view.HasInvoice = invErr == nil
 	// Mannstunden (Nr. 56/57) and Anfahrt (Nr. 58) get their own small forms on
 	// this page rather than extra fields in the main booking form, whose three
 	// stacked submit handlers and pricing fetch are not worth disturbing.
@@ -192,36 +171,50 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	data["PhotoCounts"] = photoCounts
-	data["LedgerPhotoCounts"] = ledgerPhotoCounts
-	data["Photos"] = photos
-	data["Persons"] = persons
-	data["TravelFlat"] = company.TravelFlat
-	data["TravelPerKm"] = company.TravelPerKm
-	data["HasTravelRates"] = company.TravelFlat.IsPositive() || company.TravelPerKm.IsPositive()
-	data["Tractors"] = tractors
-	data["Loads"] = loads
-	data["Machines"] = machines
-	data["Gespanne"] = gespanne
-	data["Today"] = time.Now().Format("2006-01-02")
+	view.PhotoCounts = photoCounts
+	view.LedgerPhotoCounts = ledgerPhotoCounts
+	view.Photos = photos
+	view.Persons = persons
+	view.TravelFlat = company.TravelFlat
+	view.TravelPerKm = company.TravelPerKm
+	view.HasTravelRates = company.TravelFlat.IsPositive() || company.TravelPerKm.IsPositive()
+	view.Tractors = tractors
+	view.Loads = loads
+	view.Machines = machines
+	view.Gespanne = gespanne
+	view.Today = time.Now().Format("2006-01-02")
 	bookingValues := newBookingValues()
 	if raw := r.URL.Query().Get("machine"); raw != "" {
 		if machineID, err := strconv.ParseInt(raw, 10, 64); err == nil && machineID > 0 {
 			for _, machine := range machines {
 				if machine.ID == machineID {
 					bookingValues["mode"] = "manual"
-					data["SelectedMachineIDs"] = []int64{machineID}
-					data["BookingPrefilled"] = true
-					data["PrefilledMachine"] = machine
+					view.SelectedMachineIDs = []int64{machineID}
+					view.BookingPrefilled = true
+					machineCopy := machine
+					view.PrefilledMachine = &machineCopy
+					view.Section = "booking"
 					break
 				}
 			}
 		}
 	}
-	data["BookingValues"] = bookingValues
-	data["BookingLocked"] = data["HasInvoice"]
-	data["BookingAction"] = "/entries"
+	view.BookingValues = bookingValues
+	view.BookingLocked = view.HasInvoice
+	view.BookingAction = "/entries"
+	view.bind(data)
 	s.render(w, r, "neighbor", data)
+}
+
+// neighborDetailSection limits the account page to its small set of supported
+// presentation views. Unknown links safely return to the account overview.
+func neighborDetailSection(raw string) string {
+	switch raw {
+	case "booking", "bookings", "payments":
+		return raw
+	default:
+		return "overview"
+	}
 }
 
 // handleNeighborOverview shows one neighbor across all billing years with cost,
@@ -427,6 +420,7 @@ func (s *Server) handlePricingAPI(w http.ResponseWriter, r *http.Request) {
 	loads, _ := s.store.ListLoadLevels(r.Context(), id)
 	machines, _ := s.store.ListActiveMachines(r.Context(), id)
 	gespanne, _ := s.store.ListGespanne(r.Context(), id)
+	adjustments, _ := s.store.ListFuelAdjustments(r.Context(), id)
 
 	type apiTractor struct {
 		ID int64   `json:"id"`
@@ -446,11 +440,17 @@ func (s *Server) handlePricingAPI(w http.ResponseWriter, r *http.Request) {
 		Load     *int64  `json:"load"`
 		Machines []int64 `json:"machines"`
 	}
+	type apiAdjustment struct {
+		EffectiveFrom string  `json:"effective_from"`
+		Label         string  `json:"label"`
+		Amount        float64 `json:"amount"`
+	}
 	out := struct {
-		Tractors []apiTractor `json:"tractors"`
-		Loads    []apiLoad    `json:"loads"`
-		Machines []apiMachine `json:"machines"`
-		Gespanne []apiGespann `json:"gespanne"`
+		Tractors    []apiTractor    `json:"tractors"`
+		Loads       []apiLoad       `json:"loads"`
+		Machines    []apiMachine    `json:"machines"`
+		Gespanne    []apiGespann    `json:"gespanne"`
+		Adjustments []apiAdjustment `json:"adjustments"`
 	}{}
 	// The pricing API feeds a client-side preview only; float is fine here and
 	// keeps the JSON numeric for the JS. The authoritative cost is computed
@@ -467,6 +467,12 @@ func (s *Server) handlePricingAPI(w http.ResponseWriter, r *http.Request) {
 	for _, g := range gespanne {
 		out.Gespanne = append(out.Gespanne, apiGespann{
 			ID: g.ID, Tractor: g.TractorID, Load: g.LoadLevelID, Machines: g.MachineIDs,
+		})
+	}
+	for _, adjustment := range adjustments {
+		out.Adjustments = append(out.Adjustments, apiAdjustment{
+			EffectiveFrom: adjustment.EffectiveFrom.Format("2006-01-02"),
+			Label:         adjustment.Label, Amount: adjustment.AmountPerH.InexactFloat64(),
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -598,6 +604,10 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		reject(http.StatusUnprocessableEntity, msg, neighborURL(neighborID, yearID))
 		return
 	}
+	if err := s.applyResolvedFuelAdjustment(r.Context(), year.Base.ID, entry, machineIDs); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	entry.NeighborID = neighborID
 	entry.BillingYearID = year.ID
 	entry.IdempotencyKey = idempotencyKey
@@ -641,7 +651,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 				*field.target = value
 			}
 		}
-		personCost := personHours.Mul(personRate).Round(2)
+		personCost := money.Amount(personHours, personRate)
 		if !personCost.IsPositive() || personCost.GreaterThanOrEqual(decimal.NewFromInt(10_000_000_000)) {
 			reject(http.StatusUnprocessableEntity, "Der Mannstundenbetrag liegt außerhalb des zulässigen Bereichs.", neighborURL(neighborID, yearID))
 			return
@@ -673,17 +683,25 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 			nb, entry.TaskLabel,
 			entry.Hours.StringFixed(2), entry.HourlyRate.StringFixed(2), entry.Cost.StringFixed(2))
 	}
-	var newID, companionID int64
+	command := store.BookingCommand{
+		Entry:      entry,
+		MachineIDs: machineIDs,
+		Audit:      audit,
+	}
 	if companion != nil {
 		audit.CompanionDetail = fmt.Sprintf("%s · Mannstunden (verknüpft), %s h × %s = %s €",
 			nb, companion.Quantity.String(), companion.UnitPrice.StringFixed(2), companion.Cost.StringFixed(2))
-		newID, companionID, err = s.store.CreateEntryPairAudited(r.Context(), entry, machineIDs, companion, audit)
-	} else {
-		newID, err = s.store.CreateEntryAudited(r.Context(), entry, machineIDs, audit)
+		command.Helpers = []*models.Entry{companion}
 	}
+	result, err := s.store.CreateBooking(r.Context(), command)
 	if err != nil {
 		s.unifiedBookingError(w, r, err)
 		return
+	}
+	newID := result.MainID
+	companionID := int64(0)
+	if len(result.HelperIDs) == 1 {
+		companionID = result.HelperIDs[0]
 	}
 	if newID == 0 && companionID == 0 { // duplicate replay of an offline booking — already recorded
 		s.acceptRecordedReplay(w, r, neighborURL(neighborID, yearID))
@@ -770,76 +788,45 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	if !ok {
 		return nil, nil, "Zu viele Maschinen auf einmal.", nil
 	}
-	var (
-		gespannID   *int64
-		tractorID   = formInt64Ptr(r, "tractor_id")
-		loadLevelID = formInt64Ptr(r, "load_level_id")
-		taskLabel   = trimmed(r, "task_label")
-	)
+	selection := equipmentSelection{
+		TractorID:   formInt64Ptr(r, "tractor_id"),
+		LoadLevelID: formInt64Ptr(r, "load_level_id"),
+		MachineIDs:  machineIDs,
+		TaskLabel:   trimmed(r, "task_label"),
+	}
 	if r.FormValue("mode") != "manual" {
 		if gid := formInt64(r, "gespann_id"); gid != 0 {
-			g, err := s.store.GetGespann(r.Context(), gid)
-			if errors.Is(err, store.ErrNotFound) {
-				return nil, nil, "Das gewählte Gespann ist nicht mehr vorhanden — bitte neu wählen.", nil
-			}
-			if err != nil {
-				return nil, nil, "", err
-			}
-			gespannID = &g.ID
-			tractorID = g.TractorID
-			loadLevelID = g.LoadLevelID
-			machineIDs = g.MachineIDs
-			if taskLabel == "" {
-				taskLabel = g.Name
-			}
+			selection.GespannID = &gid
 		} else {
-			tractorID, loadLevelID = nil, nil
+			selection.TractorID, selection.LoadLevelID = nil, nil
 		}
 	}
-	// The tractor is optional — a booking may be machines only, for work where the
-	// customer supplies the tractor — but the pair is all-or-nothing, because
-	// TractorRate needs both to produce a number.
-	if (tractorID == nil) != (loadLevelID == nil) {
-		return nil, nil, "Traktor und Belastungsstufe gehören zusammen — bitte beides wählen oder beides leer lassen.", nil
-	}
-	if tractorID == nil && len(machineIDs) == 0 {
-		return nil, nil, "Bitte Traktor und Belastungsstufe oder mindestens eine Maschine wählen.", nil
-	}
-	var tractor *models.Tractor
-	var load *models.LoadLevel
-	if tractorID != nil {
-		t, err := s.store.GetTractor(r.Context(), *tractorID)
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, nil, "Traktor nicht gefunden.", nil
-		}
-		if err != nil {
-			return nil, nil, "", err
-		}
-		l, err := s.store.GetLoadLevel(r.Context(), *loadLevelID)
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, nil, "Belastungsstufe nicht gefunden.", nil
-		}
-		if err != nil {
-			return nil, nil, "", err
-		}
-		tractor, load = t, l
-	}
-	machines, err := s.store.MachinesByIDs(r.Context(), machineIDs)
+	resolved, failure, err := s.resolveEquipment(r.Context(), selection)
 	if err != nil {
 		return nil, nil, "", err
 	}
-	// Every submitted machine id must resolve, tractor or not. The machines-only
-	// case priced at 0,00 € (reproduced: 3 h at 0,0000, "gespeichert"); WITH a
-	// tractor the silent drop was subtler and worse — the booking saved at the
-	// bare tractor rate, underbilling by the vanished machine's share without
-	// anyone noticing. A stale form after a machine was deleted is exactly when
-	// the user must be told, not accommodated (Ausbaukarte Nr. 61).
-	if len(machines) != len(machineIDs) {
+	switch failure {
+	case equipmentResolutionIncompletePair:
+		return nil, nil, "Traktor und Belastungsstufe gehören zusammen — bitte beides wählen oder beides leer lassen.", nil
+	case equipmentResolutionEmpty:
+		return nil, nil, "Bitte Traktor und Belastungsstufe oder mindestens eine Maschine wählen.", nil
+	case equipmentResolutionGespannMissing:
+		return nil, nil, "Das gewählte Gespann ist nicht mehr vorhanden — bitte neu wählen.", nil
+	case equipmentResolutionTractorMissing:
+		return nil, nil, "Traktor nicht gefunden.", nil
+	case equipmentResolutionLoadMissing:
+		return nil, nil, "Belastungsstufe nicht gefunden.", nil
+	case equipmentResolutionMachineMissing:
 		return nil, nil, "Die gewählten Maschinen sind nicht mehr verfügbar — bitte die Seite neu laden.", nil
 	}
+	entry, ids := resolved.entrySnapshot()
+	taskLabel := entry.TaskLabel
 	hours := formDecimal(r, "hours")
 	if !hours.IsPositive() {
 		return nil, nil, "Stunden müssen größer als 0 sein.", nil
+	}
+	if !store.MachineHoursRepresentable(hours) {
+		return nil, nil, "Maschinenstunden aus dem gepflegten Pool erlauben höchstens drei Nachkommastellen.", nil
 	}
 	if dateErr != nil {
 		return nil, nil, invalidDate, nil
@@ -851,30 +838,11 @@ func (s *Server) resolveEntryFromForm(r *http.Request) (*models.Entry, []int64, 
 	if msg := lenError("Notiz", note, maxNoteLen); msg != "" {
 		return nil, nil, msg, nil
 	}
-	rate := calc.GespannRate(tractor, load, machines)
-	names := make([]string, 0, len(machines))
-	ids := make([]int64, 0, len(machines))
-	for _, m := range machines {
-		names = append(names, m.Name)
-		ids = append(ids, m.ID)
-	}
-	entry := &models.Entry{
-		Date:          entryDate,
-		TaskLabel:     taskLabel,
-		GespannID:     gespannID,
-		MachineLabels: strings.Join(names, ", "),
-		Hours:         hours,
-		HourlyRate:    rate,
-		Cost:          calc.Cost(hours, rate),
-		Note:          note,
-	}
-	// Left nil/empty on a machines-only booking, which is what the templates and
-	// the recalculation branch on to tell the two shapes apart.
-	if tractor != nil && load != nil {
-		entry.TractorID, entry.LoadLevelID = &tractor.ID, &load.ID
-		entry.TractorLabel, entry.LoadLabel = tractor.Label(), load.Name
-	}
-	return entry, ids, "", nil
+	entry.Date = entryDate
+	entry.Hours = hours
+	entry.Cost = calc.Cost(hours, entry.HourlyRate)
+	entry.Note = note
+	return &entry, ids, "", nil
 }
 
 // entryUpdateDetail renders a per-field old→new summary of an edited booking so
@@ -939,6 +907,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	var catalogBaseID int64
 	if msg == "" {
 		// Edits stay on the year's price basis too, but may keep a tractor or
 		// machine that was deactivated after it was booked (as V2 edits do).
@@ -947,6 +916,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
+		catalogBaseID = year.Base.ID
 		if msg, err = s.checkBookingCatalog(r, entry, machineIDs, year.Base.ID, false); err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
@@ -955,6 +925,10 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 	if msg != "" {
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, neighborURL(existing.NeighborID, existing.BillingYearID))
+		return
+	}
+	if err := s.applyResolvedFuelAdjustment(r.Context(), catalogBaseID, entry, machineIDs); err != nil {
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	// Validate the target column before saving either half. Otherwise a four-
@@ -1679,7 +1653,7 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	// check sits ahead of every store call so an abusive submit costs no queries
 	// at all.
 	if n := len(r.Form["q_gespann"]); n > maxQuickEntries {
-		reject(http.StatusUnprocessableEntity, fmt.Sprintf("Zu viele Zeilen auf einmal (%d). Es können höchstens %d Zeilen gespeichert werden.", n, maxQuickEntries), neighborURL(neighborID, yearID))
+		reject(http.StatusUnprocessableEntity, fmt.Sprintf("Zu viele Zeilen auf einmal (%d). Es können höchstens %d Zeilen gespeichert werden.", n, maxQuickEntries), neighborBookingURL(neighborID, yearID))
 		return
 	}
 
@@ -1729,6 +1703,8 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 			// silently dropping it reported "N Buchungen gespeichert" while a
 			// day of work vanished. Count it and say so.
 			row.status, row.message = quickInvalid, "Gespann und gültige Stunden erforderlich."
+		case !store.MachineHoursRepresentable(row.hours):
+			row.status, row.message = quickInvalid, "Maschinenstunden erlauben höchstens drei Nachkommastellen."
 		case err != nil:
 			// A replay may run days later: never book "today" instead.
 			row.status, row.message = quickInvalid, "Bitte ein gültiges Datum angeben."
@@ -1807,7 +1783,7 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 		}
 		if year.Completed() {
 			markPending("Das Abrechnungsjahr ist abgeschlossen.")
-			reject(http.StatusUnprocessableEntity, "Das Abrechnungsjahr ist abgeschlossen.", neighborURL(neighborID, yearID))
+			reject(http.StatusUnprocessableEntity, "Das Abrechnungsjahr ist abgeschlossen.", neighborBookingURL(neighborID, yearID))
 			return
 		}
 		// Inlined rather than routed through a w,r-writing helper (as invoiceLocked
@@ -1829,7 +1805,7 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 		if iv, err := s.store.GetInvoice(r.Context(), year.ID, neighborID); err == nil {
 			msg := "Rechnung " + iv.Number + " ist festgeschrieben – Buchungen und Verrechnungen für diesen Nachbarn sind gesperrt. Für Korrekturen bitte die Rechnung stornieren."
 			markPending(msg)
-			reject(http.StatusUnprocessableEntity, msg, neighborURL(neighborID, yearID))
+			reject(http.StatusUnprocessableEntity, msg, neighborBookingURL(neighborID, yearID))
 			return
 		} else if !errors.Is(err, store.ErrNotFound) {
 			// A real store failure is transient — 500 so a replay retries instead of
@@ -1888,13 +1864,17 @@ func (s *Server) handleQuickEntries(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.setFlash(w, r, "success", fmt.Sprintf("%d Buchungen gespeichert.", created))
 	}
-	redirect(w, r, neighborURL(neighborID, yearID))
+	redirect(w, r, neighborBookingsURL(neighborID, yearID))
 }
 
 // createQuickRows books every pending row. Invalid rows are marked on the row;
 // a store failure stops the batch and is returned (rows already committed keep
 // their audit, which is written in their own transaction).
 func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neighborID int64, rows []*quickRow) (created, paired int, createErr error) {
+	adjustments, err := s.store.ListFuelAdjustments(r.Context(), year.Base.ID)
+	if err != nil {
+		return 0, 0, err
+	}
 	// The same rig repeats across the rows of one submit — that is what quick
 	// entry is FOR — so each distinct Gespann is resolved once (5 queries) and
 	// reused, instead of 5 queries per row (a 100-row submit was ~500 SELECTs).
@@ -1941,6 +1921,7 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 			continue
 		}
 		entry := rig.entry // copy of the resolved template
+		applyEffectiveFuelAdjustment(&entry, store.EffectiveFuelAdjustment(adjustments, row.date))
 		entry.Hours = row.hours
 		entry.Cost = calc.Cost(row.hours, entry.HourlyRate)
 		entry.Quantity, entry.UnitPrice = decimal.Decimal{}, decimal.Decimal{}
@@ -1981,7 +1962,7 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 				NeighborID: neighborID, BillingYearID: year.ID,
 				Date: entry.Date, TaskLabel: "Mannstunden " + p.person.Name,
 				Unit: unitMannstunde, Quantity: row.hours, UnitPrice: p.person.HourlyRate,
-				Cost:     row.hours.Mul(p.person.HourlyRate).Round(2),
+				Cost:     money.Amount(row.hours, p.person.HourlyRate),
 				PersonID: &personID,
 				// Derived from the row's own key, so a replayed row no-ops on
 				// both halves (see models.CompanionKey).
@@ -1991,14 +1972,18 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 			audit.CompanionDetail = fmt.Sprintf("%s · Schnellerfassung: Mannstunden (verknüpft), %s h × %s = %s €",
 				nb, companion.Quantity.String(), companion.UnitPrice.StringFixed(2), companion.Cost.StringFixed(2))
 		}
-		var (
-			id, companionID int64
-			err             error
-		)
+		command := store.BookingCommand{
+			Entry:      &entry,
+			MachineIDs: rig.machineIDs,
+			Audit:      audit,
+		}
 		if companion != nil {
-			id, companionID, err = s.store.CreateEntryPairAudited(r.Context(), &entry, rig.machineIDs, companion, audit)
-		} else {
-			id, err = s.store.CreateEntryAudited(r.Context(), &entry, rig.machineIDs, audit)
+			command.Helpers = []*models.Entry{companion}
+		}
+		result, err := s.store.CreateBooking(r.Context(), command)
+		companionID := int64(0)
+		if len(result.HelperIDs) == 1 {
+			companionID = result.HelperIDs[0]
 		}
 		switch {
 		case errors.Is(err, store.ErrIdempotencyConflict):
@@ -2009,7 +1994,7 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 			createErr = errors.Join(createErr, err)
 		default:
 			row.status = quickSaved
-			if id != 0 {
+			if result.MainID != 0 {
 				created++
 			}
 			if companionID != 0 {
@@ -2020,70 +2005,64 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 	return created, paired, createErr
 }
 
+// applyFuelAdjustment selects and snapshots the version effective on the
+// booking date. No version is the historical zero-adjustment behavior.
+func (s *Server) applyFuelAdjustment(ctx context.Context, baseID int64, date time.Time, entry *models.Entry) error {
+	adjustment, err := s.store.FuelAdjustmentAt(ctx, baseID, date)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	applyEffectiveFuelAdjustment(entry, adjustment)
+	return nil
+}
+
+// applyResolvedFuelAdjustment snapshots fuel pricing after catalog validation.
+func (s *Server) applyResolvedFuelAdjustment(ctx context.Context, baseID int64, entry *models.Entry, machineIDs []int64) error {
+	if entry.TractorID == nil && len(machineIDs) == 0 {
+		return nil
+	}
+	if err := s.applyFuelAdjustment(ctx, baseID, entry.Date, entry); err != nil {
+		return err
+	}
+	entry.Cost = calc.Cost(entry.Hours, entry.HourlyRate)
+	return nil
+}
+
+// applyEffectiveFuelAdjustment adds one non-cumulative version to a catalog
+// snapshot. A zero version explicitly switches the addition off.
+func applyEffectiveFuelAdjustment(entry *models.Entry, adjustment *models.FuelAdjustment) {
+	entry.FuelAdjustmentLabel = ""
+	entry.FuelAdjustmentPerH = decimal.Zero
+	if adjustment == nil || !adjustment.AmountPerH.IsPositive() {
+		return
+	}
+	entry.FuelAdjustmentLabel = adjustment.Label
+	entry.FuelAdjustmentPerH = adjustment.AmountPerH
+	entry.HourlyRate = entry.HourlyRate.Add(adjustment.AmountPerH).Round(2)
+}
+
 // buildGespannEntry resolves a fixed gespann into a snapshotted entry template
 // (rate and labels; hours, date and account are set by the caller). A missing
 // or incomplete rig is a validation message; any other store failure is an
 // error, so a replay retries instead of rejecting the rows for good.
 func (s *Server) buildGespannEntry(r *http.Request, gespannID int64) (*models.Entry, []int64, string, error) {
 	const gone = "Das gewählte Gespann ist nicht mehr vorhanden."
-	g, err := s.store.GetGespann(r.Context(), gespannID)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, nil, gone, nil
-	}
+	resolved, failure, err := s.resolveEquipment(r.Context(), equipmentSelection{GespannID: &gespannID})
 	if err != nil {
 		return nil, nil, "", err
 	}
-	// A machines-only rig is valid; a half-set tractor pair is not (see
-	// calc.GespannRate), and neither is a rig with nothing in it at all.
-	if (g.TractorID == nil) != (g.LoadLevelID == nil) || (g.TractorID == nil && len(g.MachineIDs) == 0) {
-		return nil, nil, "Das Gespann „" + g.Name + "“ ist unvollständig — bitte in den Gespannen ergänzen.", nil
-	}
-	var tractor *models.Tractor
-	var load *models.LoadLevel
-	if g.TractorID != nil {
-		tractor, err = s.store.GetTractor(r.Context(), *g.TractorID)
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, nil, gone, nil
-		}
-		if err != nil {
-			return nil, nil, "", err
-		}
-		load, err = s.store.GetLoadLevel(r.Context(), *g.LoadLevelID)
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, nil, gone, nil
-		}
-		if err != nil {
-			return nil, nil, "", err
-		}
-	}
-	machines, err := s.store.MachinesByIDs(r.Context(), g.MachineIDs)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	// See resolveEntryFromForm: every stored machine id must resolve, or the row
-	// is priced without the missing machine's share and quietly underbills.
-	if len(machines) != len(g.MachineIDs) {
+	switch failure {
+	case equipmentResolutionIncompletePair, equipmentResolutionEmpty:
+		return nil, nil, "Das Gespann „" + resolved.TaskLabel + "“ ist unvollständig — bitte in den Gespannen ergänzen.", nil
+	case equipmentResolutionGespannMissing, equipmentResolutionTractorMissing,
+		equipmentResolutionLoadMissing, equipmentResolutionMachineMissing:
 		return nil, nil, gone, nil
 	}
-	rate := calc.GespannRate(tractor, load, machines)
-	names := make([]string, 0, len(machines))
-	ids := make([]int64, 0, len(machines))
-	for _, m := range machines {
-		names = append(names, m.Name)
-		ids = append(ids, m.ID)
-	}
-	gid := g.ID
-	entry := &models.Entry{
-		TaskLabel:     g.Name,
-		GespannID:     &gid,
-		MachineLabels: strings.Join(names, ", "),
-		HourlyRate:    rate,
-	}
-	if tractor != nil && load != nil {
-		entry.TractorID, entry.LoadLevelID = &tractor.ID, &load.ID
-		entry.TractorLabel, entry.LoadLabel = tractor.Label(), load.Name
-	}
-	return entry, ids, "", nil
+	entry, ids := resolved.entrySnapshot()
+	return &entry, ids, "", nil
 }
 
 // handleEntryDelete removes a booking only while its year remains open.

@@ -11,7 +11,7 @@
 	var rows = form.querySelector("[data-person-rows]"), details = form.querySelector("[data-person-details]");
 	var preview = form.querySelector("[data-booking-preview]");
 	var locked = form.hasAttribute("data-booking-locked");
-	var drafts = Object.create(null), lastKey = "", machineCost = null, machineRate = null, serial = 0;
+	var drafts = Object.create(null), lastKey = "", machineCost = null, machineRate = null, machineAdjustment = null, serial = 0;
 	var storagePrefix = "treckrr:booking-defaults:v2:" + value("neighbor_id") + ":";
 	var remembered = ["mode", "gespann_id", "tractor_id", "load_level_id", "machine_ids", "unit", "unit_custom", "task_label"];
 	var immutable = ["booking_kind", "booking_direction", "entry_date", "year_id", "neighbor_id", "csrf_token", "idempotency_key", "booking_form_version", "copy_mode"];
@@ -82,7 +82,7 @@
 		try { localStorage.setItem(storagePrefix + key(), JSON.stringify(saved)); } catch (_) { /* Private storage is optional. */ }
 	}
 	function selectDraft() {
-		if (lastKey && lastKey !== key()) { drafts[lastKey] = saveDraft(); restoreDraft(drafts[key()]); if (!drafts[key()]) restoreDefaults(); machineCost = null; machineRate = null; }
+		if (lastKey && lastKey !== key()) { drafts[lastKey] = saveDraft(); restoreDraft(drafts[key()]); if (!drafts[key()]) restoreDefaults(); machineCost = null; machineRate = null; machineAdjustment = null; }
 		lastKey = key();
 		if (kind.value === "quantity") { if (!unit.value || unit.value === "h") unit.value = "ha"; } else unit.value = "h";
 		identifyRows(); refreshVisibility(); updatePreview();
@@ -130,13 +130,13 @@
 		form.querySelectorAll("[data-unit-label]").forEach(function (label) { label.textContent = unit.value === "__custom" ? value("unit_custom") || "Einheit" : unit.value; });
 	}
 	/** Mirrors per-person rounding without trusting a client-computed total on save. */
-	function updatePreview(cost, rate) {
-		if (arguments.length) { machineCost = cost; machineRate = rate; }
+	function updatePreview(cost, rate, adjustment) {
+		if (arguments.length) { machineCost = cost; machineRate = rate; machineAdjustment = adjustment || null; }
 		var lines = [], total = 0, valid = true;
 		var add = function (label, qty, price) { if (!positive(qty) || !positive(price)) { valid = false; return; } var amount = round(qty * price); total = round(total + amount); lines.push({ label: label, qty: qty, price: price, amount: amount }); };
 		if (kind.value === "fixed") add("Freie Position", 1, number("amount"));
 		else if (kind.value === "quantity") add("Mengenleistung · " + (unit.value === "__custom" ? value("unit_custom") : unit.value), number("quantity"), number("unit_price"));
-		else if (kind.value === "equipment") { if (catalogEquipment()) { if (positive(machineCost) && positive(machineRate)) add("Maschinenleistung", number("hours"), machineRate); else valid = false; } else add(value("partner_label") || "Maschinenleistung", number("hours"), number("partner_rate")); }
+		else if (kind.value === "equipment") { if (catalogEquipment()) { if (positive(machineCost) && positive(machineRate)) add("Maschinenleistung" + (machineAdjustment && positive(machineAdjustment.amount) ? " inkl. " + machineAdjustment.label + " (+" + fmt(machineAdjustment.amount) + "/h)" : ""), number("hours"), machineRate); else valid = false; } else add(value("partner_label") || "Maschinenleistung", number("hours"), number("partner_rate")); }
 		var count = 0;
 		activeRows().forEach(function (row) {
 			var selected = rowField(row, "person_id"); if (selected.disabled || rowField(row, "person_state").value !== "active" || !populated(row)) return;

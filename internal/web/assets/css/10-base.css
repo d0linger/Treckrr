@@ -1,0 +1,259 @@
+/* Blueprint grid on the page ground — part of the Werkblatt identity. */
+	--grid-line: rgba(20, 40, 30, .05);
+	--radius: 10px;
+	--radius-sm: 6px;
+	/* Modular type scale (theme-independent) — one system instead of ~15 ad-hoc sizes. */
+	--fs-xs: .75rem; --fs-sm: .8125rem; --fs-base: 1rem; --fs-md: 1.0625rem;
+	--fs-lg: 1.25rem; --fs-xl: 1.5rem; --fs-2xl: 1.9rem;
+	--shadow: 0 1px 2px rgba(0, 0, 0, .05);
+	/* Werkblatt depth: hairlines over shadows — cards are bordered sheets on the
+	   gridded paper; the pop-shadow is reserved for true overlays. */
+	--card-grad: var(--surface);
+	--card-hairline: rgba(20, 40, 30, .16);
+	--card-shadow: 0 1px 2px rgba(24, 45, 35, .05);
+	--glow: none;
+	/* Translucent twin of --chassis for the floating tab bar. It has to move with
+	   the chrome: left on the old dark value it kept the bottom bar dark while the
+	   app bar went light, and the muted labels on it dropped to unreadable. */
+	--glass: rgba(251, 250, 245, .92);
+	--chassis-bar-shadow: 0 -6px 20px rgba(31, 77, 56, .10);
+	/* Accent for active state that sits ON THE BAR rather than on the chip. In the
+	   mobile tab bar the chip wraps only the icon, so the label and the top marker
+	   stand on the chrome itself — where mint reaches 1.63:1. The desktop rail does
+	   not need this: there the whole item IS the chip, so mint stays correct. */
+	--chassis-accent-bar: #1f4d38;
+	--btn-glow: rgba(21, 31, 25, .16);
+	--brand-grad: linear-gradient(135deg, var(--signal), var(--signal-press));
+	--tap: 44px;
+	--maxw: 720px;
+	font-size: 16px;
+}
+
+/* Dark palette: applied automatically when the system prefers dark (unless the
+   user forced light), and always when the user forced dark. */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		color-scheme: dark;
+		--bg: #0c1511;
+		--surface: #19221d;
+		--surface-2: #232c28;
+		--text: #dbe5de;
+		--muted: #a2ada4;
+		--border: #2b332d;
+		--primary: #85d7a9;        /* Noir: vibrant mint accent */
+		--primary-strong: #63c192; /* mint gradient end (hero surfaces) */
+		--primary-tint: #1b2a22;
+		--on-primary: #04170e;     /* dark text/icon on the mint accent */
+		--signal: #ff8142;         /* Nachtschicht: signal orange glows brighter */
+		--signal-press: #e86f31;
+		--on-signal: #201005;
+		--signal-tint: rgba(255, 129, 66, .16);
+		--signal-text: #ff9a68;
+		--danger: #b82f3a; /* deep crimson — white stays AA on filled danger actions */
+		--danger-text: #e66f77; /* the fill is 4.12 on a card; this clears 4.5 on card and tint */
+		--danger-tint: #341a1c;
+		--accent: #e0a640;
+		--accent-text: #e0a640;
+		--focus: #5b9bff;
+		--data: #52b184;
+		--data-track: #26302a;
+		--pay: #52b184;
+		--owe: #e0805f;
+		--on-status: #04170e;
+		--pay-text: #5ab48a;
+		--owe-text: #e18667;
+		--chassis: #16201b;
+		--chassis-muted: #93a49a;
+		--chassis-line: #263329;
+		--chassis-chip: rgba(255, 255, 255, .05);
+		--chassis-on-chip: #fff;
+		--chassis-pill: #fff;
+		--chassis-on-pill: var(--chassis);
+		--chassis-fill: rgba(255, 255, 255, .08);
+		--chassis-border: rgba(255, 255, 255, .14);
+		--chassis-hover: rgba(255, 255, 255, .14);
+		--bk-mark: #fff;
+		--bk-ok: #8fe6b6;
+		--bk-warn: #f6c650;
+		--bk-bad: #ff9078;
+		--chassis-edge: 1px;
+		--chassis-bar-shadow: 0 -6px 24px rgba(0, 0, 0, .22);
+		--chassis-accent-bar: #85d7a9;
+		/* No longer theme-constant: the light chrome needs dark labels, so this value
+		   has to be restored here or the app bar renders dark green on dark green. */
+		--chassis-text: #c9d4cd;
+		/* --chassis-active stays theme-CONSTANT: the mint marker always sits on a
+		   dark ground (the chip in light, the bar in dark), so one value serves both.
+		   --chassis-text is NOT constant any more — the light chrome needs dark
+		   labels — and is therefore restored above. */
+		--grid-line: rgba(219, 229, 222, .035);
+		--shadow: 0 1px 2px rgba(0, 0, 0, .4);
+		--card-grad: var(--surface); /* flat card surface */
+		--card-hairline: rgba(255, 255, 255, .09);
+		--card-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+		--glow: none;
+		--glass: rgba(16, 26, 21, .94);
+		--btn-glow: rgba(0, 0, 0, .34);
+	}
+}
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	--bg: #0c1511;
+	--surface: #19221d;
+	--surface-2: #232c28;
+	--text: #dbe5de;
+	--muted: #a2ada4;
+	--border: #2b332d;
+	--primary: #85d7a9;        /* Noir: vibrant mint accent */
+	--primary-strong: #63c192; /* mint gradient end (hero surfaces) */
+	--primary-tint: #1b2a22;
+	--on-primary: #04170e;     /* dark text/icon on the mint accent */
+	--signal: #ff8142;         /* Nachtschicht: signal orange glows brighter */
+	--signal-press: #e86f31;
+	--on-signal: #201005;
+	--signal-tint: rgba(255, 129, 66, .16);
+	--signal-text: #ff9a68;
+	--danger: #b82f3a; /* deep crimson — white stays AA on filled danger actions */
+	--danger-text: #e66f77; /* the fill is 4.12 on a card; this clears 4.5 on card and tint */
+	--danger-tint: #341a1c;
+	--accent: #e0a640;
+	--accent-text: #e0a640;
+	--focus: #5b9bff;
+	--chassis: #16201b;
+	--chassis-muted: #93a49a;
+	--chassis-line: #263329;
+		--chassis-chip: rgba(255, 255, 255, .05);
+		--chassis-on-chip: #fff;
+		--chassis-pill: #fff;
+		--chassis-on-pill: var(--chassis);
+		--chassis-fill: rgba(255, 255, 255, .08);
+		--chassis-border: rgba(255, 255, 255, .14);
+		--chassis-hover: rgba(255, 255, 255, .14);
+		--bk-mark: #fff;
+		--bk-ok: #8fe6b6;
+		--bk-warn: #f6c650;
+		--bk-bad: #ff9078;
+		--chassis-edge: 1px;
+		--chassis-bar-shadow: 0 -6px 24px rgba(0, 0, 0, .22);
+		--chassis-accent-bar: #85d7a9;
+		/* No longer theme-constant: the light chrome needs dark labels, so this value
+		   has to be restored here or the app bar renders dark green on dark green. */
+		--chassis-text: #c9d4cd;
+	/* --chassis-active stays theme-CONSTANT: the mint marker always sits on a dark
+	   ground (the chip in light, the bar in dark), so one value serves both.
+	   --chassis-text is NOT constant any more and is restored above. */
+	--grid-line: rgba(219, 229, 222, .035);
+	--shadow: 0 1px 2px rgba(0, 0, 0, .4);
+	--card-grad: var(--surface); /* flat card surface */
+	--card-hairline: rgba(255, 255, 255, .09);
+	--card-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+	--glow: none;
+	--glass: rgba(16, 26, 21, .94);
+	--btn-glow: rgba(0, 0, 0, .34);
+	/* Chart-mark tokens must be redeclared here too: forcing dark via the theme
+	   toggle on a light system does not match the prefers-dark media query, so
+	   without these the bars/tracks/sparklines fall back to light values. */
+	--data: #52b184;
+	--data-track: #26302a;
+	--pay: #52b184;
+	--owe: #e0805f;
+	--on-status: #04170e;
+	--pay-text: #5ab48a;
+	--owe-text: #e18667;
+}
+
+* { box-sizing: border-box; }
+
+::selection { background: rgba(224, 89, 16, .28); background: color-mix(in srgb, var(--signal) 28%, transparent); color: var(--text); }
+html { scrollbar-color: var(--primary) var(--surface-2); }
+input, textarea { caret-color: var(--signal); }
+a, button, summary, input, select, textarea { touch-action: manipulation; }
+
+html, body {
+	margin: 0;
+	padding: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font-body);
+	line-height: 1.45;
+	-webkit-text-size-adjust: 100%;
+}
+
+/* Blueprint grid on the page ground — the Werkblatt paper. Scrolls WITH the
+   page: background-attachment:fixed would force a repaint every scroll frame
+   on mobile (and iOS Safari mishandles it on body) — a mobile-first PWA can't
+   afford that, and paper whose grid moves with the sheet is the truer metaphor
+   anyway. */
+body {
+	min-height: 100dvh;
+	background-image:
+		linear-gradient(var(--grid-line) 1px, transparent 1px),
+		linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+	background-size: 26px 26px;
+}
+/* When app-bg.js has a live canvas it paints the paper itself (grid, seed dots or
+   daylight). That canvas is fixed at z-index:-1, and per CSS painting order a
+   negative-z-index child paints BEFORE its parent's background — so body's own
+   opaque fill AND this grid would cover it entirely. Hand the ground over: html
+   keeps --bg as the base colour, body goes transparent, and the canvas shows
+   through. Without JS (or without a 2D context) the class is never set and the
+   static grid above stays as the fallback.
+
+   Scoped to `screen` on purpose: this selector is more specific than the plain
+   `body { background: #fff }` in the print blocks below, and media queries add no
+   specificity — unscoped it would silently win there and print a Beleg on the
+   dark --bg ground instead of white paper. On paper the canvas is hidden anyway,
+   so the handover has nothing to do. */
+@media screen {
+	html.has-appbg body { background: transparent; }
+}
+/* Reserve space for the fixed bottom tab bar — only on pages that render it
+   (authenticated). Without this scope, the login/offline pages (no tab bar) get
+   an extra 72px below a 100dvh container and show a phantom vertical scrollbar. */
+body.has-nav {
+	padding-bottom: calc(72px + env(safe-area-inset-bottom));
+}
+/* Full-height, self-centering pages without the nav (login, offline) provide
+   their own padding via .auth, so drop the .main gutter — otherwise it stacks
+   on top of a 100dvh child and forces a phantom scrollbar at every size. */
+body:not(.has-nav) .main { padding: 0; }
+
+/* The off-canvas side drawer is fixed and parked just off the right edge when
+   closed. On iOS Safari a fixed element beyond the viewport becomes pannable,
+   which produced a stray horizontal scrollbar (and pushed the fixed tab bar
+   below the fold). Clip horizontal overflow at the root — `clip` doesn't create
+   a scroll container, so the sticky app bar keeps working; `hidden` is the
+   fallback for browsers without `overflow: clip`. */
+html { overflow-x: hidden; }
+@supports (overflow: clip) {
+	html { overflow-x: clip; }
+}
+
+a { color: var(--primary); text-decoration: none; }
+.linkbtn { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: var(--primary);
+	font-weight: 600; cursor: pointer; text-decoration: underline; }
+.linkbtn:hover { color: var(--primary-strong); }
+.twofa-alt { margin: -.2rem 0 .3rem; }
+/* One-time-code fields: large centred digits (app code) / grouped code (backup). */
+.otp { width: 100%; text-align: center; font-family: inherit; font-size: 1.9rem; font-weight: 800;
+	letter-spacing: .5em; padding: .7rem .3rem .7rem .8rem; font-variant-numeric: tabular-nums;
+	border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); }
+.otp::placeholder { letter-spacing: .5em; color: color-mix(in srgb, var(--muted) 70%, transparent); font-weight: 700; }
+/* Backup code: full format is four 4-char groups (e.g. N6YD-DBNN-UPXT-PB67 =
+   19 chars). Monospace keeps every glyph the same width so the whole code fits
+   at 390px regardless of which letters it contains. */
+.otp2 { width: 100%; text-align: center; font-family: var(--font-mono);
+	font-size: .95rem; font-weight: 700; letter-spacing: .02em; padding: .72rem .35rem; text-transform: uppercase;
+	border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); }
+.otp2::placeholder { letter-spacing: .02em; color: color-mix(in srgb, var(--muted) 70%, transparent); font-weight: 700; }
+h1, h2, h3 { margin: 0; }
+/* Display face on headings and the big numeric readouts. */
+h1, h2, h3, .section-title, .summary-card__value, .summary-card__label,
+.appbar__title, .kpi__value, .kpi__label, .barpair__v, .stat__value {
+	font-family: var(--font-display); letter-spacing: -.01em;
+}
+.muted { color: var(--muted); font-size: .9rem; }
+.small { font-size: .78rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+em { font-style: normal; color: var(--muted); }
+

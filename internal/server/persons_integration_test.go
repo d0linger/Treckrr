@@ -100,7 +100,7 @@ func TestPersonsAndSurchargesIntegration(t *testing.T) {
 	}
 
 	// Anfahrt is hidden until rates exist, then books flat and per-km.
-	pageURL := fmt.Sprintf("/neighbors/%d?year=%d", nid, yid)
+	pageURL := neighborBookingsURL(nid, yid)
 	if page := e.get(pageURL); strings.Contains(page, "Anfahrt verrechnen") {
 		t.Errorf("the Anfahrt form is offered although no rates are configured")
 	}

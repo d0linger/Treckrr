@@ -13,22 +13,16 @@
 		</ol>
 	</div>
 	{{end}}
-	<div class="summary-card card">
+	<header class="summary-card card">
 		<div>
-			<span class="summary-card__label">Gesamtkosten {{.Year.Year}}</span>
+			<span class="summary-card__label">Abrechnungsjahr {{.Year.Year}} · {{if .Completed}}Abgeschlossen{{else}}In Bearbeitung{{end}}</span>
 			<span class="summary-card__value">{{money .GrandCost}}</span>
+			<span class="summary-card__label">Gesamtsaldo</span>
 		</div>
 		<div class="summary-card__meta">
 			<span>{{num .GrandHours}} h · Grundlage {{.Year.Base.Year}}</span>
-			<span class="btnrow">
-				<a class="btn btn--ghost btn--sm" href="/buchungen?year={{.Year.ID}}">Buchungen &amp; Filter</a>
-				<a class="btn btn--ghost btn--sm" href="/stats?year={{.Year.ID}}">Statistik</a>
-				<a class="btn btn--ghost btn--sm" href="/stats/all">Alle Jahre</a>
-				<a class="btn btn--ghost btn--sm" href="/export/year/{{.Year.ID}}">CSV Export</a>
-				{{if not .Completed}}<a class="btn btn--ghost btn--sm" href="/entries/import?year={{.Year.ID}}">Import</a>{{end}}
-			</span>
 		</div>
-	</div>
+	</header>
 
 	{{if .WorkItems}}
 	<div>
@@ -54,34 +48,18 @@
 	</div>
 	{{end}}
 
-	<div class="card statusrow">
-		<div class="statusrow__info">
-			<span>Status:
-				{{if .Completed}}<span class="tag tag--done">Abgeschlossen</span>
-				{{else}}<span class="tag tag--progress">In Bearbeitung</span>{{end}}
-			</span>
-			{{if .Completed}}
-			<span class="paysummary">
-				<span class="tag tag--paid">Bezahlt {{money .PaidCost}}</span>
-				<span class="tag tag--open">Offen {{money .OpenCost}}</span>
-				{{if .CreditCount}}<span class="tag tag--credit">Guthaben {{money .CreditCost}}</span>{{end}}
-			</span>
-			{{end}}
-		</div>
-		{{if .Completed}}
-		<form method="post" action="/years/{{.Year.ID}}/status"
-			data-confirm="Abrechnungsjahr {{.Year.Year}} wieder öffnen? Buchungen und Belege werden dadurch wieder änderbar."
-			data-confirm-reason="Grund für das Wiederöffnen (wird protokolliert)">
-			<input type="hidden" name="status" value="in_progress">
-			<input type="hidden" name="origin" value="dashboard">
-			<input type="hidden" name="reason" value="">
-			<button class="btn btn--ghost btn--sm" type="submit">Wieder öffnen</button>
-		</form>
-		{{else}}
-		<a class="btn btn--primary btn--sm" href="/years/{{.Year.ID}}/abschluss">Jahr abschließen …</a>
-		{{end}}
-		<a class="btn btn--ghost btn--sm" href="/years/{{.Year.ID}}/issue-all" title="Alle offenen Nachbarn auf einmal abrechnen">Sammel-Festschreibung</a>
+	{{if not .Completed}}
+	<div class="next-action">
+		<div><strong>Nächster Schritt</strong><span>{{if .Summaries}}Buchungen ergänzen oder das Jahr prüfen.{{else}}Nachbarn zum Abrechnungsjahr hinzufügen.{{end}}</span></div>
+		{{if .Summaries}}<a class="btn btn--primary btn--sm" href="/years/{{.Year.ID}}/abschluss">Abschluss prüfen</a>
+		{{else}}<a class="btn btn--primary btn--sm" href="#nachbarn">Nachbarn hinzufügen</a>{{end}}
 	</div>
+	{{else if or .OpenCount .CreditCount}}
+	<div class="next-action next-action--payment">
+		<div><strong>Zahlungen abschließen</strong><span>{{.OpenCount}} offen{{if .CreditCount}} · {{.CreditCount}} Guthaben{{end}}</span></div>
+		<a class="btn btn--primary btn--sm" href="{{if .OpenCount}}#offene-zahlungen{{else}}#auszuzahlen{{end}}">Beträge prüfen</a>
+	</div>
+	{{end}}
 
 	{{/* Targets of the "Zu erledigen" rows: jumping here rings every tile of
 	     that kind (CSS :has(:target)), like the linked booking cards. */}}
@@ -98,16 +76,27 @@
 		{{end}}
 	</div>
 	{{end}}
-	<div class="list">
+	<div class="list neighbor-account-grid">
 		{{range .Summaries}}
-		<div class="list__row card" data-nb-item{{if and $.Completed (not .Paid)}} data-open="1"{{end}}{{if $.Completed}}{{if .Credit}} data-due="credit"{{else if not .Paid}} data-due="open"{{end}}{{end}}>
+		<div class="list__row card neighbor-account-card" data-nb-item{{if and $.Completed (not .Paid)}} data-open="1"{{end}}{{if $.Completed}}{{if .Credit}} data-due="credit"{{else if not .Paid}} data-due="open"{{end}}{{end}}>
 			<a class="list__main list__main--link" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}">
 				<span class="list__title">{{.Neighbor.Name}}</span>
 				<span class="list__sub">{{.Entries}} Buchungen · {{num .Hours}} h</span>
 			</a>
-			<div class="list__value">{{money .Cost}}</div>
-			{{if .QualityIssues}}<a class="chip2 chip2--stale" href="/data-quality?year={{$.Year.ID}}" title="{{.QualityIssues}} Stammdaten-Hinweis(e)"><span class="chip2__g" aria-hidden="true">!</span>{{.QualityIssues}}</a>{{end}}
+			<div class="neighbor-account-card__total">
+				<span class="neighbor-account-card__label">Jahressaldo</span>
+				<strong class="list__value">{{money .Cost}}</strong>
+			</div>
+			<div class="neighbor-account-card__footer">
+				{{if or (and (not $.Completed) $.User.CanWrite) .QualityIssues}}
+				<div class="neighbor-account-card__tools">
+					{{if and (not $.Completed) $.User.CanWrite}}<a class="list__book" href="/neighbors/{{.Neighbor.ID}}?year={{$.Year.ID}}&amp;view=booking">Buchen</a>{{end}}
+					{{if .QualityIssues}}<a class="chip2 chip2--stale" href="/data-quality?year={{$.Year.ID}}" title="{{.QualityIssues}} Stammdaten-Hinweis(e)"><span class="chip2__g">{{template "ic-warn"}}</span>{{.QualityIssues}} {{if eq .QualityIssues 1}}Hinweis{{else}}Hinweise{{end}}</a>{{end}}
+				</div>
+				{{end}}
 			{{if $.Completed}}
+			<div class="neighbor-account-card__payment">
+				<span class="sr-only">Zahlungsstand:</span>
 			{{if .Paid}}
 				<span class="paychip paychip--paid">{{template "ic-check"}} Bezahlt</span>
 				{{else if .Credit}}
@@ -117,14 +106,16 @@
 					data-confirm="Restbetrag ({{money .Remaining}}) als bezahlt verbuchen?">
 					<input type="hidden" name="year_id" value="{{$.Year.ID}}">
 					<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
-					<button class="paychip paychip--open" type="submit" title="Restbetrag als bezahlt verbuchen">
-						Offen · {{money .Remaining}}
-					</button>
+					<span class="paychip paychip--open paychip--static" title="Noch offener Betrag">Offen · {{money .Remaining}}</span>
+					<button class="btn btn--ghost btn--sm paytoggle__action" type="submit" title="Restbetrag als bezahlt verbuchen">Als bezahlt markieren</button>
 				</form>
 				{{end}}
+			</div>
 			{{else if or (gt .Entries 0) (not .Remaining.IsZero)}}
 				{{/* Running year: show payment status at a glance (read-only — the
 				     "als bezahlt verbuchen" toggle stays gated to completed years). */}}
+			<div class="neighbor-account-card__payment">
+				<span class="sr-only">Zahlungsstand:</span>
 				{{if .Paid}}
 				<span class="paychip paychip--paid" title="Vollständig bezahlt">{{template "ic-check"}} Bezahlt</span>
 				{{else if .Credit}}
@@ -132,6 +123,7 @@
 				{{else}}
 				<span class="paychip paychip--open paychip--static" title="Noch offener Betrag">Offen · {{money .Remaining}}</span>
 				{{end}}
+			</div>
 			{{else}}
 			<form method="post" action="/years/remove-neighbor" class="list__remove"
 				data-confirm-danger data-confirm="{{.Neighbor.Name}} aus diesem Jahr entfernen?">
@@ -140,6 +132,7 @@
 				<button class="btn btn--ghost btn--icon" type="submit" title="Aus Jahr entfernen" aria-label="Aus Jahr entfernen">{{template "ic-x"}}</button>
 			</form>
 			{{end}}
+			</div>
 		</div>
 		{{else}}
 		<div class="empty">
@@ -192,6 +185,26 @@
 		</form>
 	</details>
 	{{end}}
+
+	<details class="disclosure disclosure--plain page-more">
+		<summary>Weitere Aktionen</summary>
+		<div class="action-list">
+			<a href="/buchungen?year={{.Year.ID}}"><span><strong>Buchungen &amp; Filter</strong><small>Alle Buchungen durchsuchen und filtern</small></span><span aria-hidden="true">›</span></a>
+			<a href="/export/year/{{.Year.ID}}"><span><strong>CSV exportieren</strong><small>Buchungsdaten dieses Jahres herunterladen</small></span><span aria-hidden="true">›</span></a>
+			{{if not .Completed}}<a href="/entries/import?year={{.Year.ID}}"><span><strong>Buchungen importieren</strong><small>Mehrere Buchungen aus einer Datei übernehmen</small></span><span aria-hidden="true">›</span></a>{{end}}
+			<a href="/years/{{.Year.ID}}/issue-all"><span><strong>Sammel-Festschreibung</strong><small>Alle offenen Nachbarn gemeinsam abrechnen</small></span><span aria-hidden="true">›</span></a>
+		</div>
+		{{if .Completed}}
+		<form method="post" action="/years/{{.Year.ID}}/status" class="page-more__form"
+			data-confirm="Abrechnungsjahr {{.Year.Year}} wieder öffnen? Buchungen und Belege werden dadurch wieder änderbar."
+			data-confirm-reason="Grund für das Wiederöffnen (wird protokolliert)">
+			<input type="hidden" name="status" value="in_progress">
+			<input type="hidden" name="origin" value="dashboard">
+			<input type="hidden" name="reason" value="">
+			<button class="btn btn--ghost btn--sm" type="submit">Jahr wieder öffnen</button>
+		</form>
+		{{end}}
+	</details>
 
 	<p class="muted center">
 		Neue Nachbarn werden im Reiter <a class="link" href="/neighbors">Nachbarn</a> angelegt

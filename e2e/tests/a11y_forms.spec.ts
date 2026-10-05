@@ -12,9 +12,40 @@ async function login(page: Page) {
 
 test.beforeEach(async ({ page }) => { await login(page); });
 
+/** Opens the collapsed create form from the page-level action and puts the user at its first field. */
+test("neighbor create shortcut reveals and focuses the form", async ({ page }) => {
+  await page.goto("/neighbors");
+  const directory = page.locator(".neighbor-directory");
+  const form = page.locator("#neuer-nachbar");
+
+  await expect(directory).toBeVisible();
+  await expect(form).not.toHaveAttribute("open");
+  await page.getByRole("link", { name: "Nachbar anlegen", exact: true }).click();
+  await expect(form).toHaveAttribute("open", "");
+  await expect(form.locator('input[name="name"]')).toBeFocused();
+  const background = await directory.evaluate(el => getComputedStyle(el).backgroundColor);
+  expect(background).not.toBe("rgba(0, 0, 0, 0)");
+});
+
+/** Keeps the core accounting workspaces readable above the decorative page grid. */
+test("core accounting workspaces use opaque surfaces", async ({ page }) => {
+  for (const [path, selector] of [
+    ["/years", ".years-workspace"],
+    ["/years/1/abschluss", ".closing-workspace"],
+    ["/neighbors/1?year=1", ".account-workspace"],
+    ["/prices?base=1", ".pricing-workspace"],
+  ] as const) {
+    await page.goto(path);
+    const surface = page.locator(selector);
+    await expect(surface).toBeVisible();
+    const background = await surface.evaluate(el => getComputedStyle(el).backgroundColor);
+    expect(background).not.toBe("rgba(0, 0, 0, 0)");
+  }
+});
+
 /** Checks every quantity unit and both hourly modes against the original POST controls. */
 test("combined billing preserves canonical units, modes and quantity calculation", async ({ page }) => {
-  await page.goto("/neighbors/1?year=1");
+  await page.goto("/neighbors/1?year=1&view=booking");
   const form = page.locator("[data-entry-form]");
   const kind = form.locator("[data-booking-kind]");
   await kind.selectOption("quantity");
@@ -43,7 +74,7 @@ test("combined billing preserves canonical units, modes and quantity calculation
 
 /** Verifies that search/selection filtering cannot drop IDs or accidentally submit a booking. */
 test("machine filtering preserves selected IDs and Enter never saves the form", async ({ page }) => {
-  await page.goto("/neighbors/1?year=1");
+  await page.goto("/neighbors/1?year=1&view=booking");
   const form = page.locator("[data-entry-form]");
   await form.locator('[name="mode"]').selectOption("manual");
   const machine = form.locator("[data-machine]").first();
@@ -70,7 +101,7 @@ test("machine filtering preserves selected IDs and Enter never saves the form", 
 
 /** Pins the rate and proves isolated quantity drafts cannot submit a hidden linked person. */
 test("hourly preview and optional person stay explicit across isolated quantity drafts", async ({ page }) => {
-  await page.goto("/neighbors/1?year=1");
+  await page.goto("/neighbors/1?year=1&view=booking");
   const form = page.locator("[data-entry-form]");
   await form.locator('[name="mode"]').selectOption("manual");
   await form.locator('[name="tractor_id"]').selectOption("1");
@@ -147,11 +178,11 @@ test("native form controls and optional sections remain usable without JavaScrip
   const context = await browser.newContext({ baseURL: new URL(page.url()).origin, storageState: await page.context().storageState(), javaScriptEnabled: false });
   try {
     const native = await context.newPage();
-    await native.goto("/neighbors/1?year=1");
+    await native.goto("/neighbors/1?year=1&view=booking");
     await expect(native.locator('select[name="unit"]')).toBeVisible();
     await expect(native.locator('select[name="mode"]')).toBeVisible();
-    await expect(native.locator('select[name="mode"] option')).toHaveText([
-      "Fixes Gespann",
+		await expect(native.locator('select[name="mode"] option')).toHaveText([
+			"Gespann aus Grundlage",
       "Frei zusammenstellen",
       "Anderes Gefährt / Freitext",
     ]);
@@ -177,7 +208,7 @@ test("remembered new-booking defaults never overwrite an edited or copied record
     await expect(page.locator('[name="task_label"]')).toHaveValue("Mähen");
     await expect(page.locator('[name="unit"]')).toHaveValue("h");
   }
-  await page.goto("/neighbors/1?year=1");
+  await page.goto("/neighbors/1?year=1&view=booking");
   await page.locator("[data-booking-kind]").selectOption("quantity");
   await expect(page.locator("[data-unit]")).toHaveValue("Ballen");
   await expect(page.locator('[name="task_label"]')).toHaveValue("Unrelated remembered task");
@@ -206,7 +237,7 @@ test("inactive record content keeps sufficient contrast in both themes", async (
 /** Guards against later base rules shrinking touch actions or creating viewport overflow. */
 test("booking actions keep 44px touch targets at narrow mobile widths", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 });
-  await page.goto("/neighbors/1?year=1");
+  await page.goto("/neighbors/1?year=1&view=bookings");
   const targets = await page.locator(".bcard__acts .iconact").evaluateAll(nodes =>
     nodes.map(node => { const rect = node.getBoundingClientRect(); return { width: rect.width, height: rect.height }; }));
   expect(targets.length).toBeGreaterThan(0);

@@ -39,11 +39,10 @@ test("mobile chrome keeps primary controls comfortably tappable", async ({ page 
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
 
-  await expect(page.locator(".appbar__theme")).toBeHidden();
-  await expect(page.locator('.tabbar__item[aria-current="page"]')).toHaveCount(1);
+	await expect(page.locator('.tabbar__item[aria-current="page"]')).toHaveCount(1);
 
   const controls = page.locator(
-    ".appbar__brand:visible, .appbar__icon:visible, .yearpill:visible, .btn--sm:visible, .btn--xs:visible, .iconact:visible, .backbtn:visible, .backlink:visible, .workspace__back:visible, .barchart__label:visible, .switch:visible"
+    ".appbar__brand:visible, .appbar__icon:visible, .yearselect select:visible, .btn--sm:visible, .btn--xs:visible, .iconact:visible, .backbtn:visible, .backlink:visible, .workspace__back:visible, .barchart__label:visible, .switch:visible"
   );
   expect(await controls.count()).toBeGreaterThan(2);
   const undersized = await controls.evaluateAll((nodes) =>
@@ -90,10 +89,10 @@ test("custom dialogs contain focus and return it to their trigger", async ({ pag
   await expect(page.locator("#drawer")).toHaveAttribute("aria-hidden", "false");
   await page.keyboard.press("Shift+Tab");
   expect(await page.evaluate(() => document.getElementById("drawer")?.contains(document.activeElement))).toBe(true);
-  await page.keyboard.press("Escape");
-  await expect(menu).toBeFocused();
+	await page.keyboard.press("Escape");
+	await expect(menu).toBeFocused();
 
-  const search = page.locator("[data-cmdk-open]");
+	const search = page.locator(".appbar [data-cmdk-open]");
   await search.focus();
   await search.click();
   const commandInput = page.locator('.cmdk input[role="combobox"]');

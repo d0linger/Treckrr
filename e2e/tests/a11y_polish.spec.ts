@@ -20,7 +20,7 @@ async function login(page: Page) {
 test("quick entry identifies every field and newly added row", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
-  await page.goto("/neighbors/1?year=1");
+  await page.goto("/neighbors/1?year=1&view=booking");
   await page.getByText("Schnellerfassung (mehrere Zeilen)", { exact: true }).click();
   for (const row of [1, 6]) {
     for (const label of ["Datum", "Gespann", "Stunden", "Person"]) {
@@ -50,7 +50,7 @@ test("year closing wraps complete explanations", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
   await page.goto("/years/1/abschluss");
-  const details = page.locator(".year-closing .list__sub");
+	const details = page.locator(".year-closing .closing-check > div > span");
   expect(await details.count()).toBeGreaterThan(0);
   expect(await details.evaluateAll((nodes) => nodes.filter((node) =>
     getComputedStyle(node).whiteSpace === "nowrap" || node.scrollWidth > node.clientWidth + 1

@@ -30,7 +30,7 @@ async function freshAccount(page: Page): Promise<Account> {
     csrf_token: csrf, year_id: yearID!, neighbor_id: "1",
   } });
   expect(assigned.ok()).toBeTruthy();
-  const account = { yearID: yearID!, year, url: `/neighbors/1?year=${yearID}` };
+  const account = { yearID: yearID!, year, url: `/neighbors/1?year=${yearID}&view=booking` };
   await page.goto(account.url);
   await expect(page.locator("[data-unified-booking]")).toBeVisible();
   return account;
@@ -48,7 +48,8 @@ function firstPersonRow(form: Locator) {
 
 /** Selects an actual compact-dialog variant and fills only that visible path. */
 async function fillBooking(page: Page, account: Account, kind: Kind, direction: Direction, task: string) {
-  const form = page.locator("[data-unified-booking]");
+	await page.goto(account.url);
+	const form = page.locator("[data-unified-booking]");
   await form.locator(`[name="booking_direction"][value="${direction}"]`).check();
   await form.locator('[name="booking_kind"]').selectOption(kind);
   await form.locator('[name="entry_date"]').fill(`${account.year}-05-01`);
@@ -145,7 +146,7 @@ test("own equipment can book independent helper hours as a linked position", asy
   await expect(helper).toContainText(/1,5.*Mannstunde/);
   const helperID = await helper.getAttribute("id");
   await expect(main.locator(`a[href="#${helperID}"]`)).toHaveCount(1);
-  await expect(page.locator(".summary-card__value")).toContainText("122,00");
+	await expect(page.locator(".summary-card__value")).toContainText("122,00");
 });
 
 /** Exercises structured ledger editing/copying with shared catalog pricing and independent helper time. */
@@ -195,7 +196,7 @@ test("incoming equipment keeps its independent helper through edit and copy", as
   await expect(page.locator(".bcard").filter({ hasText: task })).toHaveCount(2);
   card = page.locator(".bcard").filter({ hasText: task + " Kopie" });
   await expect(card.locator(".bcard__cost")).toContainText("-165,00");
-  await expect(page.locator(".summary-card__value")).toContainText("-330,00");
+	await expect(page.locator(".summary-card__value")).toContainText("330,00");
 });
 
 /** Confirms counterclaims reduce settlement but never the outgoing invoice or revenue base. */
@@ -207,7 +208,7 @@ test("incoming work offsets the account without reducing own invoice net or stat
   await saveBooking(page, form, `E2E own revenue ${account.year}`);
   form = await fillBooking(page, account, "labor", "in", `E2E counter labor ${account.year}`);
   await saveBooking(page, form, `E2E counter labor ${account.year}`);
-  await expect(page.locator(".summary-card__value")).toContainText("64,00");
+	await expect(page.locator(".summary-card__value")).toContainText("64,00");
   await page.goto(`/stats?year=${account.yearID}`);
   await expect(page.locator(".kpi--rev .kpi__value")).toContainText("100,00");
   // Make this test independently runnable: the invoice spec need not have

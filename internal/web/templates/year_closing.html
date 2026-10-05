@@ -4,7 +4,8 @@
 		<a class="backbtn" href="/years" aria-label="Zurück zu den Jahren">{{template "ic-back"}}</a>
 		<h2 class="pagehead__t">Jahresabschluss · {{.Year.Year}}</h2>
 	</div>
-	<p class="muted small">Vor dem Abschließen: was im Jahr noch offen ist. Die Liste hält niemanden auf — sie zeigt nur, was du sonst erst im nächsten Frühjahr merkst.</p>
+	<p class="muted small">Prüfe offene Hinweise und schließe das Jahr anschließend verbindlich ab.</p>
+	<div class="work-surface closing-workspace">
 
 	{{if .Year.Completed}}
 	<div class="card">
@@ -14,40 +15,44 @@
 	</div>
 	{{end}}
 
-	<div class="stack stack--tight">
+	{{if .OpenChecks}}
+	<section class="closing-checks" aria-labelledby="open-checks-title">
+		<div class="closing-checks__head"><div><p class="eyebrow">Hinweise</p><h3 id="open-checks-title">{{.OpenChecks}} Punkt(e) offen</h3></div><span class="status status--neutral">Bitte prüfen</span></div>
 		{{range .Checks}}
-		<div class="list__row card">
-			<div class="list__main">
-				<span class="list__title">
-					{{.Label}}
-					{{if .Clean}}<span class="tag tag--paid">erledigt</span>{{else}}<span class="tag tag--open">{{.Count}} offen</span>{{end}}
-				</span>
-				<span class="list__sub">{{.Detail}}</span>
-				{{if not .Clean}}
-				<span class="list__sub">
+		{{if not .Clean}}
+		<div class="closing-check">
+			<div><strong>{{.Label}}</strong><span>{{.Detail}}</span>
+				<span>
 					{{range $i, $n := .Names}}{{if $i}}, {{end}}{{$n}}{{end}}{{if .More}} … und {{.More}} weitere{{end}}
 					{{if .Amount.IsPositive}} · Summe {{money .Amount}}{{end}}
 				</span>
-				{{end}}
 			</div>
+			<span class="status status--neutral">{{.Count}} offen</span>
 		</div>
 		{{end}}
-	</div>
+		{{end}}
+	</section>
+	{{else}}
+	<div class="closing-ready"><span aria-hidden="true">{{template "ic-check"}}</span><div><strong>Alles bereit</strong><p>Es sind keine offenen Prüfpunkte vorhanden.</p></div></div>
+	{{end}}
+
+	<details class="disclosure disclosure--plain page-more">
+		<summary>Alle Prüfungen anzeigen</summary>
+		<div class="action-list closing-all">
+			{{range .Checks}}<div><span><strong>{{.Label}}</strong><small>{{.Detail}}</small></span>{{if .Clean}}<span class="status status--done">Erledigt</span>{{else}}<span class="status status--neutral">{{.Count}} offen</span>{{end}}</div>{{end}}
+		</div>
+	</details>
 
 	{{if not .Year.Completed}}
-	<div class="card stack stack--tight">
-		{{if .OpenChecks}}
-		<p><strong>{{.OpenChecks}} Punkt(e) offen.</strong> Abschließen ist trotzdem möglich — du kennst deinen Betrieb besser als die Liste.</p>
-		{{else}}
-		<p><strong>Alles erledigt.</strong> Das Jahr kann abgeschlossen werden.</p>
-		{{end}}
+	<div class="closing-action">
 		<form method="post" action="/years/{{.Year.ID}}/status"
 			data-confirm="Abrechnungsjahr {{.Year.Year}} abschließen? Danach sind Buchungen und Belege gesperrt; Zahlungen bleiben erfassbar.">
 			<input type="hidden" name="status" value="completed">
-			<button class="btn btn--primary btn--sm" type="submit">Jahr {{.Year.Year}} abschließen</button>
+			<button class="btn btn--primary btn--block" type="submit">Jahr {{.Year.Year}} abschließen</button>
 		</form>
-		<p class="muted small">Nach dem Abschluss führt dich der Jahreswechsel-Assistent durch Sicherung, Folgejahr, Nachbarn, offene Posten und Serien.</p>
+		<p class="muted small">Danach sind Buchungen und Belege gesperrt; Zahlungen bleiben weiterhin erfassbar.</p>
 	</div>
 	{{end}}
+	</div>
 </section>
 {{end}}

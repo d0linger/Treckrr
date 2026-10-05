@@ -1,0 +1,158 @@
+/* ---- Desktop nav rail (Werkblatt, ≥1024px) ----------------------------- */
+/* The bottom tab bar docks LEFT as a chassis rail — a pure CSS repositioning
+   of the same DOM (same links, handlers, e2e selectors). It fuses with the
+   chassis app bar into one machine frame; items are numbered like the sections
+   of a Werkblatt sheet via CSS counters. Placed last to win the cascade. */
+@media (min-width: 1024px) {
+	body.has-nav { padding-left: 212px; padding-bottom: 0; }
+	.tabbar {
+		top: 0; right: auto; bottom: 0; left: 0; width: 212px;
+		flex-direction: column; justify-content: flex-start; gap: .15rem;
+		background: var(--chassis);
+		-webkit-backdrop-filter: none; backdrop-filter: none;
+		border-top: 0; border-right: var(--chassis-edge) solid var(--chassis-line);
+		box-shadow: none;
+		padding: 4.6rem .55rem 1rem; /* below the sticky app-bar row */
+		counter-reset: navno;
+		z-index: 15; /* under the sticky topstack, over content */
+	}
+	.tabbar__item {
+		flex: 0 0 auto; flex-direction: row; justify-content: flex-start; gap: .55rem;
+		width: 100%; padding: .55rem .6rem; border-radius: 8px;
+		font-size: .85rem;
+		counter-increment: navno;
+		border-left: 3px solid transparent;
+	}
+	/* Sheet number replaces the mobile top-marker ::before. */
+	.tabbar__item::before,
+	.tabbar__item.is-active::before {
+		content: "0" counter(navno);
+		position: static; transform: none; width: auto; height: auto;
+		background: none; border-radius: 0;
+		font-size: .62rem; font-weight: 700; letter-spacing: .08em;
+		color: var(--chassis-muted);
+	}
+	.tabbar__item.is-active { background: var(--chassis-chip); border-left-color: var(--chassis-active); color: var(--chassis-on-chip); }
+	.tabbar__item.is-active::before { color: var(--chassis-active); }
+	.tabbar__pill { width: auto; height: auto; }
+	.tabbar__item.is-active .tabbar__pill { background: none; box-shadow: none; }
+	/* No bottom bar on desktop: dock FAB and toasts to the viewport bottom. */
+	.fab { bottom: 1.25rem; }
+	.toast { left: calc(212px + .8rem); bottom: 1rem; }
+	.beleg-toast { bottom: 1.25rem; }
+}
+@media print {
+	body.has-nav { padding-left: 0; }
+}
+
+/* Task-first forms: shared by every page, without changing document layouts. */
+.form__grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); align-items: start; }
+.form__grid > *, .equipment-grid > *, .entry-amounts > * { min-width: 0; }
+.form-section { display: flex; flex-direction: column; gap: .75rem; }
+.form-section + .form-section { border-top: 1px solid var(--border); padding-top: 1.1rem; margin-top: .3rem; }
+.form-section__title { margin: 0; color: var(--text); font-size: 1rem; font-weight: 700; }
+.form-details { border-top: 1px solid var(--border); padding-top: .15rem; }
+.form-details > summary { min-height: var(--tap); gap: .6rem; flex-wrap: wrap; }
+.form-details > summary > .small { font-weight: 400; margin-left: auto; text-align: right; overflow-wrap: anywhere; }
+.form-details > summary::after { flex: 0 0 auto; }
+.form-details > :not(summary) { margin-top: .65rem; }
+.equipment-grid, .entry-amounts { display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; }
+.equipment-grid > .fieldset { grid-column: 1 / -1; margin: 0; }
+.entry-amounts { align-items: end; }
+.entry-amounts .rate-preview { min-height: var(--tap); flex-wrap: wrap; }
+.date-shortcuts { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .3rem; }
+.date-shortcuts .btn { flex: 1 1 auto; min-height: var(--tap); padding-inline: .4rem; }
+.machine-picker__tools { display: flex; align-items: end; flex-wrap: wrap; gap: .5rem; margin-bottom: .6rem; }
+.machine-picker__tools .field { flex: 1 1 14rem; }
+.machine-picker__tools .btn { min-height: var(--tap); }
+.machine-picker__tools [aria-pressed="true"] { background: var(--primary); color: var(--on-primary); }
+.machine-picker__options { max-height: 18rem; overflow-y: auto; overscroll-behavior: contain; padding: .15rem; scrollbar-color: var(--border) var(--surface); }
+.machine-picker__options .check { min-height: var(--tap); padding: .35rem .4rem; align-items: center; border-bottom: 1px solid var(--border); }
+.machine-picker__options .check:has(input:checked) { background: var(--surface-2); }
+.machine-picker__options .check > span { overflow-wrap: anywhere; min-width: 0; }
+.machine-picker__options + [role="status"] { margin: .45rem 0 0; }
+/* Forms remain steady while a user targets a control; motion denotes state only. */
+@media (prefers-reduced-motion: no-preference) {
+	.main { animation: none; }
+	.card:hover { transform: none; }
+}
+@media (min-width: 640px) {
+	.form--toolbar { flex-direction: row; align-items: end; }
+	.form--toolbar > .field { flex: 1; }
+	.form__grid--two, .equipment-grid, .entry-amounts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.machine-picker__options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: .75rem; }
+}
+@media (max-width: 639px) {
+	.form-details > summary > .small { text-align: left; margin-left: 0; }
+	.form-details > summary::after { margin-left: auto; }
+}
+/* After the base icon rules so touch widths cannot be overwritten by 36px. */
+@media (max-width: 640px), (pointer: coarse) {
+	.iconact { width: var(--tap); height: var(--tap); }
+}
+
+/* A single safety net for both current and future effects. No essential state is
+   communicated by motion, so reduced-motion users get immediate transitions. */
+@media (prefers-reduced-motion: reduce) {
+	html { scroll-behavior: auto !important; }
+	*, *::before, *::after {
+		animation-duration: .01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: .01ms !important;
+	}
+}
+
+/* Unified booking: native radio controls retain keyboard and no-JS behavior. */
+.booking-direction { border: 0; padding: 0; margin: 0; min-width: 0; }
+.booking-direction legend { font-weight: 600; margin-bottom: .5rem; }
+.booking-direction__choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+.booking-direction__choices label { display: flex; align-items: center; gap: .6rem; padding: .8rem; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; min-height: var(--tap); }
+.booking-direction__choices label:has(:checked) { border-color: var(--primary); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--primary); }
+.booking-direction__choices label:has(:focus-visible) { outline: 2px solid var(--primary); outline-offset: 3px; }
+.booking-direction__choices span { font-weight: 600; overflow-wrap: anywhere; }
+.booking-direction__choices small { display: block; font-size: .78rem; font-weight: 400; color: var(--muted); margin-top: .15rem; }
+.booking-preview { padding: .85rem 1rem; border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: var(--radius); background: var(--surface-2); }
+.booking-preview p { margin: .15rem 0; }
+.booking-preview__line, .booking-preview__total { display: flex; justify-content: space-between; gap: .75rem; align-items: baseline; }
+.booking-preview__line > :first-child, .booking-preview__total > :first-child { overflow-wrap: anywhere; min-width: 0; }
+.booking-preview__total { border-top: 1px solid var(--border); padding-top: .55rem; margin-top: .55rem !important; font-weight: 650; }
+.booking-preview strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+[data-pricing-status]:empty { display: none; }
+.beleg__calc { margin: -.25rem 0 .35rem 5.2rem; border-left: 2px solid var(--border); padding: .1rem 0 .1rem .75rem; color: var(--muted); font-size: .78rem; }
+.beleg__calc summary { cursor: pointer; font-weight: 700; color: var(--muted); }
+.beleg__calc-body { display: grid; gap: .35rem; margin-top: .5rem; }
+.beleg__calc-body > div { display: flex; justify-content: space-between; gap: 1rem; }
+.beleg__calc-body strong { text-align: right; color: var(--text); font-weight: 650; }
+.beleg__calc-body small { display: block; font-weight: 400; color: var(--muted); }
+.beleg__calc-parts ul { margin: 0; text-align: right; list-style: none; }
+.beleg__calc--total { margin: .4rem 0 0; padding: .55rem .75rem; border: 1px solid var(--border); border-radius: var(--radius); }
+.beleg-page.is-calculation-collapsible .beleg__calc { display: none; }
+.beleg-page.is-calculation-collapsible .beleg--calculation .beleg__calc { display: block; }
+.rollgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.rollgrid h3 { margin: 0; font-size: 1rem; }
+.rollgrid .form { gap: .6rem; }
+.comtimeline { margin: 0; padding: 0; list-style: none; display: grid; }
+.comtimeline__item { position: relative; display: grid; grid-template-columns: 1rem minmax(0, 1fr) auto; gap: .65rem; align-items: start; padding: .75rem 0; border-bottom: 1px solid var(--border); }
+.comtimeline__dot { width: .65rem; height: .65rem; margin-top: .3rem; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 3px var(--surface-2); }
+.comtimeline__item--mail .comtimeline__dot, .comtimeline__item--delivery .comtimeline__dot { background: var(--primary); }
+.comtimeline__item--dunning .comtimeline__dot { background: var(--danger); }
+.savedviews { display: grid; gap: .65rem; }
+.savedviews > div:first-child { display: flex; justify-content: space-between; gap: 1rem; }
+.savedviews__list { display: flex; flex-wrap: wrap; gap: .4rem; }
+.savedview { display: inline-flex; align-items: center; gap: .15rem; }
+.savedview form { display: inline-flex; }
+.savedview .iconact { width: 1.75rem; height: 1.75rem; }
+.savedviews__save { display: grid; grid-template-columns: minmax(12rem, 1fr) auto; gap: .5rem; }
+@media (max-width: 420px) {
+	.booking-direction__choices { grid-template-columns: minmax(0, 1fr); }
+	.booking-preview__line, .booking-preview__total, .bcard__line { flex-wrap: wrap; gap: .25rem; }
+	.beleg__calc { margin-left: 0; }
+	.beleg__calc-body > div { flex-wrap: wrap; }
+	.statusrow__actions, .statusrow__actions .btn, .statusrow__actions form { width: 100%; }
+	.summary-actions > summary { width: 100%; justify-content: space-between; min-height: var(--tap); }
+	.neighbor-account-card__payment { justify-content: flex-start; }
+	[data-nb-item] .paytoggle { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; }
+	[data-nb-item] .paytoggle__action { width: 100%; }
+}
+@media (max-width: 720px) { .rollgrid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) { .savedviews__save { grid-template-columns: minmax(0, 1fr); } }

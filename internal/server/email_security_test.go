@@ -82,7 +82,7 @@ func (r *mockEmailRows) Columns() []string {
 	case strings.Contains(q, "payments p"):
 		return []string{"net", "paid"}
 	case strings.Contains(q, "company"):
-		return []string{"name", "address", "tax_id", "tax_note", "tax_mode", "vat_rate", "iban", "payment_term_days", "dunning_fee_1", "dunning_fee_2", "dunning_grace_days", "skonto_pct", "skonto_days", "invoice_prefix", "invoice_start", "small_business_limit", "travel_flat", "travel_per_km", "mail_signature", "mail_cc"}
+		return []string{"name", "address", "tax_id", "tax_note", "tax_mode", "vat_rate", "iban", "payment_term_days", "dunning_fee_1", "dunning_fee_2", "dunning_grace_days", "skonto_pct", "skonto_days", "invoice_prefix", "invoice_start", "small_business_limit", "travel_flat", "travel_per_km", "mail_signature", "mail_cc", "einvoice_street", "einvoice_zip", "einvoice_town", "einvoice_country_code"}
 	case strings.Contains(q, "from billing_years"):
 		return []string{"y_id", "y_year", "y_base_id", "y_label", "y_status", "y_created", "b_id", "b_year", "b_name", "b_locked", "b_created"}
 	case strings.Contains(q, "from neighbors"):
@@ -152,6 +152,7 @@ func (r *mockEmailRows) Next(dest []driver.Value) error {
 		dest[17] = "0.00"
 		dest[18] = "" // mail_signature
 		dest[19] = ""
+		dest[20], dest[21], dest[22], dest[23] = "", "", "", "AT"
 	case strings.Contains(q, "from billing_years"):
 		dest[0] = int64(1)
 		dest[1] = 2026

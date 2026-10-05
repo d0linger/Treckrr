@@ -36,7 +36,8 @@ func TestPaymentFlowIntegration(t *testing.T) {
 	if p.Method != "bar" || p.InvoiceID == nil || p.InvoiceNumber == "" {
 		t.Fatalf("payment not linked: method=%q invoice=%v/%q", p.Method, p.InvoiceID, p.InvoiceNumber)
 	}
-	page := e.get(fmt.Sprintf("/neighbors/%d?year=%d", nid, yid))
+	pageURL := neighborPaymentsURL(nid, yid)
+	page := e.get(pageURL)
 	if !strings.Contains(page, "bar · Rechnung "+p.InvoiceNumber) {
 		t.Errorf("payment row does not show method and invoice number")
 	}
@@ -75,7 +76,7 @@ func TestPaymentFlowIntegration(t *testing.T) {
 	}
 	credit := inv.Content.Gross.Sub(got.Amount).Sub(decimal.RequireFromString("100")).Neg()
 	displayedCredit := strings.ReplaceAll(credit.StringFixed(2), ".", ",")
-	page = e.get(fmt.Sprintf("/neighbors/%d?year=%d", nid, yid))
+	page = e.get(pageURL)
 	if !strings.Contains(page, "Guthaben ("+displayedCredit) {
 		t.Fatalf("credit actions missing or wrong amount (want Guthaben (%s …))", displayedCredit)
 	}
@@ -87,11 +88,11 @@ func TestPaymentFlowIntegration(t *testing.T) {
 	if !rest.Equal(credit) {
 		t.Errorf("payout posting = %s, want %s", rest.StringFixed(2), credit.StringFixed(2))
 	}
-	page = e.get(fmt.Sprintf("/neighbors/%d?year=%d", nid, yid))
+	page = e.get(pageURL)
 	if strings.Contains(page, "Guthaben (") {
 		t.Errorf("credit actions still shown after payout")
 	}
-	if !strings.Contains(page, "Guthaben ausbezahlt") {
+	if bookingsPage := e.get(neighborBookingsURL(nid, yid)); !strings.Contains(bookingsPage, "Guthaben ausbezahlt") {
 		t.Errorf("payout posting not visible in the ledger list")
 	}
 

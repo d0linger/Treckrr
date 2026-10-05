@@ -25,11 +25,12 @@ func TestNeighborBookingSubmitGuards(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			page := execPage(t, "neighbor", map[string]any{
-				"Base": models.PriceBase{ID: 1}, "Year": models.BillingYear{ID: 1, Year: 2026},
+				"Section": "booking",
+				"Base":    models.PriceBase{ID: 1}, "Year": models.BillingYear{ID: 1, Year: 2026},
 				"Neighbor": models.Neighbor{ID: 1, Name: "Testhof"},
 				"Gespanne": []models.Gespann{{ID: 1, Name: "Testgespann"}},
-				"Entries":  []models.Entry{}, "Saldo": decimal.Zero, "TotalHours": decimal.Zero,
-				"PaidSum": decimal.Zero, "Remaining": decimal.Zero,
+				"Entries":  []models.Entry{}, "Saldo": decimal.Zero, "TotalCost": decimal.Zero, "TotalHours": decimal.Zero,
+				"LedgerSum": decimal.Zero, "PaidSum": decimal.Zero, "Remaining": decimal.Zero,
 				"HasInvoice": tc.issued, "Completed": tc.completed,
 			})
 			for _, label := range []string{"Buchung speichern", "Zeilen speichern"} {
@@ -45,6 +46,13 @@ func TestNeighborBookingSubmitGuards(t *testing.T) {
 				}
 				if disabled := strings.Contains(button, " disabled"); disabled != tc.issued {
 					t.Errorf("%q disabled=%t, want %t", label, disabled, tc.issued)
+				}
+			}
+			if !tc.completed {
+				for _, hook := range []string{"data-booking-task-help", "data-person-help", "data-booking-direction-note"} {
+					if !strings.Contains(page, hook) {
+						t.Errorf("booking form is missing controller hook %q", hook)
+					}
 				}
 			}
 		})
@@ -84,6 +92,25 @@ func TestNeighborEmptyStateOnlyOnce(t *testing.T) {
 		html := execPage(t, "neighbors_manage", map[string]any{"Scope": scope})
 		if n := strings.Count(html, "empty__title"); n != 1 {
 			t.Errorf("scope %s renders %d empty states", scope, n)
+		}
+	}
+}
+
+func TestNeighborCreateShortcutTargetsDisclosure(t *testing.T) {
+	html := execPage(t, "neighbors_manage", map[string]any{
+		"Stats": []struct {
+			Neighbor models.Neighbor
+			Years    int
+			Entries  int
+		}{{Neighbor: models.Neighbor{ID: 1, Name: "Testhof"}}},
+	})
+	for _, want := range []string{
+		`class="neighbor-directory"`,
+		`href="#neuer-nachbar" data-open-details="#neuer-nachbar"`,
+		`class="neighbor-create disclosure" id="neuer-nachbar"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("neighbor management is missing %q", want)
 		}
 	}
 }

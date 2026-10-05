@@ -5,7 +5,7 @@
 	/** Returns visible, enabled tab stops for custom dialogs that lack native <dialog> focus handling. */
 	function dialogFocusables(root) {
 		return Array.prototype.filter.call(root.querySelectorAll(
-			'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+			'summary, a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 		), function (el) { return !el.hidden && el.getClientRects().length > 0; });
 	}
 	/** Wraps Tab/Shift+Tab at a custom dialog's boundaries; blocks Tab when no focusable control exists. */
@@ -197,6 +197,21 @@
 			var boxes = form.querySelectorAll("[data-carry-check]");
 			var anyChecked = Array.prototype.some.call(boxes, function (b) { return b.checked; });
 			boxes.forEach(function (b) { b.checked = !anyChecked; });
+		});
+	});
+
+	// Same-page shortcuts can target a collapsed form disclosure. Open it before
+	// the browser follows the hash, then move focus to the first field so the
+	// action has an immediate, keyboard-accessible result.
+	document.querySelectorAll("[data-open-details]").forEach(function (trigger) {
+		trigger.addEventListener("click", function () {
+			var selector = trigger.getAttribute("data-open-details");
+			if (!selector || selector.charAt(0) !== "#") return;
+			var details = document.getElementById(selector.slice(1));
+			if (!details || details.tagName !== "DETAILS") return;
+			details.open = true;
+			var field = details.querySelector("input:not([type='hidden']), select, textarea");
+			if (field) requestAnimationFrame(function () { field.focus({ preventScroll: true }); });
 		});
 	});
 
@@ -683,7 +698,7 @@
 			// Move focus into the drawer on open, and restore it to the opener on
 			// close, so keyboard/screen-reader users aren't stranded (a11y).
 			if (on) {
-				var first = drawer.querySelector("a, button, [tabindex]:not([tabindex='-1'])");
+				var first = dialogFocusables(drawer)[0];
 				if (first) first.focus();
 			} else if (lastFocus && typeof lastFocus.focus === "function") {
 				lastFocus.focus();
@@ -712,7 +727,11 @@
 		toggles.forEach(function (btn) {
 			btn.addEventListener("click", function (e) {
 				e.preventDefault();
-				var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+				var current = document.documentElement.getAttribute("data-theme");
+				if (current !== "dark" && current !== "light") {
+					current = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+				}
+				var next = current === "dark" ? "light" : "dark";
 				document.documentElement.setAttribute("data-theme", next);
 				try { localStorage.setItem("treckrr-theme", next); } catch (err) {}
 				fetch("/theme?set=" + next, { credentials: "same-origin" }).catch(function () {});
@@ -1351,7 +1370,7 @@
 			}, 180);
 		}
 		function onKey(e) {
-			if (e.key === "Escape") { e.preventDefault(); close(); }
+			if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }
 			else if (e.key === "ArrowDown") { e.preventDefault(); if (items.length) { sel = (sel + 1) % items.length; highlight(); } }
 			else if (e.key === "ArrowUp") { e.preventDefault(); if (items.length) { sel = (sel - 1 + items.length) % items.length; highlight(); } }
 			else if (e.key === "Enter") { e.preventDefault(); if (sel >= 0) go(sel); }
@@ -1363,6 +1382,13 @@
 			if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); if (ov) close(); else open(); }
 		});
 	})();
+
+	/** Keeps the compact mobile year selector equivalent to the desktop year links. */
+	document.querySelectorAll("[data-year-select]").forEach(function (select) {
+		select.addEventListener("change", function () {
+			if (select.form) select.form.requestSubmit();
+		});
+	});
 
 	/** Adds navigation/search shortcuts and a help dialog while leaving ordinary text entry unaffected. */
 	(function () {
@@ -1412,7 +1438,7 @@
 			ov.addEventListener("click", function (e) { if (e.target === ov) closeHelp(); });
 			/** Closes help on Escape and keeps Tab navigation inside the dialog. */
 			ov.addEventListener("keydown", function (e) {
-				if (e.key === "Escape") { e.preventDefault(); closeHelp(); }
+				if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeHelp(); }
 				else trapDialogFocus(ov, e);
 			});
 			document.body.appendChild(ov);

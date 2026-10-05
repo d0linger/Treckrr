@@ -177,6 +177,19 @@ func refreshPaymentImportBatchTx(ctx context.Context, tx *sql.Tx, batchID int64,
 	return err
 }
 
+// refreshPaymentImportBatchCountersTx updates counters without changing terminal metadata.
+func refreshPaymentImportBatchCountersTx(ctx context.Context, tx *sql.Tx, batchID int64) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE payment_import_batches b SET
+		       booked_rows=(SELECT count(*) FROM payment_import_rows r WHERE r.batch_id=b.id AND r.status='booked'),
+		       skipped_rows=(SELECT count(*) FROM payment_import_rows r WHERE r.batch_id=b.id AND r.status='skipped'),
+		       duplicate_rows=(SELECT count(*) FROM payment_import_rows r WHERE r.batch_id=b.id AND r.status='duplicate'),
+		       unmatched_rows=(SELECT count(*) FROM payment_import_rows r WHERE r.batch_id=b.id AND r.status='unmatched'),
+		       reversed_rows=(SELECT count(*) FROM payment_import_rows r WHERE r.batch_id=b.id AND r.status='reversed')
+		 WHERE b.id=$1`, batchID)
+	return err
+}
+
 // FinishPaymentImportBatch closes a run and refreshes its outcome counters.
 func (s *Store) FinishPaymentImportBatch(ctx context.Context, batchID int64, failed bool) error {
 	status := "completed"
@@ -338,7 +351,7 @@ func (s *Store) ReverseImportedPayment(ctx context.Context, rowID int64) (int64,
 		fmt.Sprintf("reversal_of=%d; amount=%s; original_paid_on=%s", paymentID, amount.Neg().StringFixed(2), paidOn.Format("2006-01-02"))); err != nil {
 		return 0, batchID, err
 	}
-	if err := refreshPaymentImportBatchTx(ctx, tx, batchID, "completed"); err != nil {
+	if err := refreshPaymentImportBatchCountersTx(ctx, tx, batchID); err != nil {
 		return 0, batchID, err
 	}
 	return reversalID.Int64, batchID, tx.Commit()

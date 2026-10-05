@@ -18,6 +18,18 @@ type AccountingExportProfile struct {
 	Columns           string
 	Delimiter         string
 	DecimalComma      bool
+	DecimalCommaSet   bool
+}
+
+// accountingExportCreateDefaults applies database-equivalent defaults to new profiles.
+func accountingExportCreateDefaults(p AccountingExportProfile) AccountingExportProfile {
+	if p.Delimiter == "" {
+		p.Delimiter = ";"
+	}
+	if !p.DecimalCommaSet {
+		p.DecimalComma = true
+	}
+	return p
 }
 
 // ListAccountingExportProfiles returns the configured profiles by name.
@@ -57,6 +69,7 @@ func (s *Store) GetAccountingExportProfile(ctx context.Context, id int64) (Accou
 // SaveAccountingExportProfile creates or updates a named export profile.
 func (s *Store) SaveAccountingExportProfile(ctx context.Context, p AccountingExportProfile) (int64, error) {
 	if p.ID == 0 {
+		p = accountingExportCreateDefaults(p)
 		err := s.db.QueryRowContext(ctx, `INSERT INTO accounting_export_profiles
 			(name,revenue_account,receivable_account,tax_code,cost_center,columns,delimiter,decimal_comma)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, p.Name, p.RevenueAccount,

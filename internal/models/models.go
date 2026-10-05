@@ -8,56 +8,9 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+
+	"github.com/d0linger/treckrr/internal/money"
 )
-
-// Roles control what a user may do.
-const (
-	RoleAdmin  = "admin"  // full access incl. user management
-	RoleEditor = "editor" // may create/edit data
-	RoleViewer = "viewer" // read-only
-)
-
-// User is an application account. Admins manage other users.
-type User struct {
-	ID                 int64
-	Username           string
-	Email              string
-	Role               string
-	IsAdmin            bool // derived: Role == admin (kept for templates/handlers)
-	MustChangePassword bool
-	TotpEnabled        bool
-	Disabled           bool
-	CreatedAt          time.Time
-}
-
-// CanWrite permits only active users with an explicitly recognized write role.
-func (u User) CanWrite() bool {
-	return !u.Disabled && (u.Role == RoleAdmin || u.Role == RoleEditor)
-}
-
-// RoleLabel returns a German label for the user's role.
-func (u User) RoleLabel() string {
-	switch u.Role {
-	case RoleAdmin:
-		return "Administrator"
-	case RoleViewer:
-		return "Nur-Lesen"
-	default:
-		return "Erfasser"
-	}
-}
-
-// Session is an active login session (for the management view).
-type Session struct {
-	Token     string
-	UserID    int64
-	UserAgent string
-	IP        string
-	LastSeen  time.Time
-	Created   time.Time
-	ExpiresAt time.Time
-	Current   bool // set at render time for the requesting session
-}
 
 // UnitMannstunde is the unit of a helper's hours. It lives here because both
 // the handlers and the store create such bookings — the recurring runner books
@@ -110,21 +63,23 @@ type RecurCompanion struct {
 // RecurTemplate is the booking blueprint a recurring rule stores (JSON). It mirrors
 // the fields CreateEntry needs; Cost is stored for display and recomputed on create.
 type RecurTemplate struct {
-	Unit          string          `json:"unit"`
-	Quantity      decimal.Decimal `json:"quantity"`
-	UnitPrice     decimal.Decimal `json:"unit_price"`
-	Hours         decimal.Decimal `json:"hours"`
-	HourlyRate    decimal.Decimal `json:"hourly_rate"`
-	Cost          decimal.Decimal `json:"cost"`
-	GespannID     *int64          `json:"gespann_id,omitempty"`
-	TractorID     *int64          `json:"tractor_id,omitempty"`
-	LoadLevelID   *int64          `json:"load_level_id,omitempty"`
-	MachineIDs    []int64         `json:"machine_ids,omitempty"`
-	TractorLabel  string          `json:"tractor_label"`
-	LoadLabel     string          `json:"load_label"`
-	MachineLabels string          `json:"machine_labels"`
-	TaskLabel     string          `json:"task_label"`
-	Note          string          `json:"note"`
+	Unit                string          `json:"unit"`
+	Quantity            decimal.Decimal `json:"quantity"`
+	UnitPrice           decimal.Decimal `json:"unit_price"`
+	Hours               decimal.Decimal `json:"hours"`
+	HourlyRate          decimal.Decimal `json:"hourly_rate"`
+	FuelAdjustmentLabel string          `json:"fuel_adjustment_label,omitempty"`
+	FuelAdjustmentPerH  decimal.Decimal `json:"fuel_adjustment_per_h,omitempty"`
+	Cost                decimal.Decimal `json:"cost"`
+	GespannID           *int64          `json:"gespann_id,omitempty"`
+	TractorID           *int64          `json:"tractor_id,omitempty"`
+	LoadLevelID         *int64          `json:"load_level_id,omitempty"`
+	MachineIDs          []int64         `json:"machine_ids,omitempty"`
+	TractorLabel        string          `json:"tractor_label"`
+	LoadLabel           string          `json:"load_label"`
+	MachineLabels       string          `json:"machine_labels"`
+	TaskLabel           string          `json:"task_label"`
+	Note                string          `json:"note"`
 	// PersonID attributes the booking ITSELF to a helper — set when the series
 	// was made from a Mannstunden booking. Dropped before this existed, so every
 	// occurrence of such a series lost the attribution the source booking had.
@@ -314,8 +269,12 @@ type Machine struct {
 	AnnualOtherCost   decimal.Decimal
 }
 
-// HourlyRate returns the machine's contribution to a Gespann's hourly rate.
-func (m Machine) HourlyRate() decimal.Decimal { return m.WorkingWidth.Mul(m.CostPerAB).Round(2) }
+// HourlyRate returns the machine's contribution to a rig's hourly rate. HTML
+// templates invoke this method reflectively; calculation code should use
+// calc.MachineRate so all equipment pricing flows through the catalog model.
+func (m Machine) HourlyRate() decimal.Decimal {
+	return money.Amount(m.WorkingWidth, m.CostPerAB)
+}
 
 // CalculatedSelfCost returns the transparent proposal from the stored
 // assumptions. It never changes SelfCostPerH; callers must apply it explicitly.
@@ -370,22 +329,6 @@ type Neighbor struct {
 	Created    time.Time
 }
 
-// NeighborEquipment is retained only to export and erase records created by
-// the short-lived neighbor-specific equipment implementation. New bookings use
-// the shared price-basis machine catalog and never create these records.
-type NeighborEquipment struct {
-	ID           int64           `json:"id"`
-	NeighborID   int64           `json:"neighbor_id"`
-	Name         string          `json:"name"`
-	Capacity     decimal.Decimal `json:"capacity"`
-	CapacityUnit string          `json:"capacity_unit"`
-	BillingUnit  string          `json:"billing_unit"`
-	DefaultRate  decimal.Decimal `json:"default_rate"`
-	Note         string          `json:"note,omitempty"`
-	Archived     bool            `json:"archived"`
-	Created      time.Time       `json:"created_at"`
-}
-
 // Entry is a booked unit of work with snapshotted pricing for stable exports.
 type Entry struct {
 	ID            int64
@@ -401,7 +344,11 @@ type Entry struct {
 	MachineLabels string
 	Hours         decimal.Decimal
 	HourlyRate    decimal.Decimal
-	Cost          decimal.Decimal
+	// FuelAdjustmentLabel and FuelAdjustmentPerH snapshot the effective
+	// operating-cost addition used when a catalog equipment rate was booked.
+	FuelAdjustmentLabel string
+	FuelAdjustmentPerH  decimal.Decimal
+	Cost                decimal.Decimal
 	// Unit/Quantity/UnitPrice generalize billing beyond hours: cost = quantity ×
 	// unit price. For hour bookings Unit is "h", Quantity == Hours and UnitPrice
 	// == HourlyRate. Other units: "ha", "Ballen", "m3", "Fuhre", "t" (or custom).
@@ -529,71 +476,6 @@ type BackupSettings struct {
 	S3Keep     int
 }
 
-// Company holds the sender (Absender) details shown on an invoice-mode Beleg,
-// plus the tax treatment: "pauschal" shows only TaxNote; "regel" adds a VAT
-// breakdown at VATRate.
-type Company struct {
-	Name                string
-	Address             string
-	TaxID               string
-	TaxNote             string
-	TaxMode             string
-	VATRate             decimal.Decimal
-	IBAN                string // optional issuer bank account for a payable invoice
-	EInvoiceStreet      string
-	EInvoiceZIP         string
-	EInvoiceTown        string
-	EInvoiceCountryCode string
-	// PaymentTermDays is the Zahlungsziel: an invoice is due this many days after
-	// its issue date. Used only to flag overdue invoices in the dunning list.
-	// A neighbor's own payment_term_days overrides it.
-	PaymentTermDays int
-	// DunningFee1/2 are the Mahnspesen for the 1st and 2nd Mahnung. Default 0 =
-	// no fee line on the letter. Verzugszinsen are deliberately not modeled —
-	// the statutory rate is a moving legal target and belongs to the operator.
-	DunningFee1 decimal.Decimal
-	DunningFee2 decimal.Decimal
-	// DunningGraceDays is the Nachfrist printed on a Mahnung ("zahlbar bis").
-	DunningGraceDays int
-	// See EffectiveTermDays for the payment-term fallback rule.
-	// SkontoPct/SkontoDays are the Skonto OFFER printed on the invoice ("2 % bei
-	// Zahlung binnen 14 Tagen"). Both 0 = no clause. The § 16 credit that applies
-	// a taken Skonto at payment time exists independently of this.
-	SkontoPct  decimal.Decimal
-	SkontoDays int
-	// InvoicePrefix/InvoiceStart configure the Nummernkreis: number =
-	// prefix + JAHR-NNN, sequence starting at InvoiceStart (continuing an
-	// external sequence). Defaults ''/1 keep the historical format.
-	InvoicePrefix string
-	InvoiceStart  int
-	// SmallBusinessLimit is the Kleinunternehmer revenue ceiling to warn
-	// against (0 = monitoring off).
-	SmallBusinessLimit decimal.Decimal
-	// TravelFlat/TravelPerKm are the Anfahrt surcharges (Ausbaukarte 58) kept
-	// as master data instead of a retyped amount. Both 0 = the surcharge form
-	// stays hidden.
-	TravelFlat  decimal.Decimal
-	TravelPerKm decimal.Decimal
-	// MailSignature replaces the built-in closing under outgoing mails; empty
-	// keeps "Mit freundlichen Grüßen / <Betriebsname>". MailCC receives a copy
-	// of every Beleg and Mahnung (Steuerberater, second person on the farm);
-	// empty = no copy (Ausbaukarte 99).
-	MailSignature string
-	MailCC        string
-}
-
-// Person is a helper with an own hourly rate (Ausbaukarte 57). The ÖKL
-// Richtwerte state the Fahrerlohn separately from the machine rate, so
-// Mannstunden are billed from this master data instead of a hand-typed price.
-type Person struct {
-	ID         int64
-	Name       string
-	HourlyRate decimal.Decimal
-	Note       string
-	Archived   bool
-	Created    time.Time
-}
-
 // InvoiceParty is a frozen issuer/recipient block on an invoice snapshot.
 type InvoiceParty struct {
 	Name        string `json:"name"`
@@ -649,18 +531,6 @@ type InvoiceContent struct {
 // invoiceUIDThreshold is the gross amount (§ 11 Abs. 1 Z 6 UStG) above which the
 // recipient's UID is a mandatory invoice field.
 var invoiceUIDThreshold = decimal.NewFromInt(10000)
-
-// EffectiveTermDays is the payment term to apply: a negative value means
-// "unset" and falls back to the 14-day default, while a CONFIGURED 0 (due
-// immediately) is valid and must not be overridden. This rule was open-coded
-// at six call sites — with two of them treating 0 as unset — before it lived
-// here.
-func (c Company) EffectiveTermDays() int {
-	if c.PaymentTermDays < 0 {
-		return 14
-	}
-	return c.PaymentTermDays
-}
 
 // DunningStageTitle is the German document heading for a dunning stage — the
 // single source for the letter, the PDF, the audit lines and the history list

@@ -88,7 +88,7 @@ func TestPhotoVisibilityIntegration(t *testing.T) {
 
 	// The chip and the gallery show up on the neighbor page, and the bookings
 	// list carries the chip too.
-	page := e.get(fmt.Sprintf("/neighbors/%d?year=%d", nid, yid))
+	page := e.get(neighborBookingsURL(nid, yid))
 	if !strings.Contains(page, "2 Fotos") {
 		t.Errorf("neighbor page shows no photo chip")
 	}

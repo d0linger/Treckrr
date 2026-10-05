@@ -11,6 +11,7 @@ import (
 
 	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 )
 
 // ErrSourceEntryVoided reports that the booking a series was to be created from
@@ -444,20 +445,22 @@ func (s *Store) saveRuleProgress(ctx context.Context, ruleID int64, next time.Ti
 // CreateEntry's callers is not needed — the template already carries Cost).
 func entryFromTemplate(t models.RecurTemplate) *models.Entry {
 	return &models.Entry{
-		TaskLabel:     t.TaskLabel,
-		Note:          t.Note,
-		Unit:          t.Unit,
-		Quantity:      t.Quantity,
-		UnitPrice:     t.UnitPrice,
-		Hours:         t.Hours,
-		HourlyRate:    t.HourlyRate,
-		Cost:          t.Cost,
-		GespannID:     t.GespannID,
-		TractorID:     t.TractorID,
-		LoadLevelID:   t.LoadLevelID,
-		TractorLabel:  t.TractorLabel,
-		LoadLabel:     t.LoadLabel,
-		MachineLabels: t.MachineLabels,
+		TaskLabel:           t.TaskLabel,
+		Note:                t.Note,
+		Unit:                t.Unit,
+		Quantity:            t.Quantity,
+		UnitPrice:           t.UnitPrice,
+		Hours:               t.Hours,
+		HourlyRate:          t.HourlyRate,
+		FuelAdjustmentLabel: t.FuelAdjustmentLabel,
+		FuelAdjustmentPerH:  t.FuelAdjustmentPerH,
+		Cost:                t.Cost,
+		GespannID:           t.GespannID,
+		TractorID:           t.TractorID,
+		LoadLevelID:         t.LoadLevelID,
+		TractorLabel:        t.TractorLabel,
+		LoadLabel:           t.LoadLabel,
+		MachineLabels:       t.MachineLabels,
 		// A series made FROM a Mannstunden booking keeps its attribution: the
 		// template carried the person id but the rebuilt entry dropped it, so
 		// every occurrence booked the helper's hours as nobody's.
@@ -486,7 +489,7 @@ func companionEntry(c *models.RecurCompanion, e *models.Entry) *models.Entry {
 		TaskLabel: "Mannstunden " + c.Name,
 		Unit:      models.UnitMannstunde,
 		Quantity:  hours, UnitPrice: c.Rate,
-		Cost:     hours.Mul(c.Rate).Round(2),
+		Cost:     money.Amount(hours, c.Rate),
 		PersonID: &personID,
 		// Derived from the occurrence's own key, so a re-run no-ops on both
 		// halves exactly as it does for a replayed offline pair.

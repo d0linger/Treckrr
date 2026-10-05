@@ -10,6 +10,7 @@ const VERSIONED = [
 	"/static/css/app.css",
 	"/static/js/app.js",
 	"/static/js/form-ux.js",
+	"/static/js/favorites.js",
 	"/static/js/entry-form.js",
 	"/static/js/unified-booking.js",
 	"/static/js/ledger-booking.js",

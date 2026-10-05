@@ -36,6 +36,59 @@ type dashboardWorkItem struct {
 	Href   string
 }
 
+// dashboardOnboardingItem is one automatically completed setup step.
+type dashboardOnboardingItem struct {
+	Done bool
+	Text string
+	Href string
+}
+
+// dashboardView is the page-specific contract consumed by dashboard.html.
+// Common shell values such as User, Year, CSRF, and navigation remain owned by
+// pageData while page migrations proceed one family at a time.
+type dashboardView struct {
+	Summaries     []neighborSummary
+	Available     []models.Neighbor
+	PrevYear      int
+	PrevNeighbors []models.Neighbor
+	GrandCost     decimal.Decimal
+	GrandHours    decimal.Decimal
+	NeighborCount int
+	BookingCount  int
+	Completed     bool
+	PaidCost      decimal.Decimal
+	OpenCost      decimal.Decimal
+	OpenCount     int
+	CreditCost    decimal.Decimal
+	CreditCount   int
+	StaleCount    int
+	WorkItems     []dashboardWorkItem
+	Onboarding    []dashboardOnboardingItem
+}
+
+// bind adds the typed dashboard contract to the legacy common template map.
+// Keeping this translation in one place makes missing or renamed page fields
+// compile-time visible without changing the shared layout contract.
+func (v dashboardView) bind(data pageData) {
+	data["Summaries"] = v.Summaries
+	data["Available"] = v.Available
+	data["PrevYear"] = v.PrevYear
+	data["PrevNeighbors"] = v.PrevNeighbors
+	data["GrandCost"] = v.GrandCost
+	data["GrandHours"] = v.GrandHours
+	data["NeighborCount"] = v.NeighborCount
+	data["BookingCount"] = v.BookingCount
+	data["Completed"] = v.Completed
+	data["PaidCost"] = v.PaidCost
+	data["OpenCost"] = v.OpenCost
+	data["OpenCount"] = v.OpenCount
+	data["CreditCost"] = v.CreditCost
+	data["CreditCount"] = v.CreditCount
+	data["StaleCount"] = v.StaleCount
+	data["WorkItems"] = v.WorkItems
+	data["Onboarding"] = v.Onboarding
+}
+
 // handleDashboard renders the selected year's totals, setup state and central
 // advisory work queue without changing any underlying workflow state.
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +106,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	summaries := make([]neighborSummary, 0, len(summaryRows))
 	var grandCost, grandHours, paidCost, openCost, creditCost decimal.Decimal
-	openCount, creditCount := 0, 0
+	bookingCount, openCount, creditCount := 0, 0, 0
 	for _, row := range summaryRows {
 		summaries = append(summaries, neighborSummary{
 			Neighbor: models.Neighbor{ID: row.NeighborID, Name: row.Name},
@@ -62,6 +115,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		})
 		grandCost = grandCost.Add(row.Cost)
 		grandHours = grandHours.Add(row.Hours)
+		bookingCount += row.Entries
 		paidCost = paidCost.Add(row.PaidAmount) // actual money received
 		if row.Remaining.IsPositive() {
 			// "Offen" = what neighbors still owe (net minus payments). Negative
@@ -89,6 +143,20 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, "dashboard: year selector", err)
 		return
 	}
+	view := dashboardView{
+		Summaries:     summaries,
+		Available:     available,
+		GrandCost:     grandCost,
+		GrandHours:    grandHours,
+		NeighborCount: len(summaries),
+		BookingCount:  bookingCount,
+		Completed:     year.Completed(),
+		PaidCost:      paidCost,
+		OpenCost:      openCost,
+		OpenCount:     openCount,
+		CreditCost:    creditCost,
+		CreditCount:   creditCount,
+	}
 	// Offer "carry over neighbors from the previous year" when one exists and
 	// there are members not yet in this year.
 	if prev, err := s.store.PreviousBillingYear(r.Context(), year.Year); err == nil {
@@ -108,20 +176,10 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if len(candidates) > 0 {
-			data["PrevYear"] = prev.Year
-			data["PrevNeighbors"] = candidates
+			view.PrevYear = prev.Year
+			view.PrevNeighbors = candidates
 		}
 	}
-	data["Summaries"] = summaries
-	data["Available"] = available
-	data["GrandCost"] = grandCost
-	data["GrandHours"] = grandHours
-	data["Completed"] = year.Completed()
-	data["PaidCost"] = paidCost
-	data["OpenCost"] = openCost
-	data["OpenCount"] = openCount
-	data["CreditCost"] = creditCost
-	data["CreditCount"] = creditCount
 	quality, err := s.loadDataQuality(r, year)
 	if err != nil {
 		s.serverError(w, "dashboard: data quality", err)
@@ -131,7 +189,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		summaries[i].QualityIssues = quality.NeighborCounts[summaries[i].Neighbor.ID]
 	}
 	// Refresh after attaching per-neighbor completeness counts.
-	data["Summaries"] = summaries
+	view.Summaries = summaries
 	// How many bookings are out of sync with the current basis (open years only).
 	// Gate first (0040): one indexed count answers "could anything be stale?".
 	// When it says no — the normal case, since the basis is rarely edited — the
@@ -150,7 +208,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	data["StaleCount"] = staleCount
+	view.StaleCount = staleCount
 
 	work := make([]dashboardWorkItem, 0, 8)
 	if len(quality.Issues) > 0 {
@@ -198,7 +256,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	data["WorkItems"] = work
+	view.WorkItems = work
 
 	// First-run onboarding: nudge the operator through setup until all steps are
 	// done, then it disappears on its own (no dismiss needed). "Basis" is implicitly
@@ -220,12 +278,13 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	companyOK := strings.TrimSpace(company.Name) != ""
 	if !companyOK || !hasNeighbor || !hasBooking {
-		data["Onboarding"] = []map[string]any{
-			{"Done": companyOK, "Text": "Betriebsdaten hinterlegen", "Href": "/admin/company"},
-			{"Done": hasNeighbor, "Text": "Ersten Nachbarn anlegen", "Href": "/neighbors"},
-			{"Done": hasBooking, "Text": "Erste Buchung erfassen", "Href": dashboardURL(year.ID)},
+		view.Onboarding = []dashboardOnboardingItem{
+			{Done: companyOK, Text: "Betriebsdaten hinterlegen", Href: "/admin/company"},
+			{Done: hasNeighbor, Text: "Ersten Nachbarn anlegen", Href: "/neighbors"},
+			{Done: hasBooking, Text: "Erste Buchung erfassen", Href: dashboardURL(year.ID)},
 		}
 	}
+	view.bind(data)
 	s.render(w, r, "dashboard", data)
 }
 

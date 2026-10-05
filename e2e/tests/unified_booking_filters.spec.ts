@@ -74,7 +74,11 @@ for (const colorScheme of ["light", "dark"] as const) {
 test("dashboard booking shortcut opens both directions with working filters and complete CSV details", async ({ page }) => {
   const account = await filterAccount(page);
   await page.goto(`/?year=${account.yearID}`);
-  const shortcut = page.locator("main").getByRole("link", { name: "Buchungen & Filter", exact: true });
+  const reports = page.locator("main details").filter({ hasText: "Weitere Aktionen" });
+  await expect(reports).toBeVisible();
+  await reports.locator("summary").click();
+  await expect(reports).toHaveAttribute("open", "");
+  const shortcut = page.locator("main").getByRole("link", { name: /^Buchungen & Filter/ });
   await expect(shortcut).toBeVisible();
   await expect(shortcut).toHaveAttribute("href", `/buchungen?year=${account.yearID}`);
   await shortcut.click();

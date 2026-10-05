@@ -30,6 +30,7 @@ func TestDashboardBookingNavigation(t *testing.T) {
 				"Year": models.BillingYear{
 					ID: tc.yearID, Year: 2026, Base: &models.PriceBase{Year: 2025},
 				},
+				"Years":     []models.BillingYear{{ID: tc.yearID, Year: 2026}},
 				"Completed": tc.completed,
 				"GrandCost": decimal.Zero, "GrandHours": decimal.Zero,
 				"PaidCost": decimal.Zero, "OpenCost": decimal.Zero,
@@ -39,16 +40,148 @@ func TestDashboardBookingNavigation(t *testing.T) {
 				t.Fatal("dashboard has no main landmark")
 			}
 			main, _, _ = strings.Cut(main, "</main>")
-			want := fmt.Sprintf(`href="/buchungen?year=%d">Buchungen &amp; Filter</a>`, tc.yearID)
+			want := fmt.Sprintf(`href="/buchungen?year=%d"`, tc.yearID)
 			if count := strings.Count(main, want); count != 1 {
 				t.Errorf("visible dashboard booking links = %d, want 1 with selected year", count)
 			}
-			for _, destination := range []string{"/stats?year=", "/stats/all", "/export/year/", "/years"} {
+			for _, destination := range []string{"/export/year/", "/years"} {
 				if !strings.Contains(main, `href="`+destination) {
 					t.Errorf("existing dashboard destination %q was removed", destination)
 				}
 			}
+			for _, destination := range []string{fmt.Sprintf("/stats?year=%d", tc.yearID), "/stats/all"} {
+				if !strings.Contains(page, `href="`+destination+`"`) {
+					t.Errorf("direct yearbar destination %q is missing", destination)
+				}
+				if strings.Contains(main, `href="`+destination+`"`) {
+					t.Errorf("direct yearbar destination %q is still duplicated in the dashboard dropdown", destination)
+				}
+			}
+			if !strings.Contains(main, `<details class="disclosure disclosure--plain page-more">`) ||
+				!strings.Contains(main, "Weitere Aktionen") {
+				t.Error("secondary dashboard destinations are not grouped under the reporting disclosure")
+			}
 		})
+	}
+}
+
+// TestDashboardCoreWorkflow keeps one next action and the direct booking entry
+// visible without duplicating the workflow as a second navigation system.
+func TestDashboardCoreWorkflow(t *testing.T) {
+	t.Parallel()
+	page := execPage(t, "dashboard", map[string]any{
+		"User": models.User{ID: 1, Username: "editor", Role: models.RoleEditor},
+		"Year": models.BillingYear{
+			ID: 7, Year: 2026, Base: &models.PriceBase{Year: 2025},
+		},
+		"BookingCount": 4,
+		"GrandCost":    decimal.NewFromInt(120),
+		"GrandHours":   decimal.NewFromInt(3),
+		"PaidCost":     decimal.Zero,
+		"OpenCost":     decimal.NewFromInt(120),
+		"Summaries": []map[string]any{{
+			"Neighbor":  models.Neighbor{ID: 9, Name: "Demo-Hof Leitner"},
+			"Cost":      decimal.NewFromInt(120),
+			"Hours":     decimal.NewFromInt(3),
+			"Entries":   4,
+			"Remaining": decimal.NewFromInt(120),
+		}},
+	})
+	if strings.Contains(page, "workpath") {
+		t.Error("dashboard still duplicates the main navigation as a workflow stepper")
+	}
+	if count := strings.Count(page, `class="next-action`); count != 1 {
+		t.Errorf("next actions = %d, want 1", count)
+	}
+	for _, want := range []string{
+		"summary-card", "Gesamtsaldo", "Abschluss prüfen", "Weitere Aktionen",
+		"neighbor-account-grid", "Jahressaldo", "Zahlungsstand",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("simplified dashboard missing %q", want)
+		}
+	}
+	if !strings.Contains(page, `href="/neighbors/9?year=7&amp;view=booking">Buchen</a>`) {
+		t.Error("open-year neighbor has no direct booking entry")
+	}
+	if strings.Contains(page, "favorite-toggle") {
+		t.Error("dashboard still exposes an unnecessary neighbor favorite control")
+	}
+}
+
+// TestNeighborAccountNavigation separates the long account into focused views
+// without removing any booking, ledger, or payment destination.
+func TestNeighborAccountNavigation(t *testing.T) {
+	t.Parallel()
+	base := map[string]any{
+		"Title": "Demo-Hof Leitner",
+		"Year": models.BillingYear{
+			ID: 7, Year: 2026, Base: &models.PriceBase{ID: 2, Year: 2026},
+		},
+		"Base":              models.PriceBase{ID: 2, Year: 2026},
+		"Neighbor":          models.Neighbor{ID: 9, Name: "Demo-Hof Leitner"},
+		"BookingCount":      4,
+		"TotalCost":         decimal.NewFromInt(120),
+		"TotalHours":        decimal.NewFromInt(3),
+		"Saldo":             decimal.NewFromInt(120),
+		"LedgerSum":         decimal.Zero,
+		"PaidSum":           decimal.Zero,
+		"Remaining":         decimal.NewFromInt(120),
+		"CreditAmount":      decimal.Zero,
+		"Today":             "2026-10-02",
+		"Stale":             map[int64]bool{},
+		"PhotoCounts":       map[int64]int{},
+		"LedgerPhotoCounts": map[int64]int{},
+		"PairLabel":         map[int64]string{},
+		"LinkedFrom":        map[int64]int64{},
+	}
+
+	base["Section"] = "overview"
+	overview := execPage(t, "neighbor", base)
+	for _, label := range []string{"Übersicht", "Buchen", "Buchungen", "Zahlungen", "Beleg", "CSV Export", "summary-card", "account-summary", "Offen"} {
+		if !strings.Contains(overview, label) {
+			t.Errorf("neighbor overview missing %q", label)
+		}
+	}
+	if strings.Contains(overview, "data-unified-booking") || strings.Contains(overview, `id="zahlungen"`) {
+		t.Error("neighbor overview still renders full booking or payment workflows")
+	}
+	if !strings.Contains(overview, `class="work-surface account-workspace"`) {
+		t.Error("neighbor account is missing its solid work surface")
+	}
+	if count := strings.Count(overview, `href="/neighbors/9/beleg?year=7"`); count != 1 {
+		t.Errorf("direct receipt links = %d, want one navigation entry", count)
+	}
+	for _, tc := range []struct {
+		section string
+		want    string
+		avoid   string
+	}{
+		{section: "booking", want: "data-unified-booking", avoid: `id="zahlungen"`},
+		{section: "bookings", want: `id="leistungen"`, avoid: "data-unified-booking"},
+		{section: "payments", want: `id="zahlungen"`, avoid: "data-unified-booking"},
+	} {
+		base["Section"] = tc.section
+		page := execPage(t, "neighbor", base)
+		if !strings.Contains(page, tc.want) || strings.Contains(page, tc.avoid) {
+			t.Errorf("neighbor section %q is not isolated", tc.section)
+		}
+	}
+
+	base["Completed"] = true
+	base["Section"] = "overview"
+	completed := execPage(t, "neighbor", base)
+	navStart := strings.Index(completed, `<nav class="section-tabs"`)
+	if navStart < 0 {
+		t.Fatal("completed neighbor page has no account navigation")
+	}
+	navEnd := strings.Index(completed[navStart:], `</nav>`)
+	if navEnd < 0 {
+		t.Fatal("completed neighbor navigation is not closed")
+	}
+	nav := completed[navStart : navStart+navEnd]
+	if strings.Contains(nav, `view=booking"`) || strings.Contains(nav, ">Buchen<") {
+		t.Error("completed neighbor navigation exposes the booking entry")
 	}
 }
 
@@ -84,6 +217,25 @@ func TestDrawerBookingNavigation(t *testing.T) {
 			if len(links) != 1 {
 				t.Fatalf("drawer booking links = %d, want 1", len(links))
 			}
+			for _, label := range []string{"Weitere Funktionen", "Mein Konto &amp; Sicherheit"} {
+				if !strings.Contains(page, label) {
+					t.Errorf("drawer missing consolidated navigation label %q", label)
+				}
+			}
+			drawerStart := strings.Index(page, `<aside class="drawer"`)
+			if drawerStart < 0 {
+				t.Fatal("application drawer is missing")
+			}
+			drawerEnd := strings.Index(page[drawerStart:], `</aside>`)
+			if drawerEnd < 0 {
+				t.Fatal("application drawer is not closed")
+			}
+			drawer := page[drawerStart : drawerStart+drawerEnd]
+			for _, duplicate := range []string{`href="/"`, `href="/years"`, `href="/neighbors"`, `href="/bases"`} {
+				if strings.Contains(drawer, duplicate) {
+					t.Errorf("drawer still duplicates persistent navigation destination %q", duplicate)
+				}
+			}
 			link := links[0]
 			if !strings.Contains(link, `href="`+tc.href+`"`) || !strings.Contains(link, "Buchungen &amp; Filter</a>") {
 				t.Errorf("booking link must retain year and consistent label: %s", link)
@@ -91,6 +243,148 @@ func TestDrawerBookingNavigation(t *testing.T) {
 			wantActive := tc.active == "entries"
 			if strings.Contains(link, `aria-current="page"`) != wantActive || strings.Contains(link, "is-active") != wantActive {
 				t.Errorf("booking active state does not match current page %q", tc.active)
+			}
+			advanced := regexp.MustCompile(`(?s)<details class="drawer__group"([^>]*)>.*?Buchungen &amp; Filter</a>`).FindStringSubmatch(page)
+			if len(advanced) != 2 {
+				t.Fatal("booking navigation is not inside the advanced-function disclosure")
+			}
+			if strings.Contains(advanced[1], "open") != wantActive {
+				t.Errorf("advanced-function disclosure open state does not match current page %q", tc.active)
+			}
+		})
+	}
+}
+
+// TestLeanApplicationShell keeps daily navigation and global search/notification
+// controls visible while administrative functions remain behind disclosures.
+func TestLeanApplicationShell(t *testing.T) {
+	t.Parallel()
+	page := execPage(t, "login", map[string]any{
+		"User":   &models.User{Username: "editor", Role: models.RoleEditor},
+		"Active": "dashboard",
+		"Year":   &models.BillingYear{ID: 7, Year: 2026},
+		"Years": []models.BillingYear{
+			{ID: 7, Year: 2026},
+			{ID: 6, Year: 2025},
+		},
+		"BasePath": "/",
+	})
+
+	headerEnd := strings.Index(page, "</header>")
+	if headerEnd < 0 {
+		t.Fatal("application shell has no header")
+	}
+	header := page[:headerEnd]
+	for _, unwanted := range []string{`class="opsbar`} {
+		if strings.Contains(header, unwanted) {
+			t.Errorf("persistent header still exposes %q", unwanted)
+		}
+	}
+	for _, want := range []string{"data-cmdk-open", `href="/notifications"`} {
+		if !strings.Contains(header, want) {
+			t.Errorf("persistent header is missing %q", want)
+		}
+	}
+	if strings.Count(page, "data-cmdk-open") != 1 || strings.Count(page, `href="/notifications"`) != 1 {
+		t.Error("search and notifications must each have one direct top-bar entry without drawer duplicates")
+	}
+	if !strings.Contains(header, "data-theme-toggle") || strings.Count(page, "data-theme-toggle") != 1 {
+		t.Error("theme toggle must appear exactly once in the persistent top bar")
+	}
+	for _, want := range []string{
+		"Weitere Funktionen",
+		"Mein Konto &amp; Sicherheit",
+		"Hinweise",
+		"data-cmdk-open",
+		"data-theme-toggle",
+		"data-year-select",
+		"yearbar__links",
+		"yearbar__tools",
+		"Statistik",
+		"Jahresvergleich",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("lean shell missing %q", want)
+		}
+	}
+	if !strings.Contains(page, `<form class="yearselect" method="get">`) {
+		t.Error("mobile year selector must submit through a same-page GET form")
+	}
+	if !strings.Contains(page, `name="year"`) || !strings.Contains(page, `value="7"`) {
+		t.Error("mobile year selector must submit only the numeric year ID")
+	}
+	if strings.Contains(page, `value="/?year=7"`) {
+		t.Error("mobile year selector must not store a navigation URL in the DOM")
+	}
+	if strings.Contains(page, "Kernablauf") {
+		t.Error("secondary drawer still duplicates the persistent core navigation")
+	}
+	if strings.Contains(page, ">Verwaltung<") {
+		t.Error("editor drawer exposes the admin-only management group")
+	}
+}
+
+// TestDrawerSeparatesAccountAndAdminNavigation keeps personal settings direct
+// while admin-only destinations remain in one shallow management disclosure.
+func TestDrawerSeparatesAccountAndAdminNavigation(t *testing.T) {
+	t.Parallel()
+	page := execPage(t, "login", map[string]any{
+		"User":   &models.User{Username: "admin", Role: models.RoleAdmin, IsAdmin: true},
+		"Active": "company",
+	})
+
+	for _, want := range []string{
+		`aria-label="Mein Konto und Sicherheit"`,
+		"Mein Konto &amp; Sicherheit",
+		"Verwaltung",
+		"Betriebsdaten",
+		"Backup",
+		"Benutzer",
+		"Mailausgang",
+		"Audit‑Log",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("admin drawer missing %q", want)
+		}
+	}
+	for _, obsolete := range []string{"Konto &amp; Verwaltung", "Erweiterte Verwaltung"} {
+		if strings.Contains(page, obsolete) {
+			t.Errorf("admin drawer still contains obsolete group %q", obsolete)
+		}
+	}
+	if got := strings.Count(page, `<details class="drawer__group"`); got != 2 {
+		t.Errorf("drawer disclosure depth/count = %d, want 2 top-level groups", got)
+	}
+	if got := strings.Count(page, `href="/profile"`); got != 1 {
+		t.Errorf("profile links = %d, want one direct account entry", got)
+	}
+	if got := strings.Count(page, `href="/notifications"`); got != 1 {
+		t.Errorf("notification links = %d, want one direct top-bar entry", got)
+	}
+}
+
+// TestBackupStatusStaysVisible keeps the reassuring healthy state in the app
+// bar instead of showing the indicator only after backups need attention.
+func TestBackupStatusStaysVisible(t *testing.T) {
+	t.Parallel()
+
+	for _, tone := range []string{"ok", "warn", "bad"} {
+		t.Run(tone, func(t *testing.T) {
+			t.Parallel()
+			page := execPage(t, "login", map[string]any{
+				"User": &models.User{Username: "editor", Role: models.RoleEditor},
+				"BackupHealth": map[string]any{
+					"Tone":     tone,
+					"Title":    "Backup aktuell",
+					"AgeLabel": "vor 2 Std.",
+				},
+			})
+
+			if count := strings.Count(page, ` data-bk>`); count != 1 {
+				t.Errorf("backup status indicators for tone %q = %d, want 1", tone, count)
+			}
+			if !strings.Contains(page, `class="bkdot bkdot--`+tone+`"`) {
+				t.Errorf("backup status tone %q is not rendered in the app bar", tone)
 			}
 		})
 	}

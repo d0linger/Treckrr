@@ -24,7 +24,7 @@
 	<div class="card stack stack--tight">
 		<div><strong>Für wen wurde die Maschine eingesetzt?</strong><p class="muted small">Die Auswahl öffnet nur den vorhandenen Buchungsdialog. Datum, Richtung und Stunden müssen dort geprüft werden.</p></div>
 		<div class="machine-scan__neighbors">
-			{{range .Neighbors}}<a class="machine-scan__neighbor" href="/neighbors/{{.ID}}?year={{$.SelectedYear.ID}}&amp;machine={{$.Machine.ID}}#neue-buchung"><span>{{.Name}}</span><span aria-hidden="true">›</span></a>{{else}}<p class="muted small">In diesem Jahr sind keine aktiven Nachbarn zugeordnet.</p>{{end}}
+			{{range .Neighbors}}<a class="machine-scan__neighbor" href="/neighbors/{{.ID}}?year={{$.SelectedYear.ID}}&amp;view=booking&amp;machine={{$.Machine.ID}}"><span>{{.Name}}</span><span aria-hidden="true">›</span></a>{{else}}<p class="muted small">In diesem Jahr sind keine aktiven Nachbarn zugeordnet.</p>{{end}}
 		</div>
 	</div>
 	{{end}}

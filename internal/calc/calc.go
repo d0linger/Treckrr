@@ -16,6 +16,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 )
 
 // DaysBetween returns the whole-day difference from `from` to `to`, counted by
@@ -32,12 +33,51 @@ func DaysBetween(from, to time.Time) int {
 
 // TractorRate returns the hourly rate for a tractor at a given load level.
 func TractorRate(t models.Tractor, l models.LoadLevel) decimal.Decimal {
-	return t.PS.Mul(l.CostPerPS).Round(2)
+	return money.Amount(t.PS, l.CostPerPS)
 }
 
 // MachineRate returns the hourly rate contribution of a machine.
 func MachineRate(m models.Machine) decimal.Decimal {
-	return m.WorkingWidth.Mul(m.CostPerAB).Round(2)
+	return money.Amount(m.WorkingWidth, m.CostPerAB)
+}
+
+// RateBreakdown is the calculated hourly price of an equipment combination.
+// Each contribution is rounded before HourlyRate is summed, matching the
+// spreadsheet and the historical billing behavior. MachineRates has the same
+// order as the machines supplied to NewRateBreakdown.
+type RateBreakdown struct {
+	TractorRate  decimal.Decimal
+	MachineRates []decimal.Decimal
+	Adjustment   decimal.Decimal
+	HourlyRate   decimal.Decimal
+}
+
+// NewRateBreakdown calculates the individually rounded contributions and their
+// combined hourly rate. A tractor and load level form one pricing component;
+// callers remain responsible for rejecting a half-set pair.
+func NewRateBreakdown(t *models.Tractor, l *models.LoadLevel, machines []models.Machine) RateBreakdown {
+	return NewAdjustedRateBreakdown(t, l, machines, decimal.Zero)
+}
+
+// NewAdjustedRateBreakdown adds one already-selected effective hourly
+// adjustment after the individually rounded catalog components.
+func NewAdjustedRateBreakdown(t *models.Tractor, l *models.LoadLevel, machines []models.Machine, adjustment decimal.Decimal) RateBreakdown {
+	breakdown := RateBreakdown{
+		MachineRates: make([]decimal.Decimal, 0, len(machines)),
+		Adjustment:   adjustment.Round(4),
+	}
+	if t != nil && l != nil {
+		breakdown.TractorRate = TractorRate(*t, *l)
+		breakdown.HourlyRate = breakdown.TractorRate
+	}
+	for _, machine := range machines {
+		rate := MachineRate(machine)
+		breakdown.MachineRates = append(breakdown.MachineRates, rate)
+		breakdown.HourlyRate = breakdown.HourlyRate.Add(rate)
+	}
+	breakdown.HourlyRate = breakdown.HourlyRate.Add(breakdown.Adjustment)
+	breakdown.HourlyRate = breakdown.HourlyRate.Round(2)
+	return breakdown
 }
 
 // GespannRate sums the tractor rate and all machine rates.
@@ -51,17 +91,10 @@ func MachineRate(m models.Machine) decimal.Decimal {
 // rather than let it silently drop the tractor from the price. The signature
 // takes pointers so every call site had to be revisited when this changed.
 func GespannRate(t *models.Tractor, l *models.LoadLevel, machines []models.Machine) decimal.Decimal {
-	rate := decimal.Zero
-	if t != nil && l != nil {
-		rate = TractorRate(*t, *l)
-	}
-	for _, m := range machines {
-		rate = rate.Add(MachineRate(m))
-	}
-	return rate.Round(2)
+	return NewRateBreakdown(t, l, machines).HourlyRate
 }
 
 // Cost multiplies hours by the hourly rate.
 func Cost(hours, hourlyRate decimal.Decimal) decimal.Decimal {
-	return hours.Mul(hourlyRate).Round(2)
+	return money.Amount(hours, hourlyRate)
 }

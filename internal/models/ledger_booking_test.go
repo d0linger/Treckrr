@@ -12,6 +12,7 @@ func TestLedgerBookingSnapshot(t *testing.T) {
 	gespannID, tractorID, loadLevelID := int64(7), int64(8), int64(9)
 	b := LedgerBooking{Version: 1, Kind: "equipment", TaskLabel: "Heuernte", Unit: "h",
 		Quantity: dec("1.005"), UnitPrice: dec("1"), PartnerLabel: "Nachbars Gespann",
+		FuelAdjustmentLabel: "Dieselzuschlag", FuelAdjustmentPerH: dec("2.25"),
 		PartnerPerson: "Franz", PersonHours: dec("2.005"), PersonRate: dec("1"), Note: "Wiese",
 		Mode: "gespann", GespannID: &gespannID, TractorID: &tractorID, LoadLevelID: &loadLevelID,
 		MachineIDs: []int64{10, 11}}
@@ -21,7 +22,7 @@ func TestLedgerBookingSnapshot(t *testing.T) {
 	if got := b.ServiceCost().StringFixed(2); got != "1.01" {
 		t.Fatalf("service line rounding: %s", got)
 	}
-	for _, want := range []string{"Heuernte", "Nachbars Gespann", "1,005 h", "Franz", "2,005 Mannstunden", "Wiese"} {
+	for _, want := range []string{"Heuernte", "Nachbars Gespann", "1,005 h", "Dieselzuschlag +2,25 €/h", "Franz", "2,005 Mannstunden", "Wiese"} {
 		if !strings.Contains(b.Summary(), want) {
 			t.Errorf("summary omitted %q: %s", want, b.Summary())
 		}

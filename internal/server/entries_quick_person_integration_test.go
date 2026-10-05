@@ -42,7 +42,7 @@ func TestQuickEntriesWithPersonIntegration(t *testing.T) {
 		t.Fatalf("person %q was not created", pname)
 	}
 	// The column exists only once a helper does.
-	if page := e.get(neighborURL(nid, yid)); !strings.Contains(page, `name="q_person"`) {
+	if page := e.get(neighborBookingURL(nid, yid)); !strings.Contains(page, `name="q_person"`) {
 		t.Fatalf("the quick-entry table offers no person column")
 	}
 

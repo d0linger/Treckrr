@@ -95,6 +95,32 @@ func TestParseImportCSV_EmptyUnitDefaultsToHours(t *testing.T) {
 	}
 }
 
+func TestImportEntryPreservesValidatedSnapshot(t *testing.T) {
+	rows, err := parseImportCSV(
+		"Max Mustermann;2026-09-24;Mähen;;;;h;2,345;46,00;0,01;Referenz\n",
+		testMembers(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || !rows[0].OK() {
+		t.Fatalf("parsed rows = %+v, want one importable row", rows)
+	}
+
+	entry := importEntry(rows[0], 42, "upload-token")
+	if entry.NeighborID != 7 || entry.BillingYearID != 42 || entry.IdempotencyKey != "upload-token:1" {
+		t.Fatalf("entry identity = %+v, want neighbor 7, year 42 and line-scoped key", entry)
+	}
+	if entry.Unit != "h" || !entry.Hours.Equal(decimal.RequireFromString("2.345")) ||
+		!entry.HourlyRate.Equal(decimal.RequireFromString("46.00")) {
+		t.Fatalf("hour snapshot = %s %s × %s, want 2.345 h × 46.00",
+			entry.Hours, entry.Unit, entry.HourlyRate)
+	}
+	if !entry.Cost.Equal(decimal.RequireFromString("107.87")) {
+		t.Fatalf("cost = %s, want recomputed 107.87 instead of supplied CSV cost", entry.Cost)
+	}
+}
+
 // TestParseImportCSV_Rejections: unknown neighbor, non-positive qty/price and a
 // bad date are each rejected with a row error (not silently imported).
 func TestParseImportCSV_Rejections(t *testing.T) {

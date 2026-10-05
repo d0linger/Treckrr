@@ -34,7 +34,8 @@ func TestInvoiceNumberSettingsAndDate(t *testing.T) {
 	if err := st.UpdateCompany(ctx, models.Company{
 		Name: "Hof Bergmann", Address: "Feldweg 3", TaxID: "ATU123",
 		TaxMode: "pauschal", VATRate: dec("13"),
-		InvoicePrefix: "IT", InvoiceStart: 41,
+		InvoicePrefix: "IT", InvoiceStart: 41, EInvoiceStreet: "Feldweg 3",
+		EInvoiceZIP: "4780", EInvoiceTown: "Sch\u00e4rding", EInvoiceCountryCode: "AT",
 	}); err != nil {
 		t.Fatalf("company: %v", err)
 	}
@@ -47,8 +48,9 @@ func TestInvoiceNumberSettingsAndDate(t *testing.T) {
 	if err := st.UpdateCompany(ctx, company); err != nil {
 		t.Fatalf("legacy company update: %v", err)
 	}
-	if got, err := st.GetCompany(ctx); err != nil || got.InvoiceStart != 41 || got.Name != company.Name {
-		t.Fatalf("legacy update: start=%d name=%q err=%v, want 41 and updated name", got.InvoiceStart, got.Name, err)
+	if got, err := st.GetCompany(ctx); err != nil || got.InvoiceStart != 41 || got.Name != company.Name ||
+		got.EInvoiceStreet != "Feldweg 3" || got.EInvoiceZIP != "4780" || got.EInvoiceTown != "Sch\u00e4rding" || got.EInvoiceCountryCode != "AT" {
+		t.Fatalf("legacy update: company=%+v err=%v, want preserved invoice settings and updated name", got, err)
 	}
 	neighbor := func(i int) int64 {
 		nid, err := st.CreateNeighbor(ctx, fmt.Sprintf("Settings-Nachbar %d", i), "")

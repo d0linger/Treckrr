@@ -24,12 +24,13 @@ func TestNeighborPersonFieldsRender(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			page := execPage(t, "neighbor", map[string]any{
-				"Base": models.PriceBase{ID: 1}, "Year": models.BillingYear{ID: 1, Year: 2026},
+				"Section": "booking",
+				"Base":    models.PriceBase{ID: 1}, "Year": models.BillingYear{ID: 1, Year: 2026},
 				"Neighbor": models.Neighbor{ID: 1, Name: "Testhof"},
 				"Gespanne": []models.Gespann{{ID: 1, Name: "Testgespann"}},
 				"Persons":  tc.persons, "Entries": []models.Entry{},
-				"Saldo": decimal.Zero, "TotalHours": decimal.Zero,
-				"PaidSum": decimal.Zero, "Remaining": decimal.Zero,
+				"Saldo": decimal.Zero, "TotalCost": decimal.Zero, "TotalHours": decimal.Zero,
+				"LedgerSum": decimal.Zero, "PaidSum": decimal.Zero, "Remaining": decimal.Zero,
 			})
 			wantPersons := 0
 			if len(tc.persons) > 0 {

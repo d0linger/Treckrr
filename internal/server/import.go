@@ -13,6 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/money"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -82,6 +83,23 @@ type importRow struct {
 
 func (row importRow) OK() bool { return row.Err == "" }
 
+// importEntry converts one validated CSV row into the immutable booking
+// snapshot written by the import adapter. Catalog columns in the CSV remain
+// intentionally ignored; imports preserve only the explicitly supplied rate.
+func importEntry(row importRow, yearID int64, token string) *models.Entry {
+	e := &models.Entry{
+		NeighborID: row.NeighborID, BillingYearID: yearID, Date: row.Date,
+		TaskLabel: row.Task, Note: row.Note, Unit: row.Unit,
+		Quantity: row.Qty, UnitPrice: row.Price, Cost: row.Cost,
+		IdempotencyKey: token + ":" + strconv.Itoa(row.Line),
+	}
+	if row.Unit == "h" {
+		e.Hours = row.Qty
+		e.HourlyRate = row.Price
+	}
+	return e
+}
+
 // parseImportDate accepts the export's ISO date and the common German format.
 func parseImportDate(s string) (time.Time, bool) {
 	s = strings.TrimSpace(s)
@@ -141,7 +159,7 @@ func parseImportCSV(text string, members map[string]int64) ([]importRow, error) 
 		if row.Unit == "" {
 			row.Unit = "h"
 		}
-		row.Cost = row.Qty.Mul(row.Price).Round(2)
+		row.Cost = money.Amount(row.Qty, row.Price)
 		amountErr := importAmountError(qtyOK, priceOK, row)
 
 		switch {
@@ -471,17 +489,8 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		e := &models.Entry{
-			NeighborID: row.NeighborID, BillingYearID: yearID, Date: row.Date,
-			TaskLabel: row.Task, Note: row.Note, Unit: row.Unit,
-			Quantity: row.Qty, UnitPrice: row.Price, Cost: row.Cost,
-			IdempotencyKey: token + ":" + strconv.Itoa(row.Line),
-		}
-		if row.Unit == "h" { // keep the hour-booking convention so it counts as hours
-			e.Hours = row.Qty
-			e.HourlyRate = row.Price
-		}
-		newID, err := s.store.CreateEntry(r.Context(), e, nil)
+		e := importEntry(row, yearID, token)
+		result, err := s.store.CreateBooking(r.Context(), store.BookingCommand{Entry: e})
 		if err != nil {
 			reason, business := importCommitSkipReason(err)
 			if !business {
@@ -495,7 +504,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 			failed = append(failed, "Zeile "+itoa(row.Line)+" ("+reason+")")
 			continue
 		}
-		if newID != 0 { // 0 = an already-imported row on a re-submit; don't double-count
+		if result.MainID != 0 { // 0 = an already-imported row on a re-submit; don't double-count
 			created++
 		}
 	}

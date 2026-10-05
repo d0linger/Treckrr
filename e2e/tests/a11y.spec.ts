@@ -54,7 +54,10 @@ async function seriousViolations(page) {
 // full dark theme with its own token set.
 const PAGES: Array<[string, string]> = [
   ["/?year=1", "dashboard"],
-  ["/neighbors/1?year=1", "neighbor detail (booking form)"],
+  ["/neighbors/1?year=1", "neighbor account overview"],
+  ["/neighbors/1?year=1&view=booking", "neighbor booking form"],
+  ["/neighbors/1?year=1&view=bookings", "neighbor bookings"],
+  ["/neighbors/1?year=1&view=payments", "neighbor payments"],
   ["/neighbors/1/beleg?year=1", "Beleg"],
   ["/neighbors/1/overview", "neighbor history"],
   ["/buchungen?year=1", "bookings list"],
@@ -159,7 +162,10 @@ for (const { scheme, width } of [
       expect(resp?.status(), `${name} (${path}) did not load`).toBeLessThan(400);
       await page.waitForLoadState("networkidle");
       await expect(page.locator("h1"), `${name} (${path}) needs one page-level heading`).toHaveCount(1);
-      const overflow = await page.locator("main").evaluate((node) => node.scrollWidth - node.clientWidth);
+      const main = page.locator("body.has-nav main.main");
+      const background = await main.evaluate((node) => getComputedStyle(node).backgroundColor);
+      expect(background, `${name} (${path}) needs an opaque workspace background`).not.toBe("rgba(0, 0, 0, 0)");
+      const overflow = await main.evaluate((node) => node.scrollWidth - node.clientWidth);
       expect(overflow, `${name} (${path}) overflows the main content`).toBeLessThanOrEqual(1);
       if (process.env.TRECKRR_UI_REVIEW) {
         await page.screenshot({ path: testInfo.outputPath(name.replace(/[^a-z0-9]+/gi, "-") + ".png"), fullPage: true });

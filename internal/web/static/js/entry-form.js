@@ -109,6 +109,19 @@
 		return sum;
 	}
 
+	// Versions replace each other. ISO dates compare lexically, so the newest
+	// effective version on the selected booking date can be chosen without
+	// timezone conversion changing the calendar day.
+	function effectiveAdjustment() {
+		if (!pricing || !pricing.adjustments) return null;
+		var date = (form.querySelector('[name="entry_date"]') || {}).value || "";
+		var selected = null;
+		pricing.adjustments.forEach(function (candidate) {
+			if (candidate.effective_from <= date && (!selected || candidate.effective_from > selected.effective_from)) selected = candidate;
+		});
+		return selected;
+	}
+
 	// Returns { ps, loadCost, machineIds, hasTractor } or null when the selection
 	// cannot be priced. A rig without a tractor is priceable as long as it carries
 	// a machine — the customer's own tractor pulls it — and mirrors the same
@@ -166,11 +179,12 @@
 			costEl.textContent = "–";
 			return;
 		}
-		var rate = round2(round2(sel.ps * sel.loadCost) + machineRates(sel.machineIds));
+		var adjustment = effectiveAdjustment();
+		var rate = round2(round2(sel.ps * sel.loadCost) + machineRates(sel.machineIds) + (adjustment ? adjustment.amount : 0));
 		rateEl.textContent = fmt(rate) + " / h";
 		var hours = parseFloat((hoursEl.value || "0").replace(",", "."));
 		costEl.textContent = hours > 0 ? fmt(round2(hours * rate)) : "–";
-		if (unified) unified.update(hours > 0 ? round2(hours * rate) : null, rate);
+		if (unified) unified.update(hours > 0 ? round2(hours * rate) : null, rate, adjustment);
 	}
 
 	function applyMode() {
@@ -231,7 +245,8 @@
 				tractors: data.tractors || [],
 				loads: data.loads || [],
 				machines: data.machines || [],
-				gespanne: data.gespanne || []
+				gespanne: data.gespanne || [],
+				adjustments: data.adjustments || []
 			};
 			applyMode();
 		})
