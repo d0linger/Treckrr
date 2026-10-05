@@ -256,7 +256,7 @@ func TestRatenplanIntegration(t *testing.T) {
 	e.post(fmt.Sprintf("/neighbors/%d/installments", nid), url.Values{
 		"year_id": {itoa64(yid)}, "due_on": {"2099-01-15"}, "amount": {"42"},
 	})
-	pageURL := fmt.Sprintf("/neighbors/%d?year=%d", nid, yid)
+	pageURL := neighborPaymentsURL(nid, yid)
 	page := e.get(pageURL)
 	if !strings.Contains(page, ">überfällig<") || !strings.Contains(page, ">offen<") {
 		t.Fatalf("expected one overdue and one open installment on the page")

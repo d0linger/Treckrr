@@ -28,7 +28,7 @@ func TestMailAdminCenterIntegration(t *testing.T) {
 	}
 
 	list := e.get("/admin/mail?status=failed")
-	for _, want := range []string{"Mailausgang", "Mail-Center Marker", "Fehlgeschlagen", "Betriebsstatus"} {
+	for _, want := range []string{"Mailausgang", "Mail-Center Marker", "Fehlgeschlagen", "Unklar / angehalten"} {
 		if !strings.Contains(list, want) {
 			t.Errorf("mail list missing %q", want)
 		}

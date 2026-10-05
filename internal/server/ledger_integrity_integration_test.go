@@ -20,12 +20,12 @@ var paymentKeyRe = regexp.MustCompile(`(?s)action="/neighbors/\d+/payments".*?na
 func TestPaymentFormIdempotencyIntegration(t *testing.T) {
 	e := newItEnv(t)
 	nid, yid := e.neighborID, e.yearID64
-	page := e.get(fmt.Sprintf("/neighbors/%d?year=%d", nid, yid))
+	page := e.get(neighborPaymentsURL(nid, yid))
 	m := paymentKeyRe.FindStringSubmatch(page)
 	if m == nil {
 		t.Fatal("payment form renders no idempotency_key")
 	}
-	if again := paymentKeyRe.FindStringSubmatch(e.get(fmt.Sprintf("/neighbors/%d?year=%d", nid, yid))); again == nil || again[1] == m[1] {
+	if again := paymentKeyRe.FindStringSubmatch(e.get(neighborPaymentsURL(nid, yid))); again == nil || again[1] == m[1] {
 		t.Fatal("idempotency_key is not fresh per render")
 	}
 	form := url.Values{
