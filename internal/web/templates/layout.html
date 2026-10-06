@@ -88,7 +88,7 @@
 		{{if .Years}}
 		<nav class="yearbar" aria-label="Jahr und Auswertung">
 			{{$active := .Year}}
-			<form class="yearselect" method="get">
+			<form class="yearselect" method="get"{{with .YearNavPath}} action="{{.}}"{{end}}>
 				<label>
 					<span class="sr-only">Abrechnungsjahr</span>
 					<select name="year" data-year-select aria-label="Abrechnungsjahr wählen">
@@ -98,14 +98,14 @@
 			</form>
 			<div class="yearbar__links">{{range .Years}}
 				<a class="yearpill {{if and $active (eq .ID $active.ID)}}is-active{{end}}"
-					href="{{$.BasePath}}?year={{.ID}}"
-					{{if and $active (eq .ID $active.ID)}}aria-current="page"{{end}}>{{.Year}}</a>
+					href="{{with $.YearNavPath}}{{.}}{{else}}{{$.BasePath}}{{end}}?year={{.ID}}"
+					{{if and $active (eq .ID $active.ID) (ne $.Active "stats_all")}}aria-current="page"{{end}}>{{.Year}}</a>
 			{{end}}</div>
 			{{with .Year}}<div class="yearbar__tools" role="group" aria-label="Auswertungen">
 				<a class="yearquick{{if eq $.Active "stats"}} is-active{{end}}" href="/stats?year={{.ID}}" title="Statistik {{.Year}}" aria-label="Statistik {{.Year}}">
 					<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V11h4v9M10 20V5h4v15M16 20v-7h4v7"/></svg><span>Statistik</span>
 				</a>
-				<a class="yearquick" href="/stats/all" title="Jahresvergleich" aria-label="Jahresvergleich">
+				<a class="yearquick{{if eq $.Active "stats_all"}} is-active{{end}}" href="/stats/all?year={{.ID}}" title="Jahresvergleich" aria-label="Jahresvergleich"{{if eq $.Active "stats_all"}} aria-current="page"{{end}}>
 					<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 5-5 4 3 7-8"/><path d="M15 7h5v5"/></svg><span>Jahresvergleich</span>
 				</a>
 			</div>{{end}}

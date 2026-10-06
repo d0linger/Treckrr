@@ -11,6 +11,45 @@ import (
 	"github.com/d0linger/treckrr/internal/models"
 )
 
+// TestYearComparisonKeepsReportingNavigation preserves year context while the
+// cross-year report remains the active analysis destination.
+func TestYearComparisonKeepsReportingNavigation(t *testing.T) {
+	t.Parallel()
+	page := execPage(t, "stats_all", map[string]any{
+		"User":        models.User{ID: 1, Username: "reader", Role: models.RoleViewer},
+		"Active":      "stats_all",
+		"BasePath":    "/stats/all",
+		"YearNavPath": "/stats",
+		"Year":        models.BillingYear{ID: 7, Year: 2026},
+		"Years": []models.BillingYear{
+			{ID: 7, Year: 2026},
+			{ID: 6, Year: 2025},
+		},
+		"GrandCost": decimal.Zero, "GrandHours": decimal.Zero,
+		"GrandLedger": decimal.Zero, "GrandNet": decimal.Zero,
+		"GrandPaid": decimal.Zero, "GrandOpen": decimal.Zero,
+		"GrandCredit": decimal.Zero,
+	})
+	for _, want := range []string{
+		`<form class="yearselect" method="get" action="/stats">`,
+		`href="/?year=7"`,
+		`href="/stats?year=7"`,
+		`href="/stats?year=6"`,
+		`class="yearquick is-active" href="/stats/all?year=7"`,
+		`aria-label="Jahresvergleich" aria-current="page"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("year comparison navigation missing %q", want)
+		}
+	}
+	if strings.Contains(page, `href="/stats/all?year=6"`) {
+		t.Error("year pills reload the comparison instead of opening year statistics")
+	}
+	if count := strings.Count(page, `aria-current="page"`); count != 1 {
+		t.Errorf("current-page markers = %d, want only the year comparison", count)
+	}
+}
+
 // TestDashboardBookingNavigation keeps the booking overview visible in both
 // open and completed years without losing the selected billing-year context.
 func TestDashboardBookingNavigation(t *testing.T) {
@@ -49,7 +88,10 @@ func TestDashboardBookingNavigation(t *testing.T) {
 					t.Errorf("existing dashboard destination %q was removed", destination)
 				}
 			}
-			for _, destination := range []string{fmt.Sprintf("/stats?year=%d", tc.yearID), "/stats/all"} {
+			for _, destination := range []string{
+				fmt.Sprintf("/stats?year=%d", tc.yearID),
+				fmt.Sprintf("/stats/all?year=%d", tc.yearID),
+			} {
 				if !strings.Contains(page, `href="`+destination+`"`) {
 					t.Errorf("direct yearbar destination %q is missing", destination)
 				}

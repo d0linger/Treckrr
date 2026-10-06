@@ -133,6 +133,14 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
 	role := r.FormValue("role")
 	if !validRole(role) {
 		s.setFlash(w, r, "error", "Unbekannte Rolle.")
@@ -163,9 +171,12 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
-	_, err = s.store.GetUser(r.Context(), id)
-	if err != nil {
-		s.notFound(w, r)
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	username := trimmed(r, "username")
@@ -196,6 +207,10 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request) {
 			redirect(w, r, "/admin/users")
 			return
 		}
+	}
+	if _, err = s.store.GetUser(r.Context(), id); err != nil {
+		s.notFound(w, r)
+		return
 	}
 	if err := s.store.UpdateUserAccount(r.Context(), id, username, email); err != nil {
 		s.setFlash(w, r, "error", "Speichern fehlgeschlagen (Benutzername bereits vergeben?).")

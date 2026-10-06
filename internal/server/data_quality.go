@@ -57,9 +57,6 @@ func (s *Server) loadDataQuality(r *http.Request, year *models.BillingYear) (dat
 		case "machine_rate":
 			view.Title, view.Detail = issue.Subject+": Preissatz unvollständig", "Arbeitsbreite und Preis je AB·h müssen positiv sein."
 			view.Href += fmt.Sprintf("#machine-%d", issue.EntityID)
-		case "machine_self_cost":
-			view.Title, view.Detail = issue.Subject+": Selbstkosten fehlen", "Deckungsbeitrag und Eigenkosten bleiben für neue Buchungen unvollständig."
-			view.Href += fmt.Sprintf("#machine-%d", issue.EntityID)
 		default:
 			continue
 		}
@@ -84,6 +81,10 @@ func (s *Server) loadDataQuality(r *http.Request, year *models.BillingYear) (dat
 		addCompany("high", "Betriebsadresse fehlt", "Rechnungen benötigen eine vollständige Absenderadresse.")
 	}
 	switch company.TaxMode {
+	case "kleinunternehmer":
+		if strings.TrimSpace(company.TaxNote) == "" {
+			addCompany("high", "Steuerhinweis fehlt", "Kleinunternehmerregelung benötigt den Hinweistext am Beleg.")
+		}
 	case "regel":
 		if !company.VATRate.IsPositive() {
 			addCompany("high", "Umsatzsteuersatz fehlt", "Regelbesteuerung benötigt einen positiven Steuersatz.")

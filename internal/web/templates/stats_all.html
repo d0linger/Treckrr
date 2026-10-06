@@ -1,6 +1,6 @@
 {{define "content"}}
 <section class="stack">
-	<a class="backlink" href="/">‹ Übersicht</a>
+	<a class="backlink" href="/?year={{.Year.ID}}">‹ Übersicht {{.Year.Year}}</a>
 
 	<div class="kpigrid">
 		<div class="kpi card kpi--rev"><span class="kpi__label">Leistungen gesamt</span><span class="kpi__value">{{money .GrandCost}}</span></div>

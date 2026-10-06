@@ -89,8 +89,10 @@ func (s *Store) YearDataQuality(ctx context.Context, yearID, baseID int64) (Data
 		}
 	}
 
+	// A machine's billable rate is required for bookings. Self-cost remains an
+	// optional controlling value and therefore must not create a work-queue item.
 	rows, err = s.db.QueryContext(ctx, `
-		SELECT id, name, working_width <= 0 OR cost_per_ab <= 0, self_cost_per_h <= 0
+		SELECT id, name, working_width <= 0 OR cost_per_ab <= 0
 		  FROM machines WHERE base_id=$1 AND active ORDER BY sort_order, name`, baseID)
 	if err != nil {
 		return report, err
@@ -98,16 +100,13 @@ func (s *Store) YearDataQuality(ctx context.Context, yearID, baseID int64) (Data
 	for rows.Next() {
 		var id int64
 		var name string
-		var rateMissing, selfCostMissing bool
-		if err := rows.Scan(&id, &name, &rateMissing, &selfCostMissing); err != nil {
+		var rateMissing bool
+		if err := rows.Scan(&id, &name, &rateMissing); err != nil {
 			_ = rows.Close()
 			return report, err
 		}
 		if rateMissing {
 			report.Issues = append(report.Issues, DataQualityIssue{Code: "machine_rate", Severity: "high", EntityID: id, Subject: name})
-		}
-		if selfCostMissing {
-			report.Issues = append(report.Issues, DataQualityIssue{Code: "machine_self_cost", Severity: "medium", EntityID: id, Subject: name})
 		}
 	}
 	_ = rows.Close()

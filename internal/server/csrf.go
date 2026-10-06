@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"regexp"
 	"time"
@@ -155,6 +156,14 @@ func (s *Server) csrf(next http.Handler) http.Handler {
 			if expected := s.csrfToken(r); expected != "" {
 				got := r.Header.Get(csrfHeaderName)
 				if got == "" {
+					if err := r.ParseForm(); err != nil {
+						s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+						return
+					}
+					if err := r.ParseMultipartForm(32 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+						s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+						return
+					}
 					got = r.FormValue(csrfFieldName)
 				}
 				if !hmac.Equal([]byte(got), []byte(expected)) {

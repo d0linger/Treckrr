@@ -54,6 +54,16 @@ test("global tools and reporting shortcuts stay direct on desktop and mobile", a
   await themeToggle.click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
+  await comparison.click();
+  await expect(page).toHaveURL(/\/stats\/all\?year=\d+$/);
+  await expect(page.locator(".yearbar")).toBeVisible();
+  await expect(comparison).toHaveAttribute("aria-current", "page");
+  await expect(statistics).toBeVisible();
+  const yearLinks = page.locator(".yearbar__links .yearpill");
+  for (const link of await yearLinks.all()) {
+    await expect(link).toHaveAttribute("href", /^\/stats\?year=\d+$/);
+  }
+
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(themeToggle).toBeVisible();
   await expect(quickSearch).toBeVisible();
