@@ -317,3 +317,34 @@ func TestHandleUserRoleValidation(t *testing.T) {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 	}
 }
+
+func TestAdminUserHandlersRejectMalformedMultipart(t *testing.T) {
+	s := testAdminServer(t)
+	tests := []struct {
+		name    string
+		path    string
+		field   string
+		handler http.HandlerFunc
+	}{
+		{name: "user update", path: "/admin/users/123/update", field: "username", handler: s.handleUserUpdate},
+		{name: "role update", path: "/admin/users/123/role", field: "role", handler: s.handleUserRole},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			body := "--boundary\r\nContent-Disposition: form-data; name=\"" + tc.field + "\"\r\n\r\nvalue"
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(body))
+			req.Header.Set("Content-Type", "multipart/form-data; boundary=boundary")
+			req.AddCookie(&http.Cookie{Name: sessionCookie, Value: "admin-session"})
+			req.Header.Set(csrfHeaderName, s.csrfToken(req))
+			req.SetPathValue("id", "123")
+			rr := httptest.NewRecorder()
+
+			s.csrf(tc.handler).ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+			}
+		})
+	}
+}
