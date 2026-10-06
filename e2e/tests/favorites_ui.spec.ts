@@ -9,10 +9,6 @@ const favorites = readFileSync(
 
 /** Verifies that device-local favorites stay user-scoped and only reorder presentation. */
 test("neighbor and rig favorites are remembered without changing submitted values", async ({ page }) => {
-	await page.route("**/static/js/favorites-test.js*", (route) => route.fulfill({
-		contentType: "application/javascript",
-		body: favorites,
-	}));
   await page.goto("/login");
   await page.setContent(`<!doctype html><html><head><meta name="user-id" content="7"></head><body>
     <div data-favorite-list="neighbor">
@@ -24,7 +20,9 @@ test("neighbor and rig favorites are remembered without changing submitted value
     </select>
     <button type="button" data-favorite-select-toggle="gespann"><span data-favorite-label>Merken</span></button>
   </body></html>`);
-  await page.addScriptTag({ url: "/static/js/favorites-test.js" });
+  // A claimed service worker bypasses Playwright request routes, so execute the
+  // checked-in asset directly instead of fetching it through a synthetic URL.
+  await page.evaluate(favorites);
 
   await page.locator('[data-favorite-id="2"] [data-favorite-toggle]').click();
   await expect(page.locator("[data-favorite-id]").first()).toHaveAttribute("data-favorite-id", "2");
