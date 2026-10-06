@@ -388,7 +388,26 @@ func formMachineIDs(r *http.Request) ([]int64, bool) {
 	return formInt64List(r, "machine_ids")
 }
 
-// redirect issues a see-other redirect (post/redirect/get).
+// redirect issues a same-origin see-other redirect (post/redirect/get). The
+// validation lives at the sink so a newly added caller cannot accidentally turn
+// a request, stored value, or Referer into an open redirect.
 func redirect(w http.ResponseWriter, r *http.Request, target string) {
-	http.Redirect(w, r, target, http.StatusSeeOther)
+	safeTarget := "/"
+	normalized := strings.ReplaceAll(target, `\`, "/")
+	u, err := url.Parse(normalized)
+	if err == nil &&
+		target != "" &&
+		!strings.Contains(target, `\`) &&
+		u.Scheme == "" &&
+		u.Host == "" &&
+		u.Hostname() == "" &&
+		strings.HasPrefix(u.Path, "/") &&
+		!strings.HasPrefix(u.Path, "//") &&
+		!strings.Contains(u.Path, `\`) &&
+		!hasControlChar(u.Path) &&
+		!hasControlChar(u.RawQuery) &&
+		!hasControlChar(u.Fragment) {
+		safeTarget = u.String()
+	}
+	http.Redirect(w, r, safeTarget, http.StatusSeeOther)
 }

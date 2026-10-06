@@ -8,6 +8,46 @@ import (
 	"testing"
 )
 
+func TestRedirectOnlyAllowsSameOriginAbsolutePaths(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		target string
+		want   string
+	}{
+		{name: "local path", target: "/neighbors/7", want: "/neighbors/7"},
+		{name: "query and fragment", target: "/buchungen?year=3#top", want: "/buchungen?year=3#top"},
+		{name: "escaped path", target: "/neighbors/Muster%20Hof", want: "/neighbors/Muster%20Hof"},
+		{name: "empty", target: "", want: "/"},
+		{name: "relative path", target: "login", want: "/"},
+		{name: "absolute URL", target: "https://attacker.example/phish", want: "/"},
+		{name: "scheme without host", target: "javascript:alert(1)", want: "/"},
+		{name: "protocol relative", target: "//attacker.example/phish", want: "/"},
+		{name: "triple slash", target: "///attacker.example/phish", want: "/"},
+		{name: "backslash authority", target: `/\attacker.example/phish`, want: "/"},
+		{name: "encoded slash authority", target: "/%2f%2fattacker.example/phish", want: "/"},
+		{name: "encoded backslash authority", target: "/%5cattacker.example/phish", want: "/"},
+		{name: "decoded control", target: "/%09/attacker.example", want: "/"},
+		{name: "raw control", target: "/safe\r\nLocation: https://attacker.example", want: "/"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := httptest.NewRequest(http.MethodPost, "http://treckrr.test/action", nil)
+			w := httptest.NewRecorder()
+
+			redirect(w, r, tc.target)
+
+			if w.Code != http.StatusSeeOther {
+				t.Fatalf("status = %d, want %d", w.Code, http.StatusSeeOther)
+			}
+			if got := w.Header().Get("Location"); got != tc.want {
+				t.Errorf("Location = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestEntryBulkReturnPath(t *testing.T) {
 	s := testServer()
 	for _, tc := range []struct {
