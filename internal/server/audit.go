@@ -80,8 +80,8 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	data["Q"] = aq.Text
 	data["Action"] = aq.Action
 	data["Username"] = aq.Username
-	data["From"] = r.URL.Query().Get("from")
-	data["To"] = r.URL.Query().Get("to")
+	data["From"] = sanitizeQueryParam(r.URL.Query().Get("from"), maxNameLen)
+	data["To"] = sanitizeQueryParam(r.URL.Query().Get("to"), maxNameLen)
 	data["FilterQuery"] = auditFilterQuery(r)
 	data["Total"] = total
 	data["Page"] = page
@@ -459,7 +459,7 @@ func auditQueryFromRequest(r *http.Request) store.AuditQuery {
 func auditFilterQuery(r *http.Request) string {
 	v := url.Values{}
 	for _, k := range []string{"q", "action", "username", "from", "to"} {
-		if s := strings.TrimSpace(r.URL.Query().Get(k)); s != "" {
+		if s := sanitizeQueryParam(r.URL.Query().Get(k), maxNameLen); s != "" {
 			v.Set(k, s)
 		}
 	}

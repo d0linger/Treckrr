@@ -103,6 +103,30 @@ func TestEntryPrecheckTaskLabelSanitization(t *testing.T) {
 	}
 }
 
+func TestFilterQuerySanitization(t *testing.T) {
+	oversized := strings.Repeat("d", maxNameLen+100)
+	params := url.Values{}
+	params.Set("from", "  "+oversized+"  ")
+	params.Set("to", "  "+oversized+"  ")
+
+	req := httptest.NewRequest(http.MethodGet, "/test?"+params.Encode(), nil)
+
+	auditQ := auditFilterQuery(req)
+	if strings.Contains(auditQ, oversized) {
+		t.Errorf("auditFilterQuery contains unsanitized parameter: %s", auditQ)
+	}
+
+	statsQ := statsPeriodQuery(req)
+	if strings.Contains(statsQ, oversized) {
+		t.Errorf("statsPeriodQuery contains unsanitized parameter: %s", statsQ)
+	}
+
+	entryURL := entryListURL(req, 1, 1, "")
+	if strings.Contains(entryURL, oversized) {
+		t.Errorf("entryListURL contains unsanitized parameter: %s", entryURL)
+	}
+}
+
 func TestSanitizeQueryParam(t *testing.T) {
 	cases := []struct {
 		name     string

@@ -166,10 +166,10 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 	data["SortNeighborURL"] = entryListURL(r, year.ID, 1, "neighbor")
 	data["ExportURL"] = entryListURL(r, year.ID, 1, "") + "&export=csv"
 	data["Filter"] = map[string]string{
-		"from": r.URL.Query().Get("from"), "to": r.URL.Query().Get("to"),
+		"from": sanitizeQueryParam(r.URL.Query().Get("from"), maxNameLen), "to": sanitizeQueryParam(r.URL.Query().Get("to"), maxNameLen),
 		"task": f.Task, "unit": f.Unit, "voided": f.Voided,
-		"neighbor_id": r.URL.Query().Get("neighbor_id"),
-		"sort":        f.Sort, "dir": r.URL.Query().Get("dir"),
+		"neighbor_id": sanitizeQueryParam(r.URL.Query().Get("neighbor_id"), maxNameLen),
+		"sort":        f.Sort, "dir": sanitizeQueryParam(r.URL.Query().Get("dir"), maxNameLen),
 		"direction": f.Direction, "kind": f.Kind,
 	}
 	data["ReturnTo"] = r.URL.RequestURI()
@@ -181,7 +181,7 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 func entryListURL(r *http.Request, yearID int64, page int, sort string) string {
 	q := url.Values{}
 	for _, k := range []string{"from", "to", "task", "unit", "voided", "neighbor_id", "sort", "dir", "direction", "kind"} {
-		if v := strings.TrimSpace(r.URL.Query().Get(k)); v != "" {
+		if v := sanitizeQueryParam(r.URL.Query().Get(k), maxNameLen); v != "" {
 			q.Set(k, v)
 		}
 	}
