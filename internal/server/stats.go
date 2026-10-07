@@ -525,8 +525,8 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["ByMachineMax"] = maxHours(byMachine)
 	data["MachineUsage"] = machineUsage
 	data["UnitMetrics"] = unitMetrics
-	data["From"] = r.URL.Query().Get("from")
-	data["To"] = r.URL.Query().Get("to")
+	data["From"] = sanitizeQueryParam(r.URL.Query().Get("from"), maxNameLen)
+	data["To"] = sanitizeQueryParam(r.URL.Query().Get("to"), maxNameLen)
 	data["Period"] = period
 	var marginTotal decimal.Decimal
 	var hasMargin, hasEstimate bool
@@ -579,7 +579,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 func statsPeriodQuery(r *http.Request) string {
 	v := url.Values{}
 	for _, k := range []string{"from", "to"} {
-		if s := strings.TrimSpace(r.URL.Query().Get(k)); s != "" {
+		if s := sanitizeQueryParam(r.URL.Query().Get(k), maxNameLen); s != "" {
 			v.Set(k, s)
 		}
 	}
