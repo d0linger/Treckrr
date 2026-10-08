@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
@@ -25,7 +26,7 @@ func (s *Server) resolvePortalShare(w http.ResponseWriter, r *http.Request) (sha
 	}
 	if strings.Contains(token, ".") {
 		neighborID, yearID, ok = s.verifyLegacyBelegShare(token)
-	} else {
+	} else if s.store != nil {
 		var err error
 		shareID, neighborID, yearID, ok, err = s.store.ResolveBelegShareAccess(r.Context(), store.HashToken(token))
 		if err != nil {
@@ -84,18 +85,26 @@ func (s *Server) handlePortalFeedback(w http.ResponseWriter, r *http.Request) {
 		s.badRequest(w, "Die Rückmeldung konnte nicht verarbeitet werden.")
 		return
 	}
+	message := strings.TrimSpace(r.FormValue("message"))
+	if utf8.RuneCountInString(message) > maxNoteLen {
+		s.badRequest(w, "Die Nachricht ist zu lang.")
+		return
+	}
+	if raw := strings.TrimSpace(r.FormValue("line")); raw != "" && utf8.RuneCountInString(raw) > maxNameLen {
+		s.badRequest(w, "Ungültige Rechnungsposition.")
+		return
+	}
 	status := r.FormValue("status")
 	if status != "confirmed" && status != "disputed" {
 		s.badRequest(w, "Ungültige Rückmeldung.")
 		return
 	}
-	message := strings.TrimSpace(r.FormValue("message"))
-	if len([]rune(message)) > maxNoteLen {
-		s.badRequest(w, "Die Nachricht ist zu lang.")
-		return
-	}
 	if status == "disputed" && message == "" {
 		s.badRequest(w, "Bitte den Einwand kurz beschreiben.")
+		return
+	}
+	if s.store == nil {
+		s.notFound(w, r)
 		return
 	}
 	iv, err := s.store.GetInvoice(r.Context(), yearID, neighborID)
