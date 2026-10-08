@@ -132,6 +132,9 @@ func shareKey(ip string) string { return "share:" + rateLimitIP(ip) }
 // shareBlocked reports whether this client has produced enough share-token misses
 // to look like it is scanning.
 func (l *loginLimiter) shareBlocked(ctx context.Context, ip string) bool {
+	if l == nil || l.store == nil {
+		return false
+	}
 	b, err := l.store.RateLimitBlocked(ctx, shareKey(ip), shareMaxMisses, shareWindow)
 	if err != nil {
 		slog.Warn("ratelimit degraded (share)", "err", sanitizeLog(err.Error()))
@@ -144,6 +147,9 @@ func (l *loginLimiter) shareBlocked(ctx context.Context, ip string) bool {
 // counterpart: a hit on a valid link must not clear a scanner's tally, and the
 // sliding window ages the count out on its own.
 func (l *loginLimiter) shareMiss(ctx context.Context, ip string) {
+	if l == nil || l.store == nil {
+		return
+	}
 	if _, err := l.store.RateLimitFail(ctx, shareKey(ip), shareWindow); err != nil {
 		slog.Warn("ratelimit fail-record failed (share)", "err", sanitizeLog(err.Error()))
 	}
