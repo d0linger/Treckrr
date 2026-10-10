@@ -4,8 +4,8 @@
 IMG    := golang:1.27-alpine
 LINT   := golangci/golangci-lint:v2.13.1
 PG_MAJOR ?= 16
-GO     := docker run --rm -v "$(CURDIR):/src" -v treckrr-gomod:/go/pkg/mod -w /src -e GOTOOLCHAIN=go1.27.2 $(IMG) sh -c
-GOTEST := docker run --rm --network treckrr-itest -v "$(CURDIR):/src" -v treckrr-gomod:/go/pkg/mod -w /src -e GOTOOLCHAIN=go1.27.2 -e PG_MAJOR="$(PG_MAJOR)" -e TEST_DATABASE_URL="$(TEST_DATABASE_URL)" $(IMG) sh -c
+GO     := docker run --rm -v "$(CURDIR):/src" -v treckrr-gomod:/go/pkg/mod -w /src -e GOTOOLCHAIN=go1.27.1 $(IMG) sh -c
+GOTEST := docker run --rm --network treckrr-itest -v "$(CURDIR):/src" -v treckrr-gomod:/go/pkg/mod -w /src -e GOTOOLCHAIN=go1.27.1 -e PG_MAJOR="$(PG_MAJOR)" -e TEST_DATABASE_URL="$(TEST_DATABASE_URL)" $(IMG) sh -c
 
 .PHONY: help run down logs build vet fmt fmt-check lint deadcode test test-unit check
 
@@ -34,7 +34,7 @@ fmt-check: ## fail if any file needs gofmt
 	$(GO) "test -z \"$$(gofmt -l internal/ cmd/)\""
 
 lint: ## golangci-lint
-	docker run --rm -v "$(CURDIR):/src" -v treckrr-gomod:/go/pkg/mod -w /src -e GOTOOLCHAIN=go1.27.2 $(LINT) golangci-lint run --build-tags=integration ./...
+	docker run --rm -v "$(CURDIR):/src" -v treckrr-gomod:/go/pkg/mod -w /src -e GOTOOLCHAIN=go1.27.1 $(LINT) golangci-lint run --build-tags=integration ./...
 
 deadcode: ## unreachable-function analysis (matches CI)
 	$(GO) "go install golang.org/x/tools/cmd/deadcode@v0.49.0 && out=\$$(\$$(go env GOPATH)/bin/deadcode -tags=integration -test ./...); echo \"\$$out\"; [ -z \"\$$out\" ] || exit 1"

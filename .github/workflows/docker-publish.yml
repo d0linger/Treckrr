@@ -15,7 +15,7 @@ permissions:
 
 env:
   # Kept in step with ci.yml's GO_VERSION.
-  GO_VERSION: "1.27.2"
+  GO_VERSION: "1.27.1"
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
