@@ -114,6 +114,39 @@ func TestDunningStageParam(t *testing.T) {
 	}
 }
 
+// TestDunningInvalidYear tests that dunning handlers reject requests with
+// missing or non-positive year parameters with 400 Bad Request.
+func TestDunningInvalidYear(t *testing.T) {
+	s := testServer()
+	routes := []struct {
+		method, path string
+		handler      func(http.ResponseWriter, *http.Request)
+	}{
+		{http.MethodGet, "/neighbors/1/mahnung?year=0", s.handleNeighborMahnung},
+		{http.MethodGet, "/neighbors/1/mahnung", s.handleNeighborMahnung},
+		{http.MethodPost, "/neighbors/1/mahnung/email?year=0", s.handleMahnungEmail},
+		{http.MethodPost, "/neighbors/1/mahnung/email", s.handleMahnungEmail},
+		{http.MethodPost, "/neighbors/1/mahnung/email?year=-5", s.handleMahnungEmail},
+		{http.MethodPost, "/neighbors/1/mahnung/mark-sent?year=0", s.handleMahnungMarkSent},
+		{http.MethodPost, "/neighbors/1/mahnung/mark-sent", s.handleMahnungMarkSent},
+		{http.MethodPost, "/neighbors/1/mahnung/mark-sent?year=abc", s.handleMahnungMarkSent},
+		{http.MethodPost, "/mahnwesen/batch-email?year=0", s.handleMahnwesenBatchEmail},
+		{http.MethodPost, "/mahnwesen/batch-email", s.handleMahnwesenBatchEmail},
+	}
+
+	for _, tc := range routes {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			req.SetPathValue("id", "1")
+			rr := httptest.NewRecorder()
+			tc.handler(rr, req)
+			if rr.Code != http.StatusBadRequest {
+				t.Errorf("%s %s status = %d, want %d", tc.method, tc.path, rr.Code, http.StatusBadRequest)
+			}
+		})
+	}
+}
+
 // TestLimitBodyImportUploadRequiresSession: the import previews' larger body
 // allowance is only for signed-in users, like the photo upload's.
 func TestLimitBodyImportUploadRequiresSession(t *testing.T) {

@@ -356,6 +356,10 @@ func (s *Server) handleMahnungEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	yearID := formInt64(r, "year")
+	if yearID <= 0 {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
 	stage, ok := dunningStageParam(r)
 	if !ok {
 		s.badRequest(w, msgInvalidDunningStage)
@@ -552,6 +556,10 @@ func (s *Server) handleMahnungMarkSent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	yearID := formInt64(r, "year")
+	if yearID <= 0 {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
 	back := fmt.Sprintf("/mahnwesen?year=%d", yearID)
 	stage, ok := dunningStageParam(r)
 	if !ok {
@@ -596,6 +604,10 @@ func (s *Server) handleMahnwesenBatchEmail(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	yearID := formInt64(r, "year")
+	if yearID <= 0 {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
 	stage, ok := dunningStageParam(r)
 	if !ok {
 		s.badRequest(w, msgInvalidDunningStage)
