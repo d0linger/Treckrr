@@ -81,6 +81,10 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/users")
 		return
 	}
+	if s.passwordTooLong(w, r, password) {
+		redirect(w, r, "/admin/users")
+		return
+	}
 	if msg := passwordPolicyError(password); msg != "" {
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, "/admin/users")

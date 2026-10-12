@@ -111,6 +111,27 @@ func testAdminServer(t *testing.T) *Server {
 func TestHandleUserCreateValidation(t *testing.T) {
 	s := testAdminServer(t)
 
+	t.Run("overly long password rejected", func(t *testing.T) {
+		form := url.Values{}
+		form.Set("username", "validuser")
+		form.Set("password", strings.Repeat("a", 73))
+		form.Set("role", "editor")
+
+		req := httptest.NewRequest(http.MethodPost, "/admin/users", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rr := httptest.NewRecorder()
+
+		s.handleUserCreate(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Errorf("expected status SeeOther, got %v", rr.Code)
+		}
+		flashCookie := flashText(t, s, rr)
+		if !strings.Contains(flashCookie, "Passwort darf höchstens 72 Byte lang sein.") {
+			t.Errorf("expected password byte limit flash message, got cookie: %q", flashCookie)
+		}
+	})
+
 	t.Run("overly long username rejected", func(t *testing.T) {
 		longUsername := strings.Repeat("a", 101)
 		form := url.Values{}
