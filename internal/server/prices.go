@@ -94,6 +94,11 @@ func (s *Server) handleFuelAdjustmentSave(w http.ResponseWriter, r *http.Request
 	}
 	baseID := s.baseIDFromForm(r)
 	back := pricesURL(baseID) + "#fuel-adjustments"
+	if s.tooLong(w, r, "Stichtag", r.FormValue("effective_from"), 50) ||
+		s.tooLong(w, r, "Zuschlag", r.FormValue("amount_per_h"), maxDecimalLen) {
+		redirect(w, r, back)
+		return
+	}
 	if s.lockedRedirect(w, r, baseID, back) {
 		return
 	}

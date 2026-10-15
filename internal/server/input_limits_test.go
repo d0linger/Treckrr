@@ -91,14 +91,15 @@ func TestInvoiceCreditInvalidSelection(t *testing.T) {
 func TestPriceDecimalLimits(t *testing.T) {
 	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
 	for _, tc := range []struct {
-		field, label string
-		handler      http.HandlerFunc
+		field, label, back string
+		handler            http.HandlerFunc
 	}{
-		{field: "cost_per_ps", label: "Kosten je PS", handler: s.handleLoadLevelSave},
-		{field: "ps", label: "PS", handler: s.handleTractorSave},
-		{field: "working_width", label: "Arbeitsbreite", handler: s.handleMachineSave},
-		{field: "cost_per_ab", label: "Kosten", handler: s.handleMachineSave},
-		{field: "self_cost_per_h", label: "Selbstkosten", handler: s.handleMachineSave},
+		{field: "cost_per_ps", label: "Kosten je PS", back: pricesURL(1), handler: s.handleLoadLevelSave},
+		{field: "ps", label: "PS", back: pricesURL(1), handler: s.handleTractorSave},
+		{field: "working_width", label: "Arbeitsbreite", back: pricesURL(1), handler: s.handleMachineSave},
+		{field: "cost_per_ab", label: "Kosten", back: pricesURL(1), handler: s.handleMachineSave},
+		{field: "self_cost_per_h", label: "Selbstkosten", back: pricesURL(1), handler: s.handleMachineSave},
+		{field: "amount_per_h", label: "Zuschlag", back: pricesURL(1) + "#fuel-adjustments", handler: s.handleFuelAdjustmentSave},
 	} {
 		t.Run(tc.field, func(t *testing.T) {
 			form := url.Values{"base_id": {"1"}, tc.field: {strings.Repeat("1", maxDecimalLen+1)}}
@@ -107,11 +108,25 @@ func TestPriceDecimalLimits(t *testing.T) {
 				s,
 				tc.handler,
 				form,
-				pricesURL(1),
+				tc.back,
 				tc.label+" darf höchstens 32 Zeichen lang sein.",
 			)
 		})
 	}
+}
+
+// TestFuelAdjustmentDateLimit prevents oversized effective_from date strings.
+func TestFuelAdjustmentDateLimit(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	form := url.Values{"base_id": {"1"}, "effective_from": {strings.Repeat("1", 51)}}
+	assertFormRedirect(
+		t,
+		s,
+		s.handleFuelAdjustmentSave,
+		form,
+		pricesURL(1)+"#fuel-adjustments",
+		"Stichtag darf höchstens 50 Zeichen lang sein.",
+	)
 }
 
 // TestLogin2FACodeLimit uses a valid pending token so the code guard, not an
