@@ -344,6 +344,10 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	user := userFromCtx(r)
+	if !s.keepsSecondFactor(w, r, user, true) {
+		redirect(w, r, mfaSetupURL)
+		return
+	}
 	if !s.sensitiveAdmit(w, r, user.ID, "/account/2fa") {
 		return
 	}

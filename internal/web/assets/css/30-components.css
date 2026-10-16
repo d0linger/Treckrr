@@ -1064,3 +1064,7 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 	display: grid; place-items: center; font-size: 1.6rem; font-weight: 700; text-decoration: none;
 	box-shadow: 0 6px 18px color-mix(in srgb, var(--signal) 45%, transparent), 0 2px 6px rgba(0, 0, 0, .3); }
 .fab:hover { background: var(--signal-press); }
+
+/* An account the sign-in policy requires to add a second factor. */
+.chip--warn { background: var(--danger-tint); color: var(--danger-text); font-weight: 700; }
+.mfa-banner { margin-bottom: .9rem; }

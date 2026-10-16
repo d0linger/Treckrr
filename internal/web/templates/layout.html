@@ -119,6 +119,7 @@
 {{end}}
 
 	<main class="main" id="main" tabindex="-1">
+		{{with .MFADeadline}}<div class="flash {{if $.MFAOverdue}}flash--error{{else}}flash--info{{end}} mfa-banner" role="note" data-mfa-banner>{{if $.MFAOverdue}}Für dein Konto ist eine Zwei-Faktor-Anmeldung vorgeschrieben. Die übrigen Bereiche sind erst danach wieder erreichbar.{{else}}Ab {{date .}} ist für dein Konto eine Zwei-Faktor-Anmeldung vorgeschrieben (Passkey oder Authenticator-App).{{end}} <a class="link" href="/profile#zwei-faktor">Jetzt einrichten</a></div>{{end}}
 		{{block "content" .}}{{end}}
 	</main>
 

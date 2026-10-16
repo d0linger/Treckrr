@@ -53,6 +53,8 @@ type Server struct {
 	backgroundTasks map[uint64]backgroundTask
 	// photoSlots bounds concurrent image decodes; see maxConcurrentPhotoDecodes.
 	photoSlots chan struct{}
+	// policy caches the sign-in policy (second factor per role).
+	policy policyCache
 }
 
 // New constructs a Server and parses templates.
@@ -368,6 +370,12 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 			http.Redirect(w, r, "/account/password", http.StatusSeeOther)
 			return
 		}
+		// A required second factor past its grace period leaves only account
+		// self-service reachable, which is where it can be set up.
+		if !isSelfServicePath(r.URL.Path) && s.mfaBlocked(r, user) {
+			s.redirectToMFASetup(w, r)
+			return
+		}
 		// Viewers may not mutate data, except managing their own account.
 		if r.Method == http.MethodPost && !user.CanWrite() && !isSelfServicePath(r.URL.Path) {
 			// A replay would read the redirect as neither success nor rejection and
@@ -431,6 +439,10 @@ func (s *Server) admin(h http.HandlerFunc) http.Handler {
 				return
 			}
 			http.Redirect(w, r, "/account/password", http.StatusSeeOther)
+			return
+		}
+		if s.mfaBlocked(r, user) {
+			s.redirectToMFASetup(w, r)
 			return
 		}
 		s.refreshSessionCookie(w, r)

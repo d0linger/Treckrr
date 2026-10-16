@@ -57,6 +57,8 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 	data := s.newPage(w, r, "Benutzerverwaltung", "admin")
 	data["Users"] = users
 	data["Roles"] = []string{models.RoleAdmin, models.RoleEditor, models.RoleViewer}
+	data["Policy"] = s.securityPolicy(r.Context())
+	data["GraceOptions"] = []int{0, 3, 7, 14, 30}
 	s.render(w, r, "admin", data)
 }
 

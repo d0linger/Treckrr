@@ -201,6 +201,10 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+	if !s.keepsSecondFactor(w, r, user, false) {
+		redirect(w, r, mfaSetupURL)
+		return
+	}
 	_, err = s.store.DeleteWebauthnCredential(r.Context(), user.ID, id)
 	switch {
 	case errors.Is(err, store.ErrNotFound):

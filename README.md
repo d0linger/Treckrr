@@ -65,7 +65,7 @@ neighbour that satisfies § 11 UStG.
 - **Account statement** per neighbour across all years, as a page and as PDF.
 - **Dunning** (Mahnwesen): overdue list, printable reminder, PDF, EPC QR, CSV export.
 - **Import/export**: CSV bookings with preview, bank statement payment matching, per-neighbour GDPR export, year and neighbour CSV.
-- **Authentication**: password + optional TOTP with recovery codes, passkeys (WebAuthn, user verification required), roles (admin / editor / viewer), and session management with per-device revocation.
+- **Authentication**: password + optional TOTP with recovery codes, passkeys (WebAuthn, user verification required), roles (admin / editor / viewer), an optional sign-in policy that requires a second factor for admins and/or editors after a grace period, and session management with per-device revocation.
 - **Append-only audit log** enforced by a database trigger, filterable and exportable, with staggered retention (1 year operational, 7 years for § 132 BAO records).
 - **Encrypted backups** (AES-256-GCM) on a schedule, optional off-box S3 target, guarded GUI restores and an offline CLI recovery workflow.
 - **PWA** with offline booking capture that replays under the user who captured it when the connection returns.

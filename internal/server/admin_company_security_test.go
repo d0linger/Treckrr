@@ -68,7 +68,7 @@ func (r *mockCompanySecRows) Columns() []string {
 	if strings.Contains(r.query, "company") {
 		return []string{"name", "address", "tax_id", "tax_note", "tax_mode", "vat_rate", "iban", "payment_term_days", "dunning_fee_1", "dunning_fee_2", "dunning_grace_days", "skonto_pct", "skonto_days", "invoice_prefix", "invoice_start", "small_business_limit", "travel_flat", "travel_per_km", "mail_signature", "mail_cc"}
 	}
-	return []string{"id", "username", "email", "role", "is_admin", "must_change_password", "totp_enabled", "created_at", "disabled"}
+	return []string{"id", "username", "email", "role", "is_admin", "must_change_password", "totp_enabled", "created_at", "disabled", "has_passkey"}
 }
 
 func (r *mockCompanySecRows) Close() error { return nil }
@@ -114,6 +114,7 @@ func (r *mockCompanySecRows) Next(dest []driver.Value) error {
 		dest[6] = false
 		dest[7] = time.Now()
 		dest[8] = false
+		dest[9] = false
 	}
 	return nil
 }
