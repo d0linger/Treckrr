@@ -33,7 +33,7 @@
 		<div class="action-list">
 			<a href="/prices?base={{.Base.ID}}&amp;mode=edit&amp;section=loads"><span><strong>Belastungsstufen</strong><small>{{len .Loads}} Stufen für Traktorsätze</small></span><span aria-hidden="true">›</span></a>
 			<a href="/prices?base={{.Base.ID}}&amp;mode=edit&amp;section=fuel"><span><strong>Diesel- und Betriebsmittelanpassung</strong><small>{{len .FuelAdjustments}} zeitlich versionierte Anpassungen</small></span><span aria-hidden="true">›</span></a>
-			{{if .MachineViews}}<a href="/prices/machines/labels?base={{.Base.ID}}"><span><strong>QR-Etiketten drucken</strong><small>Maschinen für die mobile Buchung kennzeichnen</small></span><span aria-hidden="true">›</span></a>{{end}}
+			{{if or .MachineViews .TractorViews}}<a href="/prices/machines/labels?base={{.Base.ID}}"><span><strong>QR-Etiketten drucken</strong><small>Gespanne, Traktoren und Maschinen für die mobile Buchung kennzeichnen</small></span><span aria-hidden="true">›</span></a>{{end}}
 		</div>
 	</details>
 	{{else}}
@@ -149,7 +149,7 @@
 	{{end}}
 	<div class="list list--onecol">
 		{{range .TractorViews}}
-		<details class="card disclosure disclosure--row {{if not .Tractor.Active}}is-inactive{{end}}" data-tractor-row>
+		<details class="card disclosure disclosure--row {{if not .Tractor.Active}}is-inactive{{end}}" id="tractor-{{.Tractor.ID}}" data-tractor-row>
 			<summary>
 				<span class="list__main">
 					<span class="list__title">{{.Tractor.Label}}{{if not .Tractor.Active}}<span class="pill-off">inaktiv</span>{{end}}</span>

@@ -7,7 +7,7 @@
 	{{end}}
 
 	<p class="muted">Fixe Gespanne = Traktor + Belastungsstufe + Maschinen. Bei einer Buchung
-		genügt dann die Auswahl des Gespanns.</p>
+		genügt dann die Auswahl des Gespanns.{{if .Views}} <a class="link" href="/prices/machines/labels?base={{.Base.ID}}">QR-Etiketten drucken</a>{{end}}</p>
 
 	<div class="list list--onecol">
 		{{range .Views}}

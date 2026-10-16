@@ -251,18 +251,39 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if raw := r.URL.Query().Get("machine"); raw != "" {
-		if machineID, err := strconv.ParseInt(raw, 10, 64); err == nil && machineID > 0 {
-			for _, machine := range machines {
-				if machine.ID == machineID {
-					bookingValues["mode"] = "manual"
-					view.SelectedMachineIDs = []int64{machineID}
-					view.BookingPrefilled = true
-					machineCopy := machine
-					view.PrefilledMachine = &machineCopy
-					view.Section = "booking"
-					break
-				}
+	// A scanned QR label (machine, tractor or rig) preselects that item in the
+	// existing form. Only items bookable in this year's basis qualify.
+	prefill := func(target scanTarget) {
+		view.BookingPrefilled = true
+		view.Prefilled = &target
+		view.Section = "booking"
+	}
+	query := r.URL.Query()
+	if machineID, err := strconv.ParseInt(query.Get("machine"), 10, 64); err == nil && machineID > 0 {
+		for _, machine := range machines {
+			if machine.ID == machineID {
+				bookingValues["mode"] = "manual"
+				view.SelectedMachineIDs = []int64{machineID}
+				prefill(machineTarget(machine))
+				break
+			}
+		}
+	} else if tractorID, err := strconv.ParseInt(query.Get("tractor"), 10, 64); err == nil && tractorID > 0 {
+		for _, tractor := range tractors {
+			if tractor.ID == tractorID {
+				bookingValues["mode"] = "manual"
+				bookingValues["tractor_id"] = strconv.FormatInt(tractorID, 10)
+				prefill(tractorTarget(tractor))
+				break
+			}
+		}
+	} else if gespannID, err := strconv.ParseInt(query.Get("gespann"), 10, 64); err == nil && gespannID > 0 {
+		for _, g := range gespanne {
+			if g.ID == gespannID {
+				bookingValues["mode"] = "gespann"
+				bookingValues["gespann_id"] = strconv.FormatInt(gespannID, 10)
+				prefill(scanTarget{Kind: "gespann", KindLabel: "Gespann", ID: g.ID, BaseID: g.BaseID, Name: g.Name, Active: true})
+				break
 			}
 		}
 	}

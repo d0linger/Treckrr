@@ -72,7 +72,7 @@
 	{{end}}
 	{{if and (eq .Section "booking") (not .Completed)}}
 	<h2 class="section-title" id="neue-buchung">Neue Buchung erfassen</h2>
-	{{with .PrefilledMachine}}<div class="flash flash--info"><strong>{{.Name}}</strong> wurde über den Maschinen-QR vorausgewählt. Bitte Nachbar, Richtung, Datum und Stunden prüfen; gespeichert wird erst mit „Buchung speichern“.</div>{{end}}
+	{{with .Prefilled}}<div class="flash flash--info"><strong>{{.Name}}</strong> wurde über den {{.KindLabel}}-QR vorausgewählt. Bitte Nachbar, Richtung, Datum und Stunden prüfen; gespeichert wird erst mit „Buchung speichern“.</div>{{end}}
 	{{if .HasInvoice}}<p class="flash flash--info">Neue Leistungen werden getrennt von bereits festgeschriebenen Rechnungen erfasst.</p>{{end}}
 	{{template "booking-form" .}}
 	{{if .User.CanWrite}}
