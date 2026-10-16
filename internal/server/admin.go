@@ -124,6 +124,7 @@ func (s *Server) handleUserPassword(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/users")
 		return
 	}
+	s.notifySecurityByID(r, id, securityEvent{Key: "admin-password", Title: "Passwort von einem Administrator zurückgesetzt", Mail: true})
 	s.setFlash(w, r, "success", "Passwort gesetzt. Bestehende Sitzungen wurden beendet und Passkeys entfernt.")
 	redirect(w, r, "/admin/users")
 }
@@ -160,6 +161,7 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 		slog.Error("set role failed", "user", id, "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Änderung fehlgeschlagen.")
 	default:
+		s.notifySecurityByID(r, id, securityEvent{Key: "role", Title: "Rolle geändert", Mail: true})
 		s.setFlash(w, r, "success", "Rolle aktualisiert. Sitzungen des Benutzers wurden beendet.")
 	}
 	redirect(w, r, "/admin/users")
@@ -246,6 +248,7 @@ func (s *Server) handleUserResetTotp(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, "2fa reset", err)
 		return
 	}
+	s.notifySecurity(r, target, securityEvent{Key: "admin-2fa-reset", Title: "Zwei-Faktor-Anmeldung von einem Administrator zurückgesetzt", Mail: true})
 	s.setFlash(w, r, "success", "2FA für "+target.Username+" zurückgesetzt, bestehende Sitzungen beendet und Passkeys entfernt. Der Benutzer kann beides neu einrichten.")
 	redirect(w, r, "/admin/users")
 }

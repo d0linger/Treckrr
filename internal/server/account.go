@@ -123,6 +123,7 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 	s.sensitiveReset(r, user.ID)
 	s.setCookie(w, r, &http.Cookie{Name: sessionCookie, Value: token, MaxAge: int(sessionTTL.Seconds())})
 	s.clearPending2FA(w, r)
+	s.notifySecurity(r, user, securityEvent{Key: "password", Title: "Passwort geändert", Mail: true})
 	s.setFlash(w, r, "success", "Passwort geändert. Andere Sitzungen wurden beendet.")
 	redirect(w, r, "/profile")
 }
@@ -326,6 +327,11 @@ func (s *Server) issueAndShowRecoveryCodes(w http.ResponseWriter, r *http.Reques
 		s.serverError(w, "2fa: store recovery codes", err)
 		return
 	}
+	if enroll != nil {
+		s.notifySecurity(r, userFromCtx(r), securityEvent{Key: "totp-on", Title: "Zwei-Faktor-Anmeldung eingerichtet", Mail: true})
+	} else {
+		s.notifySecurity(r, userFromCtx(r), securityEvent{Key: "recovery", Title: "Neue Wiederherstellungscodes erstellt", Mail: true})
+	}
 	data := s.newPage(w, r, "Zwei‑Faktor", "profile")
 	data["Enabled"] = true
 	data["NewCodes"] = plain
@@ -370,6 +376,7 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 		s.serverError(w, "2fa disable: clear totp", err)
 		return
 	}
+	s.notifySecurity(r, user, securityEvent{Key: "totp-off", Title: "Zwei-Faktor-Anmeldung deaktiviert", Mail: true})
 	s.setFlash(w, r, "success", "Zwei‑Faktor‑Authentifizierung deaktiviert.")
 	redirect(w, r, "/profile")
 }

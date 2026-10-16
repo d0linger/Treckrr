@@ -215,6 +215,7 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.setFlash(w, r, "error", "Passkey konnte nicht entfernt werden.")
 	default:
+		s.notifySecurity(r, user, securityEvent{Key: "passkey-remove", Title: "Passkey entfernt", Mail: true})
 		s.setFlash(w, r, "success", "Passkey entfernt.")
 	}
 	redirect(w, r, "/profile")
@@ -325,6 +326,7 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	s.notifySecurity(r, user, securityEvent{Key: "passkey-add", Title: "Passkey hinzugefügt", Detail: deviceLabel(r.UserAgent()), Mail: true})
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 

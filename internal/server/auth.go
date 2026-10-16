@@ -287,6 +287,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 		Value:  token,
 		MaxAge: int(sessionTTL.Seconds()),
 	})
+	s.noteSignIn(r, user)
 	return true
 }
 
