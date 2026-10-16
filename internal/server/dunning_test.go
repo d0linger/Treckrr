@@ -37,7 +37,6 @@ func TestDunningYearParam(t *testing.T) {
 	}
 }
 
-
 // TestDunningInvalidYear verifies rejection before any database or mail access.
 func TestDunningInvalidYear(t *testing.T) {
 	t.Parallel()
