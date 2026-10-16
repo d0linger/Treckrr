@@ -367,6 +367,8 @@ func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store, srv *se
 					}
 				}
 			})
+			// Optional daily release lookup (UPDATE_CHECK); a no-op otherwise.
+			maintenanceTask(taskCtx, 30*time.Second, srv.CheckForUpdate)
 			// Snapshot actionable states into the per-user notification center.
 			// Stable event keys make every 15-minute refresh idempotent.
 			maintenanceTask(taskCtx, time.Minute, func(bg context.Context) {

@@ -30,6 +30,7 @@ func TestDemoModeDisablesOutboundServices(t *testing.T) {
 		t.Setenv("BACKUP_ENCRYPTION_KEY", strings.Repeat("k", 32))
 		t.Setenv("BACKUP_REHEARSE_URL", "postgres://user:pw@db:5432/postgres")
 		t.Setenv("BACKUP_REHEARSE_CRON", "0 3 * * 0")
+		t.Setenv("UPDATE_CHECK", "true")
 	}
 
 	t.Run("live instance keeps outbound services", func(t *testing.T) {
@@ -62,6 +63,9 @@ func TestDemoModeDisablesOutboundServices(t *testing.T) {
 		}
 		if c.BackupRehearseURL != "" || c.BackupRehearseCron != "" {
 			t.Fatal("practice instance can still run restore rehearsals")
+		}
+		if c.UpdateCheck {
+			t.Fatal("practice instance can still call out for updates")
 		}
 	})
 }

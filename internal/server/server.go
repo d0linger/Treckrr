@@ -55,6 +55,8 @@ type Server struct {
 	photoSlots chan struct{}
 	// policy caches the sign-in policy (second factor per role).
 	policy policyCache
+	// updates holds the optional daily release lookup (UPDATE_CHECK).
+	updates updateState
 }
 
 // New constructs a Server and parses templates.

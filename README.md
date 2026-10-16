@@ -161,6 +161,8 @@ deletes its data so the next start is fresh.
 | **SMTP_STARTTLS** | Use STARTTLS | `true` | No |
 | **METRICS_TOKEN** | Min. 16 chars; enables `GET /metrics` behind a bearer token | — | No |
 | **DEMO_MODE** | `true` marks a practice instance: banner, PDF watermark, and mail, S3 and rehearsals forced off | `false` | No |
+| **UPDATE_CHECK** | `true` looks up the newest release once a day and notifies administrators; the only outbound call the app makes on its own | `false` | No |
+| **UPDATE_CHECK_URL** | Release feed for the update check (https only) | GitHub releases API | No |
 | **LOG_FORMAT** / **LOG_LEVEL** | `text`\|`json`, `debug`\|`info`\|`warn`\|`error` | `text` / `info` | No |
 
 ### Rotating the backup key

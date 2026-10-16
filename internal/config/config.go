@@ -109,7 +109,16 @@ type Config struct {
 	// world (mail, off-box S3 backups, restore rehearsals) is switched off even if
 	// real credentials were copied into its environment.
 	DemoMode bool
+
+	// UpdateCheck (UPDATE_CHECK=true) lets the app look up the newest release
+	// once a day and tell administrators. Off by default, so nothing calls out
+	// unless the operator opts in. UpdateCheckURL is the releases endpoint.
+	UpdateCheck    bool
+	UpdateCheckURL string
 }
+
+// DefaultUpdateCheckURL is the public release feed of the project.
+const DefaultUpdateCheckURL = "https://api.github.com/repos/d0linger/treckrr/releases/latest"
 
 // DemoWatermark is printed on every PDF page of a practice instance.
 const DemoWatermark = "ÜBUNGSINSTANZ · KEIN ECHTER BELEG"
@@ -120,6 +129,7 @@ func (c *Config) applyDemoMode() {
 	c.SMTPHost, c.SMTPFrom, c.SMTPUser, c.SMTPPassword = "", "", "", ""
 	c.S3Endpoint, c.S3Bucket, c.S3AccessKey, c.S3SecretKey, c.S3Prefix = "", "", "", "", ""
 	c.BackupRehearseURL, c.BackupRehearseCron = "", ""
+	c.UpdateCheck = false
 }
 
 // MailEnabled reports whether e-mail sending is configured.
@@ -162,6 +172,11 @@ func Load() (*Config, error) {
 		SMTPFrom:            os.Getenv("SMTP_FROM"),
 		SMTPStartTLS:        strings.EqualFold(getenv("SMTP_STARTTLS", "true"), "true"),
 		DemoMode:            strings.EqualFold(getenv("DEMO_MODE", "false"), "true"),
+		UpdateCheck:         strings.EqualFold(getenv("UPDATE_CHECK", "false"), "true"),
+		UpdateCheckURL:      strings.TrimSpace(getenv("UPDATE_CHECK_URL", DefaultUpdateCheckURL)),
+	}
+	if c.UpdateCheck && !strings.HasPrefix(c.UpdateCheckURL, "https://") {
+		return nil, fmt.Errorf("UPDATE_CHECK_URL must be an https:// URL")
 	}
 	if c.DemoMode {
 		c.applyDemoMode()

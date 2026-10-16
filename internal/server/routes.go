@@ -272,5 +272,6 @@ func (s *Server) registerAdminRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /admin/users/{id}/role", s.admin(s.handleUserRole))
 	mux.Handle("POST /admin/users/{id}/reset-2fa", s.admin(s.handleUserResetTotp))
 	mux.Handle("POST /admin/security-policy", s.admin(s.handleSecurityPolicySave))
+	mux.Handle("GET /admin/system", s.admin(s.handleSystemStatus))
 	mux.Handle("POST /admin/users/{id}/delete", s.admin(s.handleUserDelete))
 }

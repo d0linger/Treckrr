@@ -45,13 +45,15 @@ type NotificationPreferences struct {
 // RefreshNotifications snapshots current operational signals into per-user,
 // deduplicated notifications. Repeated maintenance ticks cannot duplicate an
 // event because (user_id, dedupe_key) is unique.
-func (s *Store) RefreshNotifications(ctx context.Context, backup *NotificationSource) error {
+func (s *Store) RefreshNotifications(ctx context.Context, extra ...*NotificationSource) error {
 	sources, err := s.notificationSources(ctx)
 	if err != nil {
 		return err
 	}
-	if backup != nil {
-		sources = append(sources, *backup)
+	for _, source := range extra {
+		if source != nil {
+			sources = append(sources, *source)
+		}
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -103,7 +105,7 @@ func validateNotificationSource(source NotificationSource) error {
 		return errors.New("notification source has invalid dedupe key")
 	}
 	switch source.Kind {
-	case "due", "recurring", "import", "mail", "backup", "feedback", "security":
+	case "due", "recurring", "import", "mail", "backup", "feedback", "security", "update":
 	default:
 		return fmt.Errorf("notification source has invalid kind %q", source.Kind)
 	}

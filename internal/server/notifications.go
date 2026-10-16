@@ -32,7 +32,14 @@ func (s *Server) RefreshNotifications(ctx context.Context) error {
 			Title: health.Title, Detail: health.AgeLabel, Href: "/admin/backup", AdminOnly: true,
 		}
 	}
-	return s.store.RefreshNotifications(ctx, backupNotice)
+	var updateNotice *store.NotificationSource
+	if u := s.updateStatus(); u.Newer {
+		updateNotice = &store.NotificationSource{
+			DedupeKey: "update:" + u.Latest, Kind: "update", Tone: "info",
+			Title: "Neue Treckrr-Version " + u.Latest, Detail: "Installiert: " + u.Current, Href: "/admin/system", AdminOnly: true,
+		}
+	}
+	return s.store.RefreshNotifications(ctx, backupNotice, updateNotice)
 }
 
 // handleNotifications renders the signed-in user's notification stream and

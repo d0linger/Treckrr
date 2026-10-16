@@ -977,3 +977,14 @@
 .rate-import__counts { display: flex; flex-wrap: wrap; gap: .4rem; }
 .tag--danger { background: var(--danger-tint); color: var(--danger-text); }
 .dtable tr.is-error td { background: var(--danger-tint); }
+
+/* System status: label/value rows with a tone dot. */
+.sysinfo { margin: 0; display: grid; gap: .1rem; }
+.sysinfo__row { display: grid; grid-template-columns: minmax(8rem, 13rem) 1fr; gap: .25rem 1rem; padding: .45rem 0; border-top: 1px solid var(--border); }
+.sysinfo__row:first-child { border-top: 0; }
+.sysinfo dt { color: var(--muted); font-size: .9rem; }
+.sysinfo dd { margin: 0; display: flex; gap: .5rem; align-items: baseline; overflow-wrap: anywhere; }
+.sysinfo__dot { flex: none; width: .6rem; height: .6rem; border-radius: 50%; background: var(--pay); transform: translateY(-.05rem); }
+.sysinfo__dot--warn { background: var(--accent); }
+.sysinfo__dot--bad { background: var(--danger); }
+@media (max-width: 520px) { .sysinfo__row { grid-template-columns: 1fr; } }

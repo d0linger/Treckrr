@@ -55,6 +55,9 @@ func (s *Server) adminStatus(r *http.Request) adminStatusView {
 // buildLabel returns a short deployment identifier without exposing paths or
 // full build metadata. Release version wins, otherwise the VCS revision does.
 func buildLabel() string {
+	if releaseVersion != "" && releaseVersion != "dev" {
+		return releaseVersion
+	}
 	if info, ok := debug.ReadBuildInfo(); ok {
 		if info.Main.Version != "" && info.Main.Version != "(devel)" {
 			return info.Main.Version

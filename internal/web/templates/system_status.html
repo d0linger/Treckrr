@@ -1,0 +1,27 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/admin/users" aria-label="Zurück zur Verwaltung">{{template "ic-back"}}</a>
+		<div>
+			<h2 class="pagehead__t">Systemzustand</h2>
+			<p class="muted small">Stand {{.CheckedAt.Format "02.01.2006 15:04"}} · nur lesend, nichts wird verändert.</p>
+		</div>
+	</div>
+	<p class="flash {{if eq .Overall "bad"}}flash--error{{else if eq .Overall "warn"}}flash--info{{else}}flash--success{{end}}" role="status">
+		{{if eq .Overall "bad"}}Mindestens ein Punkt braucht sofort Aufmerksamkeit.{{else if eq .Overall "warn"}}Alles läuft, einige Punkte sind verbesserungswürdig.{{else}}Alle Prüfungen sind unauffällig.{{end}}
+	</p>
+	{{range $area := .Areas}}
+	<div class="card stack stack--tight">
+		<h3 class="section-title">{{$area}}</h3>
+		<dl class="sysinfo">
+			{{range $.Checks}}{{if eq .Area $area}}
+			<div class="sysinfo__row">
+				<dt>{{.Label}}</dt>
+				<dd><span class="sysinfo__dot sysinfo__dot--{{.Tone}}" aria-hidden="true"></span><span class="sr-only">{{if eq .Tone "bad"}}Problem: {{else if eq .Tone "warn"}}Hinweis: {{end}}</span>{{if .Href}}<a class="link" href="{{.Href}}">{{.Value}}</a>{{else}}{{.Value}}{{end}}</dd>
+			</div>
+			{{end}}{{end}}
+		</dl>
+	</div>
+	{{end}}
+</section>
+{{end}}
