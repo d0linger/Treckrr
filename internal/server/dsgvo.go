@@ -56,7 +56,10 @@ type dsgvoYear struct {
 	Photos         []dsgvoPhoto                        `json:"photos,omitempty"`
 	Sends          []dsgvoSend                         `json:"sends,omitempty"`
 	ShareLinks     []dsgvoShare                        `json:"share_links,omitempty"`
-	Installments   []dsgvoInstallment                  `json:"installments,omitempty"`
+	// Running statement links and what the neighbor answered through them.
+	StatementLinks    []dsgvoShare             `json:"statement_links,omitempty"`
+	StatementFeedback []dsgvoStatementFeedback `json:"statement_feedback,omitempty"`
+	Installments      []dsgvoInstallment       `json:"installments,omitempty"`
 	// The dunning history is personal data too — arguably the most sensitive
 	// record held about a neighbor: which Mahnstufe went out when, through which
 	// channel, with what fee. An Auskunft omitting it is incomplete.
@@ -113,6 +116,14 @@ type dsgvoShare struct {
 	ExpiresAt  time.Time  `json:"expires_at"`
 	CreatedBy  string     `json:"created_by,omitempty"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+type dsgvoStatementFeedback struct {
+	CreatedAt  time.Time        `json:"created_at"`
+	Status     string           `json:"status"`
+	Line       string           `json:"line,omitempty"`
+	LineAmount *decimal.Decimal `json:"line_amount,omitempty"`
+	Message    string           `json:"message,omitempty"`
 }
 
 type dsgvoInstallment struct {
@@ -268,13 +279,24 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
+		statementLinks, err := s.store.ListAllStatementShares(r.Context(), n.ID, y.ID)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+		statementFeedback, err := s.store.ListStatementFeedback(r.Context(), n.ID, y.ID)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
 		dunning, err := s.store.ListDunningNotices(r.Context(), y.ID, n.ID)
 		if err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
 		if len(entries) == 0 && len(invoices) == 0 && len(payments) == 0 && len(paymentImports) == 0 && len(ledger) == 0 &&
-			len(photos) == 0 && len(sends) == 0 && len(shares) == 0 && len(plans) == 0 && len(dunning) == 0 {
+			len(photos) == 0 && len(sends) == 0 && len(shares) == 0 && len(plans) == 0 && len(dunning) == 0 &&
+			len(statementLinks) == 0 && len(statementFeedback) == 0 {
 			continue // a year with no data for this person adds nothing.
 		}
 		dy := dsgvoYear{Year: y.Year, PaymentImports: paymentImports, InvoiceSources: sources}
@@ -315,6 +337,19 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 				CreatedAt: sh.CreatedAt, ExpiresAt: sh.ExpiresAt,
 				CreatedBy: sh.CreatedBy, LastUsedAt: sh.LastUsedAt, InvoiceID: sh.InvoiceID,
 			})
+		}
+		for _, sh := range statementLinks {
+			dy.StatementLinks = append(dy.StatementLinks, dsgvoShare{
+				CreatedAt: sh.CreatedAt, ExpiresAt: sh.ExpiresAt, CreatedBy: sh.CreatedBy, LastUsedAt: sh.LastUsedAt,
+			})
+		}
+		for _, f := range statementFeedback {
+			item := dsgvoStatementFeedback{CreatedAt: f.CreatedAt, Status: f.Status, Line: f.LineLabel, Message: f.Message}
+			if f.LineAmount.Valid {
+				amount := f.LineAmount.Decimal
+				item.LineAmount = &amount
+			}
+			dy.StatementFeedback = append(dy.StatementFeedback, item)
 		}
 		for _, pl := range plans {
 			dy.Installments = append(dy.Installments, dsgvoInstallment{

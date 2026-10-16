@@ -17,6 +17,7 @@ to the operator and recipient.
 | `neighbor_ledger` | Amount/date/description and void state/reason |
 | `entry_photos` | Metadata and authenticated retrieval URLs; files require accompanying delivery |
 | `beleg_sends`, `beleg_shares` | Delivery and share-link metadata, **not bearer tokens or token hashes** |
+| `statement_shares`, `statement_feedback` | Running-statement link metadata (no tokens or hashes) and the neighbour's confirmations/objections with the line they referred to |
 | `payment_plans`, `dunning_notices` | Installment notes/amounts/dates and recorded reminder details |
 | `recurring_entries` | Subject-scoped templates, cadence, next/last run, active state and creation time, independent of billing-year membership |
 | `mail_outbox` | Subject-scoped pending/failed/sent correspondence, status/timing and attachment name/type/byte count, including messages without a billing year |

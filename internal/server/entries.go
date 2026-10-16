@@ -270,6 +270,12 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	view.BookingLocked = year.Completed()
 	view.BookingAction = "/entries"
 	view.bind(data)
+	if view.Section == "overview" {
+		if err := s.statementShareData(w, r, data, neighbor.ID, year.ID); err != nil {
+			s.serverError(w, "neighbor: statement links", err)
+			return
+		}
+	}
 	if len(ledger) > 0 {
 		targets, err := s.store.LedgerTransferTargets(r.Context(), year.ID, neighbor.ID)
 		if err != nil {

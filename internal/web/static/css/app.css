@@ -2645,6 +2645,11 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .time-helper__watch { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
 .time-helper__clock { font-family: var(--font-mono); font-weight: 700; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
 @media (max-width: 420px) { .time-helper__grid { grid-template-columns: 1fr 1fr; } }
+
+/* Running statement link: public page and the operator's feedback list. */
+.statement-share__name { font-size: clamp(1.35rem, 4vw, 1.8rem); }
+.statement-feedback { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+.statement-feedback li { border-top: 1px solid var(--border); padding-top: .5rem; overflow-wrap: anywhere; }
 /* ---- Desktop nav rail (Werkblatt, ≥1024px) ----------------------------- */
 /* The bottom tab bar docks LEFT as a chassis rail — a pure CSS repositioning
    of the same DOM (same links, handlers, e2e selectors). It fuses with the

@@ -149,9 +149,18 @@ func (s *Server) audit(r *http.Request, action, entity string, entityID int64, d
 	}
 }
 
+// publicTokenPrefixes are the routes whose next path segment is a bearer
+// token. The access log keeps the route shape and drops the token itself.
+var publicTokenPrefixes = []string{"/s/beleg/", "/s/portal/", "/s/konto/"}
+
 func logRequestPath(path string) string {
-	if strings.HasPrefix(path, "/s/beleg/") {
-		return "/s/beleg/[redacted]"
+	for _, prefix := range publicTokenPrefixes {
+		if rest, ok := strings.CutPrefix(path, prefix); ok {
+			if i := strings.IndexByte(rest, '/'); i >= 0 {
+				return prefix + "[redacted]" + sanitizeLog(rest[i:])
+			}
+			return prefix + "[redacted]"
+		}
 	}
 	return sanitizeLog(path)
 }

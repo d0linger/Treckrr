@@ -49,6 +49,22 @@
 			</div>
 		</details>
 	</section>
+	{{if or .User.CanWrite .StatementFeedback}}
+	<details class="card disclosure" id="zwischenstand" {{if .StatementShareToken}}open{{end}}>
+		<summary>Zwischenstand teilen{{with .StatementFeedback}} <span class="muted small">{{len .}} Rückmeldung{{if gt (len .) 1}}en{{end}}</span>{{end}}</summary>
+		<p class="muted small">Der Link zeigt {{.Neighbor.Name}} die noch nicht abgerechneten Leistungen {{.Year.Year}} und den Kontostand, ohne Notizen, Fotos oder andere Nachbarn. Dort kann der Stand bestätigt oder ein Einwand gemeldet werden, solange eine Korrektur noch keine Rechnung betrifft.</p>
+		{{if .User.CanWrite}}
+		{{if .StatementShareToken}}<label class="field"><span>Öffentlicher Link – jetzt kopieren, nur einmal sichtbar</span><input class="input" readonly value="{{.StatementShareURL}}" data-copy-src></label><button class="btn btn--ghost btn--sm" type="button" data-copy-src-btn>Link kopieren</button><img class="qr" src="/zwischenstand/share-qr.png" width="180" height="180" alt="QR-Code zum Zwischenstand-Link">{{end}}
+		{{range .StatementShares}}<div class="btnrow"><span>Gültig bis {{date .ExpiresAt}}{{with .LastUsedAt}} · zuletzt geöffnet {{pdate .}}{{end}}</span><form method="post" action="/neighbors/{{$.Neighbor.ID}}/zwischenstand/revoke?year={{$.Year.ID}}" data-confirm-danger data-confirm="Diesen Zwischenstand-Link widerrufen?"><input type="hidden" name="share_id" value="{{.ID}}"><button class="btn btn--danger btn--sm" type="submit">Widerrufen</button></form></div>{{end}}
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/zwischenstand/share?year={{.Year.ID}}" class="form">
+			<label class="field"><span>Linkdauer</span><select class="select" name="days">{{range .ShareDayOptions}}<option value="{{.}}" {{if eq . $.ShareDefaultDays}}selected{{end}}>{{.}} Tage</option>{{end}}</select></label>
+			<button class="btn btn--ghost" type="submit">Link erzeugen</button>
+		</form>
+		{{end}}
+		{{with .StatementFeedback}}<h3>Rückmeldungen</h3>
+		<ul class="statement-feedback">{{range .}}<li><strong>{{if eq .Status "confirmed"}}Bestätigt{{else}}Einwand{{end}}</strong> <span class="muted small">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>{{with .LineLabel}}<br><span class="small">{{.}}</span>{{end}}{{if .LineAmount.Valid}} <span class="small">· {{money .LineAmount.Decimal}}</span>{{end}}{{with .Message}}<br>{{.}}{{end}}</li>{{end}}</ul>{{end}}
+	</details>
+	{{end}}
 	{{end}}
 
 	{{if .Completed}}

@@ -1,0 +1,57 @@
+{{define "content"}}
+{{with .Statement}}
+<section class="stack statement-share">
+	<header class="card stack stack--tight">
+		<span class="kpi__label">Zwischenstand · Abrechnungsjahr {{.Year}}</span>
+		<h1 class="statement-share__name">{{.Recipient}}</h1>
+		<p class="muted">{{if .Issuer}}{{.Issuer}} · {{end}}Stand {{date .AsOf}}</p>
+		<p class="flash flash--info">Das ist noch keine Rechnung. Offene Leistungen und Beträge können sich bis zur Abrechnung ändern.</p>
+	</header>
+
+	{{with .Account}}
+	<div class="kpigrid" role="group" aria-label="Kontostand {{.Year}}">
+		<div class="kpi card"><span class="kpi__label">Leistungen {{.Year}}</span><span class="kpi__value">{{money .Cost}}</span></div>
+		{{if not .Ledger.IsZero}}<div class="kpi card"><span class="kpi__label">Verrechnung</span><span class="kpi__value">{{money .Ledger}}</span></div>{{end}}
+		<div class="kpi card"><span class="kpi__label">Bezahlt</span><span class="kpi__value">{{money .PaidAmount}}</span></div>
+		<div class="kpi card"><span class="kpi__label">{{if .Credit}}Guthaben{{else}}Offen{{end}}</span><span class="kpi__value">{{if .Credit}}{{money .Remaining.Neg}}{{else}}{{money .Remaining}}{{end}}</span></div>
+	</div>
+	{{end}}
+
+	<section class="card stack" aria-labelledby="statement-open-h">
+		<h2 id="statement-open-h">Noch nicht abgerechnete Leistungen</h2>
+		{{with .Pending}}
+		<div class="tablewrap" role="region" aria-label="Noch nicht abgerechnete Leistungen" tabindex="0">
+			<table class="dtable">
+				<thead><tr><th>Datum</th><th>Leistung</th><th class="num">Menge</th><th class="num">Satz</th><th class="num">Betrag</th></tr></thead>
+				<tbody>
+					{{range .Lines}}<tr><td>{{date .Date}}</td><td>{{.Label}}</td><td class="num">{{num .Quantity}} {{.Unit}}</td><td class="num">{{money .UnitPrice}}</td><td class="num">{{money .Cost}}</td></tr>{{end}}
+				</tbody>
+				<tfoot>
+					{{if .ShowVAT}}
+					<tr><th colspan="4">Netto</th><td class="num">{{money .Net}}</td></tr>
+					<tr><th colspan="4">USt {{num .VATRate}} %</th><td class="num">{{money .VATAmount}}</td></tr>
+					{{end}}
+					<tr><th colspan="4">Summe{{if .ShowVAT}} brutto{{end}}</th><td class="num"><strong>{{money .Gross}}</strong></td></tr>
+				</tfoot>
+			</table>
+		</div>
+		{{if .TaxNote}}<p class="muted small">{{.TaxNote}}</p>{{end}}
+		{{else}}
+		<p class="muted">Derzeit sind keine Leistungen offen, die noch abgerechnet werden müssen.</p>
+		{{end}}
+	</section>
+
+	<section class="card stack" aria-labelledby="statement-feedback-h">
+		<h2 id="statement-feedback-h">Rückmeldung</h2>
+		{{if $.FeedbackResult}}<p class="flash flash--success" role="status">Danke, die Rückmeldung wurde gespeichert.</p>{{end}}
+		<form method="post" action="/s/konto/{{$.StatementToken}}/feedback"><input type="hidden" name="status" value="confirmed"><button class="btn btn--primary" type="submit">Stand bestätigen</button></form>
+		<details class="disclosure"><summary>Einwand melden</summary><form method="post" action="/s/konto/{{$.StatementToken}}/feedback" class="form">
+			<input type="hidden" name="status" value="disputed">
+			{{with .Pending}}<label class="field"><span>Betroffene Position (optional)</span><select class="select" name="line"><option value="">Gesamter Stand</option>{{range $i, $line := .Lines}}<option value="{{$i}}">{{date $line.Date}} · {{$line.Label}} · {{money $line.Cost}}</option>{{end}}</select></label>{{end}}
+			<label class="field"><span>Einwand</span><textarea class="input" name="message" rows="3" maxlength="500" required></textarea></label>
+			<button class="btn btn--ghost" type="submit">Einwand senden</button>
+		</form></details>
+	</section>
+</section>
+{{end}}
+{{end}}

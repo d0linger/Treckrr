@@ -123,6 +123,8 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 			`DELETE FROM beleg_shares WHERE neighbor_id = $1`,
 			`DELETE FROM beleg_share_events WHERE neighbor_id = $1`,
 			`DELETE FROM beleg_feedback WHERE neighbor_id = $1`,
+			`DELETE FROM statement_shares WHERE neighbor_id = $1`,
+			`DELETE FROM statement_feedback WHERE neighbor_id = $1`,
 			// Ratenplan notes are operator-typed free text about the person
 			// ("zahlt monatlich, Sohn holt das Geld") — the same class as the
 			// booking notes above.
