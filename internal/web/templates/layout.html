@@ -6,13 +6,14 @@
 	<meta name="theme-color" content="#1f2823">
 	<meta name="csrf-token" content="{{.CSRF}}">
 	{{if .User}}<meta name="user-id" content="{{.User.ID}}">{{end}}
-	<title>{{.Title}} · Treckrr</title>
+	<title>{{if .DemoMode}}Übung · {{end}}{{.Title}} · Treckrr</title>
 	<link rel="manifest" href="/manifest.webmanifest">
 	<link rel="icon" href="/static/icons/favicon.svg?v={{.AssetVersion}}" type="image/svg+xml">
 	<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 	<link rel="stylesheet" href="/static/css/app.css?v={{.AssetVersion}}">
 </head>
 <body{{if .User}} class="has-nav"{{end}}>
+{{if .DemoMode}}<div class="demo-banner" role="note" data-demo-banner><strong>Übungsinstanz</strong> <span>Alle Daten sind Beispieldaten. E-Mail-Versand und externe Backups sind abgeschaltet.</span></div>{{end}}
 {{/* Shared SVG gradient defs for chart bars (referenced via fill: url(#…) in
     app.css). Stop colours are set by CSS class so they follow the theme. */}}
 <svg class="gradient-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs>

@@ -24,6 +24,7 @@ import (
 	"github.com/d0linger/treckrr/internal/mail"
 	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/server"
 	"github.com/d0linger/treckrr/internal/store"
 )
@@ -136,6 +137,10 @@ func run() error {
 	// TRUST_PROXY=true (or COOKIE_SECURE=true).
 	if !cfg.CookieSecure && !cfg.TrustProxy {
 		slog.Warn("auth cookies are not Secure and no trusted proxy is set — use HTTPS behind a TLS proxy (TRUST_PROXY=true) or COOKIE_SECURE=true in production")
+	}
+	if cfg.DemoMode {
+		slog.Warn("DEMO_MODE: practice instance — e-mail, S3 off-box backups and restore rehearsals are disabled; PDFs carry a watermark")
+		pdf.SetWatermark(config.DemoWatermark)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

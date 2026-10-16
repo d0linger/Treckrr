@@ -7,7 +7,7 @@ PG_MAJOR ?= 16
 GO     := docker run --rm -v "$(CURDIR):/src" -v treckrr-gomod:/go/pkg/mod -w /src -e GOTOOLCHAIN=go1.27.2 $(IMG) sh -c
 GOTEST := docker run --rm --network treckrr-itest -v "$(CURDIR):/src" -v treckrr-gomod:/go/pkg/mod -w /src -e GOTOOLCHAIN=go1.27.2 -e PG_MAJOR="$(PG_MAJOR)" -e TEST_DATABASE_URL="$(TEST_DATABASE_URL)" -e TEST_INVOICE_MIGRATION_DATABASES="$(TEST_INVOICE_MIGRATION_DATABASES)" $(IMG) sh -c
 
-.PHONY: help run down logs build vet fmt fmt-check lint deadcode test test-unit test-parity check
+.PHONY: help run down logs demo demo-down demo-reset build vet fmt fmt-check lint deadcode test test-unit test-parity check
 
 help: ## Show this help
 	@grep -hE '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/' | sort
@@ -20,6 +20,18 @@ down: ## Stop the compose stack
 
 logs: ## Follow the app logs
 	docker logs -f treckrr-app
+
+DEMO := docker compose -f compose.demo.yml
+
+demo: ## Start the practice instance with sample data on http://localhost:8090 (never touches the real stack)
+	$(DEMO) up -d --build --wait
+	$(DEMO) exec -T db psql -U treckrr_demo -d treckrr_demo -v ON_ERROR_STOP=1 < demo/seed.sql
+
+demo-down: ## Stop the practice instance, keeping its data
+	$(DEMO) down
+
+demo-reset: ## Delete the practice instance and its data (next `make demo` starts fresh)
+	$(DEMO) down --volumes
 
 build: ## go build all packages
 	$(GO) "go build ./..."

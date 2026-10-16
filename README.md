@@ -106,6 +106,24 @@ The GHCR profile is the production/TLS path: it forces Secure cookies, enables
 proxy trust, and requires `TRUSTED_PROXIES`. Pin a release rather than tracking
 `latest` with `TRECKRR_TAG=1.4`.
 
+### Practice instance (Übungsinstanz)
+
+Issued invoices, numbering and Storno cannot be undone, so try workflows on a
+separate practice stack first. It runs beside the real one with its own project
+name, database volume and port, reads no `.env`, and starts with invented sample
+data (four neighbours, a rate basis, bookings and payments):
+
+```bash
+make demo          # or: docker compose -f compose.demo.yml up -d --build --wait
+                   #     docker compose -f compose.demo.yml exec -T db psql -U treckrr_demo -d treckrr_demo -v ON_ERROR_STOP=1 < demo/seed.sql
+```
+
+Open **http://localhost:8090** and sign in as `admin` / `uebung-admin-2026`.
+`DEMO_MODE=true` puts a banner on every page and a watermark on every PDF, and
+switches off e-mail, S3 off-box backups and restore rehearsals even if real
+credentials end up in its environment. `make demo-down` stops it; `make demo-reset`
+deletes its data so the next start is fresh.
+
 ---
 
 ## ⚙️ Configuration / Environment Variables
@@ -142,6 +160,7 @@ proxy trust, and requires `TRUSTED_PROXIES`. Pin a release rather than tracking
 | **SMTP_PORT** / **SMTP_USER** / **SMTP_PASSWORD** | SMTP credentials | `587` | No |
 | **SMTP_STARTTLS** | Use STARTTLS | `true` | No |
 | **METRICS_TOKEN** | Min. 16 chars; enables `GET /metrics` behind a bearer token | — | No |
+| **DEMO_MODE** | `true` marks a practice instance: banner, PDF watermark, and mail, S3 and rehearsals forced off | `false` | No |
 | **LOG_FORMAT** / **LOG_LEVEL** | `text`\|`json`, `debug`\|`info`\|`warn`\|`error` | `text` / `info` | No |
 
 ### Rotating the backup key

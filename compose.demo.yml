@@ -1,0 +1,54 @@
+# Practice instance ("Übungsinstanz"): a separate stack with sample data for
+# trying Festschreibung, Storno, imports or a batch issue without touching the
+# real ledger. It has its own project name, database volume and port, reads no
+# .env file, and DEMO_MODE switches off mail, S3 and restore rehearsals.
+#
+#   docker compose -f compose.demo.yml up -d --build --wait
+#   docker compose -f compose.demo.yml exec -T db psql -U treckrr_demo -d treckrr_demo -v ON_ERROR_STOP=1 < demo/seed.sql
+#   open http://localhost:8090  (admin / uebung-admin-2026)
+#
+# Reset to fresh sample data: docker compose -f compose.demo.yml down --volumes
+name: treckrr-demo
+
+services:
+  db:
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_USER: treckrr_demo
+      POSTGRES_PASSWORD: demo-only-database-password
+      POSTGRES_DB: treckrr_demo
+    volumes:
+      - demo-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U treckrr_demo -d treckrr_demo"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  app:
+    build: .
+    environment:
+      DEMO_MODE: "true"
+      DATABASE_URL: postgres://treckrr_demo:demo-only-database-password@db:5432/treckrr_demo?sslmode=disable
+      SESSION_SECRET: demo-only-session-secret-not-for-production
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: uebung-admin-2026
+      COOKIE_SECURE: "false"
+      ALLOW_INSECURE_HTTP: "true"
+      TRUST_PROXY: "false"
+      RP_ID: localhost
+      RP_ORIGIN: http://localhost:8090
+    tmpfs:
+      - /backups:uid=10001,gid=10001
+    ports:
+      - "127.0.0.1:8090:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  demo-pgdata:

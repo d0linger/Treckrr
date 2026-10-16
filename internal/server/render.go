@@ -139,6 +139,10 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 	if _, exists := data["AssetVersion"]; !exists {
 		data["AssetVersion"] = web.AssetVersion()
 	}
+	// Every page of a practice instance says so, including login and shared links.
+	if s.cfg != nil && s.cfg.DemoMode {
+		data["DemoMode"] = true
+	}
 	// Render to a buffer first so a template error does not emit a half page.
 	var buf bytes.Buffer
 	if err := tpl.ExecuteTemplate(&buf, "layout", data); err != nil {

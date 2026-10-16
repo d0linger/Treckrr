@@ -103,6 +103,23 @@ type Config struct {
 	SMTPPassword string
 	SMTPFrom     string
 	SMTPStartTLS bool
+
+	// DemoMode (DEMO_MODE=true) marks a practice instance: every page shows a
+	// banner, PDFs carry a watermark, and everything that could reach the outside
+	// world (mail, off-box S3 backups, restore rehearsals) is switched off even if
+	// real credentials were copied into its environment.
+	DemoMode bool
+}
+
+// DemoWatermark is printed on every PDF page of a practice instance.
+const DemoWatermark = "ÜBUNGSINSTANZ · KEIN ECHTER BELEG"
+
+// applyDemoMode clears every setting that would let a practice instance send
+// mail or write to shared off-box storage.
+func (c *Config) applyDemoMode() {
+	c.SMTPHost, c.SMTPFrom, c.SMTPUser, c.SMTPPassword = "", "", "", ""
+	c.S3Endpoint, c.S3Bucket, c.S3AccessKey, c.S3SecretKey, c.S3Prefix = "", "", "", "", ""
+	c.BackupRehearseURL, c.BackupRehearseCron = "", ""
 }
 
 // MailEnabled reports whether e-mail sending is configured.
@@ -144,6 +161,10 @@ func Load() (*Config, error) {
 		SMTPPassword:        os.Getenv("SMTP_PASSWORD"),
 		SMTPFrom:            os.Getenv("SMTP_FROM"),
 		SMTPStartTLS:        strings.EqualFold(getenv("SMTP_STARTTLS", "true"), "true"),
+		DemoMode:            strings.EqualFold(getenv("DEMO_MODE", "false"), "true"),
+	}
+	if c.DemoMode {
+		c.applyDemoMode()
 	}
 	if c.BackupRehearseCron != "" {
 		if _, err := cron.ParseStandard(c.BackupRehearseCron); err != nil {

@@ -601,6 +601,15 @@ body.has-nav .main { background: var(--surface); }
 	box-shadow: var(--card-shadow);
 	padding: 1rem;
 }
+
+/* Practice instance (DEMO_MODE): a stamped warning label above everything, so a
+   demo tab or screenshot can never pass for the live ledger. */
+.demo-banner {
+	position: relative; z-index: 60; display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: baseline;
+	padding: .45rem max(1rem, env(safe-area-inset-left)) .45rem max(1rem, env(safe-area-inset-right));
+	background: var(--signal); color: var(--on-signal); font-size: .85rem; line-height: 1.35;
+}
+.demo-banner strong { font-family: var(--font-display); font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; }
 /* ---- Summary card ----------------------------------------------------- */
 /* Mobile-first: stack the value above the meta/actions so nothing overflows;
    side-by-side layout kicks in on wider screens (see @media below). */
