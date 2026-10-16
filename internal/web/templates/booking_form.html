@@ -59,6 +59,20 @@
 		<label class="field"><span data-booking-hours-label>Stunden</span><input class="input" type="number" name="hours" min="0.0001" max="999999999" step="0.0001" value="{{index $v "hours"}}" inputmode="decimal" data-hours data-booking-required></label>
 		<div class="rate-preview" data-rate-preview data-booking-catalog-rate><span class="rate-preview__main"><span class="rate-preview__lbl">Maschinenkosten</span><strong class="rate-preview__cost" data-cost>–</strong></span><span class="rate-preview__rate">Satz <strong data-rate>–</strong></span></div>
 	</div>
+	<details class="disclosure form-details time-helper" data-booking-panel="equipment:out equipment:in labor:out labor:in" data-time-helper>
+		<summary>Zeit erfassen <span class="muted small">Von – Bis oder Stoppuhr</span></summary>
+		<div class="time-helper__grid">
+			<label class="field"><span>Von</span><input class="input" type="time" data-time-from></label>
+			<label class="field"><span>Bis</span><input class="input" type="time" data-time-to></label>
+			<label class="field"><span>Pause (Min.)</span><input class="input" type="number" min="0" max="1440" step="1" inputmode="numeric" data-time-break></label>
+		</div>
+		<div class="time-helper__watch">
+			<button class="btn btn--ghost btn--sm" type="button" data-stopwatch-toggle aria-pressed="false">Stoppuhr starten</button>
+			<span class="time-helper__clock" data-stopwatch-display aria-hidden="true">0:00:00</span>
+			<button class="btn btn--ghost btn--xs" type="button" data-stopwatch-reset hidden>Verwerfen</button>
+		</div>
+		<p class="muted small" data-time-status role="status"></p>
+	</details>
 	<div class="stack stack--tight" data-booking-panel="quantity:out quantity:in">
 		<label class="field"><span>Einheit</span><select class="select" name="unit" data-unit>
 			<option value="h" hidden {{if eq $unit "h"}}selected{{end}}>Stunden (h)</option>

@@ -414,3 +414,97 @@
 		});
 	});
 
+
+	// Time helper on the booking form: "Von – Bis minus Pause", or a stopwatch that
+	// survives reloads and app switches, fills the existing hours field. Its inputs
+	// carry no name, so the submitted form, the draft store and the offline queue
+	// never see them and the stacked submit handlers stay untouched.
+	document.querySelectorAll("[data-time-helper]").forEach(function (box) {
+		var form = box.closest("form");
+		var hours = form && form.querySelector("[data-hours]");
+		if (!hours) return;
+		var from = box.querySelector("[data-time-from]"), to = box.querySelector("[data-time-to]"),
+			pause = box.querySelector("[data-time-break]"), status = box.querySelector("[data-time-status]"),
+			toggle = box.querySelector("[data-stopwatch-toggle]"), display = box.querySelector("[data-stopwatch-display]"),
+			discard = box.querySelector("[data-stopwatch-reset]");
+		var uid = document.querySelector('meta[name="user-id"]');
+		var key = "treckrr-stopwatch-" + (uid ? uid.content : "anon");
+		var memo = null, timer = null; // memo keeps the stopwatch when storage is blocked
+		/** Parses "HH:MM" from a time input into minutes after midnight, or null. */
+		function minutesOf(value) {
+			var m = /^(\d{1,2}):(\d{2})/.exec(value || "");
+			return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+		}
+		/** Formats whole minutes as "2 h 20 min". */
+		function duration(minutes) { return Math.floor(minutes / 60) + " h " + (minutes % 60) + " min"; }
+		/** Writes the minutes as decimal hours (two places, at least 0.01) and lets the price preview react. */
+		function apply(minutes) {
+			var h = Math.max(0.01, Math.round(minutes / 60 * 100) / 100);
+			hours.value = h.toFixed(2);
+			hours.dispatchEvent(new Event("input", { bubbles: true }));
+			hours.dispatchEvent(new Event("change", { bubbles: true }));
+			status.textContent = duration(minutes) + " → " + h.toFixed(2).replace(".", ",") + " h übernommen.";
+		}
+		/** Applies Von – Bis minus Pause once both times are set; a Bis before Von crosses midnight. */
+		function fromRange() {
+			var a = minutesOf(from.value), b = minutesOf(to.value);
+			if (a === null || b === null) return;
+			var span = b - a;
+			if (span <= 0) span += 1440;
+			var rest = Math.max(0, Math.floor(Number(pause.value) || 0));
+			if (rest >= span) { status.textContent = "Die Pause ist so lang wie die Arbeitszeit oder länger."; return; }
+			apply(span - rest);
+		}
+		[from, to, pause].forEach(function (el) { el.addEventListener("input", fromRange); el.addEventListener("change", fromRange); });
+		/** Returns the running stopwatch {start} from storage or memory, or null. */
+		function running() {
+			try {
+				var saved = JSON.parse(localStorage.getItem(key) || "null");
+				if (saved && typeof saved.start === "number" && saved.start <= Date.now()) return saved;
+			} catch (e) { /* storage blocked: fall back to this page's memory */ }
+			return memo;
+		}
+		/** Persists the stopwatch so another tab or a reload continues it. */
+		function store(value) {
+			memo = value;
+			try {
+				if (value) localStorage.setItem(key, JSON.stringify(value)); else localStorage.removeItem(key);
+			} catch (e) { /* private mode: the stopwatch lasts this page only */ }
+		}
+		/** Formats elapsed milliseconds as H:MM:SS. */
+		function clock(ms) {
+			var s = Math.max(0, Math.floor(ms / 1000)), m = Math.floor(s % 3600 / 60), r = s % 60;
+			return Math.floor(s / 3600) + ":" + (m < 10 ? "0" : "") + m + ":" + (r < 10 ? "0" : "") + r;
+		}
+		/** Formats a Date as HH:MM for the time inputs. */
+		function hhmm(d) { return (d.getHours() < 10 ? "0" : "") + d.getHours() + ":" + (d.getMinutes() < 10 ? "0" : "") + d.getMinutes(); }
+		/** Syncs button label, discard button and the ticking display with the stopwatch state. */
+		function render() {
+			var run = running();
+			toggle.textContent = run ? "Stoppuhr anhalten und übernehmen" : "Stoppuhr starten";
+			toggle.setAttribute("aria-pressed", run ? "true" : "false");
+			discard.hidden = !run;
+			display.textContent = clock(run ? Date.now() - run.start : 0);
+			if (run && !timer) timer = setInterval(render, 1000);
+			if (!run && timer) { clearInterval(timer); timer = null; }
+		}
+		toggle.addEventListener("click", function () {
+			var run = running();
+			if (!run) {
+				store({ start: Date.now() });
+				status.textContent = "Stoppuhr läuft seit " + hhmm(new Date()) + " Uhr, auch wenn die Seite geschlossen wird.";
+			} else {
+				var minutes = Math.max(1, Math.round((Date.now() - run.start) / 60000));
+				from.value = hhmm(new Date(run.start));
+				to.value = hhmm(new Date());
+				pause.value = "";
+				store(null);
+				apply(minutes);
+			}
+			render();
+		});
+		discard.addEventListener("click", function () { store(null); status.textContent = "Stoppuhr verworfen."; render(); });
+		window.addEventListener("storage", function (e) { if (e.key === key) render(); });
+		if (running()) box.open = true;
+		render();
+	});

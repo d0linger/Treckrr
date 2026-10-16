@@ -2639,6 +2639,12 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 @media (max-width: 640px), (pointer: coarse) {
 	.photogrid__del { width: var(--tap); height: var(--tap); }
 }
+
+/* Booking time helper: Von / Bis / Pause and a stopwatch that fill the hours field. */
+.time-helper__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; }
+.time-helper__watch { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.time-helper__clock { font-family: var(--font-mono); font-weight: 700; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+@media (max-width: 420px) { .time-helper__grid { grid-template-columns: 1fr 1fr; } }
 /* ---- Desktop nav rail (Werkblatt, ≥1024px) ----------------------------- */
 /* The bottom tab bar docks LEFT as a chassis rail — a pure CSS repositioning
    of the same DOM (same links, handlers, e2e selectors). It fuses with the
