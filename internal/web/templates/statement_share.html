@@ -6,6 +6,7 @@
 		<h1 class="statement-share__name">{{.Recipient}}</h1>
 		<p class="muted">{{if .Issuer}}{{.Issuer}} · {{end}}Stand {{date .AsOf}}</p>
 		<p class="flash flash--info">Das ist noch keine Rechnung. Offene Leistungen und Beträge können sich bis zur Abrechnung ändern.</p>
+		<p><a class="link" href="/s/konto/{{$.StatementToken}}/preisblatt.pdf">Preisblatt mit allen Sätzen (PDF)</a></p>
 	</header>
 
 	{{with .Account}}

@@ -33,6 +33,7 @@
 		<div class="action-list">
 			<a href="/prices?base={{.Base.ID}}&amp;mode=edit&amp;section=loads"><span><strong>Belastungsstufen</strong><small>{{len .Loads}} Stufen für Traktorsätze</small></span><span aria-hidden="true">›</span></a>
 			<a href="/prices?base={{.Base.ID}}&amp;mode=edit&amp;section=fuel"><span><strong>Diesel- und Betriebsmittelanpassung</strong><small>{{len .FuelAdjustments}} zeitlich versionierte Anpassungen</small></span><span aria-hidden="true">›</span></a>
+			<a href="/bases/{{.Base.ID}}/preisblatt.pdf"><span><strong>Preisblatt (PDF)</strong><small>Alle Sätze dieser Grundlage zum Weitergeben an Nachbarn</small></span><span aria-hidden="true">›</span></a>
 			{{if or .MachineViews .TractorViews}}<a href="/prices/machines/labels?base={{.Base.ID}}"><span><strong>QR-Etiketten drucken</strong><small>Gespanne, Traktoren und Maschinen für die mobile Buchung kennzeichnen</small></span><span aria-hidden="true">›</span></a>{{end}}
 		</div>
 	</details>

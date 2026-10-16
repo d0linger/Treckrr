@@ -25,6 +25,7 @@
 				<a class="btn btn--ghost btn--sm" href="/prices?base={{$b.ID}}">Kosten</a>
 				<a class="btn btn--ghost btn--sm" href="/gespanne?base={{$b.ID}}">Gespanne</a>
 				<a class="btn btn--ghost btn--sm" href="/bases/{{$b.ID}}/export.csv" download>Als CSV</a>
+				<a class="btn btn--ghost btn--sm" href="/bases/{{$b.ID}}/preisblatt.pdf">Preisblatt (PDF)</a>
 			</div>
 			{{if $.User.CanWrite}}<details class="disclosure disclosure--plain">
 				<summary>Umbenennen / Sperren / Löschen</summary>
