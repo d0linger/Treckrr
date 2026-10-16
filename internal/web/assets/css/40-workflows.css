@@ -972,3 +972,8 @@
 .statement-share__name { font-size: clamp(1.35rem, 4vw, 1.8rem); }
 .statement-feedback { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
 .statement-feedback li { border-top: 1px solid var(--border); padding-top: .5rem; overflow-wrap: anywhere; }
+
+/* Rate-list import preview: counts as tags, failed rows and danger tag marked. */
+.rate-import__counts { display: flex; flex-wrap: wrap; gap: .4rem; }
+.tag--danger { background: var(--danger-tint); color: var(--danger-text); }
+.dtable tr.is-error td { background: var(--danger-tint); }

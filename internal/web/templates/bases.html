@@ -24,6 +24,7 @@
 			<div class="btnrow">
 				<a class="btn btn--ghost btn--sm" href="/prices?base={{$b.ID}}">Kosten</a>
 				<a class="btn btn--ghost btn--sm" href="/gespanne?base={{$b.ID}}">Gespanne</a>
+				<a class="btn btn--ghost btn--sm" href="/bases/{{$b.ID}}/export.csv" download>Als CSV</a>
 			</div>
 			{{if $.User.CanWrite}}<details class="disclosure disclosure--plain">
 				<summary>Umbenennen / Sperren / Löschen</summary>
@@ -85,6 +86,23 @@
 					<input class="input" name="name" placeholder="Bemessungsgrundlage"></label>
 			</details>
 			<button class="btn btn--primary" type="submit">Anlegen</button>
+		</form>
+	</details>
+	<details class="card disclosure" id="preisliste">
+		<summary>Neue Grundlage aus Preisliste (CSV)</summary>
+		<p class="muted small">Eine bestehende Grundlage „Als CSV“ herunterladen, die Werte in der Tabellenkalkulation anpassen und hier hochladen. Vor dem Anlegen zeigt eine Vorschau jede neue, geänderte und entfallene Position. Bestehende Grundlagen und Buchungen bleiben unverändert.</p>
+		<form method="post" action="/bases/import/preview" enctype="multipart/form-data" class="form">
+			<div class="form__grid">
+				<label class="field"><span>Preisliste (CSV, Semikolon)</span><input class="input" type="file" name="file" accept=".csv,text/csv" required></label>
+				<label class="field"><span>Gültig ab (Jahr)</span><input class="input" type="number" name="year" min="1900" max="3000" value="{{if .NextYear}}{{.NextYear}}{{end}}" required></label>
+				<label class="field"><span>Vergleichen mit (Gespanne übernehmen)</span>
+					<select class="select" name="source_base_id">
+						<option value="">— ohne Vergleich —</option>
+						{{range .Bases}}<option value="{{.ID}}">{{.Year}} — {{.Name}}</option>{{end}}
+					</select></label>
+				<label class="field"><span>Name <em>(optional)</em></span><input class="input" name="name" maxlength="100" placeholder="Bemessungsgrundlage"></label>
+			</div>
+			<button class="btn btn--ghost" type="submit">Vorschau anzeigen</button>
 		</form>
 	</details>{{end}}
 </section>
