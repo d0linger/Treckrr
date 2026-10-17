@@ -419,6 +419,38 @@ func TestPaymentDateLimits(t *testing.T) {
 	}
 }
 
+// TestAccountingProfileInputLimits rejects oversized column slice selections before joining or store access.
+func TestAccountingProfileInputLimits(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+
+	// Oversized column count (> maxFormListLen)
+	tooManyColumns := make([]string, maxFormListLen+1)
+	for i := range tooManyColumns {
+		tooManyColumns[i] = "number"
+	}
+	formMany := url.Values{"name": {"Profile"}, "columns": tooManyColumns}
+	assertFormRedirect(
+		t,
+		s,
+		s.handleAccountingProfileSave,
+		formMany,
+		"/rechnungsjournal",
+		"Zu viele Exportspalten ausgewählt.",
+	)
+
+	// Oversized joined string length (> maxNoteLen)
+	oversizedJoinedColumns := []string{"number", strings.Repeat("date", maxNoteLen)}
+	formString := url.Values{"name": {"Profile"}, "columns": oversizedJoinedColumns}
+	assertFormRedirect(
+		t,
+		s,
+		s.handleAccountingProfileSave,
+		formString,
+		"/rechnungsjournal",
+		fmt.Sprintf("Exportspalten darf höchstens %d Zeichen lang sein.", maxNoteLen),
+	)
+}
+
 // TestSavedViewQueryLimit rejects oversized filters before parsing or store access.
 func TestSavedViewQueryLimit(t *testing.T) {
 	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}

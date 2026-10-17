@@ -185,12 +185,21 @@ func (s *Server) handleAccountingProfileSave(w http.ResponseWriter, r *http.Requ
 	if yearID := s.yearIDFromForm(r); yearID != 0 {
 		back += "?year=" + strconv.FormatInt(yearID, 10)
 	}
+	if len(r.PostForm["columns"]) > maxFormListLen {
+		s.setFlash(w, r, "error", "Zu viele Exportspalten ausgewählt.")
+		redirect(w, r, back)
+		return
+	}
 	name := trimmed(r, "name")
 	columns := strings.Join(r.PostForm["columns"], ",")
 	if name == "" || s.tooLong(w, r, "Profilname", name, maxNameLen) {
 		if name == "" {
 			s.setFlash(w, r, "error", "Ein Profilname ist erforderlich.")
 		}
+		redirect(w, r, back)
+		return
+	}
+	if s.tooLong(w, r, "Exportspalten", columns, maxNoteLen) {
 		redirect(w, r, back)
 		return
 	}
