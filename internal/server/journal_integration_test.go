@@ -142,3 +142,31 @@ func TestJournalAndArchiveIntegration(t *testing.T) {
 		t.Errorf("journal page shows no KU meter in kleinunternehmer mode")
 	}
 }
+
+func TestAccountingProfileSaveInputLimitsIntegration(t *testing.T) {
+	e := newItEnv(t)
+
+	// Valid column selection succeeds.
+	validForm := url.Values{
+		"name":    {"Test Profile"},
+		"columns": {"number", "date", "kind"},
+	}
+	resPage := e.post("/rechnungsjournal/profile", validForm)
+	if strings.Contains(resPage, "Zu viele Exportspalten") {
+		t.Errorf("valid profile save failed unexpectedly")
+	}
+
+	// Oversized column array selection (> maxFormListLen) is rejected.
+	tooManyColumns := make([]string, maxFormListLen+1)
+	for i := range tooManyColumns {
+		tooManyColumns[i] = "number"
+	}
+	invalidForm := url.Values{
+		"name":    {"Oversized Profile"},
+		"columns": tooManyColumns,
+	}
+	resPage = e.post("/rechnungsjournal/profile", invalidForm)
+	if !strings.Contains(resPage, "Zu viele Exportspalten") {
+		t.Errorf("expected flash message for too many export columns, got: %s", resPage)
+	}
+}
