@@ -148,7 +148,7 @@ func TestAccountingProfileSaveInputLimitsIntegration(t *testing.T) {
 
 	// Valid column selection succeeds.
 	validForm := url.Values{
-		"name": {"Test Profile"},
+		"name":    {"Test Profile"},
 		"columns": {"number", "date", "kind"},
 	}
 	resPage := e.post("/rechnungsjournal/profile", validForm)
