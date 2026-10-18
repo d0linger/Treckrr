@@ -53,6 +53,9 @@ func dunningStageParam(r *http.Request) (int, bool) {
 	if raw == "" {
 		return 0, true
 	}
+	if len(raw) > 50 {
+		return 0, false
+	}
 	stage, err := strconv.Atoi(raw)
 	if err != nil || !validDunningStage(stage) {
 		return 0, false
@@ -66,7 +69,11 @@ const msgInvalidDunningStage = "Ungültige Mahnstufe — erlaubt sind nur Zahlun
 // dunningYearParam accepts only positive billing-year IDs, including a checked
 // parse so an overflowing value cannot become a saturated, apparently valid ID.
 func dunningYearParam(r *http.Request) (int64, bool) {
-	yearID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("year")), 10, 64)
+	raw := strings.TrimSpace(r.FormValue("year"))
+	if len(raw) > 50 {
+		return 0, false
+	}
+	yearID, err := strconv.ParseInt(raw, 10, 64)
 	return yearID, err == nil && yearID > 0
 }
 

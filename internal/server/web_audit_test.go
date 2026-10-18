@@ -105,6 +105,7 @@ func TestDunningStageParam(t *testing.T) {
 	}{
 		"": {0, true}, "0": {0, true}, "1": {1, true}, " 2 ": {2, true},
 		"3": {0, false}, "-1": {0, false}, "x": {0, false}, "1.0": {0, false}, "99999999999999999999": {0, false},
+		strings.Repeat("1", 100): {0, false},
 	} {
 		r := httptest.NewRequest(http.MethodGet, "/neighbors/1/mahnung?stufe="+url.QueryEscape(raw), nil)
 		stage, ok := dunningStageParam(r)
