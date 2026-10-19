@@ -2,6 +2,9 @@ package server
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -70,5 +73,54 @@ func TestAttachedInvoiceCreditsStayDocumentScoped(t *testing.T) {
 	got := attachedInvoiceCredits(invoice, []models.Invoice{other, standalone, canceled, wrongYear, wrongNeighbor, wrongKind, credit})
 	if len(got) != 1 || got[0].Number != credit.Number {
 		t.Fatalf("attached credits include another document or inactive/foreign records: %+v", got)
+	}
+}
+
+func TestPortalFeedbackQueryValidation(t *testing.T) {
+	t.Parallel()
+	templates, err := web.Templates()
+	if err != nil {
+		t.Fatalf("loading templates: %v", err)
+	}
+	invoice := documentViewFixture()
+	view, err := newInvoiceDocumentView(invoice, decimal.NewFromInt(83))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name          string
+		feedbackInput string
+		wantMessage   bool
+	}{
+		{name: "valid confirmed", feedbackInput: "confirmed", wantMessage: true},
+		{name: "valid disputed", feedbackInput: "disputed", wantMessage: true},
+		{name: "invalid status", feedbackInput: "invalid_status", wantMessage: false},
+		{name: "oversized payload", feedbackInput: strings.Repeat("x", 1000), wantMessage: false},
+		{name: "empty string", feedbackInput: "", wantMessage: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodGet, "/s/portal/token?feedback="+url.QueryEscape(tc.feedbackInput), nil)
+			data := pageData{
+				"Doc": view, "Invoice": invoice, "Year": &models.BillingYear{ID: 7, Year: 2026},
+				"Neighbor": &models.Neighbor{ID: 9, Name: "Test Neighbor"},
+				"Shared":   true, "PortalToken": "synthetic-token", "PortalFeedbackEnabled": true,
+			}
+
+			if fb := req.URL.Query().Get("feedback"); fb == "confirmed" || fb == "disputed" {
+				data["PortalFeedbackResult"] = fb
+			}
+
+			var rendered bytes.Buffer
+			if err := templates["invoice_document"].ExecuteTemplate(&rendered, "content", data); err != nil {
+				t.Fatal(err)
+			}
+
+			gotMsg := strings.Contains(rendered.String(), "Die Rückmeldung wurde gespeichert.")
+			if gotMsg != tc.wantMessage {
+				t.Errorf("feedbackInput=%q: rendered message presence = %v, want %v", tc.feedbackInput, gotMsg, tc.wantMessage)
+			}
+		})
 	}
 }

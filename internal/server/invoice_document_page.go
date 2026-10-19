@@ -83,7 +83,9 @@ func (s *Server) renderInvoiceDocument(w http.ResponseWriter, r *http.Request,
 	}
 	data["EInvoiceMissing"] = einvoice.MissingFields(invoice)
 	data["PortalToken"], data["PortalFeedbackEnabled"] = token, shareID != 0
-	data["PortalFeedbackResult"] = r.URL.Query().Get("feedback")
+	if fb := r.URL.Query().Get("feedback"); fb == "confirmed" || fb == "disputed" {
+		data["PortalFeedbackResult"] = fb
+	}
 	feedback, err := s.store.ListBelegFeedback(r.Context(), neighbor.ID, year.ID)
 	if err != nil {
 		s.serverError(w, "invoice feedback", err)
