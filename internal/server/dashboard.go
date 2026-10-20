@@ -307,7 +307,7 @@ func (s *Server) handleYearAddNeighbor(w http.ResponseWriter, r *http.Request) {
 	}
 	yearID := s.yearIDFromForm(r)
 	neighborID := formInt64(r, "neighbor_id")
-	if yearID == 0 || neighborID == 0 {
+	if yearID <= 0 || neighborID <= 0 {
 		s.setFlash(w, r, "error", "Bitte einen Nachbarn wählen.")
 		redirect(w, r, dashboardURL(yearID))
 		return
@@ -336,6 +336,11 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 	}
 	yearID := s.yearIDFromForm(r)
 	neighborID := formInt64(r, "neighbor_id")
+	if yearID <= 0 || neighborID <= 0 {
+		s.setFlash(w, r, "error", "Bitte einen Nachbarn wählen.")
+		redirect(w, r, dashboardURL(yearID))
+		return
+	}
 	err := s.store.RemoveNeighborFromYear(r.Context(), yearID, neighborID)
 	var inUse *store.MembershipInUseError
 	switch {

@@ -419,6 +419,55 @@ func TestPaymentDateLimits(t *testing.T) {
 	}
 }
 
+// TestYearIDValidation rejects non-positive base and neighbor IDs up front before database operations.
+func TestYearIDValidation(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+
+	t.Run("year create non-positive base_id", func(t *testing.T) {
+		assertFormRedirect(
+			t,
+			s,
+			s.handleYearCreate,
+			url.Values{"year": {"2026"}, "base_id": {"-1"}},
+			"/years",
+			"Bitte eine Bemessungsgrundlage wählen.",
+		)
+	})
+
+	t.Run("year update non-positive base_id", func(t *testing.T) {
+		assertFormRedirect(
+			t,
+			s,
+			s.handleYearUpdate,
+			url.Values{"base_id": {"0"}},
+			"/years",
+			"Bitte eine Bemessungsgrundlage wählen.",
+		)
+	})
+
+	t.Run("year add neighbor non-positive ids", func(t *testing.T) {
+		assertFormRedirect(
+			t,
+			s,
+			s.handleYearAddNeighbor,
+			url.Values{"year_id": {"1"}, "neighbor_id": {"-5"}},
+			dashboardURL(1),
+			"Bitte einen Nachbarn wählen.",
+		)
+	})
+
+	t.Run("year remove neighbor non-positive ids", func(t *testing.T) {
+		assertFormRedirect(
+			t,
+			s,
+			s.handleYearRemoveNeighbor,
+			url.Values{"year_id": {"-1"}, "neighbor_id": {"1"}},
+			dashboardURL(-1),
+			"Bitte einen Nachbarn wählen.",
+		)
+	})
+}
+
 // TestSavedViewQueryLimit rejects oversized filters before parsing or store access.
 func TestSavedViewQueryLimit(t *testing.T) {
 	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
