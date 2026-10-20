@@ -2670,6 +2670,16 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .sysinfo__dot--warn { background: var(--accent); }
 .sysinfo__dot--bad { background: var(--danger); }
 @media (max-width: 520px) { .sysinfo__row { grid-template-columns: 1fr; } }
+
+/* Dashboard: open invoice amounts by age (stacked bar + legend). */
+.aging__bar { width: 100%; height: .9rem; border-radius: 6px; background: var(--data-track); overflow: hidden; display: block; }
+.aging__seg--ok { fill: var(--pay); }
+.aging__seg--warn { fill: var(--accent); }
+.aging__seg--bad { fill: var(--danger); }
+.aging__legend { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; font-size: .92rem; }
+.aging__dot { display: inline-block; width: .65rem; height: .65rem; border-radius: 50%; margin-right: .45rem; background: var(--pay); }
+.aging__dot--warn { background: var(--accent); }
+.aging__dot--bad { background: var(--danger); }
 /* ---- Desktop nav rail (Werkblatt, ≥1024px) ----------------------------- */
 /* The bottom tab bar docks LEFT as a chassis rail — a pure CSS repositioning
    of the same DOM (same links, handlers, e2e selectors). It fuses with the

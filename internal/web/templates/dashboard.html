@@ -63,6 +63,18 @@
 		<a class="btn btn--primary btn--sm" href="{{if .OpenCount}}#offene-zahlungen{{else}}#auszuzahlen{{end}}">Beträge prüfen</a>
 	</div>
 	{{end}}
+	{{with .Aging}}
+	<section class="card stack stack--tight aging" aria-labelledby="aging-h">
+		<div class="btnrow btnrow--split"><h2 class="section-title" id="aging-h">Offene Rechnungsbeträge nach Fälligkeit</h2><a class="link small" href="/mahnwesen">Mahnwesen ›</a></div>
+		<svg class="aging__bar" viewBox="0 0 100 4" preserveAspectRatio="none" role="img" aria-label="Offene Rechnungsbeträge aller Jahre: {{money .Total}}">
+			{{range .Segments}}<rect class="aging__seg aging__seg--{{.Tone}}" x="{{.X}}" y="0" width="{{.Width}}" height="4"><title>{{.Label}}: {{money .Amount}}</title></rect>{{end}}
+		</svg>
+		<ul class="aging__legend">
+			{{range .Buckets}}<li><span class="aging__dot aging__dot--{{.Tone}}" aria-hidden="true"></span>{{.Label}}: <strong>{{money .Amount}}</strong>{{if .Invoices}} <span class="muted small">({{.Invoices}} Rechnung{{if gt .Invoices 1}}en{{end}})</span>{{end}}</li>{{end}}
+		</ul>
+		<p class="muted small">Alle Abrechnungsjahre, Summe {{money .Total}}. Fälligkeit nach Zahlungsziel der Rechnung, des Nachbarn oder des Betriebs.</p>
+	</section>
+	{{end}}
 	{{if .Completed}}
 	<div class="card">
 		{{if .ArchiveCount}}<a class="btn btn--ghost btn--sm" href="/rechnungsjournal/archiv.zip?year={{.Year.ID}}">Jahresunterlagen herunterladen</a>

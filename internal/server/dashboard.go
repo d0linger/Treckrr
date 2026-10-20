@@ -2,11 +2,13 @@ package server
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	netmail "net/mail"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -296,6 +298,13 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	view.bind(data)
+	// Open invoice amounts of all years by age, with the Mahnwesen terms.
+	// Best-effort: a failed read only hides the bar.
+	if aging, err := s.store.ReadInvoiceAging(r.Context(), company.EffectiveTermDays(), time.Now()); err == nil && aging.Total.IsPositive() {
+		data["Aging"] = aging
+	} else if err != nil {
+		slog.Error("dashboard: invoice aging", "err", sanitizeLog(err.Error()))
+	}
 	s.render(w, r, "dashboard", data)
 }
 
