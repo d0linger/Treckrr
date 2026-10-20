@@ -19,7 +19,7 @@ func TestShareTokenLogRedaction(t *testing.T) {
 	s := &Server{cfg: &config.Config{}}
 	token := strings.Repeat("a", 64)
 	for _, path := range []string{"/s/beleg/" + token, "/s/beleg/" + token + "/extra",
-		"/s/portal/" + token + "/invoice.pdf", "/s/konto/" + token, "/s/konto/" + token + "/feedback"} {
+		"/s/portal/" + token + "/invoice.pdf", "/s/konto/" + token, "/s/konto/" + token + "/feedback", "/cal/" + token + ".ics"} {
 		r := httptest.NewRequest(http.MethodGet, path, nil)
 		s.accessLog(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -28,7 +28,7 @@ func TestShareTokenLogRedaction(t *testing.T) {
 	if strings.Contains(output.String(), token) {
 		t.Fatal("bearer token leaked into access log")
 	}
-	for _, want := range []string{"/s/beleg/[redacted]", "/s/portal/[redacted]/invoice.pdf", "/s/konto/[redacted]/feedback"} {
+	for _, want := range []string{"/s/beleg/[redacted]", "/s/portal/[redacted]/invoice.pdf", "/s/konto/[redacted]/feedback", "/cal/[redacted]"} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("redacted route %s missing", want)
 		}

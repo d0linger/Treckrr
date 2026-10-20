@@ -145,6 +145,7 @@ func (s *Server) registerPublicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /sw.js", s.handleServiceWorker)
 	mux.HandleFunc("GET /offline", s.handleOffline)
 	mux.HandleFunc("GET /hilfe", s.handleHelp)
+	mux.HandleFunc("GET /cal/{token}", s.handleCalendarFeed)
 	mux.HandleFunc("GET /login", s.handleLoginForm)
 	mux.HandleFunc("POST /login", s.handleLogin)
 	mux.HandleFunc("POST /login/2fa", s.handleLogin2FA)
@@ -200,6 +201,8 @@ func (s *Server) registerCatalogRoutes(mux *http.ServeMux) {
 // and booking imports, recurring bookings, exports, and dunning.
 func (s *Server) registerAccountAndOperationsRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /profile", s.auth(s.handleProfile))
+	mux.Handle("POST /account/calendar", s.auth(s.handleCalendarFeedCreate))
+	mux.Handle("POST /account/calendar/delete", s.auth(s.handleCalendarFeedDelete))
 	mux.Handle("GET /notifications", s.auth(s.handleNotifications))
 	mux.Handle("POST /notifications/{id}/open", s.auth(s.handleNotificationOpen))
 	mux.Handle("POST /notifications/{id}/dismiss", s.auth(s.handleNotificationDismiss))

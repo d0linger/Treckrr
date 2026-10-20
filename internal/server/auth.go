@@ -445,5 +445,6 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		}
 		data["RecoveryRemaining"] = remaining
 	}
+	s.calendarProfileData(w, r, data, user.ID)
 	s.render(w, r, "profile", data)
 }

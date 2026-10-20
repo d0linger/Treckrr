@@ -117,6 +117,18 @@
 		</details>
 	</div>
 
+	<div class="card stack stack--tight" id="kalender">
+		<h2 class="section-title">Kalender abonnieren</h2>
+		<p class="muted small">Fälligkeiten offener Rechnungen, Raten, Nachfristen und die nächsten Serien-Läufe als Kalender für Handy oder PC (iCal). Wer den Link in einen Online-Kalender einträgt, gibt diese Termine an den Kalenderanbieter weiter.</p>
+		{{with .CalendarURL}}<label class="field"><span>Kalender-Link – jetzt kopieren, nur einmal sichtbar</span><input class="input" readonly value="{{.}}" data-copy-src></label><button class="btn btn--ghost btn--sm" type="button" data-copy-src-btn>Link kopieren</button>{{end}}
+		{{with .CalendarFeed}}<p class="small">Aktiv seit {{date .CreatedAt}}{{if .Minimal}} · ohne Namen und Beträge{{end}}{{with .LastUsedAt}} · zuletzt abgerufen {{pdate .}}{{end}}</p>{{end}}
+		<form method="post" action="/account/calendar" class="form"{{if .CalendarFeed}} data-confirm="Neuen Link erzeugen? Der bisherige Link funktioniert danach nicht mehr."{{end}}>
+			<label class="check"><input type="checkbox" name="minimal" value="1" {{with .CalendarFeed}}{{if .Minimal}}checked{{end}}{{end}}><span>Ohne Namen und Beträge</span></label>
+			<button class="btn btn--ghost btn--sm" type="submit">{{if .CalendarFeed}}Neuen Link erzeugen{{else}}Kalender-Link erzeugen{{end}}</button>
+		</form>
+		{{if .CalendarFeed}}<form method="post" action="/account/calendar/delete" data-confirm-danger data-confirm="Kalender-Abo widerrufen?"><button class="btn btn--danger btn--sm" type="submit">Abo widerrufen</button></form>{{end}}
+	</div>
+
 	<div class="card stack stack--tight">
 		<h2 class="section-title">Darstellung</h2>
 		{{/* Werkblatt F2: the active theme is a selection STATE, so it wears the
