@@ -237,7 +237,7 @@
 	<div class="bcard__summary"><span class="muted">Meine Leistungen · {{num .TotalHours}} Maschinen-h</span><span>{{money .TotalCost}}</span></div>
 	{{end}}
 
-	<h2 class="section-title" id="verrechnung">Nachbarleistungen &amp; Verrechnung</h2>
+	<h2 class="section-title" id="verrechnung">Nachbarleistungen &amp; Verrechnung {{template "help-link" "gegenleistung"}}</h2>
 	<p class="muted small">Leistungen des Nachbarn werden mit Maschinenleistung und Mannstunden vollständig aufgeschlüsselt. Sie reduzieren den Saldo, bleiben aber von meiner Rechnung und eigenen Maschinennutzung getrennt.</p>
 	<div class="bookcards">
 		{{range .Ledger}}

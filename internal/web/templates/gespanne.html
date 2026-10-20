@@ -6,7 +6,7 @@
 	<div class="flash flash--info">Diese Bemessungsgrundlage ({{.Base.Year}}) ist gesperrt. Gespanne sind schreibgeschützt.</div>
 	{{end}}
 
-	<p class="muted">Fixe Gespanne = Traktor + Belastungsstufe + Maschinen. Bei einer Buchung
+	<p class="muted">Fixe Gespanne {{template "help-link" "gespann"}} = Traktor + Belastungsstufe + Maschinen. Bei einer Buchung
 		genügt dann die Auswahl des Gespanns.{{if .Views}} <a class="link" href="/prices/machines/labels?base={{.Base.ID}}">QR-Etiketten drucken</a>{{end}}</p>
 
 	<div class="list list--onecol">

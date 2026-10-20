@@ -998,3 +998,14 @@
 .aging__dot { display: inline-block; width: .65rem; height: .65rem; border-radius: 50%; margin-right: .45rem; background: var(--pay); }
 .aging__dot--warn { background: var(--accent); }
 .aging__dot--bad { background: var(--danger); }
+
+/* Glossary page and the inline "?" links that point into it. */
+.help-index { display: flex; flex-wrap: wrap; gap: .35rem .9rem; }
+.help-list { margin: 0; display: grid; gap: .6rem; }
+.help-term { scroll-margin-top: 6rem; }
+.help-term:target { outline: 2px solid var(--signal); outline-offset: 2px; }
+.help-term dt { font-family: var(--font-display); font-weight: 700; }
+.help-term dd { margin: .3rem 0 0; max-width: 70ch; }
+.help-link { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; font: 700 .72rem/1 var(--font-display);
+	text-decoration: none; color: var(--primary); border: 1.5px solid currentColor; vertical-align: middle; }
+.help-link:hover, .help-link:focus-visible { background: var(--primary-tint); }

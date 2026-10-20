@@ -122,6 +122,7 @@
 	{{if .Feedback}}<details class="card disclosure"><summary>Rückmeldungen zu dieser Rechnung</summary>{{range .Feedback}}<p>{{if eq .Status "confirmed"}}Bestätigt{{else}}Einwand{{end}} · {{pdate .CreatedAt}}{{with .Message}} · {{.}}{{end}}</p>{{end}}</details>{{end}}
 	{{if and (not .Shared) .User.CanWrite .Doc.Active (not .Completed)}}
 	<details class="card disclosure no-print"><summary>Rechnung korrigieren</summary>
+		<p class="muted small">Storno hebt die Rechnung ganz auf, eine Gutschrift mindert sie. <a class="link" href="/hilfe#storno">Unterschied erklärt</a></p>
 		<form method="post" action="/neighbors/{{.Neighbor.ID}}/invoice/gutschrift" class="form">
 			<input type="hidden" name="year_id" value="{{.Year.ID}}"><input type="hidden" name="invoice_id" value="{{.Invoice.ID}}">
 			<label class="field"><span>Gutschrift / Teilstorno (€ brutto)</span><input class="input" name="amount" inputmode="decimal" required></label>

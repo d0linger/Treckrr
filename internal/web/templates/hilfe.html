@@ -1,0 +1,19 @@
+{{define "content"}}
+<section class="stack help-page">
+	<div class="pagehead">
+		{{if .User}}<a class="backbtn" href="/" aria-label="Zur Übersicht">{{template "ic-back"}}</a>{{end}}
+		<div><h2 class="pagehead__t">Hilfe &amp; Begriffe</h2><p class="muted small">Was die Begriffe in Treckrr bedeuten.</p></div>
+	</div>
+	<nav class="card help-index" aria-label="Begriffe">
+		{{range .Glossary}}<a href="#{{.ID}}">{{.Term}}</a>{{end}}
+	</nav>
+	<dl class="help-list">
+		{{range .Glossary}}
+		<div class="card help-term" id="{{.ID}}">
+			<dt>{{.Term}}</dt>
+			<dd>{{.Text}}</dd>
+		</div>
+		{{end}}
+	</dl>
+</section>
+{{end}}

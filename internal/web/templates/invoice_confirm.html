@@ -3,7 +3,7 @@
 	{{template "readonly-notice" .}}
 	<div class="pagehead">
 		<a class="backbtn" href="{{.BackURL}}" aria-label="Zurück">{{template "ic-back"}}</a>
-		<h2 class="pagehead__t">Rechnung festschreiben</h2>
+		<h2 class="pagehead__t">Rechnung festschreiben {{template "help-link" "festschreibung"}}</h2>
 	</div>
 	<p class="muted small">{{.Neighbor.Name}} · Abrechnung {{.Year.Year}}</p>
 

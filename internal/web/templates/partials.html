@@ -154,3 +154,6 @@
 		{{end}}
 	</div>
 {{end}}
+
+{{/* "help-link" is a small "?" that opens the glossary entry with this ID. */}}
+{{define "help-link"}}<a class="help-link no-print" href="/hilfe#{{.}}" title="Begriff erklärt" aria-label="Begriff erklärt">?</a>{{end}}

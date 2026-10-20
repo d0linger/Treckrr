@@ -1470,7 +1470,8 @@
 			{ label: "Nachbarn", sub: "verwalten", url: "/neighbors", kw: "nachbar kontakte" },
 			{ label: "Grundlagen", sub: "Traktoren · Maschinen · Belastungsstufen · Preise", url: "/bases", kw: "grundlagen bemessung preise preisliste traktoren maschinen belastungsstufen laststufen gespanne" },
 			{ label: "Jahre", sub: "Abrechnungsjahre", url: "/years", kw: "jahr abrechnung" },
-			{ label: "Mahnwesen", sub: "Offene Posten", url: "/mahnwesen", kw: "mahnung offen faellig zahlung" }
+			{ label: "Mahnwesen", sub: "Offene Posten", url: "/mahnwesen", kw: "mahnung offen faellig zahlung" },
+			{ label: "Hilfe & Begriffe", sub: "Glossar", url: "/hilfe", kw: "hilfe glossar begriffe erklaerung bemessungsgrundlage belastungsstufe gespann gegenleistung verrechnung guthaben festschreibung storno gutschrift zwischenstand neuberechnung" }
 		];
 		function fold(x) { return x.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, ""); }
 		function localCommands(q) {
