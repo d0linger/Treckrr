@@ -383,6 +383,14 @@ move when requests are queuing for a connection.
 curl -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:8080/metrics
 ```
 
+Ready-made monitoring: import [`docs/grafana/treckrr.json`](docs/grafana/treckrr.json)
+into Grafana (backup and restore-test age, HTTP classes and p95, database pool,
+sign-in protection, mail and maintenance) and load
+[`docs/prometheus/treckrr-alerts.yml`](docs/prometheus/treckrr-alerts.yml) as
+Prometheus rules (backup failed or stale, overdue restore test, server errors,
+panics, failed sign-ins, mail backlog, saturated pool, failing maintenance).
+A test keeps both files limited to series the app actually emits.
+
 ---
 
 ## 🌐 Running behind a reverse proxy
