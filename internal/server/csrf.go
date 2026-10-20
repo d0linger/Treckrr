@@ -147,7 +147,11 @@ func (s *Server) csrf(next http.Handler) http.Handler {
 		// report-uri is same-origin — which made csrfToken return a token to
 		// compare against and rejected every report with 403. The endpoint changes
 		// no state: it reads at most 8 KiB, writes a log line and returns 204.
-		if r.URL.Path == "/csp-report" || preSessionAuthPaths[r.URL.Path] {
+		// The share-target POST comes from the operating system's share sheet and
+		// cannot carry a token. Its handler reads no body and changes nothing; the
+		// photos are uploaded later through the protected booking photo route.
+		if r.URL.Path == "/csp-report" || preSessionAuthPaths[r.URL.Path] ||
+			(r.Method == http.MethodPost && r.URL.Path == shareTargetPath) {
 			next.ServeHTTP(w, r)
 			return
 		}

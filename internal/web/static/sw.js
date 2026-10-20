@@ -60,6 +60,10 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
 	const req = event.request;
+	if (req.method === "POST" && new URL(req.url).pathname === "/share-target") {
+		event.respondWith(receiveShare(req));
+		return;
+	}
 	if (req.method !== "GET") return; // never cache mutations
 
 	const url = new URL(req.url);
@@ -97,6 +101,34 @@ self.addEventListener("fetch", (event) => {
 		);
 	}
 });
+
+// receiveShare handles the Web Share Target: up to ten shared images are parked
+// in IndexedDB on this device and the picker page opens. Nothing reaches the
+// server here; the picker uploads through the normal booking photo route.
+async function receiveShare(req) {
+	try {
+		const form = await req.formData();
+		const files = form.getAll("photos")
+			.filter((f) => f && typeof f === "object" && /^image\//.test(f.type))
+			.slice(0, 10)
+			.map((f) => ({ name: f.name, type: f.type, blob: f }));
+		await new Promise((resolve, reject) => {
+			const open = indexedDB.open("treckrr-share", 1);
+			open.onupgradeneeded = () => open.result.createObjectStore("pending");
+			open.onerror = () => reject(open.error);
+			open.onsuccess = () => {
+				const db = open.result;
+				const tx = db.transaction("pending", "readwrite");
+				tx.objectStore("pending").put({ files, at: Date.now() }, "shared");
+				tx.oncomplete = () => { db.close(); resolve(); };
+				tx.onerror = () => { db.close(); reject(tx.error); };
+			};
+		});
+		return Response.redirect("/share-target", 303);
+	} catch (e) {
+		return Response.redirect("/share-target?fallback=1", 303);
+	}
+}
 
 // OFFLINE_FALLBACK is the SW's own tiny branded page, used only when the cached
 // /offline shell is unavailable. Kept inline so it needs no network or cache.

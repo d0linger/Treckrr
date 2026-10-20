@@ -20,6 +20,12 @@ func TestManifestShortcuts(t *testing.T) {
 		t.Fatalf("content type %q", ct)
 	}
 	var manifest struct {
+		ShareTarget struct {
+			Action, Method, Enctype string
+			Params                  struct {
+				Files []struct{ Name string } `json:"files"`
+			} `json:"params"`
+		} `json:"share_target"`
 		Shortcuts []struct {
 			Name  string `json:"name"`
 			URL   string `json:"url"`
@@ -30,6 +36,11 @@ func TestManifestShortcuts(t *testing.T) {
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &manifest); err != nil {
 		t.Fatalf("manifest is not valid JSON: %v", err)
+	}
+	st := manifest.ShareTarget
+	if st.Action != shareTargetPath || st.Method != "POST" || st.Enctype != "multipart/form-data" ||
+		len(st.Params.Files) != 1 || st.Params.Files[0].Name != "photos" {
+		t.Fatalf("share target %+v must post photos to %s", st, shareTargetPath)
 	}
 	if len(manifest.Shortcuts) < 3 {
 		t.Fatalf("shortcuts=%d, want at least 3", len(manifest.Shortcuts))

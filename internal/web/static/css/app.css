@@ -2691,6 +2691,11 @@ a.paychip--credit:hover { background: color-mix(in srgb, var(--owe) 22%, transpa
 .help-link { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; font: 700 .72rem/1 var(--font-display);
 	text-decoration: none; color: var(--primary); border: 1.5px solid currentColor; vertical-align: middle; }
 .help-link:hover, .help-link:focus-visible { background: var(--primary-tint); }
+
+/* Share target picker: thumbnails of the parked photos and booking choices. */
+.share-target__thumbs { display: flex; flex-wrap: wrap; gap: .5rem; }
+.share-target__thumbs img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.share-target__row { align-items: flex-start; }
 /* ---- Desktop nav rail (Werkblatt, ≥1024px) ----------------------------- */
 /* The bottom tab bar docks LEFT as a chassis rail — a pure CSS repositioning
    of the same DOM (same links, handlers, e2e selectors). It fuses with the

@@ -1009,3 +1009,8 @@
 .help-link { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; font: 700 .72rem/1 var(--font-display);
 	text-decoration: none; color: var(--primary); border: 1.5px solid currentColor; vertical-align: middle; }
 .help-link:hover, .help-link:focus-visible { background: var(--primary-tint); }
+
+/* Share target picker: thumbnails of the parked photos and booking choices. */
+.share-target__thumbs { display: flex; flex-wrap: wrap; gap: .5rem; }
+.share-target__thumbs img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.share-target__row { align-items: flex-start; }

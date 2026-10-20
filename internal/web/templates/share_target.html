@@ -1,0 +1,26 @@
+{{define "content"}}
+<section class="stack share-target" data-share-target>
+	<div class="pagehead">
+		<a class="backbtn" href="/buchungen" aria-label="Zu den Buchungen">{{template "ic-back"}}</a>
+		<div><h2 class="pagehead__t">Fotos zuordnen</h2><p class="muted small">Geteilte Belegfotos einer Buchung anhängen.</p></div>
+	</div>
+	{{template "readonly-notice" .}}
+	{{if .Fallback}}<p class="flash flash--info">Die geteilten Fotos sind nicht angekommen, weil Treckrr auf diesem Gerät noch nicht vollständig eingerichtet war. Bitte Treckrr einmal öffnen und erneut teilen, oder das Foto direkt in der Buchung anhängen.</p>{{end}}
+	{{if .User.CanWrite}}
+	<div class="card stack stack--tight" data-share-preview hidden>
+		<strong data-share-count></strong>
+		<div class="share-target__thumbs" data-share-thumbs></div>
+	</div>
+	<p class="muted" data-share-empty>Keine geteilten Fotos auf diesem Gerät gefunden. Fotos in der Galerie oder Kamera-App über „Teilen“ → Treckrr senden.</p>
+	<form method="post" enctype="multipart/form-data" class="card form" data-share-form hidden>
+		<input type="file" name="photo" multiple hidden data-share-files>
+		<fieldset class="fieldset"><legend>Zu welcher Buchung gehören die Fotos?</legend>
+			{{range .Targets}}<label class="check share-target__row"><input type="radio" name="target" value="/entries/{{.EntryID}}/photos" required><span>{{date .Date}} · {{.Neighbor}}{{if .Task}} · {{.Task}}{{end}} <span class="muted small">{{money .Cost}}</span></span></label>
+			{{else}}<p class="muted small">Keine offene Buchung gefunden. Fotos lassen sich nur an Buchungen offener Jahre anhängen, die noch nicht festgeschrieben sind.</p>{{end}}
+		</fieldset>
+		<div class="btnrow"><button class="btn btn--primary" type="submit" data-share-submit>Fotos anhängen</button><button class="btn btn--ghost" type="button" data-share-discard>Verwerfen</button></div>
+		<p class="muted small">Die Fotos werden wie beim direkten Anhängen geprüft und ohne Standortdaten gespeichert.</p>
+	</form>
+	{{end}}
+</section>
+{{end}}

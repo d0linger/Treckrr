@@ -649,6 +649,61 @@
 		if (running()) box.open = true;
 		render();
 	});
+
+	// Share target picker: photos shared into the installed app wait in
+	// IndexedDB (written by sw.js). They are moved into the form's file input
+	// and uploaded through the normal booking photo route, CSRF included.
+	document.querySelectorAll("[data-share-target]").forEach(function (root) {
+		var form = root.querySelector("[data-share-form]");
+		if (!form || !("indexedDB" in window) || typeof DataTransfer !== "function") return;
+		var input = form.querySelector("[data-share-files]"), preview = root.querySelector("[data-share-preview]"),
+			empty = root.querySelector("[data-share-empty]"), thumbs = root.querySelector("[data-share-thumbs]");
+		/** Runs one request against the parked-share store and resolves with its result. */
+		function withStore(mode, work) {
+			return new Promise(function (resolve, reject) {
+				var open = indexedDB.open("treckrr-share", 1);
+				open.onupgradeneeded = function () { open.result.createObjectStore("pending"); };
+				open.onerror = function () { reject(open.error); };
+				open.onsuccess = function () {
+					var db = open.result, tx = db.transaction("pending", mode), req = work(tx.objectStore("pending"));
+					tx.oncomplete = function () { db.close(); resolve(req ? req.result : undefined); };
+					tx.onerror = function () { db.close(); reject(tx.error); };
+				};
+			});
+		}
+		/** Removes the parked share so it can never be attached twice. */
+		function forget() { return withStore("readwrite", function (store) { return store.delete("shared"); }); }
+		withStore("readonly", function (store) { return store.get("shared"); }).then(function (record) {
+			var files = record && Array.isArray(record.files) ? record.files : [];
+			if (!files.length) return;
+			var list = new DataTransfer();
+			files.forEach(function (f, i) {
+				var file = new File([f.blob], f.name || ("foto-" + (i + 1) + ".jpg"), { type: f.type || "image/jpeg" });
+				list.items.add(file);
+				var img = document.createElement("img");
+				img.src = URL.createObjectURL(file);
+				img.alt = file.name;
+				img.width = 96;
+				img.height = 96;
+				thumbs.appendChild(img);
+			});
+			input.files = list.files;
+			root.querySelector("[data-share-count]").textContent = files.length + (files.length === 1 ? " Foto" : " Fotos") + " bereit";
+			preview.hidden = false;
+			form.hidden = false;
+			empty.hidden = true;
+		}).catch(function () { /* nothing parked or storage blocked: the empty hint stays */ });
+		form.addEventListener("submit", function (e) {
+			e.preventDefault();
+			var target = form.querySelector('input[name="target"]:checked');
+			if (!target || !/^\/entries\/\d+\/photos$/.test(target.value) || !input.files.length) return;
+			form.action = target.value;
+			forget().then(function () { form.submit(); }, function () { form.submit(); });
+		});
+		root.querySelector("[data-share-discard]").addEventListener("click", function () {
+			forget().then(function () { window.location.href = "/buchungen"; }, function () { window.location.href = "/buchungen"; });
+		});
+	});
 	// Recovery-code gate: "Fertig" stays disabled until the user confirms they
 	// saved the codes. Without JS the link works normally (no lockout).
 	(function () {
