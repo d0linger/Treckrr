@@ -187,6 +187,7 @@ func (s *Server) registerCatalogRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /bases/{id}/preisblatt.pdf", s.auth(s.handlePriceSheet))
 	mux.Handle("POST /bases/import/preview", s.auth(s.handleBaseImportPreview))
 	mux.Handle("POST /bases/import", s.auth(s.handleBaseImportCommit))
+	mux.Handle("POST /bases/uplift/preview", s.auth(s.handleBaseUpliftPreview))
 	mux.Handle("POST /bases/{id}/update", s.auth(s.handleBaseUpdate))
 	mux.Handle("POST /bases/{id}/delete", s.auth(s.handleBaseDelete))
 	mux.Handle("POST /bases/{id}/lock", s.auth(s.handleBaseLock))

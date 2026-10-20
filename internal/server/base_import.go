@@ -439,36 +439,152 @@ func (s *Server) handleBaseExport(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, "base export: machines", err)
 		return
 	}
-	var buf bytes.Buffer
-	buf.WriteString("\uFEFF")
-	cw := csv.NewWriter(&buf)
-	cw.Comma = ';'
-	yesNo := func(b bool) string {
-		if b {
-			return "ja"
-		}
-		return "nein"
-	}
-	_ = cw.Write(rateListHeader)
-	for _, l := range loads {
-		_ = cw.Write([]string{"Belastungsstufe", "", csvSafe(l.Name), "", rateNum(l.CostPerPS), "", "", "", "", "ja"})
-	}
-	for _, t := range tractors {
-		_ = cw.Write([]string{"Traktor", csvSafe(t.Ident), csvSafe(t.Name), rateNum(t.PS), "", "", "", "", "", yesNo(t.Active)})
-	}
-	for _, m := range machines {
-		_ = cw.Write([]string{"Maschine", "", csvSafe(m.Name), "", "", rateNum(m.WorkingWidth), rateNum(m.CostPerAB),
-			csvSafe(m.Category), rateNum(m.SelfCostPerH), yesNo(m.Active)})
-	}
-	cw.Flush()
-	if err := cw.Error(); err != nil {
+	data, err := rateListCSV(loads, tractors, machines, true)
+	if err != nil {
 		s.serverError(w, "base export: csv", err)
 		return
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="Bemessungsgrundlage_`+strconv.Itoa(base.Year)+`.csv"`)
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(buf.Bytes())
+	_, _ = w.Write(data)
+}
+
+// rateListCSV writes a basis in the rate-list format. spreadsheet=true guards
+// text cells against formula injection for files opened in a spreadsheet; the
+// internal uplift round trip passes false so names survive unchanged.
+func rateListCSV(loads []models.LoadLevel, tractors []models.Tractor, machines []models.Machine, spreadsheet bool) ([]byte, error) {
+	text := func(s string) string {
+		if spreadsheet {
+			return csvSafe(s)
+		}
+		return s
+	}
+	yesNo := func(b bool) string {
+		if b {
+			return "ja"
+		}
+		return "nein"
+	}
+	var buf bytes.Buffer
+	buf.WriteString("\uFEFF")
+	cw := csv.NewWriter(&buf)
+	cw.Comma = ';'
+	_ = cw.Write(rateListHeader)
+	for _, l := range loads {
+		_ = cw.Write([]string{"Belastungsstufe", "", text(l.Name), "", rateNum(l.CostPerPS), "", "", "", "", "ja"})
+	}
+	for _, t := range tractors {
+		_ = cw.Write([]string{"Traktor", text(t.Ident), text(t.Name), rateNum(t.PS), "", "", "", "", "", yesNo(t.Active)})
+	}
+	for _, m := range machines {
+		_ = cw.Write([]string{"Maschine", "", text(m.Name), "", "", rateNum(m.WorkingWidth), rateNum(m.CostPerAB),
+			text(m.Category), rateNum(m.SelfCostPerH), yesNo(m.Active)})
+	}
+	cw.Flush()
+	return buf.Bytes(), cw.Error()
+}
+
+// upliftSteps are the offered roundings for adjusted rates, in euros.
+var upliftSteps = []string{"0.01", "0.0001", "0.05", "0.1"}
+
+// upliftRate raises a rate by pct percent and rounds to the step.
+func upliftRate(rate, pct, step decimal.Decimal) decimal.Decimal {
+	raised := rate.Mul(decimal.NewFromInt(100).Add(pct)).Div(decimal.NewFromInt(100))
+	return raised.Div(step).Round(0).Mul(step)
+}
+
+// handleBaseUpliftPreview builds a new basis from an existing one with load
+// level and machine rates changed by a percentage, and shows it in the same
+// dry run as an imported rate list. Committing goes through the import path,
+// so the new basis, the rig copy and the audit entry work identically.
+func (s *Server) handleBaseUpliftPreview(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	req := rateImportRequest{Year: formInt(r, "year"), Name: trimmed(r, "name"), SourceID: formInt64(r, "source_base_id")}
+	if req.SourceID <= 0 {
+		s.setFlash(w, r, "error", "Bitte die Grundlage wählen, deren Sätze angepasst werden.")
+		redirect(w, r, "/bases#anpassen")
+		return
+	}
+	if req.Year < 1900 || req.Year > 3000 {
+		s.setFlash(w, r, "error", "Bitte ein gültiges „gültig ab“-Jahr angeben.")
+		redirect(w, r, "/bases#anpassen")
+		return
+	}
+	if msg := lenError("Name", req.Name, maxNameLen); msg != "" {
+		s.setFlash(w, r, "error", msg)
+		redirect(w, r, "/bases#anpassen")
+		return
+	}
+	if req.Name == "" {
+		req.Name = "Bemessungsgrundlage " + strconv.Itoa(req.Year)
+	}
+	limit := func(field string) (decimal.Decimal, bool) {
+		raw := strings.TrimSpace(r.FormValue(field))
+		if raw == "" {
+			return decimal.Zero, true
+		}
+		d, ok := parseGermanDecimalOK(raw)
+		return d, ok && d.GreaterThanOrEqual(decimal.NewFromInt(-50)) && d.LessThanOrEqual(decimal.NewFromInt(100))
+	}
+	pctLoad, okLoad := limit("pct_load")
+	pctMachine, okMachine := limit("pct_machine")
+	if !okLoad || !okMachine {
+		s.setFlash(w, r, "error", "Die Anpassung muss zwischen -50 und +100 Prozent liegen.")
+		redirect(w, r, "/bases#anpassen")
+		return
+	}
+	stepRaw := r.FormValue("round")
+	step := decimal.RequireFromString("0.01")
+	for _, offered := range upliftSteps {
+		if stepRaw == offered {
+			step = decimal.RequireFromString(offered)
+		}
+	}
+	source, err := s.store.GetBase(r.Context(), req.SourceID)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	loads, err := s.store.ListLoadLevels(r.Context(), source.ID)
+	if err != nil {
+		s.serverError(w, "base uplift: loads", err)
+		return
+	}
+	tractors, err := s.store.ListTractors(r.Context(), source.ID)
+	if err != nil {
+		s.serverError(w, "base uplift: tractors", err)
+		return
+	}
+	machines, err := s.store.ListMachines(r.Context(), source.ID)
+	if err != nil {
+		s.serverError(w, "base uplift: machines", err)
+		return
+	}
+	for i := range loads {
+		loads[i].CostPerPS = upliftRate(loads[i].CostPerPS, pctLoad, step)
+	}
+	for i := range machines {
+		machines[i].CostPerAB = upliftRate(machines[i].CostPerAB, pctMachine, step)
+	}
+	if req.Raw, err = rateListCSV(loads, tractors, machines, false); err != nil {
+		s.serverError(w, "base uplift: csv", err)
+		return
+	}
+	preview, fileErr, err := s.rateListPreviewFor(r, req)
+	if err != nil {
+		s.serverError(w, "base uplift: preview", err)
+		return
+	}
+	if fileErr != "" {
+		s.setFlash(w, r, "error", fileErr)
+		redirect(w, r, "/bases#anpassen")
+		return
+	}
+	s.renderRateImport(w, r, req, preview)
 }
 
 // rateImportRequest is the form shared by preview and commit.
