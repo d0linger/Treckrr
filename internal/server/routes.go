@@ -15,6 +15,7 @@ func (s *Server) registerWorkflowRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /neighbors/{id}", s.auth(s.handleNeighborDetail))
 	mux.Handle("GET /neighbors/{id}/overview", s.auth(s.handleNeighborOverview))
 	mux.Handle("GET /neighbors/{id}/overview.pdf", s.auth(s.handleNeighborOverviewPDF))
+	mux.Handle("POST /neighbors/{id}/overview/email", s.auth(s.handleNeighborOverviewEmail))
 	mux.Handle("GET /neighbors", s.auth(s.handleNeighborsManage))
 	mux.Handle("POST /neighbors/create", s.auth(s.handleNeighborManageCreate))
 	mux.Handle("POST /neighbors/{id}/update", s.auth(s.handleNeighborUpdate))

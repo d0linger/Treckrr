@@ -15,7 +15,6 @@ import (
 	"github.com/d0linger/treckrr/internal/calc"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/money"
-	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -386,6 +385,7 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 	data["TotalRemaining"] = totalRemaining
 	data["Payments"] = payments
 	data["PaidTotal"] = paidTotal
+	data["MailEnabled"] = s.cfg.MailEnabled()
 	communication, err := s.store.NeighborCommunication(r.Context(), neighbor.ID, 200)
 	if err != nil {
 		s.serverError(w, "neighbor communication", err)
@@ -437,36 +437,8 @@ func (s *Server) handleNeighborOverviewPDF(w http.ResponseWriter, r *http.Reques
 		s.notFound(w, r)
 		return
 	}
-	statement, err := s.store.ReadNeighborStatement(r.Context(), id)
-	if err != nil {
-		s.serverError(w, "overview pdf: history", err)
-		return
-	}
-	history := statement.Years
 	company, _ := s.store.GetCompany(r.Context())
-	sd := pdf.StatementData{
-		IssuerName: company.Name, IssuerAddress: company.Address,
-		RecipientName: neighbor.Name, RecipientAddr: neighbor.Address, Today: time.Now(),
-	}
-	for _, h := range history {
-		sd.Rows = append(sd.Rows, pdf.StatementYear{
-			Year:       h.Year,
-			Cost:       h.Net,
-			Hours:      h.Hours,
-			PaidAmount: h.PaidAmount,
-			Remaining:  h.Remaining,
-			Paid:       h.Paid,
-			Credit:     h.Credit,
-		})
-		sd.TotalCost = sd.TotalCost.Add(h.Net)
-		sd.TotalHours = sd.TotalHours.Add(h.Hours)
-	}
-	payments := statement.Payments
-	for _, payment := range payments {
-		sd.Payments = append(sd.Payments, pdf.StatementPayment{Year: payment.Year, Date: payment.PaidOn,
-			Amount: payment.Amount, Reference: payment.InvoiceNumber, Reversal: payment.Reversal})
-	}
-	blob, err := pdf.RenderStatement(sd)
+	blob, err := s.statementPDF(r.Context(), neighbor, company, time.Now())
 	if err != nil {
 		s.serverError(w, "overview pdf", err)
 		return
