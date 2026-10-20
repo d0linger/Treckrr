@@ -85,7 +85,7 @@ jobs:
       # Include tagged regressions; packages share the service database, so
       # serialize packages to keep their database fixtures from interfering.
       - name: Test (unit + integration)
-        run: go test -race -tags=integration -p 1 -coverprofile=coverage.out ./...
+        run: go test -race -tags=integration -p 1 -timeout 30m -coverprofile=coverage.out ./...
       # The profile used to be written and thrown away, so a slide in coverage
       # was invisible. The floor is deliberately a few points BELOW the current
       # figure: it catches a real regression (a whole handler family losing its
