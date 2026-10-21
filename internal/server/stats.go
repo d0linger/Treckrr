@@ -630,17 +630,14 @@ func (s *Server) handleStatsExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filename := fmt.Sprintf("statistik-%d.csv", year.Year)
-	cw, finish := csvDownload(w, r, filename)
-	defer finish()
-	_ = cw.Write([]string{"Auswertung", "Bezeichnung", "Einheit", "Menge", "Stunden", "Betrag (€)", "je Einheit (€)"})
-	// csvSafe on every free-text column, like every other export: a neighbor,
-	// task or machine name starting with = + - @ would otherwise be evaluated as
-	// a formula by the spreadsheet this file is opened in. Amount columns stay
-	// raw — a quote would break the negative sign.
+	t := exportTable{sheet: fmt.Sprintf("Statistik %d", year.Year),
+		header: []string{"Auswertung", "Bezeichnung", "Einheit", "Menge", "Stunden", "Betrag (€)", "je Einheit (€)"}}
+	// Free text (neighbor, task, machine names) is neutralized in CSV and an
+	// inline string in XLSX, like every other export; amounts stay numbers.
+	empty := cellEmpty()
 	writeAgg := func(section string, rows []aggRow) {
 		for _, row := range rows {
-			_ = cw.Write([]string{section, csvSafe(row.Label), "", "", deDecimal(row.Hours), deDecimal(row.Cost), ""})
+			t.add(cellLabel(section), cellText(row.Label), empty, empty, cellNumber(row.Hours), cellMoney(row.Cost), empty)
 		}
 	}
 	writeAgg("Nachbar", byNeighbor)
@@ -653,15 +650,16 @@ func (s *Server) handleStatsExport(w http.ResponseWriter, r *http.Request) {
 			section = "Maschine · enthält Altbestandsschätzung zu aktuellen Sätzen"
 			marginSection = "Maschine · Deckungsbeitrag · enthält Altbestandsschätzung zu aktuellen Sätzen"
 		}
-		_ = cw.Write([]string{section, csvSafe(m.Name), "h", deDecimal(m.Hours), deDecimal(m.Hours),
-			deDecimal(m.Revenue), deDecimal(m.Rate)})
+		t.add(cellLabel(section), cellText(m.Name), cellLabel("h"), cellNumber(m.Hours), cellNumber(m.Hours),
+			cellMoney(m.Revenue), cellMoney(m.Rate))
 		if m.HasMargin() {
-			_ = cw.Write([]string{marginSection, csvSafe(m.Name), "h", deDecimal(m.Hours), "",
-				deDecimal(m.Margin), deDecimal(m.SelfCost)})
+			t.add(cellLabel(marginSection), cellText(m.Name), cellLabel("h"), cellNumber(m.Hours), empty,
+				cellMoney(m.Margin), cellMoney(m.SelfCost))
 		}
 	}
 	for _, u := range units {
-		_ = cw.Write([]string{"Kennzahl", csvSafe(u.Task), csvSafe(u.Unit), deDecimal(u.Quantity), "",
-			deDecimal(u.Cost), deDecimal(u.PerUnit)})
+		t.add(cellLabel("Kennzahl"), cellText(u.Task), cellText(u.Unit), cellNumber(u.Quantity), empty,
+			cellMoney(u.Cost), cellMoney(u.PerUnit))
 	}
+	s.writeExport(w, r, fmt.Sprintf("statistik-%d", year.Year), t)
 }

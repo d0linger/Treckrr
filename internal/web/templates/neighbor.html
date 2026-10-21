@@ -46,6 +46,7 @@
 			<div class="action-list">
 				<a href="/neighbors/{{.Neighbor.ID}}/overview"><span><strong>Verlauf aller Jahre</strong><small>Jahresübergreifendes Nachbarkonto</small></span><span aria-hidden="true">›</span></a>
 				<a href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}"><span><strong>CSV exportieren</strong><small>Buchungsdaten herunterladen</small></span><span aria-hidden="true">›</span></a>
+				<a href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;format=xlsx"><span><strong>Excel exportieren</strong><small>Buchungsdaten als Tabelle mit echten Zahlen</small></span><span aria-hidden="true">›</span></a>
 			</div>
 		</details>
 	</section>
@@ -511,6 +512,7 @@
 		{{if .User.CanWrite}}<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;view=payments#zahlung-erfassen">Zahlung verbuchen</a>{{end}}
 		<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}/beleg?year={{.Year.ID}}">Beleg</a>
 		<a class="btn btn--ghost btn--sm" href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}">CSV Export</a>
+		<a class="btn btn--ghost btn--sm" href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;format=xlsx">Excel Export</a>
 	</span>
 </div>
 {{end}}

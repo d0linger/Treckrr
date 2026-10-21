@@ -340,21 +340,25 @@ func (s *Server) handleAccountingCSV(w http.ResponseWriter, r *http.Request) {
 
 // writeJournalCSV writes the journal in the export CSV dialect (BOM + ';').
 func writeJournalCSV(w *csv.Writer, rows []store.JournalRow) {
-	_ = w.Write([]string{"Nummer", "Datum", "Art", "Status", "Nachbar", "Netto (€)", "USt-Satz (%)", "USt (€)", "Brutto (€)"})
-	kinds := documentKindLabels
+	t := journalTable(rows, "")
+	t.writeCSV(w)
+}
+
+// journalTable is the invoice journal as CSV/XLSX: one row per document and
+// the signed totals.
+func journalTable(rows []store.JournalRow, sheet string) exportTable {
+	t := exportTable{sheet: sheet, header: []string{"Nummer", "Datum", "Art", "Status", "Nachbar", "Netto (€)", "USt-Satz (%)", "USt (€)", "Brutto (€)"}}
 	status := map[string]string{"issued": "ausgestellt", "canceled": "storniert"}
 	for _, j := range rows {
-		// csvSafe on the free-text columns, like every other export: a neighbor
-		// name or invoice number starting with = + - @ would otherwise be
-		// evaluated as a formula by the spreadsheet this file is opened in.
-		// Amount columns stay raw — a quote would break the negative sign.
-		_ = w.Write([]string{
-			csvSafe(j.Number), j.IssuedOn.Format("02.01.2006"), orKey(kinds, j.Kind), orKey(status, j.Status), csvSafe(j.NeighborName),
-			deDecimal(j.Net), deDecimal(j.VATRate), deDecimal(j.VATAmount), deDecimal(j.Gross),
-		})
+		// Free text is neutralized in CSV and an inline string in XLSX, like
+		// every other export; amount columns stay numbers.
+		t.add(cellText(j.Number), cellDate(j.IssuedOn), cellLabel(orKey(documentKindLabels, j.Kind)), cellLabel(orKey(status, j.Status)),
+			cellText(j.NeighborName), cellMoney(j.Net), cellNumber(j.VATRate), cellMoney(j.VATAmount), cellMoney(j.Gross))
 	}
 	net, vat, gross := journalTotals(rows)
-	_ = w.Write([]string{"", "", "", "", "Summe (signiert)", deDecimal(net), "", deDecimal(vat), deDecimal(gross)})
+	empty := cellEmpty()
+	t.add(empty, empty, empty, empty, cellLabel("Summe (signiert)"), cellMoney(net), empty, cellMoney(vat), cellMoney(gross))
+	return t
 }
 
 func orKey(m map[string]string, k string) string {
@@ -375,10 +379,7 @@ func (s *Server) handleJournalCSV(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	filename := fmt.Sprintf("rechnungsjournal-%d.csv", year.Year)
-	cw, finish := csvDownload(w, r, filename)
-	defer finish()
-	writeJournalCSV(cw, rows)
+	s.writeExport(w, r, fmt.Sprintf("rechnungsjournal-%d", year.Year), journalTable(rows, fmt.Sprintf("Rechnungsjournal %d", year.Year)))
 }
 
 var zipNameSafe = regexp.MustCompile(`[^A-Za-z0-9._-]`)
