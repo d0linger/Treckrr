@@ -419,6 +419,42 @@ func TestPaymentDateLimits(t *testing.T) {
 	}
 }
 
+// TestInvoiceHandlersRejectNonPositiveYearID verifies that invoice handlers reject
+// non-positive year parameters (<= 0) upfront with 400 Bad Request.
+func TestInvoiceHandlersRejectNonPositiveYearID(t *testing.T) {
+	s := &Server{}
+	for _, tc := range []struct {
+		name    string
+		field   string
+		path    string
+		val     string
+		handler http.HandlerFunc
+	}{
+		{name: "confirm zero year", field: "year", path: "/neighbors/1/invoice/confirm", val: "0", handler: s.handleInvoiceConfirm},
+		{name: "confirm negative year", field: "year", path: "/neighbors/1/invoice/confirm", val: "-1", handler: s.handleInvoiceConfirm},
+		{name: "issue zero year_id", field: "year_id", path: "/neighbors/1/invoice", val: "0", handler: s.handleInvoiceIssue},
+		{name: "issue negative year_id", field: "year_id", path: "/neighbors/1/invoice", val: "-5", handler: s.handleInvoiceIssue},
+		{name: "storno zero year_id", field: "year_id", path: "/neighbors/1/invoice/storno", val: "0", handler: s.handleInvoiceStorno},
+		{name: "storno negative year_id", field: "year_id", path: "/neighbors/1/invoice/storno", val: "-10", handler: s.handleInvoiceStorno},
+		{name: "gutschrift zero year_id", field: "year_id", path: "/neighbors/1/invoice/gutschrift", val: "0", handler: s.handleInvoiceGutschrift},
+		{name: "gutschrift negative year_id", field: "year_id", path: "/neighbors/1/invoice/gutschrift", val: "-12", handler: s.handleInvoiceGutschrift},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			form := url.Values{tc.field: {tc.val}}
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.SetPathValue("id", "1")
+			rr := httptest.NewRecorder()
+
+			tc.handler(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+			}
+		})
+	}
+}
+
 // TestSavedViewQueryLimit rejects oversized filters before parsing or store access.
 func TestSavedViewQueryLimit(t *testing.T) {
 	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
