@@ -18,7 +18,8 @@ func TestSystemStatusIntegration(t *testing.T) {
 	}
 	page := e.get("/admin/system")
 	for _, want := range []string{"Systemzustand", "Betrieb", "Datenbank", "Sicherung", "E-Mail", "Anmeldung",
-		"PostgreSQL", "Migrationen", latest, "ohne HTTPS übertragen", "Zweiter Faktor"} {
+		"PostgreSQL", "Migrationen", latest, "ohne HTTPS übertragen", "Zweiter Faktor",
+		"Protokoll", "Prüfkette Geschäftsvorfälle", "Prüfkette Anmeldung und Betrieb"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("system page lacks %q", want)
 		}

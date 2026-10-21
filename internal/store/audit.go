@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 	"time"
 
@@ -70,6 +71,11 @@ var shortLivedAuditActions = []string{
 // reverts on COMMIT/ROLLBACK, so the opt-in can never leak to another query sharing
 // the same pooled connection — this deliberate retention job is the only path that
 // can delete an audit row.
+//
+// Sealed rows (0091) are removed per chain as a prefix: everything before the
+// first row still inside its window, so sealing order and created_at may differ
+// by seconds without punching a hole into the chain. The hash the removed
+// prefix ends on becomes the chain's anchor for the verification.
 func (s *Store) PurgeAuditLog(ctx context.Context, shortCutoff, longCutoff time.Time) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -89,16 +95,66 @@ func (s *Store) PurgeAuditLog(ctx context.Context, shortCutoff, longCutoff time.
 	// [a-z_] identifiers; this removes every other escaping footgun.) Passing one
 	// text parameter keeps it portable across the database/sql driver without a
 	// lib/pq dependency.
+	// Same lock order as sealing, so the two never deadlock.
+	lastSeq := map[string]int64{}
+	heads, err := tx.QueryContext(ctx, `SELECT chain, last_seq FROM audit_chain_heads ORDER BY chain FOR UPDATE`)
+	if err != nil {
+		return 0, err
+	}
+	for heads.Next() {
+		var chain string
+		var seq int64
+		if err := heads.Scan(&chain, &seq); err != nil {
+			_ = heads.Close()
+			return 0, err
+		}
+		lastSeq[chain] = seq
+	}
+	if err := heads.Close(); err != nil {
+		return 0, err
+	}
+	var n int64
+	for chain, cutoff := range map[string]time.Time{"short": shortCutoff, "long": longCutoff} {
+		var keepFrom int64
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COALESCE(min(chain_seq), $2 + 1) FROM audit_log WHERE chain = $1 AND created_at >= $3`,
+			chain, lastSeq[chain], cutoff).Scan(&keepFrom); err != nil {
+			return 0, err
+		}
+		var anchor []byte
+		err := tx.QueryRowContext(ctx, `SELECT row_hash FROM audit_log WHERE chain = $1 AND chain_seq = $2`,
+			chain, keepFrom-1).Scan(&anchor)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue // nothing sealed has expired since the last purge
+		}
+		if err != nil {
+			return 0, err
+		}
+		res, err := tx.ExecContext(ctx, `DELETE FROM audit_log WHERE chain = $1 AND chain_seq < $2`, chain, keepFrom)
+		if err != nil {
+			return 0, err
+		}
+		deleted, _ := res.RowsAffected()
+		n += deleted
+		if _, err := tx.ExecContext(ctx, `UPDATE audit_chain_heads SET anchor_seq = $2, anchor_hash = $3 WHERE chain = $1`,
+			chain, keepFrom-1, anchor); err != nil {
+			return 0, err
+		}
+	}
+
+	// Rows the sealing has not reached yet keep the per-action rule.
 	shortCSV := strings.Join(shortLivedAuditActions, ",")
 	res, err := tx.ExecContext(ctx, `
 		DELETE FROM audit_log
-		 WHERE (action = ANY(string_to_array($1, ',')) AND created_at < $2)
-		    OR (NOT (action = ANY(string_to_array($1, ','))) AND created_at < $3)`,
+		 WHERE row_hash IS NULL
+		   AND ((action = ANY(string_to_array($1, ',')) AND created_at < $2)
+		    OR (NOT (action = ANY(string_to_array($1, ','))) AND created_at < $3))`,
 		shortCSV, shortCutoff, longCutoff)
 	if err != nil {
 		return 0, err
 	}
-	n, _ := res.RowsAffected()
+	unsealed, _ := res.RowsAffected()
+	n += unsealed
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}

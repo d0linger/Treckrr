@@ -142,6 +142,9 @@ func (s *Service) RehearseRestore(ctx context.Context, enc []byte) (Rehearsal, e
 		}
 		rep.Rows += n
 	}
+	if err := s.recordAuditHeads(ctx, probe); err != nil {
+		return rep, fmt.Errorf("rehearsal: audit chain heads: %w", err)
+	}
 	rep.Duration = time.Since(start)
 	rep.At = time.Now()
 	if err := s.recordRehearsal(rep); err != nil {
@@ -315,4 +318,39 @@ func withDatabase(rawURL, dbName string) string {
 	params = append(params, databaseURIParam{raw: "dbname=" + url.PathEscape(dbName)})
 	u.params = params
 	return u.String()
+}
+
+// recordAuditHeads copies the audit chain heads of the restored backup into
+// the live database (0091). The verification then checks that the live chain
+// still contains every head a backup once held, so a history rewritten after
+// a backup was taken is detected even if all hashes were recomputed. Backups
+// from before the chain existed have no heads and are skipped.
+func (s *Service) recordAuditHeads(ctx context.Context, probe *sql.DB) error {
+	if s.db == nil {
+		return nil
+	}
+	var present bool
+	if err := probe.QueryRowContext(ctx, `SELECT to_regclass('audit_chain_heads') IS NOT NULL`).Scan(&present); err != nil || !present {
+		return err
+	}
+	rows, err := probe.QueryContext(ctx, `SELECT chain, last_seq, last_hash FROM audit_chain_heads WHERE last_seq > 0`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	source := "Restore-Probe " + time.Now().Format("02.01.2006 15:04")
+	for rows.Next() {
+		var chain string
+		var seq int64
+		var hash []byte
+		if err := rows.Scan(&chain, &seq, &hash); err != nil {
+			return err
+		}
+		if _, err := s.db.ExecContext(ctx, `
+			INSERT INTO audit_chain_backup_heads (chain, seq, hash, source) VALUES ($1, $2, $3, $4)
+			ON CONFLICT (chain, seq, hash) DO NOTHING`, chain, seq, hash, source); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
 }

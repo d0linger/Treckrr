@@ -427,6 +427,14 @@ func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store, srv *se
 					slog.Error("purge sent mail", "err", err)
 				}
 			})
+			// Seal new audit rows into the hash chain before the purge, so the
+			// purge only ever removes sealed prefixes (0091).
+			maintenanceTask(taskCtx, time.Minute, func(bg context.Context) {
+				if _, err := st.SealAuditLog(bg); err != nil {
+					metrics.Inc(metrics.MaintenanceFails)
+					slog.Error("seal audit log", "err", err)
+				}
+			})
 			maintenanceTask(taskCtx, time.Minute, func(bg context.Context) {
 				shortCutoff, longCutoff := auditRetentionCutoffs(time.Now())
 				if n, err := st.PurgeAuditLog(bg, shortCutoff, longCutoff); err != nil {
@@ -435,6 +443,22 @@ func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store, srv *se
 				} else if n > 0 {
 					metrics.Add(metrics.AuditPurged, n)
 					slog.Info("audit log purged", "count", n)
+				}
+			})
+			// Nightly-ish: recompute the whole chain once it is a day old. A
+			// failure raises an admin notification on the next refresh.
+			maintenanceTask(taskCtx, 5*time.Minute, func(bg context.Context) {
+				due, err := st.AuditChainVerifyDue(bg, 24*time.Hour)
+				if err != nil || !due {
+					return
+				}
+				if report, err := st.VerifyAuditChain(bg); err != nil {
+					metrics.Inc(metrics.MaintenanceFails)
+					slog.Error("verify audit chain", "err", err)
+				} else if !report.OK() {
+					slog.Error("audit chain verification failed", "problems", report.Problems)
+				} else {
+					slog.Info("audit chain verified", "rows", report.Checked)
 				}
 			})
 		})

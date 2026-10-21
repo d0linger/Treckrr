@@ -28,6 +28,11 @@ func (s *Server) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 	backupView := s.backupHealth()
 	backupState := s.currentBackupStatus()
 	policy := s.securityPolicy(r.Context())
+	chainHeads, err := s.store.AuditChainHeads(r.Context())
+	if err != nil {
+		s.serverError(w, "system status: audit chain", err)
+		return
+	}
 	updates := s.updateStatus()
 	pool := s.store.DBStats()
 
@@ -112,6 +117,26 @@ func (s *Server) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 		add("Anmeldung", "Metriken", "aus", "ok", "")
 	}
 
+	for _, h := range chainHeads {
+		label := "Prüfkette Geschäftsvorfälle"
+		if h.Chain == "short" {
+			label = "Prüfkette Anmeldung und Betrieb"
+		}
+		value, tone := itoa64(h.LastSeq)+" Einträge versiegelt", "warn"
+		if h.LastSeq > 0 {
+			value += " · Stand " + h.ShortHash() + "…"
+		}
+		switch {
+		case h.VerifiedAt == nil:
+			value += " · noch nicht geprüft"
+		case h.VerifiedOK != nil && !*h.VerifiedOK:
+			value, tone = "VERLETZT: "+h.VerifyNote, "bad"
+		default:
+			value, tone = value+" · geprüft "+humanAgeDE(*h.VerifiedAt), "ok"
+		}
+		add("Protokoll", label, value, tone, "/admin/audit")
+	}
+
 	worst := "ok"
 	for _, c := range checks {
 		if c.Tone == "bad" || (c.Tone == "warn" && worst == "ok") {
@@ -120,7 +145,7 @@ func (s *Server) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	data := s.newPage(w, r, "Systemzustand", "system")
 	data["Checks"] = checks
-	data["Areas"] = []string{"Betrieb", "Datenbank", "Sicherung", "E-Mail", "Anmeldung"}
+	data["Areas"] = []string{"Betrieb", "Datenbank", "Sicherung", "E-Mail", "Anmeldung", "Protokoll"}
 	data["Overall"] = worst
 	data["CheckedAt"] = time.Now()
 	s.render(w, r, "system_status", data)
