@@ -108,6 +108,7 @@ func (s *Server) registerBookingRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcPreview))
 	mux.Handle("POST /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcApply))
 	mux.Handle("GET /years/{id}/recalc", s.auth(s.handleYearRecalcPreview))
+	mux.Handle("GET /years/{id}/bericht.pdf", s.auth(s.handleAnnualReport))
 	mux.Handle("POST /years/{id}/recalc", s.auth(s.handleYearRecalcApply))
 	mux.Handle("GET /buchungen", s.auth(s.handleEntryList))
 	mux.Handle("POST /buchungen/bulk", s.auth(s.handleEntryBulk))

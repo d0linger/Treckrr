@@ -341,7 +341,7 @@ func (s *Server) handleAccountingCSV(w http.ResponseWriter, r *http.Request) {
 // writeJournalCSV writes the journal in the export CSV dialect (BOM + ';').
 func writeJournalCSV(w *csv.Writer, rows []store.JournalRow) {
 	_ = w.Write([]string{"Nummer", "Datum", "Art", "Status", "Nachbar", "Netto (€)", "USt-Satz (%)", "USt (€)", "Brutto (€)"})
-	kinds := map[string]string{"invoice": "Rechnung", "storno": "Storno", "gutschrift": "Gutschrift", "anzahlung": "Abschlag"}
+	kinds := documentKindLabels
 	status := map[string]string{"issued": "ausgestellt", "canceled": "storniert"}
 	for _, j := range rows {
 		// csvSafe on the free-text columns, like every other export: a neighbor
