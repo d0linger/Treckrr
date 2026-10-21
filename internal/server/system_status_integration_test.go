@@ -12,9 +12,13 @@ import (
 // configuration warnings this test server deserves (plain-HTTP cookies) show.
 func TestSystemStatusIntegration(t *testing.T) {
 	e := newItEnv(t)
+	var latest string
+	if err := e.pool.QueryRowContext(e.ctx, `SELECT max(name) FROM schema_migrations`).Scan(&latest); err != nil {
+		t.Fatal(err)
+	}
 	page := e.get("/admin/system")
 	for _, want := range []string{"Systemzustand", "Betrieb", "Datenbank", "Sicherung", "E-Mail", "Anmeldung",
-		"PostgreSQL", "Migrationen", "0086_update_notifications.sql", "ohne HTTPS übertragen", "Zweiter Faktor"} {
+		"PostgreSQL", "Migrationen", latest, "ohne HTTPS übertragen", "Zweiter Faktor"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("system page lacks %q", want)
 		}
