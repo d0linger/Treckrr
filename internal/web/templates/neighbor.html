@@ -65,6 +65,25 @@
 		<ul class="statement-feedback">{{range .}}<li><strong>{{if eq .Status "confirmed"}}Bestätigt{{else}}Einwand{{end}}</strong> <span class="muted small">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>{{with .LineLabel}}<br><span class="small">{{.}}</span>{{end}}{{if .LineAmount.Valid}} <span class="small">· {{money .LineAmount.Decimal}}</span>{{end}}{{with .Message}}<br>{{.}}{{end}}</li>{{end}}</ul>{{end}}
 	</details>
 	{{end}}
+	{{if or .User.CanWrite .PriceTerms}}
+	<details class="card disclosure" id="konditionen">
+		<summary>Preisvereinbarung {{template "help-link" "preisvereinbarung"}}{{with .PriceTermToday}} <span class="muted small">heute: {{num .DiscountPct}} % {{.Label}}</span>{{end}}</summary>
+		<p class="muted small">Ein vereinbarter Rabatt auf eigene Maschinenstunden aus dem Katalog an {{.Neighbor.Name}}. Er gilt für neue und bearbeitete Buchungen im Gültigkeitszeitraum und steht auf Beleg und Rechnung; offene Buchungen ändern sich erst über „Neu berechnen“. Mannstunden, Mengen und Gegenleistungen bleiben unverändert.</p>
+		{{if .PriceTerms}}<ul class="action-list">{{range .PriceTerms}}<li class="btnrow"><span><strong>{{num .DiscountPct}} % {{.Label}}</strong> <span class="muted small">ab {{date .ValidFrom}}{{with .ValidTo}} bis {{date .}}{{end}}</span></span>
+			{{if $.User.CanWrite}}<form method="post" action="/neighbors/{{$.Neighbor.ID}}/price-terms/delete?year={{$.Year.ID}}" data-confirm-danger data-confirm="Preisvereinbarung {{.Label}} löschen? Gebuchte Leistungen behalten ihren Preis bis zur Neuberechnung."><input type="hidden" name="term_id" value="{{.ID}}"><button class="btn btn--ghost btn--sm" type="submit">Löschen</button></form>{{end}}</li>{{end}}</ul>{{end}}
+		{{if .User.CanWrite}}{{if not .Neighbor.Anonymized}}
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/price-terms?year={{.Year.ID}}" class="form" data-price-term-form>
+			<div class="form__grid">
+				<label class="field"><span>Bezeichnung</span><input class="input" name="label" maxlength="100" required placeholder="z. B. Familienrabatt"></label>
+				<label class="field"><span>Rabatt (%)</span><input class="input" type="number" name="discount_pct" min="0.01" max="99.99" step="0.01" inputmode="decimal" required></label>
+				<label class="field"><span>Gültig ab</span><input class="input" type="date" name="valid_from" required></label>
+				<label class="field"><span>Gültig bis (optional)</span><input class="input" type="date" name="valid_to"></label>
+			</div>
+			<div class="btnrow"><button class="btn btn--ghost" type="submit">Preisvereinbarung speichern</button></div>
+		</form>
+		{{end}}{{end}}
+	</details>
+	{{end}}
 	{{end}}
 
 	{{if .Completed}}

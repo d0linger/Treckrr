@@ -100,6 +100,8 @@ func (s *Server) registerBookingRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /installments/{id}/delete", s.auth(s.handleInstallmentDelete))
 	mux.Handle("POST /neighbors/{id}/mannstunden", s.auth(s.handleMannstundenAdd))
 	mux.Handle("POST /neighbors/{id}/anfahrt", s.auth(s.handleAnfahrtAdd))
+	mux.Handle("POST /neighbors/{id}/price-terms", s.auth(s.handlePriceTermCreate))
+	mux.Handle("POST /neighbors/{id}/price-terms/delete", s.auth(s.handlePriceTermDelete))
 	mux.Handle("GET /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcPreview))
 	mux.Handle("POST /neighbors/{id}/recalc", s.auth(s.handleNeighborRecalcApply))
 	mux.Handle("GET /years/{id}/recalc", s.auth(s.handleYearRecalcPreview))

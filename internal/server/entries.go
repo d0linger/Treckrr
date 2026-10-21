@@ -290,6 +290,10 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	view.BookingLocked = year.Completed()
 	view.BookingAction = "/entries"
 	view.bind(data)
+	if err := s.priceTermsData(r.Context(), data, neighbor.ID); err != nil {
+		s.serverError(w, "neighbor: price terms", err)
+		return
+	}
 	if view.Section == "overview" {
 		if err := s.statementShareData(w, r, data, neighbor.ID, year.ID); err != nil {
 			s.serverError(w, "neighbor: statement links", err)
@@ -659,6 +663,10 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	if err := s.applyNeighborPriceTerm(r.Context(), entry, machineIDs, neighborID); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 	applyBillingRule(entry, machineIDs, year.Base)
 	entry.NeighborID = neighborID
 	entry.BillingYearID = year.ID
@@ -981,6 +989,10 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.applyResolvedFuelAdjustment(r.Context(), catalogBaseID, entry, machineIDs); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	if err := s.applyNeighborPriceTerm(r.Context(), entry, machineIDs, existing.NeighborID); err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
@@ -1919,6 +1931,10 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 	if err != nil {
 		return 0, 0, err
 	}
+	terms, err := s.store.ListPriceTerms(r.Context(), neighborID)
+	if err != nil {
+		return 0, 0, err
+	}
 	// The same rig repeats across the rows of one submit — that is what quick
 	// entry is FOR — so each distinct Gespann is resolved once (5 queries) and
 	// reused, instead of 5 queries per row (a 100-row submit was ~500 SELECTs).
@@ -1969,6 +1985,8 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 		entry.Hours = row.hours
 		entry.Cost = calc.Cost(row.hours, entry.HourlyRate)
 		entry.Quantity, entry.UnitPrice = decimal.Decimal{}, decimal.Decimal{}
+		entry.Date = row.date
+		applyPriceTerm(&entry, rig.machineIDs, models.EffectivePriceTerm(terms, row.date))
 		applyBillingRule(&entry, rig.machineIDs, year.Base)
 		entry.Date = row.date
 		entry.NeighborID = neighborID

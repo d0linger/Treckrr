@@ -48,6 +48,21 @@
 		return milli / 1000;
 	}
 
+	// Mirrors applyPriceTerm: the neighbor's standing term effective on the
+	// booking date discounts own catalog machine rates, never incoming work.
+	var priceTerms = [];
+	try { priceTerms = JSON.parse(form.dataset.priceTerms || "[]"); } catch (_) { priceTerms = []; }
+	function effectivePriceTerm() {
+		var direction = form.querySelector('[name="booking_direction"]:checked');
+		if (direction && direction.value !== "out") return null;
+		var date = (form.querySelector('[name="entry_date"]') || {}).value || "";
+		var selected = null;
+		priceTerms.forEach(function (term) {
+			if (term.from <= date && (!term.to || date <= term.to) && (!selected || term.from > selected.from)) selected = term;
+		});
+		return selected;
+	}
+
 	function decVal(el) { return parseFloat((((el && el.value) || "0")).replace(",", ".")) || 0; }
 	function isHours() {
 		var u = ((unitEl && unitEl.value) || "").trim();
@@ -194,10 +209,12 @@
 		}
 		var adjustment = effectiveAdjustment();
 		var rate = round2(round2(sel.ps * sel.loadCost) + machineRates(sel.machineIds) + (adjustment ? adjustment.amount : 0));
+		var term = effectivePriceTerm();
+		if (term) rate = Math.round(rate * (100 - term.pct)) / 100;
 		rateEl.textContent = fmt(rate) + " / h";
 		var hours = billedHours(parseFloat((hoursEl.value || "0").replace(",", ".")));
 		costEl.textContent = hours > 0 ? fmt(round2(hours * rate)) : "–";
-		if (unified) unified.update(hours > 0 ? round2(hours * rate) : null, rate, adjustment, hours > 0 ? hours : null);
+		if (unified) unified.update(hours > 0 ? round2(hours * rate) : null, rate, adjustment, hours > 0 ? hours : null, term);
 	}
 
 	function applyMode() {

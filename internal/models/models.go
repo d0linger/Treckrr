@@ -70,6 +70,9 @@ type RecurTemplate struct {
 	HourlyRate          decimal.Decimal `json:"hourly_rate"`
 	FuelAdjustmentLabel string          `json:"fuel_adjustment_label,omitempty"`
 	FuelAdjustmentPerH  decimal.Decimal `json:"fuel_adjustment_per_h,omitempty"`
+	PriceTermLabel      string          `json:"price_term_label,omitempty"`
+	PriceTermPct        decimal.Decimal `json:"price_term_pct,omitempty"`
+	PriceTermPerH       decimal.Decimal `json:"price_term_per_h,omitempty"`
 	Cost                decimal.Decimal `json:"cost"`
 	GespannID           *int64          `json:"gespann_id,omitempty"`
 	TractorID           *int64          `json:"tractor_id,omitempty"`
@@ -372,7 +375,13 @@ type Entry struct {
 	// operating-cost addition used when a catalog equipment rate was booked.
 	FuelAdjustmentLabel string
 	FuelAdjustmentPerH  decimal.Decimal
-	Cost                decimal.Decimal
+	// PriceTermLabel, PriceTermPct and PriceTermPerH snapshot the neighbor's
+	// standing price term (if any) applied to a catalog machine rate: HourlyRate
+	// is already discounted, PriceTermPerH is what the term took off per hour.
+	PriceTermLabel string
+	PriceTermPct   decimal.Decimal
+	PriceTermPerH  decimal.Decimal
+	Cost           decimal.Decimal
 	// Unit/Quantity/UnitPrice generalize billing beyond hours: cost = quantity ×
 	// unit price. For hour bookings Unit is "h", Quantity == Hours and UnitPrice
 	// == HourlyRate. Other units: "ha", "Ballen", "m3", "Fuhre", "t" (or custom).

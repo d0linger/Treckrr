@@ -235,6 +235,13 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			if err := s.applyResolvedFuelAdjustment(r.Context(), year.Base.ID, resolved, ids); err != nil {
 				return bookingDraft{}, "", err
 			}
+			// A standing price term is what I grant the neighbor; work they
+			// bill me keeps the catalog rate.
+			if direction == "out" {
+				if err := s.applyNeighborPriceTerm(r.Context(), resolved, ids, main.NeighborID); err != nil {
+					return bookingDraft{}, "", err
+				}
+			}
 			resolved.NeighborID, resolved.BillingYearID = main.NeighborID, main.BillingYearID
 			resolved.IdempotencyKey, resolved.RequestFingerprint = main.IdempotencyKey, main.RequestFingerprint
 			main, machines = resolved, ids

@@ -23,6 +23,7 @@
 			</div>
 			<div class="rcard__grid">
 				<span class="rcard__k">Stunden</span><span class="rcard__v">{{if .NewHours.Equal .Hours}}{{num .Hours}} h{{else}}<span class="old">{{num .Hours}} h</span> <span class="arr">→</span> <strong>{{num .NewHours}} h</strong>{{end}}</span>
+				{{if .PriceTermPct.IsPositive}}<span class="rcard__k">Vereinbarung</span><span class="rcard__v">abzgl. {{num .PriceTermPct}} % {{.PriceTermLabel}}</span>{{end}}
 				<span class="rcard__k">Satz</span><span class="rcard__v"><span class="old">{{money .OldRate}}</span> <span class="arr">→</span> <strong>{{money .NewRate}}</strong></span>
 				<span class="rcard__k">Kosten</span><span class="rcard__v"><span class="old">{{money .OldCost}}</span> <span class="arr">→</span> <strong>{{money .NewCost}}</strong></span>
 			</div>

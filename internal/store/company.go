@@ -327,6 +327,9 @@ func invoiceContentFromEntries(
 		if label == "" {
 			label = "Sonstige"
 		}
+		if note := models.PriceTermNote(e.PriceTermLabel, e.PriceTermPct); note != "" {
+			label += " (" + note + ")"
+		}
 		qty, up := e.Hours, e.HourlyRate
 		if e.Unit != "" && e.Unit != "h" {
 			qty, up = e.Quantity, e.UnitPrice

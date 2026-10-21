@@ -25,7 +25,8 @@ var (
 // values of its billing year's basis. Changed covers money or adjustment
 // snapshot changes; unrelated label reordering alone does not count. NewHours
 // is Hours billed by the basis' increment and minimum (equal to Hours without a
-// rule or when the booking already satisfies it).
+// rule or when the booking already satisfies it). PriceTerm* is the neighbor's
+// standing price term effective on the booking date, already in NewRate.
 type RecalcRow struct {
 	EntryID             int64
 	Date                time.Time
@@ -40,6 +41,9 @@ type RecalcRow struct {
 	NewCost             decimal.Decimal
 	FuelAdjustmentLabel string
 	FuelAdjustmentPerH  decimal.Decimal
+	PriceTermLabel      string
+	PriceTermPct        decimal.Decimal
+	PriceTermPerH       decimal.Decimal
 	TractorLabel        string
 	LoadLabel           string
 	MachineLabels       string
@@ -68,6 +72,15 @@ func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int
 		return nil, err
 	}
 	adjustments, err := s.ListFuelAdjustments(ctx, year.BaseID)
+	if err != nil {
+		return nil, err
+	}
+	terms := map[int64][]models.PriceTerm{}
+	if neighborID != nil {
+		terms[*neighborID], err = s.ListPriceTerms(ctx, *neighborID)
+	} else {
+		terms, err = s.PriceTermsByNeighbor(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +167,8 @@ func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int
 				adjustmentAmount = adjustment.AmountPerH
 				adjustmentLabel = adjustment.Label
 			}
-			rate := calc.NewAdjustedRateBreakdown(t, l, ms, adjustmentAmount).HourlyRate
+			rate, term := applyPriceTermRate(calc.NewAdjustedRateBreakdown(t, l, ms, adjustmentAmount).HourlyRate,
+				models.EffectivePriceTerm(terms[e.NeighborID], e.Date))
 			hours := e.Hours
 			if year.Base != nil {
 				hours = year.Base.BilledHours(hours)
@@ -162,6 +176,7 @@ func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int
 			cost := calc.Cost(hours, rate)
 			row.NewHours, row.NewRate, row.NewCost = hours, rate, cost
 			row.FuelAdjustmentLabel, row.FuelAdjustmentPerH = adjustmentLabel, adjustmentAmount
+			row.PriceTermLabel, row.PriceTermPct, row.PriceTermPerH = term.label, term.pct, term.perH
 			if t != nil && l != nil {
 				row.TractorLabel, row.LoadLabel = t.Label(), l.Name
 			} else {
@@ -169,7 +184,8 @@ func (s *Store) RecalcPreview(ctx context.Context, yearID int64, neighborID *int
 			}
 			row.MachineLabels = strings.Join(mnames, ", ")
 			row.Changed = !rate.Equal(e.HourlyRate) || !cost.Equal(e.Cost) || !hours.Equal(e.Hours) ||
-				adjustmentLabel != e.FuelAdjustmentLabel || !adjustmentAmount.Equal(e.FuelAdjustmentPerH)
+				adjustmentLabel != e.FuelAdjustmentLabel || !adjustmentAmount.Equal(e.FuelAdjustmentPerH) ||
+				term.label != e.PriceTermLabel || !term.pct.Equal(e.PriceTermPct) || !term.perH.Equal(e.PriceTermPerH)
 		}
 		out = append(out, row)
 	}
@@ -319,10 +335,12 @@ func (s *Store) ApplyRecalc(ctx context.Context, yearID int64, neighborID *int64
 			       unit_price = CASE WHEN unit='h' THEN $1 ELSE unit_price END,
 			       quantity = CASE WHEN unit='h' AND quantity=hours THEN $11 ELSE quantity END,
 			       hours = $11,
+			       price_term_label=$13, price_term_pct=$14, price_term_per_h=$15,
 			       priced_at = now()
 			 WHERE id=$8 AND hourly_rate=$9 AND cost=$10 AND hours=$12`,
 			r.NewRate, r.NewCost, r.TractorLabel, r.LoadLabel, r.MachineLabels,
-			r.FuelAdjustmentLabel, r.FuelAdjustmentPerH, r.EntryID, r.OldRate, r.OldCost, r.NewHours, r.Hours)
+			r.FuelAdjustmentLabel, r.FuelAdjustmentPerH, r.EntryID, r.OldRate, r.OldCost, r.NewHours, r.Hours,
+			r.PriceTermLabel, r.PriceTermPct, r.PriceTermPerH)
 		if e != nil {
 			return 0, oldTotal, newTotal, e
 		}

@@ -3,7 +3,7 @@
 {{$v := or .BookingValues (dict)}}{{$kind := or (index $v "booking_kind") "equipment"}}{{$direction := or (index $v "booking_direction") "out"}}{{$mode := or (index $v "mode") "gespann"}}{{$unit := index $v "unit"}}
 <form method="post" action="{{or .BookingAction "/entries"}}" class="card form" data-entry-form data-unified-booking
 	{{if .BookingEdit}}data-entry-edit{{else}}data-entry-create{{if and (not .BookingCopy) (not .BookingPrefilled)}} data-entry-defaults{{end}}{{end}}
- data-pricing-url="/api/base/{{.Base.ID}}/pricing"{{if .Base.HasBillingRule}} data-billing-increment="{{numInput .Base.BillingIncrementH}}" data-billing-minimum="{{numInput .Base.MinimumH}}"{{end}} data-neighbor-name="{{.Neighbor.Name}}" {{if .BookingLocked}}data-booking-locked{{end}}>
+ data-pricing-url="/api/base/{{.Base.ID}}/pricing"{{with .PriceTermsJSON}} data-price-terms="{{.}}"{{end}}{{if .Base.HasBillingRule}} data-billing-increment="{{numInput .Base.BillingIncrementH}}" data-billing-minimum="{{numInput .Base.MinimumH}}"{{end}} data-neighbor-name="{{.Neighbor.Name}}" {{if .BookingLocked}}data-booking-locked{{end}}>
 	<input type="hidden" name="booking_form_version" value="{{or .BookingFormVersion "3"}}">
 	<input type="hidden" name="year_id" value="{{.Year.ID}}">
 	<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
@@ -60,6 +60,7 @@
 		<div class="rate-preview" data-rate-preview data-booking-catalog-rate><span class="rate-preview__main"><span class="rate-preview__lbl">Maschinenkosten</span><strong class="rate-preview__cost" data-cost>–</strong></span><span class="rate-preview__rate">Satz <strong data-rate>–</strong></span></div>
 	</div>
 	{{if .Base.HasBillingRule}}<p class="muted small" data-booking-catalog-rate data-billing-rule-note>Abrechnung laut Grundlage: Maschinenstunden {{if .Base.BillingIncrementH.IsPositive}}auf {{num .Base.BillingIncrementH}} h aufgerundet{{end}}{{if and .Base.BillingIncrementH.IsPositive .Base.MinimumH.IsPositive}}, {{end}}{{if .Base.MinimumH.IsPositive}}mindestens {{num .Base.MinimumH}} h je Einsatz{{end}}. Mannstunden bleiben genau.</p>{{end}}
+	{{with .PriceTermToday}}<p class="muted small" data-booking-catalog-rate data-price-term-note>Preisvereinbarung mit {{$.Neighbor.Name}}: eigene Maschinenstunden abzgl. {{num .DiscountPct}} % {{.Label}} (maßgeblich ist das Buchungsdatum).</p>{{end}}
 	<details class="disclosure form-details time-helper" data-booking-panel="equipment:out equipment:in labor:out labor:in" data-time-helper>
 		<summary>Zeit erfassen <span class="muted small">Von – Bis oder Stoppuhr</span></summary>
 		<div class="time-helper__grid">

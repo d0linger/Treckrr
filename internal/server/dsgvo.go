@@ -21,6 +21,7 @@ type dsgvoExport struct {
 	Notice             string                          `json:"notice"`
 	Subject            dsgvoSubject                    `json:"subject"`
 	LegacyEquipment    []models.NeighborEquipment      `json:"neighbor_equipment,omitempty"`
+	PriceTerms         []dsgvoPriceTerm                `json:"price_terms,omitempty"`
 	BillingYears       []dsgvoYear                     `json:"billing_years"`
 	Recurring          []store.NeighborRecurringExport `json:"recurring_rules"`
 	Mail               []store.NeighborMailExport      `json:"mail_outbox"`
@@ -132,6 +133,14 @@ type dsgvoInstallment struct {
 	Note   string          `json:"note,omitempty"`
 }
 
+type dsgvoPriceTerm struct {
+	Label       string          `json:"label"`
+	DiscountPct decimal.Decimal `json:"discount_pct"`
+	ValidFrom   time.Time       `json:"valid_from"`
+	ValidTo     *time.Time      `json:"valid_to,omitempty"`
+	Created     time.Time       `json:"created"`
+}
+
 type dsgvoEntry struct {
 	ID         int64           `json:"id"`
 	Date       time.Time       `json:"date"`
@@ -146,6 +155,7 @@ type dsgvoEntry struct {
 	Note       string          `json:"note,omitempty"`
 	Voided     bool            `json:"voided"`
 	VoidReason string          `json:"void_reason,omitempty"`
+	PriceTerm  string          `json:"price_term,omitempty"`
 }
 
 type dsgvoInvoice struct {
@@ -171,7 +181,7 @@ func dsgvoEntryFrom(e models.Entry) dsgvoEntry {
 		ID: e.ID, Date: e.Date, Task: e.TaskLabel, Tractor: e.TractorLabel, Load: e.LoadLabel,
 		Machines: e.MachineLabels, Unit: e.Unit, Quantity: e.Quantity,
 		UnitPrice: e.UnitPrice, Cost: e.Cost, Note: e.Note,
-		Voided: e.Voided, VoidReason: e.VoidReason,
+		Voided: e.Voided, VoidReason: e.VoidReason, PriceTerm: models.PriceTermNote(e.PriceTermLabel, e.PriceTermPct),
 	}
 }
 
@@ -222,6 +232,16 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
+	}
+	terms, err := s.store.ListPriceTerms(r.Context(), n.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	for _, t := range terms {
+		out.PriceTerms = append(out.PriceTerms, dsgvoPriceTerm{
+			Label: t.Label, DiscountPct: t.DiscountPct, ValidFrom: t.ValidFrom, ValidTo: t.ValidTo, Created: t.Created,
+		})
 	}
 	out.Mail, err = s.store.ListNeighborMailExport(r.Context(), n.ID)
 	if err != nil {

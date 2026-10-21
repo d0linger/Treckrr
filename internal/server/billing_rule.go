@@ -19,11 +19,7 @@ import (
 // hourly rate. Person hours, free-text equipment and non-hour units are left
 // alone. It returns the measured hours and whether they changed.
 func applyBillingRule(entry *models.Entry, machineIDs []int64, base *models.PriceBase) (decimal.Decimal, bool) {
-	if entry == nil || base == nil || !base.HasBillingRule() || entry.PersonID != nil ||
-		(entry.Unit != "h" && entry.Unit != "") {
-		return decimal.Zero, false
-	}
-	if entry.GespannID == nil && entry.TractorID == nil && len(machineIDs) == 0 {
+	if base == nil || !base.HasBillingRule() || !catalogMachineHours(entry, machineIDs) {
 		return decimal.Zero, false
 	}
 	measured := entry.Hours

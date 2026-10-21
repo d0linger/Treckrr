@@ -504,3 +504,22 @@ test("the preview bills catalog hours by the basis increment and minimum", async
   await form.locator('[name="hours"]').fill("0.5");
   await expect(form.locator("[data-booking-preview]")).toContainText("0,5 × 30,00 €");
 });
+
+/** Mirrors the neighbor's standing price term: own catalog hours in range are discounted, incoming work is not. */
+test("the preview applies the neighbor price term to own catalog hours only", async ({ page }) => {
+  const form = await mockPage(page, false, [], `data-price-terms='[{"from":"2026-09-01","to":"2026-09-30","pct":10,"label":"Familienrabatt"}]'`);
+  await ownEquipment(form);
+  await expect(form.locator("[data-cost]")).toHaveText("82,80 €");
+  await expect(form.locator("[data-booking-preview]")).toContainText("abzgl. 10 % Familienrabatt");
+  await expect(form.locator("[data-booking-preview]")).toContainText("2 × 41,40 €");
+
+  await form.locator('[name="entry_date"]').fill("2026-10-01");
+  await expect(form.locator("[data-cost]")).toHaveText("92,00 €");
+  await form.locator('[name="entry_date"]').fill("2026-09-13");
+  await expect(form.locator("[data-cost]")).toHaveText("82,80 €");
+
+  await form.locator('[name="booking_direction"][value="in"]').check();
+  await ownEquipment(form);
+  await expect(form.locator("[data-cost]")).toHaveText("92,00 €");
+  await expect(form.locator("[data-booking-preview]")).not.toContainText("Familienrabatt");
+});
