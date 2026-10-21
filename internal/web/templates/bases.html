@@ -9,13 +9,14 @@
 	<div class="list">
 		{{range .BaseViews}}
 		{{$b := .Base}}
-		<div class="card stack stack--tight">
+		<div class="card stack stack--tight" id="grundlage-{{$b.ID}}">
 			<div class="list__row list__row--plain">
 				<div class="list__main">
 					<span class="list__title">{{$b.Year}} — {{$b.Name}}</span>
 					<span class="list__sub">
 						{{if $b.Locked}}{{template "ic-lock"}} gesperrt{{else}}{{template "ic-edit"}} bearbeitbar{{end}}
 						{{if .InUse}} · in Verwendung{{else}} · nicht verwendet{{end}}
+						{{if $b.HasBillingRule}} · {{if $b.BillingIncrementH.IsPositive}}Takt {{num $b.BillingIncrementH}} h{{end}}{{if and $b.BillingIncrementH.IsPositive $b.MinimumH.IsPositive}}, {{end}}{{if $b.MinimumH.IsPositive}}mind. {{num $b.MinimumH}} h{{end}}{{end}}
 					</span>
 				</div>
 			</div>
@@ -28,7 +29,7 @@
 				<a class="btn btn--ghost btn--sm" href="/bases/{{$b.ID}}/preisblatt.pdf">Preisblatt (PDF)</a>
 			</div>
 			{{if $.User.CanWrite}}<details class="disclosure disclosure--plain">
-				<summary>Umbenennen / Sperren / Löschen</summary>
+				<summary>Umbenennen / Abrechnung / Sperren / Löschen</summary>
 				<form method="post" action="/bases/{{$b.ID}}/update" class="form">
 					<div class="form__grid">
 						<label class="field"><span>Name</span>
@@ -38,6 +39,21 @@
 					</div>
 					<div class="btnrow"><button class="btn btn--primary btn--sm" type="submit">Speichern</button></div>
 				</form>
+				{{if not $b.Locked}}
+				<form method="post" action="/bases/{{$b.ID}}/billing-rule" class="form" data-billing-rule-form>
+					<p class="muted small">Maschinenstunden aus dem Katalog im Takt aufrunden und eine Mindestzeit je Einsatz verrechnen {{template "help-link" "abrechnungstakt"}}.
+						Gilt für neue und bearbeitete Buchungen; bestehende Buchungen bleiben unverändert. Leer oder 0 = aus.</p>
+					<div class="form__grid">
+						<label class="field"><span>Abrechnungstakt (h)</span>
+							<input class="input" type="number" name="billing_increment_h" min="0" max="24" step="0.001" inputmode="decimal"
+								value="{{if $b.BillingIncrementH.IsPositive}}{{numInput $b.BillingIncrementH}}{{end}}" placeholder="z. B. 0,25"></label>
+						<label class="field"><span>Mindestzeit je Einsatz (h)</span>
+							<input class="input" type="number" name="minimum_h" min="0" max="24" step="0.001" inputmode="decimal"
+								value="{{if $b.MinimumH.IsPositive}}{{numInput $b.MinimumH}}{{end}}" placeholder="z. B. 1"></label>
+					</div>
+					<div class="btnrow"><button class="btn btn--primary btn--sm" type="submit">Abrechnungsregel speichern</button></div>
+				</form>
+				{{end}}
 				<div class="btnrow">
 					{{if $b.Locked}}
 					<form method="post" action="/bases/{{$b.ID}}/unlock">

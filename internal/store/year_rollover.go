@@ -12,7 +12,7 @@ import (
 func (s *Store) BillingYearByNumber(ctx context.Context, year int) (*models.BillingYear, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT y.id, y.year, y.base_id, y.label, y.status, y.created_at,
-		       b.id, b.year, b.name, b.locked, b.created_at
+		       b.id, b.year, b.name, b.locked, b.created_at, b.billing_increment_h, b.minimum_h
 		  FROM billing_years y JOIN price_bases b ON b.id=y.base_id
 		 WHERE y.year=$1`, year)
 	y, err := scanBillingYear(row)

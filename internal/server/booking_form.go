@@ -269,6 +269,11 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 				return bookingDraft{}, "Bitte den vereinbarten Maschinensatz angeben.", nil
 			}
 		}
+		if mode != "free" && year.Base != nil {
+			// The basis' billing increment and minimum apply to catalog machine
+			// hours only; agreed free-text rates are billed exactly as typed.
+			hours = year.Base.BilledHours(hours)
+		}
 		main.Unit, main.Hours, main.Quantity, main.HourlyRate, main.UnitPrice = "h", hours, hours, rate, rate
 		main.Cost = money.Amount(hours, rate)
 		b.Mode, b.Unit, b.Quantity, b.UnitPrice = mode, "h", hours, rate

@@ -13,6 +13,7 @@ type glossaryTerm struct {
 var glossary = []glossaryTerm{
 	{"bemessungsgrundlage", "Bemessungsgrundlage", "Die gemeinsam vereinbarte Preisliste: Kosten je PS-Stunde für jede Belastungsstufe und Kosten je Meter Arbeitsbreite und Stunde für jede Maschine. Sie gilt ab einem Jahr und kann von mehreren Abrechnungsjahren genutzt werden. Eine gesperrte Grundlage ändert sich nicht mehr."},
 	{"abrechnungsjahr", "Abrechnungsjahr", "Das Jahr, in dem gebucht und abgerechnet wird. Es nutzt eine Bemessungsgrundlage und hat eigene Nachbarn. Ein abgeschlossenes Jahr nimmt keine neuen Buchungen an; Zahlungen bleiben möglich."},
+	{"abrechnungstakt", "Abrechnungstakt und Mindestzeit", "Eine Regel der Bemessungsgrundlage für Maschinenstunden aus dem Katalog: Die Stunden werden auf den Takt aufgerundet (bei 0,25 h werden aus 2,1 h also 2,25 h), und je Einsatz wird mindestens die Mindestzeit verrechnet. Sie gilt für neue und bearbeitete Buchungen; Mannstunden und frei vereinbarte Sätze bleiben genau."},
 	{"belastungsstufe", "Belastungsstufe", "Wie stark der Traktor gefordert ist, zum Beispiel leicht, mittel oder schwer. Der Traktorsatz je Stunde ist PS mal Kosten je PS-Stunde der Stufe."},
 	{"maschinensatz", "Maschinensatz", "Der Stundensatz einer Maschine: Arbeitsbreite in Metern mal Kosten je Meter und Stunde."},
 	{"gespann", "Gespann", "Eine feste Kombination aus Traktor, Belastungsstufe und Maschinen. Sein Stundensatz ist der Traktorsatz plus die Sätze aller Maschinen. Beim Buchen genügt dann die Auswahl des Gespanns."},

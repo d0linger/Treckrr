@@ -659,6 +659,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	applyBillingRule(entry, machineIDs, year.Base)
 	entry.NeighborID = neighborID
 	entry.BillingYearID = year.ID
 	entry.IdempotencyKey = idempotencyKey
@@ -959,6 +960,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var catalogBaseID int64
+	var catalogBase *models.PriceBase
 	if msg == "" {
 		// Edits stay on the year's price basis too, but may keep a tractor or
 		// machine that was deactivated after it was booked (as V2 edits do).
@@ -967,7 +969,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
-		catalogBaseID = year.Base.ID
+		catalogBaseID, catalogBase = year.Base.ID, year.Base
 		if msg, err = s.checkBookingCatalog(r, entry, machineIDs, year.Base.ID, false); err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
@@ -981,6 +983,11 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := s.applyResolvedFuelAdjustment(r.Context(), catalogBaseID, entry, machineIDs); err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
+	}
+	// A synced pair keeps one shared hour value for machine and helper; rounding
+	// it would bill the helper's hours by the machine increment as well.
+	if r.FormValue("sync_pair") != "1" {
+		applyBillingRule(entry, machineIDs, catalogBase)
 	}
 	// Validate the target column before saving either half. Otherwise a four-
 	// decimal labor quantity would save first, then round only machine hours.
@@ -1962,6 +1969,7 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 		entry.Hours = row.hours
 		entry.Cost = calc.Cost(row.hours, entry.HourlyRate)
 		entry.Quantity, entry.UnitPrice = decimal.Decimal{}, decimal.Decimal{}
+		applyBillingRule(&entry, rig.machineIDs, year.Base)
 		entry.Date = row.date
 		entry.NeighborID = neighborID
 		entry.BillingYearID = year.ID

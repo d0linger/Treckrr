@@ -5,7 +5,7 @@ import path from "node:path";
 const web = path.resolve(__dirname, "../../internal/web");
 
 /** Supplies the complete DOM contract required by the shared booking controllers. */
-function fixture(): string {
+function fixture(formAttributes = ""): string {
   const personRow = `<fieldset data-person-row><legend>Person</legend>
     <input type="hidden" name="person_row_id" value="">
     <label data-person-name-field>Name der Person<input name="person_name"></label>
@@ -16,7 +16,7 @@ function fixture(): string {
     <button type="button" data-person-use-rate hidden>Stammsatz übernehmen</button>
     <button type="button" data-person-remove hidden>Person entfernen</button>
   </fieldset>`;
-  const form = `<form method="post" action="/entries" data-entry-form data-entry-create data-entry-defaults data-unified-booking data-balance="72" data-pricing-url="/api/base/1/pricing" data-neighbor-name="E2E Nachbar">
+  const form = `<form method="post" action="/entries" data-entry-form data-entry-create data-entry-defaults data-unified-booking data-balance="72" data-pricing-url="/api/base/1/pricing" data-neighbor-name="E2E Nachbar" ${formAttributes}>
     <input type="hidden" name="csrf_token" value="fixture-csrf"><input type="hidden" name="booking_form_version" value="3">
     <input type="hidden" name="year_id" value="11"><input type="hidden" name="neighbor_id" value="22">
     <fieldset><legend>Wer verrechnet wem?</legend>
@@ -50,11 +50,11 @@ function fixture(): string {
 }
 
 /** Intercepts every request so GUI unit scenarios never reach a real app or database. */
-async function mockPage(page: Page, failedPricing = false, adjustments: Array<{effective_from: string, label: string, amount: number}> = []) {
+async function mockPage(page: Page, failedPricing = false, adjustments: Array<{effective_from: string, label: string, amount: number}> = [], formAttributes = "") {
   page.on("pageerror", error => { throw error; });
   await page.route("**/*", route => {
     const pathname = new URL(route.request().url()).pathname;
-    if (pathname === "/fixture") return route.fulfill({ contentType: "text/html", body: fixture() });
+    if (pathname === "/fixture") return route.fulfill({ contentType: "text/html", body: fixture(formAttributes) });
     if (pathname.startsWith("/static/js/") || pathname === "/static/css/app.css") {
       return route.fulfill({ contentType: pathname.endsWith(".css") ? "text/css" : "application/javascript", body: readFileSync(path.join(web, pathname), "utf8") });
     }
@@ -483,4 +483,24 @@ test("without JavaScript a fixed counterclaim still posts its native fields", as
     expect(submissions[0].get("booking_direction")).toBe("in");
     expect(submissions[0].get("amount")).toBe("53");
   } finally { await context.close(); }
+});
+
+/** Mirrors the basis' billing rule: catalog hours round up and floor at the minimum, free rates stay exact. */
+test("the preview bills catalog hours by the basis increment and minimum", async ({ page }) => {
+  const form = await mockPage(page, false, [], 'data-billing-increment="0.25" data-billing-minimum="1"');
+  await ownEquipment(form);
+  await form.locator('[name="hours"]').fill("2.1");
+  await expect(form.locator("[data-cost]")).toHaveText("103,50 €");
+  await expect(form.locator("[data-booking-preview]")).toContainText("2,25 × 46,00 €");
+  await form.locator('[name="hours"]').fill("1.1");
+  await expect(form.locator("[data-booking-preview]")).toContainText("1,25 × 46,00 €");
+  await form.locator('[name="hours"]').fill("0.3");
+  await expect(form.locator("[data-cost]")).toHaveText("46,00 €");
+  await expect(form.locator("[data-booking-preview]")).toContainText("1 × 46,00 €");
+
+  await form.locator('[name="mode"]').selectOption("free");
+  await form.locator('[name="partner_label"]').fill("Leihgerät");
+  await form.locator('[name="partner_rate"]').fill("30");
+  await form.locator('[name="hours"]').fill("0.5");
+  await expect(form.locator("[data-booking-preview]")).toContainText("0,5 × 30,00 €");
 });

@@ -14,7 +14,7 @@ import (
 func (s *Store) ListBillingYears(ctx context.Context) ([]models.BillingYear, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT y.id, y.year, y.base_id, y.label, y.status, y.created_at,
-		       b.id, b.year, b.name, b.locked, b.created_at
+		       b.id, b.year, b.name, b.locked, b.created_at, b.billing_increment_h, b.minimum_h
 		  FROM billing_years y
 		  JOIN price_bases b ON b.id = y.base_id
 		 ORDER BY y.year DESC`)
@@ -37,7 +37,7 @@ func (s *Store) ListBillingYears(ctx context.Context) ([]models.BillingYear, err
 func (s *Store) GetBillingYear(ctx context.Context, id int64) (*models.BillingYear, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT y.id, y.year, y.base_id, y.label, y.status, y.created_at,
-		       b.id, b.year, b.name, b.locked, b.created_at
+		       b.id, b.year, b.name, b.locked, b.created_at, b.billing_increment_h, b.minimum_h
 		  FROM billing_years y
 		  JOIN price_bases b ON b.id = y.base_id
 		 WHERE y.id = $1`, id)
@@ -55,7 +55,7 @@ func (s *Store) GetBillingYear(ctx context.Context, id int64) (*models.BillingYe
 func (s *Store) LatestBillingYear(ctx context.Context) (*models.BillingYear, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT y.id, y.year, y.base_id, y.label, y.status, y.created_at,
-		       b.id, b.year, b.name, b.locked, b.created_at
+		       b.id, b.year, b.name, b.locked, b.created_at, b.billing_increment_h, b.minimum_h
 		  FROM billing_years y
 		  JOIN price_bases b ON b.id = y.base_id
 		 ORDER BY y.year DESC LIMIT 1`)
@@ -157,7 +157,7 @@ func (s *Store) CountEntriesForYear(ctx context.Context, yearID int64) (int, err
 func (s *Store) PreviousBillingYear(ctx context.Context, beforeYear int) (*models.BillingYear, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT y.id, y.year, y.base_id, y.label, y.status, y.created_at,
-		       b.id, b.year, b.name, b.locked, b.created_at
+		       b.id, b.year, b.name, b.locked, b.created_at, b.billing_increment_h, b.minimum_h
 		  FROM billing_years y
 		  JOIN price_bases b ON b.id = y.base_id
 		 WHERE y.year < $1
@@ -323,7 +323,7 @@ func scanBillingYear(sc scanner) (models.BillingYear, error) {
 		b models.PriceBase
 	)
 	if err := sc.Scan(&y.ID, &y.Year, &y.BaseID, &y.Label, &y.Status, &y.Created,
-		&b.ID, &b.Year, &b.Name, &b.Locked, &b.Created); err != nil {
+		&b.ID, &b.Year, &b.Name, &b.Locked, &b.Created, &b.BillingIncrementH, &b.MinimumH); err != nil {
 		return y, err
 	}
 	y.Base = &b

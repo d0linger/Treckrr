@@ -194,6 +194,27 @@ type PriceBase struct {
 	Name    string
 	Locked  bool
 	Created time.Time
+	// BillingIncrementH rounds billed machine hours UP to this step (0 = off);
+	// MinimumH is the least billed per catalog machine booking (0 = off).
+	BillingIncrementH decimal.Decimal
+	MinimumH          decimal.Decimal
+}
+
+// HasBillingRule reports whether the basis rounds or floors machine hours.
+func (b PriceBase) HasBillingRule() bool {
+	return b.BillingIncrementH.IsPositive() || b.MinimumH.IsPositive()
+}
+
+// BilledHours applies the basis' increment (rounding up) and minimum to
+// measured machine hours. Without a rule the hours stay unchanged.
+func (b PriceBase) BilledHours(hours decimal.Decimal) decimal.Decimal {
+	if b.BillingIncrementH.IsPositive() {
+		hours = hours.Div(b.BillingIncrementH).Ceil().Mul(b.BillingIncrementH)
+	}
+	if b.MinimumH.IsPositive() && hours.LessThan(b.MinimumH) {
+		hours = b.MinimumH
+	}
+	return hours
 }
 
 // Billing year workflow statuses.

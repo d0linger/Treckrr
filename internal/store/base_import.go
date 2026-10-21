@@ -63,7 +63,10 @@ func (s *Store) CreateBaseFromRateList(ctx context.Context, year int, name strin
 	}
 	defer func() { _ = tx.Rollback() }()
 	var result RateListImport
-	if err := tx.QueryRowContext(ctx, `INSERT INTO price_bases (year, name) VALUES ($1, $2) RETURNING id`, year, name).
+	if err := tx.QueryRowContext(ctx, `INSERT INTO price_bases (year, name, billing_increment_h, minimum_h)
+		SELECT $1, $2, COALESCE(src.billing_increment_h, 0), COALESCE(src.minimum_h, 0)
+		  FROM (SELECT 1) one LEFT JOIN price_bases src ON src.id = $3
+		RETURNING id`, year, name, sourceBaseID).
 		Scan(&result.BaseID); err != nil {
 		return RateListImport{}, fmt.Errorf("create base: %w", err)
 	}

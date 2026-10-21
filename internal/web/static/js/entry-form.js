@@ -35,6 +35,19 @@
 	var unitCustomInput = form.querySelector("[data-unit-custom-input]");
 	var noTractorNote = form.querySelector("[data-no-tractor-note]");
 
+	// Mirrors models.PriceBase.BilledHours: the basis' increment rounds catalog
+	// machine hours up and its minimum sets a floor. Whole thousandths of an hour
+	// keep 1,1 / 0,1 from drifting past 11 steps in floating point.
+	var billingIncrement = Math.round((parseFloat(form.dataset.billingIncrement) || 0) * 1000);
+	var billingMinimum = Math.round((parseFloat(form.dataset.billingMinimum) || 0) * 1000);
+	function billedHours(hours) {
+		if (!(hours > 0) || (billingIncrement <= 0 && billingMinimum <= 0)) return hours;
+		var milli = Math.round(hours * 1000);
+		if (billingIncrement > 0) milli = Math.ceil(milli / billingIncrement) * billingIncrement;
+		if (billingMinimum > 0 && milli < billingMinimum) milli = billingMinimum;
+		return milli / 1000;
+	}
+
 	function decVal(el) { return parseFloat((((el && el.value) || "0")).replace(",", ".")) || 0; }
 	function isHours() {
 		var u = ((unitEl && unitEl.value) || "").trim();
@@ -182,9 +195,9 @@
 		var adjustment = effectiveAdjustment();
 		var rate = round2(round2(sel.ps * sel.loadCost) + machineRates(sel.machineIds) + (adjustment ? adjustment.amount : 0));
 		rateEl.textContent = fmt(rate) + " / h";
-		var hours = parseFloat((hoursEl.value || "0").replace(",", "."));
+		var hours = billedHours(parseFloat((hoursEl.value || "0").replace(",", ".")));
 		costEl.textContent = hours > 0 ? fmt(round2(hours * rate)) : "–";
-		if (unified) unified.update(hours > 0 ? round2(hours * rate) : null, rate, adjustment);
+		if (unified) unified.update(hours > 0 ? round2(hours * rate) : null, rate, adjustment, hours > 0 ? hours : null);
 	}
 
 	function applyMode() {
