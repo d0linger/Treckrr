@@ -101,6 +101,10 @@
 	<label class="field"><span>Tätigkeit / Beschreibung</span><input class="input" name="task_label" maxlength="100" value="{{index $v "task_label"}}" placeholder="z. B. Mähen oder Materialkosten" data-booking-task {{if or (eq $kind "quantity") (eq $kind "fixed")}}required{{end}}><span class="sr-only" data-booking-task-help></span></label>
 	<details class="disclosure form-details" {{if index $v "note"}}open{{end}}><summary>Weitere Angaben <span class="muted small">optional</span></summary><label class="field"><span>Notiz / Belegreferenz</span><input class="input" name="note" maxlength="2000" value="{{index $v "note"}}"></label>{{if and (not .BookingEdit) (not .BookingCopy)}}<button class="btn btn--ghost btn--xs" type="button" data-defaults-reset>Gemerkte Vorgaben löschen</button>{{end}}</details>
 	<div class="booking-preview" data-booking-preview role="status" aria-live="polite" aria-atomic="true"><p class="muted small">Leistung auswählen und positive Stunden oder Beträge eingeben.</p></div>
+	{{if and (not .BookingEdit) (not .BookingLocked)}}<details class="disclosure form-details" data-booking-panel="equipment:out labor:out quantity:out fixed:out" data-signature-panel>
+		<summary>Unterschrift vor Ort <span class="muted small">optional</span></summary>
+		{{template "signature-pad" .}}
+	</details>{{end}}
 	<p class="muted small" data-pricing-status role="status"></p>
 	<button class="btn btn--primary btn--block" type="submit" title="Strg + Enter" {{if .BookingLocked}}disabled{{end}}>{{if .BookingEdit}}Änderungen speichern{{else if .BookingCopy}}Kopie speichern{{else}}Buchung speichern{{end}}</button>
 	{{if and (not .BookingEdit) (not .BookingCopy)}}<button class="btn btn--ghost btn--block" type="submit" name="continue_next" value="1" data-booking-next {{if .BookingLocked}}disabled{{end}}>Speichern &amp; nächste Buchung</button>{{end}}
@@ -149,6 +153,7 @@
 
 {{define "booking-extras"}}
 {{if .PhotoAction}}{{template "booking_attachments" .}}{{end}}
+{{if .SignatureAction}}{{template "booking_signature" .}}{{end}}
 {{if and .User.CanWrite .RecurringAction}}
 <details class="card disclosure"><summary>Als Serie wiederholen</summary><p class="muted small">Wiederholt diese Leistung im offenen Jahr. Gespann, vereinbarte Preise und alle ausgewählten Personen werden aus der Buchung übernommen.</p>
 	<form method="post" action="{{.RecurringAction}}" class="form"><div class="form__grid"><label class="field"><span>Rhythmus</span><select class="select" name="interval_kind"><option value="weekly">wöchentlich</option><option value="monthly">monatlich</option></select></label><label class="field"><span>Erster Lauf</span><input class="input" type="date" name="next_run" value="{{.NextWeek}}" required></label><label class="field"><span>Endet am <em>(optional)</em></span><input class="input" type="date" name="ends_on"></label></div>

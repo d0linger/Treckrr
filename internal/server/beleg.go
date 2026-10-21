@@ -74,6 +74,8 @@ func (c BelegCalculation) Corrected() bool { return !c.Difference.IsZero() }
 type BelegEntry struct {
 	models.Entry
 	Calculation BelegCalculation
+	// Signed is the on-site signature (metadata only), nil when unsigned.
+	Signed *models.EntrySignature
 }
 
 // BelegDay groups a neighbor's bookings by calendar day so the date is shown once
@@ -251,6 +253,10 @@ func (s *Server) buildBelegView(r *http.Request, neighbor *models.Neighbor, year
 	if err != nil {
 		return belegView{}, err
 	}
+	signatures, err := s.store.SignaturesByNeighborYear(r.Context(), neighbor.ID, year.ID)
+	if err != nil {
+		return belegView{}, err
+	}
 	// Group bookings by day (date shown once per day) and aggregate identical
 	// Leistungen for the optional "Bündeln" view. Both render the same bookings as
 	// the flat list; totals are unchanged (voided bookings are excluded from the
@@ -272,6 +278,9 @@ func (s *Server) buildBelegView(r *http.Request, neighbor *models.Neighbor, year
 			FuelAdjustmentPerH:  e.FuelAdjustmentPerH,
 		}
 		view := BelegEntry{Entry: e, Calculation: calculation}
+		if sig, ok := signatures[e.ID]; ok {
+			view.Signed = &sig
+		}
 		d := e.Date.Format("02.01.")
 		if n := len(days); n > 0 && days[n-1].Date == d {
 			days[n-1].Entries = append(days[n-1].Entries, view)

@@ -100,6 +100,7 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 		for _, q := range []string{
 			`DELETE FROM neighbor_equipment WHERE neighbor_id = $1`,
 			`DELETE FROM entry_photos WHERE entry_id IN (SELECT id FROM entries WHERE neighbor_id = $1)`,
+			`DELETE FROM entry_signatures WHERE entry_id IN (SELECT id FROM entries WHERE neighbor_id = $1)`,
 			`DELETE FROM ledger_photos WHERE ledger_id IN (SELECT id FROM neighbor_ledger WHERE neighbor_id = $1)`,
 			`UPDATE entries SET note = '', task_label = '', person_name = '', void_reason = '', request_fingerprint = NULL,
 			        price_term_label = CASE WHEN price_term_pct > 0 THEN 'Preisvereinbarung' ELSE '' END
@@ -353,6 +354,11 @@ func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 	}
 	if err := replaceEntryMachineSnapshotsTx(ctx, tx, id, machineIDs); err != nil {
 		return 0, err
+	}
+	if e.Signature != nil {
+		if err := insertSignatureTx(ctx, tx, id, e); err != nil {
+			return 0, err
+		}
 	}
 	return id, nil
 }

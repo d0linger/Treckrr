@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -65,6 +66,8 @@ type dsgvoYear struct {
 	// record held about a neighbor: which Mahnstufe went out when, through which
 	// channel, with what fee. An Auskunft omitting it is incomplete.
 	Dunning []dsgvoDunning `json:"dunning_notices,omitempty"`
+	// On-site signatures: the signer's name and handwriting are personal data.
+	Signatures []dsgvoSignature `json:"signatures,omitempty"`
 }
 
 type dsgvoDunning struct {
@@ -96,6 +99,15 @@ type dsgvoLedger struct {
 	Voided      bool                  `json:"voided"`
 	VoidReason  string                `json:"void_reason,omitempty"`
 	Booking     *models.LedgerBooking `json:"booking,omitempty"`
+}
+
+type dsgvoSignature struct {
+	EntryID    int64     `json:"entry_id"`
+	SignerName string    `json:"signer_name"`
+	SignedAt   time.Time `json:"signed_at"`
+	ReceivedAt time.Time `json:"received_at"`
+	Confirmed  string    `json:"confirmed"`
+	URL        string    `json:"url"`
 }
 
 type dsgvoPhoto struct {
@@ -314,9 +326,14 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
+		signatures, err := s.store.SignaturesByNeighborYear(r.Context(), n.ID, y.ID)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
 		if len(entries) == 0 && len(invoices) == 0 && len(payments) == 0 && len(paymentImports) == 0 && len(ledger) == 0 &&
 			len(photos) == 0 && len(sends) == 0 && len(shares) == 0 && len(plans) == 0 && len(dunning) == 0 &&
-			len(statementLinks) == 0 && len(statementFeedback) == 0 {
+			len(statementLinks) == 0 && len(statementFeedback) == 0 && len(signatures) == 0 {
 			continue // a year with no data for this person adds nothing.
 		}
 		dy := dsgvoYear{Year: y.Year, PaymentImports: paymentImports, InvoiceSources: sources}
@@ -371,6 +388,13 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 			}
 			dy.StatementFeedback = append(dy.StatementFeedback, item)
 		}
+		for _, sig := range signatures {
+			dy.Signatures = append(dy.Signatures, dsgvoSignature{
+				EntryID: sig.EntryID, SignerName: sig.SignerName, SignedAt: sig.SignedAt, ReceivedAt: sig.ReceivedAt,
+				Confirmed: sig.ConfirmedText, URL: "/entries/" + itoa64(sig.EntryID) + "/signature.png",
+			})
+		}
+		sort.Slice(dy.Signatures, func(i, j int) bool { return dy.Signatures[i].EntryID < dy.Signatures[j].EntryID })
 		for _, pl := range plans {
 			dy.Installments = append(dy.Installments, dsgvoInstallment{
 				DueOn: pl.DueOn, Amount: pl.Amount, Note: pl.Note,

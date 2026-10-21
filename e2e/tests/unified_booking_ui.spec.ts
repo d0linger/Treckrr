@@ -42,6 +42,10 @@ function fixture(formAttributes = ""): string {
     <details data-person-details><summary><span data-person-heading>Personen mitbuchen</span> <span data-person-summary>optional</span></summary><p data-person-help></p><div data-person-rows>${personRow}${personRow}${personRow}</div><button type="button" data-person-add hidden>Person hinzufügen</button><p data-person-status></p></details>
     <label>Tätigkeit / Beschreibung<input name="task_label" data-booking-task><span data-booking-task-help></span></label><input name="note">
     <div data-booking-preview></div><p data-pricing-status></p>
+    <details data-booking-panel="equipment:out labor:out quantity:out fixed:out" data-signature-panel open><summary>Unterschrift vor Ort</summary>
+      <label>Name der unterschreibenden Person<input name="signature_name"></label>
+      <div data-signature-pad><canvas width="600" height="200" style="width:300px;height:100px;touch-action:none"></canvas><input type="hidden" name="signature_png" data-signature-data><input type="hidden" name="signature_at" data-signature-at><button type="button" data-signature-clear>Unterschrift löschen</button></div>
+    </details>
     <button class="btn btn--primary" type="submit">Buchung speichern</button><button type="button" data-defaults-reset>Gemerkte Vorgaben löschen</button>
     <template data-person-template>${personRow}</template>
   </form>`;
@@ -522,4 +526,31 @@ test("the preview applies the neighbor price term to own catalog hours only", as
   await ownEquipment(form);
   await expect(form.locator("[data-cost]")).toHaveText("92,00 €");
   await expect(form.locator("[data-booking-preview]")).not.toContainText("Familienrabatt");
+});
+
+/** The on-site pad writes a PNG into the posted form, clears on demand and never rides along with incoming work. */
+test("the signature pad fills its fields for own work only", async ({ page }) => {
+  const form = await mockPage(page);
+  await ownEquipment(form);
+  const canvas = form.locator("[data-signature-pad] canvas");
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("signature canvas not rendered");
+  await page.mouse.move(box.x + 20, box.y + 50);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 150, box.y + 30, { steps: 8 });
+  await page.mouse.move(box.x + 280, box.y + 70, { steps: 8 });
+  await page.mouse.up();
+  await form.locator('[name="signature_name"]').fill("Hans Huber");
+  let values = await successful(form);
+  expect(values.get("signature_png")).toMatch(/^data:image\/png;base64,/);
+  expect(Date.parse(values.get("signature_at") || "")).not.toBeNaN();
+
+  await form.locator("[data-signature-clear]").click();
+  values = await successful(form);
+  expect(values.get("signature_png")).toBe("");
+
+  await form.locator('[name="booking_direction"][value="in"]').check();
+  values = await successful(form);
+  expect(values.has("signature_png")).toBe(false);
+  expect(values.has("signature_name")).toBe(false);
 });

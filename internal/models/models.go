@@ -403,6 +403,9 @@ type Entry struct {
 	PersonID *int64
 	// PersonName preserves the booked name even without a master-data link.
 	PersonName string
+	// Signature is an on-site signature captured with a new booking; the store
+	// writes it in the booking's transaction. Never loaded with the entry.
+	Signature *EntrySignature `json:"-"`
 	// LinkedEntryID connects a companion booking to the machine booking it was
 	// created with (person booked alongside the Gespann): the Mannstunden entry
 	// points at the machine entry. Nil for everything else. The link is

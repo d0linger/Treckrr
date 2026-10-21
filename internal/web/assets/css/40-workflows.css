@@ -1014,3 +1014,10 @@
 .share-target__thumbs { display: flex; flex-wrap: wrap; gap: .5rem; }
 .share-target__thumbs img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
 .share-target__row { align-items: flex-start; }
+
+/* On-site signature (Ausbaukarte II #22): a fixed 3:1 drawing surface that
+   never scrolls the page while a finger signs. */
+.signature-pad { display: grid; gap: .4rem; justify-items: start; }
+.signature-pad__canvas { width: 100%; max-width: 600px; aspect-ratio: 3 / 1; height: auto; touch-action: none; background: #fff; border: 1px dashed var(--border); border-radius: 8px; cursor: crosshair; }
+.signature-view { margin: 0; display: grid; gap: .3rem; }
+.signature-view img { width: 100%; max-width: 300px; height: auto; background: #fff; border: 1px solid var(--border); border-radius: 6px; }

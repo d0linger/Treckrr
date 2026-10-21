@@ -84,6 +84,9 @@ func (s *Server) setEntryBookingForm(r *http.Request, data pageData, entry *mode
 	data["BookingEdit"], data["BookingCopy"] = !copyMode, copyMode
 	data["PhotoAction"], data["RecurringAction"] = "/entries/"+strconv.FormatInt(entry.ID, 10)+"/photos", "/entries/"+strconv.FormatInt(entry.ID, 10)+"/recur"
 	data["BookingVoided"] = entry.Voided
+	if !copyMode {
+		return s.signatureView(r, data, entry)
+	}
 	return nil
 }
 

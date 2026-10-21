@@ -309,6 +309,15 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			Incoming: direction == "in", Booking: b, IdempotencyKey: main.IdempotencyKey}
 		return bookingDraft{LedgerInput: in, BookedPeople: people}, "", nil
 	}
+	// An on-site signature is captured only with a new own booking; it is
+	// stored with the main entry in the booking's transaction (online or replayed).
+	if creating {
+		signature, message := signatureFromForm(r)
+		if message != "" {
+			return bookingDraft{}, message, nil
+		}
+		main.Signature = signature
+	}
 	return bookingDraft{Entry: main, MachineIDs: machines, BookedPeople: people}, "", nil
 }
 

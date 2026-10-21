@@ -704,6 +704,58 @@
 			forget().then(function () { window.location.href = "/buchungen"; }, function () { window.location.href = "/buchungen"; });
 		});
 	});
+
+	// On-site signature (Ausbaukarte II #22). Draws with pointer events and keeps
+	// the PNG in a hidden field, so the booking POST, the offline queue and the
+	// replay carry it like any other control. No submit handler: the booking form
+	// already stacks several, and the pad only writes field values.
+	document.querySelectorAll("[data-signature-pad]").forEach(function (pad) {
+		var canvas = pad.querySelector("canvas"), data = pad.querySelector("[data-signature-data]"), at = pad.querySelector("[data-signature-at]");
+		var ctx = canvas.getContext("2d"), drawing = false, last = null;
+		function reset() {
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			data.value = "";
+			at.value = "";
+		}
+		function point(e) {
+			var rect = canvas.getBoundingClientRect();
+			return { x: (e.clientX - rect.left) * canvas.width / rect.width, y: (e.clientY - rect.top) * canvas.height / rect.height };
+		}
+		ctx.lineWidth = 3;
+		ctx.lineCap = "round";
+		ctx.lineJoin = "round";
+		ctx.strokeStyle = "#111";
+		canvas.addEventListener("pointerdown", function (e) {
+			e.preventDefault();
+			drawing = true;
+			last = point(e);
+			canvas.setPointerCapture(e.pointerId);
+			ctx.beginPath();
+			ctx.arc(last.x, last.y, ctx.lineWidth / 2, 0, Math.PI * 2);
+			ctx.fillStyle = ctx.strokeStyle;
+			ctx.fill();
+		});
+		canvas.addEventListener("pointermove", function (e) {
+			if (!drawing) return;
+			var p = point(e);
+			ctx.beginPath();
+			ctx.moveTo(last.x, last.y);
+			ctx.lineTo(p.x, p.y);
+			ctx.stroke();
+			last = p;
+		});
+		function finish() {
+			if (!drawing) return;
+			drawing = false;
+			data.value = canvas.toDataURL("image/png");
+			at.value = new Date().toISOString();
+		}
+		canvas.addEventListener("pointerup", finish);
+		canvas.addEventListener("pointercancel", finish);
+		pad.querySelector("[data-signature-clear]").addEventListener("click", reset);
+		var form = pad.closest("form");
+		if (form) form.addEventListener("reset", reset);
+	});
 	// Recovery-code gate: "Fertig" stays disabled until the user confirms they
 	// saved the codes. Without JS the link works normally (no lockout).
 	(function () {
