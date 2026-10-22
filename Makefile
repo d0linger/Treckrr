@@ -34,7 +34,7 @@ fmt-check: ## fail if any file needs gofmt
 	$(GO) "test -z \"$$(gofmt -l internal/ cmd/)\""
 
 lint: ## golangci-lint
-	# Analyzer-only compatibility pin; application builds use Go 1.27.2 above.
+	# Analyzer-only compatibility pin; application builds use Go 1.27.3 above.
 	docker run --rm -v "$(CURDIR):/src" -v treckrr-gomod:/go/pkg/mod -w /src -e GOTOOLCHAIN=go1.26.9 $(LINT) golangci-lint run --build-tags=integration ./...
 
 deadcode: ## unreachable-function analysis (matches CI)
