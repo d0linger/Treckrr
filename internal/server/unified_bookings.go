@@ -172,7 +172,7 @@ func unifiedRequestFingerprint(r *http.Request) string {
 	fields := []string{"booking_kind", "booking_direction", "neighbor_id", "year_id", "entry_date", "task_label", "note"}
 	if sharedBookingForm(r) {
 		fields = append(fields, "booking_form_version", "person_row_id", "person_id", "person_name", "person_hours", "person_rate", "person_state", "copy_mode", "copy_people",
-			"field_id", "field_label")
+			"field_id", "field_label", "meter_start", "meter_end")
 		if kind == "fixed" {
 			fields = append(fields, "amount")
 		}

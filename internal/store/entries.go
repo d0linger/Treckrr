@@ -321,9 +321,9 @@ func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 		    tractor_label, load_label, machine_labels, hours, hourly_rate,
 		    fuel_adjustment_label, fuel_adjustment_per_h, cost, note,
 		    unit, quantity, unit_price, idempotency_key, person_id, linked_entry_id, request_fingerprint, person_name,
-		    price_term_label, price_term_pct, price_term_per_h, field_id, field_label)
+		    price_term_label, price_term_pct, price_term_per_h, field_id, field_label, meter_start, meter_end)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,
-		         COALESCE(NULLIF($24,''),(SELECT name FROM persons WHERE id=$21),''), $25, $26, $27, $28, $29)
+		         COALESCE(NULLIF($24,''),(SELECT name FROM persons WHERE id=$21),''), $25, $26, $27, $28, $29, $30, $31)
 		 ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
 		 RETURNING id`,
 		e.NeighborID, e.BillingYearID, e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID),
@@ -331,7 +331,7 @@ func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 		e.HourlyRate, e.FuelAdjustmentLabel, e.FuelAdjustmentPerH, e.Cost, e.Note,
 		e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey), nullInt(e.PersonID),
 		nullInt(e.LinkedEntryID), nullStr(e.RequestFingerprint), e.PersonName,
-		e.PriceTermLabel, e.PriceTermPct, e.PriceTermPerH, nullInt(e.FieldID), e.FieldLabel).Scan(&id)
+		e.PriceTermLabel, e.PriceTermPct, e.PriceTermPerH, nullInt(e.FieldID), e.FieldLabel, e.MeterStart, e.MeterEnd).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		var neighborID, yearID int64
 		if err := tx.QueryRowContext(ctx,
@@ -1211,12 +1211,13 @@ func updateEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 			hours=$9, hourly_rate=$10, fuel_adjustment_label=$11, fuel_adjustment_per_h=$12,
 			cost=$13, note=$14, unit=$15, quantity=$16, unit_price=$17, person_id=$19,
 			person_name=COALESCE(NULLIF($20,''),(SELECT name FROM persons WHERE id=$19),''),
-			price_term_label=$21, price_term_pct=$22, price_term_per_h=$23, field_id=$24, field_label=$25 WHERE id=$18`,
+			price_term_label=$21, price_term_pct=$22, price_term_per_h=$23, field_id=$24, field_label=$25,
+			meter_start=$26, meter_end=$27 WHERE id=$18`,
 		e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID), nullInt(e.LoadLevelID),
 		e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours, e.HourlyRate,
 		e.FuelAdjustmentLabel, e.FuelAdjustmentPerH, e.Cost, e.Note, e.Unit,
 		e.Quantity, e.UnitPrice, e.ID, nullInt(e.PersonID), e.PersonName,
-		e.PriceTermLabel, e.PriceTermPct, e.PriceTermPerH, nullInt(e.FieldID), e.FieldLabel)
+		e.PriceTermLabel, e.PriceTermPct, e.PriceTermPerH, nullInt(e.FieldID), e.FieldLabel, e.MeterStart, e.MeterEnd)
 	if err != nil {
 		return err
 	}
@@ -1272,7 +1273,7 @@ const entryCols = `id, neighbor_id, billing_year_id, entry_date, task_label, ges
 	tractor_id, load_level_id, tractor_label, load_label, machine_labels,
 	hours, hourly_rate, fuel_adjustment_label, fuel_adjustment_per_h, cost, note, voided, void_reason, created_at,
 	unit, quantity, unit_price, person_id, linked_entry_id, request_fingerprint, person_name,
-	price_term_label, price_term_pct, price_term_per_h, field_id, field_label`
+	price_term_label, price_term_pct, price_term_per_h, field_id, field_label, meter_start, meter_end`
 
 const entrySelect = `SELECT ` + entryCols + `,
 	EXISTS(SELECT 1 FROM invoice_entries ie WHERE ie.entry_id=entries.id AND ie.active) AS invoice_locked
@@ -1308,7 +1309,7 @@ func scanEntry(sc scanner) (models.Entry, error) {
 		&e.Hours, &e.HourlyRate, &e.FuelAdjustmentLabel, &e.FuelAdjustmentPerH,
 		&e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created,
 		&e.Unit, &e.Quantity, &e.UnitPrice, &person, &linked, &fingerprint, &e.PersonName,
-		&e.PriceTermLabel, &e.PriceTermPct, &e.PriceTermPerH, &field, &e.FieldLabel, &e.InvoiceLocked}
+		&e.PriceTermLabel, &e.PriceTermPct, &e.PriceTermPerH, &field, &e.FieldLabel, &e.MeterStart, &e.MeterEnd, &e.InvoiceLocked}
 	if err := sc.Scan(dest...); err != nil {
 		return e, err
 	}

@@ -80,6 +80,20 @@ func (s *Server) setEntryBookingForm(r *http.Request, data pageData, entry *mode
 	case entry.FieldLabel != "":
 		v["field_id"], v["field_label"] = "other", entry.FieldLabel
 	}
+	// A copy is new work on the same tractor: its readings start fresh, from
+	// the tractor's last end reading.
+	if entry.HasMeter() && !copyMode {
+		v["meter_start"], v["meter_end"] = entry.MeterStart.Decimal.String(), entry.MeterEnd.Decimal.String()
+	}
+	if copyMode {
+		year, err := s.store.GetBillingYear(r.Context(), entry.BillingYearID)
+		if err != nil {
+			return err
+		}
+		if data["MeterReadingsJSON"], err = s.meterReadingsAttr(r.Context(), year.BaseID); err != nil {
+			return err
+		}
+	}
 	fields, err := s.store.ListFields(r.Context(), entry.NeighborID)
 	if err != nil {
 		return err

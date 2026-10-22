@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -176,4 +177,19 @@ func (s *Server) handleFieldDelete(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, "field_delete", "neighbor", id, s.neighborName(r, id)+" · Feld "+field.Name+" gelöscht")
 	s.setFlash(w, r, "success", "Feld „"+field.Name+"“ gelöscht.")
 	redirect(w, r, back)
+}
+
+// meterReadingsAttr serializes the last hour-meter end reading per tractor of
+// a basis for the booking form, which prefills the next start from it.
+func (s *Server) meterReadingsAttr(ctx context.Context, baseID int64) (string, error) {
+	last, err := s.store.LastMeterReadings(ctx, baseID)
+	if err != nil || len(last) == 0 {
+		return "", err
+	}
+	out := make(map[string]string, len(last))
+	for id, reading := range last {
+		out[strconv.FormatInt(id, 10)] = reading.String()
+	}
+	b, err := json.Marshal(out)
+	return string(b), err
 }

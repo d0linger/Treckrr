@@ -407,6 +407,10 @@ type Entry struct {
 	// a listed field (FieldID) or free text, with the name frozen in FieldLabel.
 	FieldID    *int64
 	FieldLabel string
+	// MeterStart and MeterEnd are the tractor's hour-meter readings for an own
+	// booking (both or neither). Evidence only: Hours stays what is billed.
+	MeterStart decimal.NullDecimal
+	MeterEnd   decimal.NullDecimal
 	// Signature is an on-site signature captured with a new booking; the store
 	// writes it in the booking's transaction. Never loaded with the entry.
 	Signature *EntrySignature `json:"-"`

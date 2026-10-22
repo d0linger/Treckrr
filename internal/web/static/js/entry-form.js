@@ -190,7 +190,34 @@
 		return { ps: tr.ps, loadCost: lo.cost, machineIds: ids, hasTractor: true };
 	}
 
+	// Hour meter (Ausbaukarte II #30): once the operator opens the meter
+	// section, the start reading is prefilled with the selected tractor's last
+	// end reading, until it is typed over. Values only; no submit handler.
+	var meterBox = form.querySelector("[data-meter]");
+	var meterStart = form.querySelector("[data-meter-start]");
+	var meterLast = {};
+	try { meterLast = JSON.parse(form.dataset.meterLast || "{}"); } catch (_) { meterLast = {}; }
+	function currentTractorId() {
+		if (currentMode() === "gespann") {
+			var gid = parseInt((form.querySelector("[data-gespann-select]") || {}).value, 10);
+			var g = pricing && gid ? byId(pricing.gespanne, gid) : null;
+			return g && g.tractor ? g.tractor : 0;
+		}
+		return parseInt((form.querySelector("[data-tractor-select]") || {}).value, 10) || 0;
+	}
+	function syncMeter() {
+		if (!meterBox || !meterBox.open || !meterStart) return;
+		var last = meterLast[String(currentTractorId())];
+		if (last !== undefined && (meterStart.value === "" || meterStart.dataset.autofilled === "1")) {
+			meterStart.value = last;
+			meterStart.dataset.autofilled = "1";
+		}
+	}
+	if (meterBox) meterBox.addEventListener("toggle", syncMeter);
+	if (meterStart) meterStart.addEventListener("input", function () { meterStart.dataset.autofilled = ""; });
+
 	function update() {
+		syncMeter();
 		if (unified && !unified.standard()) { unified.update(); return; }
 		if (!isHours()) {
 			var q = decVal(qtyEl), p = decVal(unitPriceEl);

@@ -245,6 +245,11 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			resolved.NeighborID, resolved.BillingYearID = main.NeighborID, main.BillingYearID
 			resolved.IdempotencyKey, resolved.RequestFingerprint = main.IdempotencyKey, main.RequestFingerprint
 			main, machines = resolved, ids
+			if direction == "out" && main.TractorID != nil {
+				if main.MeterStart, main.MeterEnd, msg = meterFromForm(r); msg != "" {
+					return bookingDraft{}, msg, nil
+				}
+			}
 			b.GespannID, b.TractorID, b.LoadLevelID, b.MachineIDs = main.GespannID, main.TractorID, main.LoadLevelID, ids
 			b.PartnerLabel = strings.Trim(strings.Join([]string{main.TractorLabel, main.LoadLabel, main.MachineLabels}, " · "), " ·")
 			if main.GespannID != nil {
@@ -440,4 +445,24 @@ func (s *Server) handleBookingCreateV2(w http.ResponseWriter, r *http.Request) {
 		msg = "Personen zur bereits erfassten Buchung erg\u00e4nzt."
 	}
 	s.bookingSuccess(w, r, msg)
+}
+
+// maxMeterReading bounds an hour-meter reading (NUMERIC(10,2)).
+var maxMeterReading = decimal.NewFromInt(100_000_000)
+
+// meterFromForm reads the optional hour-meter readings of a tractor booking:
+// both or neither, non-negative, end not below start, at most two decimals.
+func meterFromForm(r *http.Request) (decimal.NullDecimal, decimal.NullDecimal, string) {
+	rawStart, rawEnd := trimmed(r, "meter_start"), trimmed(r, "meter_end")
+	if rawStart == "" && rawEnd == "" {
+		return decimal.NullDecimal{}, decimal.NullDecimal{}, ""
+	}
+	const msg = "Bitte Anfangs- und Endstand des Betriebsstundenzählers angeben (Ende nicht kleiner als Anfang, höchstens zwei Nachkommastellen) oder beide leer lassen."
+	start, okStart := parseGermanDecimalOK(rawStart)
+	end, okEnd := parseGermanDecimalOK(rawEnd)
+	if !okStart || !okEnd || start.IsNegative() || end.LessThan(start) || end.GreaterThanOrEqual(maxMeterReading) ||
+		!start.Equal(start.Round(2)) || !end.Equal(end.Round(2)) {
+		return decimal.NullDecimal{}, decimal.NullDecimal{}, msg
+	}
+	return decimal.NewNullDecimal(start), decimal.NewNullDecimal(end), ""
 }

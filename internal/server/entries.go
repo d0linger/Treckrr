@@ -298,6 +298,10 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, "neighbor: fields", err)
 		return
 	}
+	if data["MeterReadingsJSON"], err = s.meterReadingsAttr(r.Context(), base.ID); err != nil {
+		s.serverError(w, "neighbor: meter readings", err)
+		return
+	}
 	if view.Section == "overview" {
 		if err := s.statementShareData(w, r, data, neighbor.ID, year.ID); err != nil {
 			s.serverError(w, "neighbor: statement links", err)
@@ -1000,8 +1004,10 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	// The older form has no field picker; an edit through it keeps the field.
+	// The older form has no field picker or meter readings; an edit through it
+	// keeps both as stored.
 	entry.FieldID, entry.FieldLabel = existing.FieldID, existing.FieldLabel
+	entry.MeterStart, entry.MeterEnd = existing.MeterStart, existing.MeterEnd
 	// A synced pair keeps one shared hour value for machine and helper; rounding
 	// it would bill the helper's hours by the machine increment as well.
 	if r.FormValue("sync_pair") != "1" {

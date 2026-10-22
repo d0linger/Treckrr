@@ -57,6 +57,18 @@ func (s *Server) loadDataQuality(r *http.Request, year *models.BillingYear) (dat
 		case "machine_rate":
 			view.Title, view.Detail = issue.Subject+": Preissatz unvollständig", "Arbeitsbreite und Preis je AB·h müssen positiv sein."
 			view.Href += fmt.Sprintf("#machine-%d", issue.EntityID)
+		case "meter_overlap":
+			view.Group, view.Title = "Betriebsstunden", "Zählerstände überschneiden sich: "+issue.Subject
+			view.Detail = "Der Anfangsstand liegt unter dem Endstand der vorigen Buchung dieses Traktors. Einer der Stände ist vermutlich falsch."
+			view.Href = fmt.Sprintf("/entries/%d/edit", issue.EntityID)
+		case "meter_gaps":
+			view.Group, view.Title = "Betriebsstunden", "Zählerstunden ohne Buchung: "+issue.Subject
+			view.Detail = "Zwischen Buchungen lief der Zähler weiter – eigene Arbeit oder eine vergessene Buchung? Die erste Lücke ist verlinkt."
+			view.Href = fmt.Sprintf("/entries/%d/edit", issue.EntityID)
+		case "meter_deviation":
+			view.Group, view.Title = "Betriebsstunden", "Stunden weichen vom Zähler ab: "+issue.Subject
+			view.Detail = "Verrechnet werden die eingegebenen Stunden; der Zählerstand dient als Nachweis. Bitte prüfen."
+			view.Href = fmt.Sprintf("/entries/%d/edit", issue.EntityID)
 		default:
 			continue
 		}
