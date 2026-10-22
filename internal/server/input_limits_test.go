@@ -469,7 +469,9 @@ func assertFormRedirect(
 }
 
 func TestMutationHandlersRejectMalformedForms(t *testing.T) {
-	s := &Server{}
+	// A valid header token bypasses the CSRF middleware's form parser. Each
+	// handler must still reject an unreadable body before any store access.
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
 	for _, tc := range []struct {
 		name    string
 		handler http.HandlerFunc
@@ -479,13 +481,28 @@ func TestMutationHandlersRejectMalformedForms(t *testing.T) {
 		{name: "delete accounting profile", handler: s.handleAccountingProfileDelete},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodPost, "/validation", strings.NewReader("data=%XX"))
-			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			r.SetPathValue("id", "1")
-			w := httptest.NewRecorder()
-			tc.handler(w, r)
-			if w.Code != http.StatusBadRequest {
-				t.Fatalf("status = %d, want 400", w.Code)
+			for _, body := range []struct {
+				name, contentType, data string
+			}{
+				{name: "urlencoded", contentType: "application/x-www-form-urlencoded", data: "data=%XX"},
+				{name: "multipart without boundary", contentType: "multipart/form-data", data: "unreadable"},
+				{
+					name: "truncated multipart", contentType: "multipart/form-data; boundary=test-boundary",
+					data: "--test-boundary\r\nContent-Disposition: form-data; name=\"data\"\r\n\r\nvalue",
+				},
+			} {
+				t.Run(body.name, func(t *testing.T) {
+					r := httptest.NewRequest(http.MethodPost, "/validation", strings.NewReader(body.data))
+					r.Header.Set("Content-Type", body.contentType)
+					r.SetPathValue("id", "1")
+					r.AddCookie(&http.Cookie{Name: sessionCookie, Value: "mutation-validation-session"})
+					r.Header.Set(csrfHeaderName, s.csrfToken(r))
+					w := httptest.NewRecorder()
+					s.csrf(tc.handler).ServeHTTP(w, r)
+					if w.Code != http.StatusBadRequest {
+						t.Fatalf("status = %d, want 400", w.Code)
+					}
+				})
 			}
 		})
 	}
