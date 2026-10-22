@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -240,4 +241,34 @@ func (s *Store) BookingUnitsInYear(ctx context.Context, yearID int64) ([]string,
 		return nil, fmt.Errorf("iterate booking units: %w", err)
 	}
 	return out, nil
+}
+
+// BookingDay is the number and the non-voided sum of the bookings on one day.
+type BookingDay struct {
+	Count int
+	Sum   decimal.Decimal
+}
+
+// BookingDayTotals groups the bookings matching f by day (yyyy-mm-dd), with
+// the same count and sum rules as FilterBookings, for the calendar view.
+func (s *Store) BookingDayTotals(ctx context.Context, f BookingFilter) (map[string]BookingDay, error) {
+	where, args := bookingFilterWhere(f)
+	// #nosec G202 -- all SQL fragments are constant or generated placeholders.
+	query := bookingRowsSQL + `SELECT e.entry_date, count(*), COALESCE(SUM(CASE WHEN e.voided THEN 0 ELSE e.cost END), 0)
+		FROM bookings e` + where + ` GROUP BY e.entry_date`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("booking day totals: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]BookingDay{}
+	for rows.Next() {
+		var day time.Time
+		var d BookingDay
+		if err := rows.Scan(&day, &d.Count, &d.Sum); err != nil {
+			return nil, err
+		}
+		out[day.Format("2006-01-02")] = d
+	}
+	return out, rows.Err()
 }

@@ -8,6 +8,7 @@
 
 	<form method="get" action="/buchungen" class="card form">
 		<input type="hidden" name="year" value="{{.Year.ID}}">
+		{{with .Calendar}}<input type="hidden" name="view" value="kalender"><input type="hidden" name="month" value="{{.Month.Format "2006-01"}}">{{end}}
 		<div class="form__grid form__grid--two">
 			<label class="field"><span>Nachbar</span>
 				<select class="select" name="neighbor_id">
@@ -79,6 +80,11 @@
 		</form>{{end}}
 	</details>
 
+	<nav class="segmented viewtoggle" aria-label="Ansicht">
+		<a class="segmented__item" href="{{.ListViewURL}}" {{if not .Calendar}}aria-current="page"{{end}}><span>Liste</span></a>
+		<a class="segmented__item" href="{{.CalendarViewURL}}" {{if .Calendar}}aria-current="page"{{end}}><span>Kalender</span></a>
+	</nav>
+	{{if .Calendar}}{{template "booking-calendar" .Calendar}}{{else}}
 	<p class="muted small">{{.Total}} Buchung(en) · Summe beider Richtungen (ohne Storno) {{money .SumCost}}{{if gt .Pages 1}} · Seite {{.Page}} von {{.Pages}}{{end}}</p>
 	<p class="muted small">Positive Beträge schuldet der Nachbar, negative Beträge schulde ich. Zahlungen sind hier nicht enthalten.</p>
 	<div class="btnrow">
@@ -145,5 +151,22 @@
 		<span class="muted small">Mit diesem Filter gibt es nichts — Filter zurücksetzen zeigt wieder alles.</span>
 	</div>
 	{{end}}
+	{{end}}
 </section>
+{{end}}
+
+{{define "booking-calendar"}}
+<div class="card calendar" data-booking-calendar>
+	<div class="calendar__head">
+		<a class="btn btn--ghost btn--sm" href="{{.PrevURL}}" aria-label="Vormonat">←</a>
+		<h3 class="calendar__title">{{.MonthLabel}}</h3>
+		<a class="btn btn--ghost btn--sm" href="{{.NextURL}}" aria-label="Folgemonat">→</a>
+	</div>
+	<p class="muted small">{{.Count}} Buchung(en) an {{.Days}} Tag(en) · Summe beider Richtungen ohne Storno {{money .Sum}}. Ein Tag öffnet die Liste dieses Tages mit denselben Filtern.</p>
+	<table class="calendar__grid">
+		<thead><tr><th scope="col" abbr="Montag">Mo</th><th scope="col" abbr="Dienstag">Di</th><th scope="col" abbr="Mittwoch">Mi</th><th scope="col" abbr="Donnerstag">Do</th><th scope="col" abbr="Freitag">Fr</th><th scope="col" abbr="Samstag">Sa</th><th scope="col" abbr="Sonntag">So</th></tr></thead>
+		<tbody>{{range .Weeks}}<tr>{{range .}}<td class="calendar__day{{if not .InMonth}} calendar__day--out{{end}}{{if .Weekend}} calendar__day--weekend{{end}}{{if .Today}} calendar__day--today{{end}}{{if .Count}} calendar__day--busy{{end}}">{{if .InMonth}}<a href="{{.URL}}" aria-label="{{.Label}}"><span class="calendar__num">{{.Date.Day}}</span>{{if .Count}}<span class="calendar__count">{{.Count}}×</span><span class="calendar__sum">{{money .Sum}}</span>{{end}}</a>{{else}}<span class="calendar__num" aria-hidden="true">{{.Date.Day}}</span>{{end}}</td>{{end}}</tr>{{end}}</tbody>
+	</table>
+	<p><a class="link small" href="{{.ListURL}}">Zur Liste mit denselben Filtern</a></p>
+</div>
 {{end}}
