@@ -233,6 +233,10 @@ func (s *Server) handleUserResetTotp(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
 	target, err := s.store.GetUser(r.Context(), id)
 	if err != nil {
 		s.notFound(w, r)
@@ -259,6 +263,10 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		s.notFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	current := userFromCtx(r)

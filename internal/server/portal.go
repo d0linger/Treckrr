@@ -10,6 +10,16 @@ import (
 	"github.com/d0linger/treckrr/internal/store"
 )
 
+// feedbackResult accepts only the statuses produced by the public feedback forms.
+func feedbackResult(r *http.Request) string {
+	switch result := r.URL.Query().Get("feedback"); result {
+	case "confirmed", "disputed":
+		return result
+	default:
+		return ""
+	}
+}
+
 // resolvePortalShare applies the same bounded, rate-limited token resolution to
 // every public portal action. Only token hashes ever reach the store.
 func (s *Server) resolvePortalShare(w http.ResponseWriter, r *http.Request) (shareID, neighborID, yearID, invoiceID int64, token string, ok bool) {

@@ -1005,7 +1005,7 @@ func (s *Server) handleInvoiceConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	yearID := formInt64(r, "year")
-	if yearID == 0 {
+	if yearID <= 0 {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
@@ -1058,7 +1058,7 @@ func (s *Server) handleInvoiceIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	yearID := s.yearIDFromForm(r)
-	if yearID == 0 {
+	if yearID <= 0 {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
@@ -1156,7 +1156,7 @@ func (s *Server) handleInvoiceStorno(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	yearID := s.yearIDFromForm(r)
-	if yearID == 0 {
+	if yearID <= 0 {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
@@ -1233,7 +1233,7 @@ func (s *Server) handleInvoiceGutschrift(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	yearID := s.yearIDFromForm(r)
-	if yearID == 0 {
+	if yearID <= 0 {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}

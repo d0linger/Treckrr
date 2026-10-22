@@ -13,7 +13,7 @@ docker compose up -d --build  # http://localhost:8080
 ```
 
 For a local Go workflow you need Go ≥ 1.26.6 (the `go.mod` language floor; CI
-and the image build on 1.27.2) and a reachable PostgreSQL:
+and the image build on 1.27.3) and a reachable PostgreSQL:
 
 ```bash
 export DATABASE_URL="postgres://treckrr:treckrr@localhost:5432/treckrr?sslmode=disable"

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"net/url"
 	"os"
 	"strings"
@@ -14,6 +15,45 @@ import (
 	"github.com/d0linger/treckrr/internal/db"
 	"github.com/d0linger/treckrr/internal/store"
 )
+
+// Verification must not mistake a concurrent seal or retention purge for tampering.
+func TestAuditChainConcurrentMaintenanceIntegration(t *testing.T) {
+	_, st := chainDatabase(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	maintenance := make(chan error, 1)
+	go func() {
+		for i := 0; i < 100; i++ {
+			if err := st.AddAudit(ctx, nil, "admin", "entry_create", "entry", "1", "concurrent", ""); err != nil {
+				maintenance <- err
+				return
+			}
+			if _, err := st.SealAuditLog(ctx); err != nil {
+				maintenance <- err
+				return
+			}
+			if _, err := st.PurgeAuditLog(ctx, time.Now().Add(time.Hour), time.Now().Add(time.Hour)); err != nil {
+				maintenance <- err
+				return
+			}
+		}
+		maintenance <- nil
+	}()
+	var verifyErr error
+	for i := 0; i < 100; i++ {
+		report, err := st.VerifyAuditChain(ctx)
+		if err != nil || !report.OK() {
+			verifyErr = fmt.Errorf("verification %d: %v, problems %v", i, err, report.Problems)
+			break
+		}
+	}
+	if err := <-maintenance; err != nil {
+		t.Fatalf("concurrent maintenance: %v", err)
+	}
+	if verifyErr != nil {
+		t.Fatal(verifyErr)
+	}
+}
 
 // chainDatabase migrates a fresh, owned database: the chain spans the whole
 // audit_log, and the shared test database has other tests deleting their rows.

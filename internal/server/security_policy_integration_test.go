@@ -3,11 +3,76 @@
 package server
 
 import (
+	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/d0linger/treckrr/internal/models"
 )
+
+func TestRequiredPasskeyRejectsPasswordOnlyLoginIntegration(t *testing.T) {
+	e := newItEnv(t)
+	t.Cleanup(func() {
+		if _, err := e.pool.ExecContext(e.ctx, `UPDATE security_policy SET require_mfa_admin=false,
+			require_mfa_editor=false, grace_days=7, enforced_since=NULL WHERE id=1`); err != nil {
+			t.Errorf("reset policy: %v", err)
+		}
+	})
+	user, err := e.st.AuthenticateUser(e.ctx, e.uname, e.adminPass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.AddWebauthnCredential(e.ctx, user.ID, models.WebauthnCredential{
+		CredentialID: []byte(e.uname), PublicKey: []byte("synthetic-test-key"), Name: "Test passkey",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	e.post("/admin/security-policy", url.Values{"require_admin": {"1"}, "grace_days": {"0"}})
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar}
+	resp, err := client.Get(e.srv.URL + "/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := csrfRe.FindStringSubmatch(string(body))
+	if token == nil {
+		t.Fatal("login form lacks CSRF token")
+	}
+	resp, err = client.PostForm(e.srv.URL+"/login", url.Values{
+		"username": {e.uname}, "password": {e.adminPass}, "csrf_token": {token[1]},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "Bitte mit deinem Passkey anmelden.") {
+		t.Fatal("required passkey was bypassed by password-only login")
+	}
+	u, err := url.Parse(e.srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cookie := range jar.Cookies(u) {
+		if cookie.Name == sessionCookie && cookie.Value != "" {
+			t.Fatal("password-only login created an authenticated session")
+		}
+	}
+}
 
 // TestSecondFactorPolicyIntegration switches the sign-in policy on for the
 // env's admin, who has no second factor: during the grace period only a banner

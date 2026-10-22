@@ -172,6 +172,10 @@ func (s *Store) AuditChainHeads(ctx context.Context) ([]AuditChainHead, error) {
 	if err != nil {
 		return nil, err
 	}
+	return scanAuditChainHeads(rows)
+}
+
+func scanAuditChainHeads(rows *sql.Rows) ([]AuditChainHead, error) {
 	defer rows.Close()
 	var out []AuditChainHead
 	for rows.Next() {
@@ -209,23 +213,36 @@ const maxAuditChainProblems = 10
 // part of the live chain, and stores the result on the heads.
 func (s *Store) VerifyAuditChain(ctx context.Context) (AuditChainReport, error) {
 	var report AuditChainReport
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return report, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Sealing and pruning take these locks in this order too. Keep the heads
+	// and their rows stable until the verification result is recorded.
+	headRows, err := tx.QueryContext(ctx, `
+		SELECT chain, last_seq, last_hash, anchor_seq, anchor_hash, verified_at, verified_ok, verify_note
+		  FROM audit_chain_heads ORDER BY chain FOR UPDATE`)
+	if err != nil {
+		return report, err
+	}
 	problem := func(format string, args ...any) {
 		if len(report.Problems) < maxAuditChainProblems {
 			report.Problems = append(report.Problems, fmt.Sprintf(format, args...))
 		}
 	}
-	heads, err := s.AuditChainHeads(ctx)
+	heads, err := scanAuditChainHeads(headRows)
 	if err != nil {
 		return report, err
 	}
 	for _, head := range heads {
-		if err := s.verifyAuditChainRows(ctx, head, &report.Checked, problem); err != nil {
+		if err := verifyAuditChainRows(ctx, tx, head, &report.Checked, problem); err != nil {
 			return report, err
 		}
 	}
 	// Heads copied from restored backups: the row at that position must still
 	// carry that hash, unless the retention purge has since removed it.
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := tx.QueryContext(ctx, `
 		SELECT b.chain, b.seq, b.hash, b.source, a.row_hash, h.anchor_seq
 		  FROM audit_chain_backup_heads b
 		  JOIN audit_chain_heads h ON h.chain = b.chain
@@ -255,15 +272,15 @@ func (s *Store) VerifyAuditChain(ctx context.Context) (AuditChainReport, error) 
 	if !report.OK() {
 		note = report.Problems[0]
 	}
-	if _, err := s.db.ExecContext(ctx,
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE audit_chain_heads SET verified_at=now(), verified_ok=$1, verify_note=$2`, report.OK(), note); err != nil {
 		return report, err
 	}
-	return report, nil
+	return report, tx.Commit()
 }
 
-func (s *Store) verifyAuditChainRows(ctx context.Context, head AuditChainHead, checked *int, problem func(string, ...any)) error {
-	rows, err := s.db.QueryContext(ctx, `
+func verifyAuditChainRows(ctx context.Context, tx *sql.Tx, head AuditChainHead, checked *int, problem func(string, ...any)) error {
+	rows, err := tx.QueryContext(ctx, `
 		SELECT id, username, action, entity, entity_id, detail, ip, created_at, chain_seq, prev_hash, row_hash
 		  FROM audit_log WHERE chain = $1 ORDER BY chain_seq`, head.Chain)
 	if err != nil {

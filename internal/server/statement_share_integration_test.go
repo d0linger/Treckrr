@@ -71,6 +71,13 @@ func TestStatementShareIntegration(t *testing.T) {
 			t.Errorf("public statement leaks %q", forbidden)
 		}
 	}
+	for _, result := range []string{"confirmed", "disputed", "invalid", ""} {
+		_, _, feedbackPage := fetch(http.MethodGet, "/s/konto/"+token+"?feedback="+result, nil)
+		want := result == "confirmed" || result == "disputed"
+		if got := strings.Contains(feedbackPage, "Danke, die Rückmeldung wurde gespeichert."); got != want {
+			t.Errorf("feedback=%q: confirmation shown=%v, want %v", result, got, want)
+		}
+	}
 
 	status, _, _ = fetch(http.MethodPost, "/s/konto/"+token+"/feedback", url.Values{"status": {"disputed"}, "line": {"99"}, "message": {"Falsche Zeile"}})
 	if status != http.StatusBadRequest {

@@ -25,11 +25,18 @@ func insertSignatureTx(ctx context.Context, tx *sql.Tx, entryID int64, e *models
 
 // AddEntrySignature signs an existing booking that is still open for evidence.
 func (s *Store) AddEntrySignature(ctx context.Context, e *models.Entry) error {
+	yearID, neighborID, err := s.entryAccount(ctx, e.ID)
+	if err != nil {
+		return err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
+		return err
+	}
 	if err := lockUninvoicedEntry(ctx, tx, e.ID); err != nil {
 		return err
 	}
@@ -87,11 +94,18 @@ func (s *Store) SignaturesByNeighborYear(ctx context.Context, neighborID, yearID
 // DeleteEntrySignature removes the signature of a booking that is not
 // festgeschrieben and returns it for the audit trail.
 func (s *Store) DeleteEntrySignature(ctx context.Context, entryID int64) (*models.EntrySignature, error) {
+	yearID, neighborID, err := s.entryAccount(ctx, entryID)
+	if err != nil {
+		return nil, err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := lockMutableBookingAccount(ctx, tx, yearID, neighborID); err != nil {
+		return nil, err
+	}
 	if err := lockUninvoicedEntry(ctx, tx, entryID); err != nil {
 		return nil, err
 	}

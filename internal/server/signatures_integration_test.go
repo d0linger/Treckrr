@@ -5,6 +5,7 @@ package server
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // signaturePNG returns a pad-like data URL: a transparent 600×200 canvas with
@@ -138,5 +140,21 @@ func TestEntrySignatureIntegration(t *testing.T) {
 
 	if export := e.get("/neighbors/" + nid + "/dsgvo-export.json"); !strings.Contains(export, `"signer_name": "Eva Huber"`) {
 		t.Error("DSGVO export does not list the signatures")
+	}
+
+	// The store must recheck the year inside the write transaction: a handler
+	// may have loaded an open year just before another request completed it.
+	if _, err := e.pool.ExecContext(e.ctx, `UPDATE billing_years SET status='completed' WHERE id=$1`, e.yearID64); err != nil {
+		t.Fatal(err)
+	}
+	signed.Signature = again
+	if err := e.st.AddEntrySignature(e.ctx, &signed); !errors.Is(err, store.ErrYearCompleted) {
+		t.Errorf("signing a completed year: %v, want ErrYearCompleted", err)
+	}
+	if _, err := e.st.DeleteEntrySignature(e.ctx, signed.ID); !errors.Is(err, store.ErrYearCompleted) {
+		t.Errorf("deleting from a completed year: %v, want ErrYearCompleted", err)
+	}
+	if _, err := e.st.GetEntrySignature(e.ctx, signed.ID); err != nil {
+		t.Fatalf("signature lost after rejected deletion: %v", err)
 	}
 }

@@ -283,7 +283,10 @@ func formInt64FromPath(r *http.Request, name string) (int64, error) {
 
 // formInt64 parses a form field as int64 (0 on empty/invalid).
 func formInt64(r *http.Request, name string) int64 {
-	v, _ := strconv.ParseInt(strings.TrimSpace(r.FormValue(name)), 10, 64)
+	v, err := strconv.ParseInt(strings.TrimSpace(r.FormValue(name)), 10, 64)
+	if err != nil {
+		return 0
+	}
 	return v
 }
 
@@ -291,7 +294,10 @@ func formInt64(r *http.Request, name string) int64 {
 // value as 0 (mirroring formInt64). strconv.Atoi yields an int directly, so the
 // value never passes through a lossy int64->int narrowing on 32-bit builds.
 func formInt(r *http.Request, name string) int {
-	v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue(name)))
+	v, err := strconv.Atoi(strings.TrimSpace(r.FormValue(name)))
+	if err != nil {
+		return 0
+	}
 	return v
 }
 

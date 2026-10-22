@@ -200,8 +200,17 @@ func (s *Server) handleAccountingProfileSave(w http.ResponseWriter, r *http.Requ
 	if yearID := s.yearIDFromForm(r); yearID != 0 {
 		back += "?year=" + strconv.FormatInt(yearID, 10)
 	}
+	if len(r.PostForm["columns"]) > maxFormListLen {
+		s.setFlash(w, r, "error", "Zu viele Exportspalten ausgewählt.")
+		redirect(w, r, back)
+		return
+	}
 	name := trimmed(r, "name")
 	columns := strings.Join(r.PostForm["columns"], ",")
+	if s.tooLong(w, r, "Exportspalten", columns, maxNoteLen) {
+		redirect(w, r, back)
+		return
+	}
 	format := r.FormValue("format")
 	preset := accountingPresetFor(format)
 	if preset == nil {
@@ -263,6 +272,10 @@ func (s *Server) handleAccountingProfileDelete(w http.ResponseWriter, r *http.Re
 	id, err := pathID(r)
 	if err != nil {
 		s.notFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	back := "/rechnungsjournal"

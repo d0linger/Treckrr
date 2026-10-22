@@ -145,6 +145,10 @@ func (s *Server) handleEntrySignatureAdd(w http.ResponseWriter, r *http.Request)
 	}
 	entry.Signature = sig
 	switch err := s.store.AddEntrySignature(r.Context(), entry); {
+	case errors.Is(err, store.ErrYearCompleted):
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen – Unterschriften können nicht mehr ergänzt werden.")
+	case errors.Is(err, store.ErrNeighborAnonymized):
+		s.setFlash(w, r, "error", "Der Nachbar wurde inzwischen anonymisiert. Die Unterschrift wurde nicht gespeichert.")
 	case errors.Is(err, store.ErrSignatureExists):
 		s.setFlash(w, r, "info", "Diese Buchung ist bereits unterschrieben.")
 	case errors.Is(err, store.ErrInvoiceLocked):
@@ -196,6 +200,10 @@ func (s *Server) handleEntrySignatureDelete(w http.ResponseWriter, r *http.Reque
 	back := "/entries/" + itoa64(id) + "/edit#unterschrift"
 	sig, err := s.store.DeleteEntrySignature(r.Context(), id)
 	switch {
+	case errors.Is(err, store.ErrYearCompleted):
+		s.setFlash(w, r, "error", "Das Abrechnungsjahr ist abgeschlossen – Unterschriften können nicht mehr geändert werden.")
+	case errors.Is(err, store.ErrNeighborAnonymized):
+		s.setFlash(w, r, "error", "Der Nachbar wurde inzwischen anonymisiert. Die Unterschrift wurde nicht geändert.")
 	case errors.Is(err, store.ErrNotFound):
 		s.setFlash(w, r, "info", "Die Unterschrift war bereits entfernt.")
 	case errors.Is(err, store.ErrInvoiceLocked):

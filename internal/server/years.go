@@ -94,7 +94,7 @@ func (s *Server) handleYearCreate(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/years")
 		return
 	}
-	if baseID == 0 {
+	if baseID <= 0 {
 		s.setFlash(w, r, "error", "Bitte eine Bemessungsgrundlage wählen.")
 		redirect(w, r, "/years")
 		return
@@ -131,6 +131,11 @@ func (s *Server) handleYearUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	baseID := formInt64(r, "base_id")
 	label := trimmed(r, "label")
+	if baseID <= 0 {
+		s.setFlash(w, r, "error", "Bitte eine Bemessungsgrundlage wählen.")
+		redirect(w, r, "/years")
+		return
+	}
 	if s.tooLong(w, r, "Bezeichnung", label, maxNameLen) {
 		redirect(w, r, "/years")
 		return

@@ -268,7 +268,7 @@ func (s *Server) handleSharedStatement(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	data := pageData{
 		"Title": "Zwischenstand " + strconv.Itoa(view.Year), "Theme": s.themeFromCookie(r),
-		"Statement": view, "StatementToken": token, "FeedbackResult": r.URL.Query().Get("feedback"),
+		"Statement": view, "StatementToken": token, "FeedbackResult": feedbackResult(r),
 	}
 	s.render(w, r, "statement_share", data)
 }
