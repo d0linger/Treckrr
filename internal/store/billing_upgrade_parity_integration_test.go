@@ -98,6 +98,7 @@ func TestBillingUpgradeParityIntegration(t *testing.T) {
 		if err := db.Migrate(ctx, pool); err != nil {
 			t.Fatalf("upgrade migrations: %v", err)
 		}
+		billingUpgradeNeutralDefaults(t, ctx, pool)
 		if changed, err := st.BackfillInvoiceSnapshots(ctx); err != nil || changed != 0 {
 			t.Fatalf("startup backfill: changed=%d err=%v, want no reconstructed snapshots", changed, err)
 		}
@@ -288,6 +289,8 @@ func billingUpgradeRows(t *testing.T, ctx context.Context, pool *sql.DB) map[str
 	t.Helper()
 	// Static SQL only. Keep every old column, including payments.invoice_id,
 	// IDs, timestamps, snapshot hashes, individual line decimals and audit details.
+	// Project only the metadata added since the baseline out of the comparison;
+	// billingUpgradeNeutralDefaults checks those new fields independently.
 	tables := []string{
 		"company", "price_bases", "billing_years", "neighbors", "billing_year_neighbors",
 		"entries", "entry_machines", "neighbor_ledger", "audit_log", "invoices", "payments",
@@ -299,14 +302,15 @@ func billingUpgradeRows(t *testing.T, ctx context.Context, pool *sql.DB) map[str
 	}
 	rows, err := pool.QueryContext(ctx, `SELECT table_name,jsonb_agg(row_data ORDER BY row_data::text) FROM (
 		SELECT 'company' AS table_name,to_jsonb(r) AS row_data FROM company r
-		UNION ALL SELECT 'price_bases',to_jsonb(r) FROM price_bases r
+		UNION ALL SELECT 'price_bases',to_jsonb(r)-'billing_increment_h'-'minimum_h' FROM price_bases r
 		UNION ALL SELECT 'billing_years',to_jsonb(r) FROM billing_years r
 		UNION ALL SELECT 'neighbors',to_jsonb(r) FROM neighbors r
 		UNION ALL SELECT 'billing_year_neighbors',to_jsonb(r) FROM billing_year_neighbors r
-		UNION ALL SELECT 'entries',to_jsonb(r) FROM entries r
+		UNION ALL SELECT 'entries',to_jsonb(r)-'price_term_label'-'price_term_pct'-'price_term_per_h'
+			-'field_id'-'field_label'-'meter_start'-'meter_end' FROM entries r
 		UNION ALL SELECT 'entry_machines',to_jsonb(r) FROM entry_machines r
 		UNION ALL SELECT 'neighbor_ledger',to_jsonb(r) FROM neighbor_ledger r
-		UNION ALL SELECT 'audit_log',to_jsonb(r) FROM audit_log r
+		UNION ALL SELECT 'audit_log',to_jsonb(r)-'chain'-'chain_seq'-'prev_hash'-'row_hash' FROM audit_log r
 		UNION ALL SELECT 'invoices',to_jsonb(r)-'issue_request_hash'-'payment_term_days' FROM invoices r
 		UNION ALL SELECT 'payments',to_jsonb(r)-'preferred_invoice_id' FROM payments r
 		UNION ALL SELECT 'beleg_sends',to_jsonb(r)-'invoice_id' FROM beleg_sends r
@@ -329,6 +333,30 @@ func billingUpgradeRows(t *testing.T, ctx context.Context, pool *sql.DB) map[str
 		t.Fatal(err)
 	}
 	return out
+}
+
+func billingUpgradeNeutralDefaults(t *testing.T, ctx context.Context, pool *sql.DB) {
+	t.Helper()
+	// The old fixture has no billing rules, terms, fields, meter readings, MFA
+	// requirement or audit seals. An upgrade must not introduce any of them.
+	var changed bool
+	if err := pool.QueryRowContext(ctx, `SELECT
+		EXISTS(SELECT 1 FROM price_bases WHERE billing_increment_h <> 0 OR minimum_h <> 0)
+		OR EXISTS(SELECT 1 FROM entries WHERE price_term_label <> '' OR price_term_pct <> 0
+			OR price_term_per_h <> 0 OR field_id IS NOT NULL OR field_label <> ''
+			OR meter_start IS NOT NULL OR meter_end IS NOT NULL)
+		OR EXISTS(SELECT 1 FROM neighbor_price_terms)
+		OR EXISTS(SELECT 1 FROM neighbor_fields)
+		OR EXISTS(SELECT 1 FROM entry_signatures)
+		OR EXISTS(SELECT 1 FROM accounting_export_profiles WHERE format <> 'custom')
+		OR EXISTS(SELECT 1 FROM security_policy WHERE require_mfa_admin OR require_mfa_editor)
+		OR EXISTS(SELECT 1 FROM audit_log WHERE chain IS NOT NULL OR chain_seq IS NOT NULL
+			OR prev_hash IS NOT NULL OR row_hash IS NOT NULL)`).Scan(&changed); err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("upgrade introduced non-neutral defaults into historical data")
+	}
 }
 
 func billingUpgradeReport(t *testing.T, ctx context.Context, st *store.Store, pool *sql.DB) map[string]any {

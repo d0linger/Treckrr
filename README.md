@@ -226,6 +226,10 @@ The backup schedule is a cron expression set in the admin Backup panel, not an e
 - **Port 8080** published on the host (`HOST_PORT`). The database port is not published.
 - Migrations run automatically at startup and are forward-only — **take a backup before upgrading**.
 
+Use the [upgrade validation procedure](docs/upgrade-validation.md) for a production
+backup rehearsal, a read-only comparison of existing business values, and cutover
+and recovery checks.
+
 Persist these two named volumes:
 
 | Volume | Contents |
