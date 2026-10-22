@@ -108,25 +108,38 @@ self.addEventListener("fetch", (event) => {
 async function receiveShare(req) {
 	try {
 		const form = await req.formData();
-		const files = form.getAll("photos")
-			.filter((f) => f && typeof f === "object" && /^image\//.test(f.type))
-			.slice(0, 10)
-			.map((f) => ({ name: f.name, type: f.type, blob: f }));
-		await new Promise((resolve, reject) => {
+		const incoming = form.getAll("photos");
+		if (!incoming.length) return Response.redirect("/share-target?share-error=empty", 303);
+		if (incoming.length > 10) return Response.redirect("/share-target?share-error=too-many", 303);
+		if (incoming.some((f) => !f || typeof f !== "object" || !/^(image\/jpeg|image\/png|image\/gif)$/.test(f.type))) {
+			return Response.redirect("/share-target?share-error=unsupported", 303);
+		}
+		const files = incoming.map((f) => ({ name: f.name, type: f.type, blob: f }));
+		const record = { files, at: Date.now(), id: crypto.randomUUID() };
+		const pending = await new Promise((resolve, reject) => {
 			const open = indexedDB.open("treckrr-share", 1);
 			open.onupgradeneeded = () => open.result.createObjectStore("pending");
 			open.onerror = () => reject(open.error);
 			open.onsuccess = () => {
 				const db = open.result;
 				const tx = db.transaction("pending", "readwrite");
-				tx.objectStore("pending").put({ files, at: Date.now() }, "shared");
-				tx.oncomplete = () => { db.close(); resolve(); };
+				const store = tx.objectStore("pending");
+				let occupied = false;
+				// Keep the check and write together: simultaneous shares must not
+				// replace photos that have not been attached or discarded yet.
+				const current = store.get("shared");
+				current.onsuccess = () => {
+					occupied = !!(current.result && Array.isArray(current.result.files) && current.result.files.length);
+					if (!occupied) store.put(record, "shared");
+				};
+				tx.oncomplete = () => { db.close(); resolve(occupied); };
 				tx.onerror = () => { db.close(); reject(tx.error); };
+				tx.onabort = () => { db.close(); reject(tx.error); };
 			};
 		});
-		return Response.redirect("/share-target", 303);
+		return Response.redirect(pending ? "/share-target?share-error=pending" : "/share-target", 303);
 	} catch (e) {
-		return Response.redirect("/share-target?fallback=1", 303);
+		return Response.redirect("/share-target?share-error=storage", 303);
 	}
 }
 

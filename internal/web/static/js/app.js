@@ -663,7 +663,22 @@
 		if (!form || !("indexedDB" in window) || typeof DataTransfer !== "function") return;
 		var input = form.querySelector("[data-share-files]"), preview = root.querySelector("[data-share-preview]"),
 			empty = root.querySelector("[data-share-empty]"), thumbs = root.querySelector("[data-share-thumbs]");
-		var parkedAt = null, uploading = false;
+		var parkedAt = null, parkedID = null, uploading = false;
+		var shareErrors = {
+			empty: "Es wurden keine Fotos übernommen. Bitte Fotos in der Galerie auswählen und erneut teilen.",
+			"too-many": "Die neuen Fotos wurden nicht übernommen. Bitte höchstens 10 Fotos auf einmal teilen. Bereits wartende Fotos bleiben erhalten.",
+			unsupported: "Die neuen Dateien wurden nicht übernommen. Bitte nur JPEG-, PNG- oder GIF-Fotos teilen. Bereits wartende Fotos bleiben erhalten.",
+			pending: "Die neuen Fotos wurden nicht übernommen, weil noch andere Fotos auf diesem Gerät warten. Bitte diese zuerst anhängen oder verwerfen und die neuen Fotos danach erneut teilen.",
+			storage: "Die neuen Fotos konnten auf diesem Gerät nicht gespeichert werden. Bitte erneut teilen oder direkt in der Buchung anhängen."
+		};
+		var shareError = new URLSearchParams(window.location.search).get("share-error");
+		if (Object.prototype.hasOwnProperty.call(shareErrors, shareError)) {
+			var warning = document.createElement("p");
+			warning.className = "flash flash--error";
+			warning.setAttribute("role", "alert");
+			warning.textContent = shareErrors[shareError];
+			root.insertBefore(warning, form);
+		}
 		var status = document.createElement("p");
 		status.className = "muted small";
 		status.setAttribute("role", "status");
@@ -678,6 +693,7 @@
 					var db = open.result, tx = db.transaction("pending", mode), req = work(tx.objectStore("pending"));
 					tx.oncomplete = function () { db.close(); resolve(req ? req.result : undefined); };
 					tx.onerror = function () { db.close(); reject(tx.error); };
+					tx.onabort = function () { db.close(); reject(tx.error); };
 				};
 			});
 		}
@@ -686,7 +702,8 @@
 			return withStore("readwrite", function (store) {
 				var req = store.get("shared");
 				req.onsuccess = function () {
-					if (req.result && req.result.at === parkedAt) store.delete("shared");
+					var current = req.result;
+					if (current && (parkedID ? current.id === parkedID : !current.id && current.at === parkedAt)) store.delete("shared");
 				};
 				return req;
 			});
@@ -695,16 +712,31 @@
 			var files = record && Array.isArray(record.files) ? record.files : [];
 			if (!files.length) return;
 			parkedAt = record.at;
+			parkedID = record.id || null;
 			var list = new DataTransfer();
 			files.forEach(function (f, i) {
 				var file = new File([f.blob], f.name || ("foto-" + (i + 1) + ".jpg"), { type: f.type || "image/jpeg" });
 				list.items.add(file);
 				var img = document.createElement("img");
-				img.src = URL.createObjectURL(file);
 				img.alt = file.name;
 				img.width = 96;
 				img.height = 96;
 				thumbs.appendChild(img);
+				function unavailable() {
+					var hint = document.createElement("span");
+					hint.className = "muted small";
+					hint.textContent = file.name + " – Vorschau nicht verfügbar";
+					if (img.parentNode === thumbs) thumbs.replaceChild(hint, img);
+				}
+				// The image policy permits data URLs; the original file stays in
+				// the form and parked store even if its preview cannot be read.
+				var reader = new FileReader();
+				reader.onload = function () {
+					if (typeof reader.result === "string") img.src = reader.result;
+					else unavailable();
+				};
+				reader.onerror = reader.onabort = img.onerror = unavailable;
+				try { reader.readAsDataURL(file); } catch (e) { unavailable(); }
 			});
 			input.files = list.files;
 			root.querySelector("[data-share-count]").textContent = files.length + (files.length === 1 ? " Foto" : " Fotos") + " bereit";

@@ -35,9 +35,9 @@ async function openFixture(page: Page) {
 }
 
 // Writes the parked share exactly as sw.js does.
-async function park(page: Page, count: number) {
+async function park(page: Page, count: number, id?: string) {
   await page.goto("http://share-target.test/fixture");
-  await page.evaluate(async ({ png, count }) => {
+  await page.evaluate(async ({ png, count, id }) => {
     const bytes = Uint8Array.from(atob(png), c => c.charCodeAt(0));
     const files = Array.from({ length: count }, (_, i) => ({ name: `beleg-${i + 1}.png`, type: "image/png", blob: new Blob([bytes], { type: "image/png" }) }));
     await new Promise<void>((resolve, reject) => {
@@ -46,39 +46,41 @@ async function park(page: Page, count: number) {
       open.onerror = () => reject(open.error);
       open.onsuccess = () => {
         const tx = open.result.transaction("pending", "readwrite");
-        tx.objectStore("pending").put({ files, at: Date.now() }, "shared");
+        tx.objectStore("pending").put({ files, at: Date.now(), ...(id ? { id } : {}) }, "shared");
         tx.oncomplete = () => { open.result.close(); resolve(); };
       };
     });
-  }, { png, count });
+  }, { png, count, id });
   await page.reload();
 }
 
-test("parked photos are attached and uploaded to the chosen booking once", async ({ page }) => {
-  await openFixture(page);
-  await park(page, 2);
-  await expect(page.locator("[data-share-count]")).toHaveText("2 Fotos bereit");
-  await expect(page.locator("[data-share-thumbs] img")).toHaveCount(2);
+for (const identity of ["legacy timestamp", "unique ID"]) {
+  test(`parked photos with ${identity} are attached and uploaded to the chosen booking once`, async ({ page }) => {
+    await openFixture(page);
+    await park(page, 2, identity === "unique ID" ? "d7445564-77f8-4a62-9308-8bf3527a5b49" : undefined);
+    await expect(page.locator("[data-share-count]")).toHaveText("2 Fotos bereit");
+    await expect(page.locator("[data-share-thumbs] img")).toHaveCount(2);
 
-  let body = "";
-  let target = "";
-  await page.route("**/entries/7/photos", async route => {
-    target = new URL(route.request().url()).pathname;
-    body = route.request().postDataBuffer()?.toString("latin1") || "";
-	return route.fulfill({ contentType: "application/json", body: JSON.stringify({ uploaded: true }) });
+    let body = "";
+    let target = "";
+    await page.route("**/entries/7/photos", async route => {
+      target = new URL(route.request().url()).pathname;
+      body = route.request().postDataBuffer()?.toString("latin1") || "";
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ uploaded: true }) });
+    });
+    await page.getByLabel("Buchung 7").check();
+    await page.getByRole("button", { name: "Fotos anhängen" }).click();
+    await expect.poll(() => target).toBe("/entries/7/photos");
+    expect(body).toContain('name="photo"; filename="beleg-1.png"');
+    expect(body).toContain('name="photo"; filename="beleg-2.png"');
+    expect(body).toContain('name="csrf_token"');
+
+    await expect(page).toHaveURL("http://share-target.test/entries/7/edit");
+    await page.goto("http://share-target.test/fixture");
+    await expect(page.locator("[data-share-empty]")).toBeVisible();
+    await expect(page.locator("[data-share-form]")).toBeHidden();
   });
-  await page.getByLabel("Buchung 7").check();
-  await page.getByRole("button", { name: "Fotos anhängen" }).click();
-  await expect.poll(() => target).toBe("/entries/7/photos");
-  expect(body).toContain('name="photo"; filename="beleg-1.png"');
-  expect(body).toContain('name="photo"; filename="beleg-2.png"');
-  expect(body).toContain('name="csrf_token"');
-
-  await expect(page).toHaveURL("http://share-target.test/entries/7/edit");
-  await page.goto("http://share-target.test/fixture");
-  await expect(page.locator("[data-share-empty]")).toBeVisible();
-  await expect(page.locator("[data-share-form]")).toBeHidden();
-});
+}
 
 for (const failure of ["network", "rejected", "partial", "login"]) {
 	test(`parked photos survive ${failure} upload failures and can be retried`, async ({ page }) => {
@@ -153,4 +155,55 @@ for (const invalid of [
     await expect(page.locator("[data-share-count]")).toHaveText("1 Foto bereit");
     expect(posts).toEqual([]);
   });
+}
+
+for (const identity of ["legacy timestamp", "unique ID"]) {
+  for (const action of ["upload", "discard"]) {
+    test(`a stale ${identity} tab cannot remove a newer share on ${action}`, async ({ page }) => {
+      await openFixture(page);
+      await park(page, 1);
+      // Hold the timestamp constant: two distinct shares may arrive within the
+      // same millisecond, including during an upgrade from legacy records.
+      const replace = async (id: string, name: string) => page.evaluate(async ({ id, name }) => {
+        await new Promise<void>((resolve, reject) => {
+          const open = indexedDB.open("treckrr-share", 1);
+          open.onerror = () => reject(open.error);
+          open.onsuccess = () => {
+            const db = open.result;
+            const tx = db.transaction("pending", "readwrite");
+            const store = tx.objectStore("pending");
+            const get = store.get("shared");
+            get.onsuccess = () => {
+              const record = get.result;
+              record.id = id;
+              record.files[0].name = name;
+              store.put(record, "shared");
+            };
+            tx.oncomplete = () => { db.close(); resolve(); };
+            tx.onabort = () => { db.close(); reject(tx.error); };
+          };
+        });
+      }, { id, name });
+      if (identity === "unique ID") {
+        await replace("displayed-share", "displayed.png");
+        await page.reload();
+      }
+      await expect(page.locator("[data-share-count]")).toHaveText("1 Foto bereit");
+      await replace("newer-share", "newer.png");
+      if (action === "upload") {
+        await page.route("**/entries/7/photos", route => route.fulfill({
+          contentType: "application/json", body: JSON.stringify({ uploaded: true }),
+        }));
+        await page.getByLabel("Buchung 7").check();
+        await page.getByRole("button", { name: "Fotos anhängen" }).click();
+        await expect(page).toHaveURL("http://share-target.test/entries/7/edit");
+      } else {
+        await page.getByRole("button", { name: "Verwerfen", exact: true }).click();
+        await expect(page).toHaveURL("http://share-target.test/buchungen");
+      }
+      await page.goto("http://share-target.test/fixture");
+      await expect(page.locator("[data-share-count]")).toHaveText("1 Foto bereit");
+      await expect(page.locator("[data-share-thumbs] img")).toHaveAttribute("alt", "newer.png");
+    });
+  }
 }
