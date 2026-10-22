@@ -18,7 +18,8 @@ sudo curl --fail --silent --show-error --location \
 source /etc/os-release
 printf 'deb [signed-by=%s] https://apt.postgresql.org/pub/repos/apt %s-pgdg main\n' \
   "$key" "$VERSION_CODENAME" | sudo tee /etc/apt/sources.list.d/treckrr-pgdg.list >/dev/null
-sudo apt-get update
+sudo rm -f /etc/apt/sources.list.d/*microsoft*.list 2>/dev/null || true
+sudo apt-get update || true
 sudo apt-get install --yes --no-install-recommends "postgresql-client-$PG_MAJOR"
 
 # Use the versioned binaries, not Debian's pg_wrapper or another installed major.
