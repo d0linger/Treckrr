@@ -134,5 +134,30 @@
 		</div>
 	</div>
 	{{end}}
+
+	{{if .FieldStats}}
+	<div class="card" id="felder">
+		<h2 class="section-title">Felder</h2>
+		<p class="muted small">Eigene Leistungen je Feld, wie beim Buchen angegeben. „je ha“ nur bei gepflegter Fläche.</p>
+		<div class="tablewrap" role="region" aria-label="Leistungen je Feld" tabindex="0">
+			<table class="dtable">
+				<thead><tr><th>Nachbar</th><th>Feld</th><th class="num">Fläche</th><th class="num">Buchungen</th><th class="num">Stunden</th><th class="num">Summe</th><th class="num">je ha</th></tr></thead>
+				<tbody>
+					{{range .FieldStats}}
+					<tr>
+						<td>{{.NeighborName}}</td>
+						<td><a href="/buchungen?year={{$.Year.ID}}&neighbor_id={{.NeighborID}}&task={{.Label}}{{$.Period}}">{{.Label}}</a></td>
+						<td class="num">{{if .AreaHa.IsPositive}}{{num .AreaHa}} ha{{else}}–{{end}}</td>
+						<td class="num">{{.Count}}</td>
+						<td class="num">{{num .Hours}}</td>
+						<td class="num">{{money .Cost}}</td>
+						<td class="num">{{if .AreaHa.IsPositive}}{{money .PerHa}}{{else}}–{{end}}</td>
+					</tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+	</div>
+	{{end}}
 </section>
 {{end}}

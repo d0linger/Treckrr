@@ -23,6 +23,7 @@ type dsgvoExport struct {
 	Subject            dsgvoSubject                    `json:"subject"`
 	LegacyEquipment    []models.NeighborEquipment      `json:"neighbor_equipment,omitempty"`
 	PriceTerms         []dsgvoPriceTerm                `json:"price_terms,omitempty"`
+	Fields             []models.Field                  `json:"fields,omitempty"`
 	BillingYears       []dsgvoYear                     `json:"billing_years"`
 	Recurring          []store.NeighborRecurringExport `json:"recurring_rules"`
 	Mail               []store.NeighborMailExport      `json:"mail_outbox"`
@@ -168,6 +169,7 @@ type dsgvoEntry struct {
 	Voided     bool            `json:"voided"`
 	VoidReason string          `json:"void_reason,omitempty"`
 	PriceTerm  string          `json:"price_term,omitempty"`
+	Field      string          `json:"field,omitempty"`
 }
 
 type dsgvoInvoice struct {
@@ -194,6 +196,7 @@ func dsgvoEntryFrom(e models.Entry) dsgvoEntry {
 		Machines: e.MachineLabels, Unit: e.Unit, Quantity: e.Quantity,
 		UnitPrice: e.UnitPrice, Cost: e.Cost, Note: e.Note,
 		Voided: e.Voided, VoidReason: e.VoidReason, PriceTerm: models.PriceTermNote(e.PriceTermLabel, e.PriceTermPct),
+		Field: e.FieldLabel,
 	}
 }
 
@@ -241,6 +244,11 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 		return
 	}
 	out.LegacyEquipment, err = s.store.ListNeighborEquipment(r.Context(), n.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	out.Fields, err = s.store.ListFields(r.Context(), n.ID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return

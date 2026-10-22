@@ -25,10 +25,12 @@ type BookingFilter struct {
 // only rows sourced from entries may be submitted to booking bulk actions.
 type BookingRow struct {
 	EntryRow
-	Source    string
-	Direction string
-	Kind      string
-	Booking   *models.LedgerBooking
+	// FieldLabel is the neighbor's field an own booking names ("" otherwise).
+	FieldLabel string
+	Source     string
+	Direction  string
+	Kind       string
+	Booking    *models.LedgerBooking
 }
 
 // IsLedger distinguishes account postings from outgoing work entries.
@@ -66,7 +68,7 @@ func (r BookingRow) DirectionLabel() string {
 const bookingRowsSQL = `WITH bookings AS (
 	SELECT e.id, e.billing_year_id, e.neighbor_id, e.entry_date,
 	       e.task_label, e.note, e.unit, e.hours, e.quantity, e.unit_price,
-	       e.cost, e.voided, e.linked_entry_id,
+	       e.cost, e.voided, e.linked_entry_id, e.field_label,
 	       'entry'::text AS source, 'out'::text AS direction,
 	       CASE WHEN e.person_id IS NOT NULL OR e.unit = 'Mannstunde' THEN 'labor'
 	            WHEN e.unit = 'h' THEN 'equipment' ELSE 'quantity' END AS kind,
@@ -80,7 +82,7 @@ const bookingRowsSQL = `WITH bookings AS (
 	       CASE WHEN l.booking->>'unit' = 'h' THEN (l.booking->>'quantity')::numeric ELSE 0 END,
 	       COALESCE((l.booking->>'quantity')::numeric, 0),
 	       COALESCE((l.booking->>'unit_price')::numeric, 0),
-	       l.amount, l.voided, NULL::bigint, 'ledger'::text,
+	       l.amount, l.voided, NULL::bigint, ''::text, 'ledger'::text,
 	       CASE WHEN l.amount < 0 THEN 'in' ELSE 'out' END,
 	       CASE WHEN COALESCE(l.transfer_id, '') <> '' THEN 'transfer'
 	            ELSE COALESCE(l.booking->>'kind', 'manual') END,
@@ -102,7 +104,7 @@ func bookingFilterWhere(f BookingFilter) (string, []any) {
 		args = append(args, likeEscape(strings.ToLower(task)))
 		p := "$" + strconv.Itoa(len(args))
 		where += " AND (lower(e.task_label) LIKE " + p + " ESCAPE '\\' OR lower(e.note) LIKE " + p +
-			" ESCAPE '\\' OR lower(e.detail) LIKE " + p + " ESCAPE '\\')"
+			" ESCAPE '\\' OR lower(e.detail) LIKE " + p + " ESCAPE '\\' OR lower(e.field_label) LIKE " + p + " ESCAPE '\\')"
 	}
 	switch f.Direction {
 	case "in", "out":
@@ -126,7 +128,7 @@ func scanBookingRow(rows *sql.Rows) (BookingRow, error) {
 	var booking []byte
 	err := rows.Scan(&r.ID, &r.NeighborID, &r.Date, &r.TaskLabel, &r.Note,
 		&r.Unit, &r.Hours, &r.Quantity, &r.UnitPrice, &r.Cost, &r.Voided,
-		&r.LinkedEntryID, &r.NeighborName, &r.Source, &r.Direction, &r.Kind, &booking, &r.InvoiceLocked)
+		&r.LinkedEntryID, &r.FieldLabel, &r.NeighborName, &r.Source, &r.Direction, &r.Kind, &booking, &r.InvoiceLocked)
 	if err != nil {
 		return r, fmt.Errorf("scan unified booking: %w", err)
 	}
@@ -140,7 +142,7 @@ func scanBookingRow(rows *sql.Rows) (BookingRow, error) {
 
 const bookingSelectSQL = `SELECT e.id, e.neighbor_id, e.entry_date,
 	e.task_label, e.note, e.unit, e.hours, e.quantity, e.unit_price, e.cost,
-	e.voided, e.linked_entry_id, n.name, e.source, e.direction, e.kind, e.booking, e.invoice_locked
+	e.voided, e.linked_entry_id, e.field_label, n.name, e.source, e.direction, e.kind, e.booking, e.invoice_locked
 	FROM bookings e JOIN neighbors n ON n.id = e.neighbor_id`
 
 // FilterBookings returns one combined page and exact signed totals for all

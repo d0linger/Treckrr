@@ -74,6 +74,17 @@ func (s *Server) setEntryBookingForm(r *http.Request, data pageData, entry *mode
 	if err != nil {
 		return err
 	}
+	switch {
+	case entry.FieldID != nil:
+		v["field_id"] = strconv.FormatInt(*entry.FieldID, 10)
+	case entry.FieldLabel != "":
+		v["field_id"], v["field_label"] = "other", entry.FieldLabel
+	}
+	fields, err := s.store.ListFields(r.Context(), entry.NeighborID)
+	if err != nil {
+		return err
+	}
+	data["Fields"] = fields
 	data["BookingAction"] = "/entries/" + strconv.FormatInt(entry.ID, 10) + "/update"
 	if copyMode {
 		data["BookingAction"] = "/entries"

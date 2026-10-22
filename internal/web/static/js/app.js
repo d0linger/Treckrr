@@ -756,6 +756,16 @@
 		var form = pad.closest("form");
 		if (form) form.addEventListener("reset", reset);
 	});
+
+	// Field picker (Ausbaukarte II #29): "Anderes Feld" reveals the free-text
+	// name. Value-only like the other helpers; no submit handler.
+	document.querySelectorAll("[data-field-select]").forEach(function (select) {
+		var text = select.closest("[data-field-picker]").querySelector("[data-field-text]");
+		if (!text) return;
+		function sync() { text.hidden = select.value !== "other"; }
+		select.addEventListener("change", sync);
+		sync();
+	});
 	// Recovery-code gate: "Fertig" stays disabled until the user confirms they
 	// saved the codes. Without JS the link works normally (no lockout).
 	(function () {

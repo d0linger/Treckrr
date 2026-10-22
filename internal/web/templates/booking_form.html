@@ -98,6 +98,15 @@
 		<p class="muted small" data-person-status role="status"></p>
 		{{if not .Persons}}<p class="muted small">Noch keine gepflegte Person vorhanden. Freie Namen sind möglich. <a class="link" href="/personen">Personen verwalten</a></p>{{end}}
 	</details>
+	{{$fieldSel := index $v "field_id"}}
+	<div class="form__grid form__grid--two" data-booking-panel="equipment:out labor:out quantity:out fixed:out" data-field-picker>
+		<label class="field"><span>Feld <span class="muted small">optional</span></span><select class="select" name="field_id" data-field-select>
+			<option value="">— kein Feld —</option>
+			{{range .Fields}}{{if or (not .Archived) (eq (printf "%d" .ID) $fieldSel)}}<option value="{{.ID}}" {{if eq (printf "%d" .ID) $fieldSel}}selected{{end}}>{{.Label}}</option>{{end}}{{end}}
+			<option value="other" {{if eq $fieldSel "other"}}selected{{end}}>Anderes Feld (Freitext)</option>
+		</select></label>
+		<label class="field" data-field-text {{if ne $fieldSel "other"}}hidden{{end}}><span>Feldname</span><input class="input" name="field_label" maxlength="100" value="{{index $v "field_label"}}" placeholder="z. B. Wiese am Bach"></label>
+	</div>
 	<label class="field"><span>Tätigkeit / Beschreibung</span><input class="input" name="task_label" maxlength="100" value="{{index $v "task_label"}}" placeholder="z. B. Mähen oder Materialkosten" data-booking-task {{if or (eq $kind "quantity") (eq $kind "fixed")}}required{{end}}><span class="sr-only" data-booking-task-help></span></label>
 	<details class="disclosure form-details" {{if index $v "note"}}open{{end}}><summary>Weitere Angaben <span class="muted small">optional</span></summary><label class="field"><span>Notiz / Belegreferenz</span><input class="input" name="note" maxlength="2000" value="{{index $v "note"}}"></label>{{if and (not .BookingEdit) (not .BookingCopy)}}<button class="btn btn--ghost btn--xs" type="button" data-defaults-reset>Gemerkte Vorgaben löschen</button>{{end}}</details>
 	<div class="booking-preview" data-booking-preview role="status" aria-live="polite" aria-atomic="true"><p class="muted small">Leistung auswählen und positive Stunden oder Beträge eingeben.</p></div>

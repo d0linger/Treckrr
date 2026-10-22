@@ -68,8 +68,8 @@
 	{{end}}
 	{{if or .User.CanWrite .PriceTerms}}
 	<details class="card disclosure" id="konditionen">
-		<summary>Preisvereinbarung {{template "help-link" "preisvereinbarung"}}{{with .PriceTermToday}} <span class="muted small">heute: {{num .DiscountPct}} % {{.Label}}</span>{{end}}</summary>
-		<p class="muted small">Ein vereinbarter Rabatt auf eigene Maschinenstunden aus dem Katalog an {{.Neighbor.Name}}. Er gilt für neue und bearbeitete Buchungen im Gültigkeitszeitraum und steht auf Beleg und Rechnung; offene Buchungen ändern sich erst über „Neu berechnen“. Mannstunden, Mengen und Gegenleistungen bleiben unverändert.</p>
+		<summary>Preisvereinbarung{{with .PriceTermToday}} <span class="muted small">heute: {{num .DiscountPct}} % {{.Label}}</span>{{end}}</summary>
+		<p class="muted small">Ein vereinbarter Rabatt {{template "help-link" "preisvereinbarung"}} auf eigene Maschinenstunden aus dem Katalog an {{.Neighbor.Name}}. Er gilt für neue und bearbeitete Buchungen im Gültigkeitszeitraum und steht auf Beleg und Rechnung; offene Buchungen ändern sich erst über „Neu berechnen“. Mannstunden, Mengen und Gegenleistungen bleiben unverändert.</p>
 		{{if .PriceTerms}}<ul class="action-list">{{range .PriceTerms}}<li class="btnrow"><span><strong>{{num .DiscountPct}} % {{.Label}}</strong> <span class="muted small">ab {{date .ValidFrom}}{{with .ValidTo}} bis {{date .}}{{end}}</span></span>
 			{{if $.User.CanWrite}}<form method="post" action="/neighbors/{{$.Neighbor.ID}}/price-terms/delete?year={{$.Year.ID}}" data-confirm-danger data-confirm="Preisvereinbarung {{.Label}} löschen? Gebuchte Leistungen behalten ihren Preis bis zur Neuberechnung."><input type="hidden" name="term_id" value="{{.ID}}"><button class="btn btn--ghost btn--sm" type="submit">Löschen</button></form>{{end}}</li>{{end}}</ul>{{end}}
 		{{if .User.CanWrite}}{{if not .Neighbor.Anonymized}}
@@ -81,6 +81,26 @@
 				<label class="field"><span>Gültig bis (optional)</span><input class="input" type="date" name="valid_to"></label>
 			</div>
 			<div class="btnrow"><button class="btn btn--ghost" type="submit">Preisvereinbarung speichern</button></div>
+		</form>
+		{{end}}{{end}}
+	</details>
+	{{end}}
+	{{if or .User.CanWrite .Fields}}
+	<details class="card disclosure" id="felder">
+		<summary>Felder{{with .Fields}} <span class="muted small">{{len .}}</span>{{end}}</summary>
+		<p class="muted small">Felder von {{.Neighbor.Name}}, die beim Buchen eigener Leistungen gewählt werden können. Die Buchung behält den Feldnamen, auch wenn das Feld später archiviert wird. Leistungen {{.Year.Year}} je Feld stehen daneben.</p>
+		{{if .Fields}}<ul class="action-list">{{range .Fields}}{{$stat := index $.FieldStats .ID}}<li class="btnrow"><span><strong>{{.Label}}</strong>{{if .Archived}} <span class="tag">archiviert</span>{{end}}{{if $stat.Count}} <span class="muted small">{{$stat.Count}} Buchung(en) · {{money $stat.Cost}}{{if .AreaHa.IsPositive}} · {{money $stat.PerHa}} je ha{{end}}</span>{{end}}</span>
+			{{if $.User.CanWrite}}<form method="post" action="/neighbors/{{$.Neighbor.ID}}/fields/archive?year={{$.Year.ID}}"><input type="hidden" name="field_id" value="{{.ID}}"><input type="hidden" name="archived" value="{{if .Archived}}0{{else}}1{{end}}"><button class="btn btn--ghost btn--sm" type="submit">{{if .Archived}}Wieder aktivieren{{else}}Archivieren{{end}}</button></form>
+			<form method="post" action="/neighbors/{{$.Neighbor.ID}}/fields/delete?year={{$.Year.ID}}" data-confirm-danger data-confirm="Feld {{.Name}} löschen? Gebuchte Felder lassen sich nur archivieren."><input type="hidden" name="field_id" value="{{.ID}}"><button class="btn btn--ghost btn--sm" type="submit">Löschen</button></form>{{end}}</li>{{end}}</ul>{{end}}
+		{{with .LooseFieldStats}}<p class="muted small">Als Freitext gebucht: {{range $i, $s := .}}{{if $i}}, {{end}}{{$s.Label}} ({{money $s.Cost}}){{end}}</p>{{end}}
+		{{if .User.CanWrite}}{{if not .Neighbor.Anonymized}}
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/fields?year={{.Year.ID}}" class="form" data-field-form>
+			<div class="form__grid">
+				<label class="field"><span>Feldname</span><input class="input" name="name" maxlength="100" required placeholder="z. B. Hinterfeld"></label>
+				<label class="field"><span>Fläche (ha, optional)</span><input class="input" type="number" name="area_ha" min="0.0001" step="0.0001" inputmode="decimal"></label>
+				<label class="field"><span>Schlagnummer (optional)</span><input class="input" name="plot_number" maxlength="40"></label>
+			</div>
+			<div class="btnrow"><button class="btn btn--ghost" type="submit">Feld anlegen</button></div>
 		</form>
 		{{end}}{{end}}
 	</details>

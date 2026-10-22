@@ -432,6 +432,11 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	fieldStats, err := s.store.FieldStatsForYear(r.Context(), year.ID, nil, from, to)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 
 	// Payment split (paid vs open), computed in a single query.
 	paidCost, openCost, creditCost, err := s.store.YearPaymentTotals(r.Context(), year.ID)
@@ -525,6 +530,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["ByMachineMax"] = maxHours(byMachine)
 	data["MachineUsage"] = machineUsage
 	data["UnitMetrics"] = unitMetrics
+	data["FieldStats"] = fieldStats
 	data["From"] = sanitizeQueryParam(r.URL.Query().Get("from"), maxNameLen)
 	data["To"] = sanitizeQueryParam(r.URL.Query().Get("to"), maxNameLen)
 	data["Period"] = period
@@ -629,6 +635,11 @@ func (s *Server) handleStatsExport(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	fields, err := s.store.FieldStatsForYear(r.Context(), year.ID, nil, from, to)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 
 	t := exportTable{sheet: fmt.Sprintf("Statistik %d", year.Year),
 		header: []string{"Auswertung", "Bezeichnung", "Einheit", "Menge", "Stunden", "Betrag (€)", "je Einheit (€)"}}
@@ -660,6 +671,14 @@ func (s *Server) handleStatsExport(w http.ResponseWriter, r *http.Request) {
 	for _, u := range units {
 		t.add(cellLabel("Kennzahl"), cellText(u.Task), cellText(u.Unit), cellNumber(u.Quantity), empty,
 			cellMoney(u.Cost), cellMoney(u.PerUnit))
+	}
+	for _, f := range fields {
+		perHa := empty
+		if f.AreaHa.IsPositive() {
+			perHa = cellMoney(f.PerHa())
+		}
+		t.add(cellLabel("Feld"), cellText(f.NeighborName+" · "+f.Label), cellLabel("ha"), cellNumber(f.AreaHa), cellNumber(f.Hours),
+			cellMoney(f.Cost), perHa)
 	}
 	s.writeExport(w, r, fmt.Sprintf("statistik-%d", year.Year), t)
 }

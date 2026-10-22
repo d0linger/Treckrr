@@ -131,7 +131,7 @@ func bookingEntryPerson(p models.BookingPerson, main *models.Entry) *models.Entr
 		Date: main.Date, TaskLabel: "Mannstunden " + p.Name, Unit: models.UnitMannstunde,
 		Quantity: p.Hours, UnitPrice: p.Rate, Cost: money.Amount(p.Hours, p.Rate),
 		PersonID: p.PersonID, PersonName: p.Name, Voided: p.Voided,
-		RequestFingerprint: main.RequestFingerprint,
+		RequestFingerprint: main.RequestFingerprint, FieldID: main.FieldID, FieldLabel: main.FieldLabel,
 	}
 }
 
@@ -308,6 +308,11 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 		in := &store.LedgerBookingInput{YearID: year.ID, NeighborID: main.NeighborID, Date: date,
 			Incoming: direction == "in", Booking: b, IdempotencyKey: main.IdempotencyKey}
 		return bookingDraft{LedgerInput: in, BookedPeople: people}, "", nil
+	}
+	// The field the work was done on (a listed field of the neighbor or free
+	// text) is frozen on the own booking and its helper lines.
+	if main.FieldID, main.FieldLabel, msg, err = s.bookingFieldFromForm(r, main.NeighborID, creating); msg != "" || err != nil {
+		return bookingDraft{}, msg, err
 	}
 	// An on-site signature is captured only with a new own booking; it is
 	// stored with the main entry in the booking's transaction (online or replayed).

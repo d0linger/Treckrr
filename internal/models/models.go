@@ -403,6 +403,10 @@ type Entry struct {
 	PersonID *int64
 	// PersonName preserves the booked name even without a master-data link.
 	PersonName string
+	// FieldID and FieldLabel name the neighbor's field the work was done on:
+	// a listed field (FieldID) or free text, with the name frozen in FieldLabel.
+	FieldID    *int64
+	FieldLabel string
 	// Signature is an on-site signature captured with a new booking; the store
 	// writes it in the booking's transaction. Never loaded with the entry.
 	Signature *EntrySignature `json:"-"`
