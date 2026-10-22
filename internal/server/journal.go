@@ -126,6 +126,12 @@ func (s *Server) handleJournal(w http.ResponseWriter, r *http.Request) {
 	}
 	data["AccountingProfiles"] = profiles
 	data["AccountingColumns"] = accountingColumns
+	data["AccountingPresets"] = accountingPresets
+	presetLabels := map[string]string{}
+	for _, p := range accountingPresets {
+		presetLabels[p.Key] = p.Label
+	}
+	data["AccountingPresetLabels"] = presetLabels
 	// Kleinunternehmer ceiling (Nr. 55): only when configured (>0) and relevant.
 	if company.TaxMode == "kleinunternehmer" && company.SmallBusinessLimit.IsPositive() {
 		kuSum, err := s.store.KUCalendarYearGross(r.Context(), year.Year)
@@ -161,6 +167,15 @@ var accountingColumnLabels = func() map[string]string {
 	return m
 }()
 
+// allAccountingColumns is the complete free mapping in display order.
+func allAccountingColumns() string {
+	keys := make([]string, len(accountingColumns))
+	for i, col := range accountingColumns {
+		keys[i] = col.Key
+	}
+	return strings.Join(keys, ",")
+}
+
 func validAccountingColumns(raw string) ([]string, bool) {
 	parts := strings.Split(raw, ",")
 	seen := make(map[string]bool, len(parts))
@@ -187,6 +202,15 @@ func (s *Server) handleAccountingProfileSave(w http.ResponseWriter, r *http.Requ
 	}
 	name := trimmed(r, "name")
 	columns := strings.Join(r.PostForm["columns"], ",")
+	format := r.FormValue("format")
+	preset := accountingPresetFor(format)
+	if preset == nil {
+		format = "custom"
+	} else {
+		// A preset fixes its own layout; the stored mapping keeps every column
+		// so switching the profile back to "custom" starts complete.
+		columns = allAccountingColumns()
+	}
 	if name == "" || s.tooLong(w, r, "Profilname", name, maxNameLen) {
 		if name == "" {
 			s.setFlash(w, r, "error", "Ein Profilname ist erforderlich.")
@@ -207,7 +231,10 @@ func (s *Server) handleAccountingProfileSave(w http.ResponseWriter, r *http.Requ
 		ID: formInt64(r, "id"), Name: name, RevenueAccount: trimmed(r, "revenue_account"),
 		ReceivableAccount: trimmed(r, "receivable_account"), TaxCode: trimmed(r, "tax_code"),
 		CostCenter: trimmed(r, "cost_center"), Columns: columns, Delimiter: delimiter,
-		DecimalComma: r.FormValue("decimal_comma") == "true", DecimalCommaSet: true,
+		DecimalComma: r.FormValue("decimal_comma") == "true", DecimalCommaSet: true, Format: format,
+	}
+	if preset != nil {
+		p.Delimiter, p.DecimalComma = ";", true
 	}
 	for label, value := range map[string]string{
 		"Erlöskonto": p.RevenueAccount, "Debitorenkonto": p.ReceivableAccount,
@@ -300,14 +327,26 @@ func (s *Server) handleAccountingCSV(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+	preset := accountingPresetFor(profile.Format)
 	columns, ok := validAccountingColumns(profile.Columns)
-	if !ok {
+	if !ok && preset == nil {
 		s.serverError(w, r.URL.Path, errors.New("invalid accounting export profile columns"))
 		return
 	}
 	rows, err := s.store.ListInvoiceJournal(r.Context(), year.ID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	if preset != nil {
+		cw, finish := csvDownload(w, r, fmt.Sprintf("buchhaltung-%d-%d-%s.csv", year.Year, profile.ID, preset.Key))
+		defer finish()
+		_ = cw.Write(preset.header)
+		for _, row := range rows {
+			if row.CountsForRevenue() {
+				_ = cw.Write(preset.row(row, profile))
+			}
+		}
 		return
 	}
 	filename := fmt.Sprintf("buchhaltung-%d-%d.csv", year.Year, profile.ID)
