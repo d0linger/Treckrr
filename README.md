@@ -500,7 +500,7 @@ Report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
 | **CI** | `go vet`, `go test -race` against a real PostgreSQL service, `go build`, module verification and a tidiness check, golangci-lint |
 | **Security** | gosec static scan and govulncheck, weekly as well as on push |
 | **Supply chain** | Trivy over the repository *and* over the built image (the Alpine layer nothing else inspects), CycloneDX SBOM generated from the image |
-| **E2E** | Playwright smoke test: login → booking → Beleg |
+| **E2E** | Playwright suite on a disposable stack (`node e2e/run.mjs`), then visual regression on a second fresh stack (`node e2e/run.mjs --visual`): ten key pages in light and dark, phone and desktop, against the baselines in `e2e/visual-baselines` (refresh with `node e2e/run.mjs --visual --update-snapshots` after an intended change) |
 | **DeadCode** | unreachable-function detection |
 | **GODep / GitSecret** | dependency review on PRs, gitleaks secret scanning |
 | **Docker** | multi-arch image (amd64 + arm64) to GHCR — **gated on the tests passing**, so a red build publishes nothing |

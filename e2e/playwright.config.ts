@@ -10,8 +10,29 @@ import { defineConfig, devices } from "@playwright/test";
 // would leak into another's assertions (e.g. the a11y scan). Serial execution keeps
 // the shared state deterministic. Mobile surface checks are read-only; the
 // separate billing journey creates its own neighbor and year.
+// Visual regression (Ausbaukarte II #14) runs on its own fresh stack, because
+// every other spec writes to the shared database and would change what the
+// pages show: `node e2e/run.mjs --visual` sets TRECKRR_E2E_VISUAL=1, which
+// swaps in the four visual projects. Baselines live in e2e/visual-baselines
+// (mounted into the browser container); `--update-snapshots` rewrites them.
+const visual = process.env.TRECKRR_E2E_VISUAL === "1";
+const visualProjects = (["light", "dark"] as const).flatMap((colorScheme) => [
+  {
+    name: `visual-desktop-${colorScheme}`,
+    testMatch: /visual\.spec\.ts/,
+    use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 }, colorScheme, serviceWorkers: "block" as const },
+  },
+  {
+    name: `visual-phone-${colorScheme}`,
+    testMatch: /visual\.spec\.ts/,
+    use: { ...devices["Pixel 7"], colorScheme, serviceWorkers: "block" as const },
+  },
+]);
+
 export default defineConfig({
   testDir: "./tests",
+  snapshotPathTemplate: "visual-baselines/{arg}-{projectName}{ext}",
+  expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01, animations: "disabled", caret: "hide" } },
   timeout: 30_000,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
@@ -21,8 +42,8 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
-  projects: [
-    { name: "chromium", testIgnore: /mobile_(core|billing)\.spec\.ts/, use: { ...devices["Desktop Chrome"] } },
+  projects: visual ? visualProjects : [
+    { name: "chromium", testIgnore: /mobile_(core|billing)\.spec\.ts|visual\.spec\.ts/, use: { ...devices["Desktop Chrome"] } },
     ...(["light", "dark"] as const).flatMap((colorScheme) => [
       {
         name: `mobile-chromium-${colorScheme}`,

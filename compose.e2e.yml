@@ -56,6 +56,9 @@ services:
     volumes:
       - ${TRECKRR_E2E_REPORT_DIR:-./e2e/playwright-report}:/work/e2e/playwright-report
       - ${TRECKRR_E2E_RESULTS_DIR:-./e2e/test-results}:/work/e2e/test-results
+      # Visual regression baselines: read by --visual runs, written by
+      # --visual --update-snapshots (only the repository's own folder).
+      - ./e2e/visual-baselines:/work/e2e/visual-baselines
     depends_on:
       app:
         condition: service_healthy
