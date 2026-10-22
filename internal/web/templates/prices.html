@@ -243,7 +243,7 @@
 				</span>
 				<span class="list__value">{{money .Rate}}/h</span>
 			</summary>
-			{{if not $.User.CanWrite}}
+			{{if or (not $.User.CanWrite) $.Locked}}
 			<details class="disclosure form-details">
 				<summary>Sortierung &amp; Selbstkosten <span class="muted small">Position {{.Machine.SortOrder}} · {{money .Machine.SelfCostPerH}}/h</span></summary>
 				<div class="list">

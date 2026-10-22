@@ -197,8 +197,8 @@ func RenderAnnualReport(a AnnualReport) ([]byte, error) {
 			rule()
 		}
 		header()
-		for _, m := range a.Machines {
-			if y > 770 {
+		for i, m := range a.Machines {
+			if y > 770 || (a.HasMargin && i == len(a.Machines)-1 && y+15+26 > 770) {
 				pdf.AddPage()
 				y = 56
 				header()
@@ -214,6 +214,11 @@ func RenderAnnualReport(a AnnualReport) ([]byte, error) {
 			y += 15
 		}
 		if a.HasMargin {
+			if y+26 > 770 {
+				pdf.AddPage()
+				y = 56
+				header()
+			}
 			y += 2
 			gtext(pdf, marginL, y, 9.5, true, "Deckungsbeitrag gesamt (Maschinen mit gepflegten Eigenkosten)")
 			gtextR(pdf, right, y, 9.5, true, money(a.MarginTotal))
@@ -238,8 +243,8 @@ func RenderAnnualReport(a AnnualReport) ([]byte, error) {
 			rule()
 		}
 		header()
-		for _, iv := range a.Invoices {
-			if y > 770 {
+		for i, iv := range a.Invoices {
+			if y > 770 || (i == len(a.Invoices)-1 && y+14+28 > 770) {
 				pdf.AddPage()
 				y = 56
 				header()
@@ -255,6 +260,11 @@ func RenderAnnualReport(a AnnualReport) ([]byte, error) {
 			gtextR(pdf, marginL+440, y, 9, false, money(iv.VAT))
 			gtextR(pdf, right, y, 9, false, money(iv.Gross))
 			y += 14
+		}
+		if y+28 > 770 {
+			pdf.AddPage()
+			y = 56
+			header()
 		}
 		y += 2
 		rule()

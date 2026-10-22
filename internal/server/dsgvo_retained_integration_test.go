@@ -143,7 +143,8 @@ func TestDsgvoRetainedRecordsIntegration(t *testing.T) {
 			t.Errorf("export leaked excluded value %q", excluded)
 		}
 	}
-	if len(exported.Recurring) != 1 || len(exported.Mail) != 1 || len(exported.AdditionalDelivery) != 4 {
+	if len(exported.Recurring) != 1 || len(exported.Mail) != 1 || len(exported.AdditionalDelivery) != 5 ||
+		!strings.Contains(strings.Join(exported.AdditionalDelivery, "\n"), "Unterschriften:") {
 		t.Fatalf("missing subject records or delivery checklist: %+v", exported)
 	}
 	if exported.Mail[0].AttachmentBytes != int64(len("attachment-content-marker")) {

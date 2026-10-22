@@ -645,7 +645,12 @@
 			render();
 		});
 		discard.addEventListener("click", function () { store(null); status.textContent = "Stoppuhr verworfen."; render(); });
-		window.addEventListener("storage", function (e) { if (e.key === key) render(); });
+		window.addEventListener("storage", function (e) {
+			if (e.key === key || e.key === null) {
+				memo = null;
+				render();
+			}
+		});
 		if (running()) box.open = true;
 		render();
 	});
@@ -658,6 +663,11 @@
 		if (!form || !("indexedDB" in window) || typeof DataTransfer !== "function") return;
 		var input = form.querySelector("[data-share-files]"), preview = root.querySelector("[data-share-preview]"),
 			empty = root.querySelector("[data-share-empty]"), thumbs = root.querySelector("[data-share-thumbs]");
+		var parkedAt = null, uploading = false;
+		var status = document.createElement("p");
+		status.className = "muted small";
+		status.setAttribute("role", "status");
+		form.appendChild(status);
 		/** Runs one request against the parked-share store and resolves with its result. */
 		function withStore(mode, work) {
 			return new Promise(function (resolve, reject) {
@@ -671,11 +681,20 @@
 				};
 			});
 		}
-		/** Removes the parked share so it can never be attached twice. */
-		function forget() { return withStore("readwrite", function (store) { return store.delete("shared"); }); }
+		/** Removes only the displayed share; another tab may have parked newer photos. */
+		function forget() {
+			return withStore("readwrite", function (store) {
+				var req = store.get("shared");
+				req.onsuccess = function () {
+					if (req.result && req.result.at === parkedAt) store.delete("shared");
+				};
+				return req;
+			});
+		}
 		withStore("readonly", function (store) { return store.get("shared"); }).then(function (record) {
 			var files = record && Array.isArray(record.files) ? record.files : [];
 			if (!files.length) return;
+			parkedAt = record.at;
 			var list = new DataTransfer();
 			files.forEach(function (f, i) {
 				var file = new File([f.blob], f.name || ("foto-" + (i + 1) + ".jpg"), { type: f.type || "image/jpeg" });
@@ -695,10 +714,27 @@
 		}).catch(function () { /* nothing parked or storage blocked: the empty hint stays */ });
 		form.addEventListener("submit", function (e) {
 			e.preventDefault();
+			if (uploading) return;
 			var target = form.querySelector('input[name="target"]:checked');
 			if (!target || !/^\/entries\/\d+\/photos$/.test(target.value) || !input.files.length) return;
-			form.action = target.value;
-			forget().then(function () { form.submit(); }, function () { form.submit(); });
+			uploading = true;
+			var buttons = form.querySelectorAll("button");
+			buttons.forEach(function (button) { button.disabled = true; });
+			status.textContent = "Fotos werden angehängt …";
+			fetch(target.value, { method: "POST", body: new FormData(form), credentials: "same-origin", redirect: "error",
+				headers: { "X-Treckrr-Share-Upload": "1" } }).then(function (response) {
+				return response.json().then(function (result) {
+					if (!response.ok || result.uploaded !== true) throw new Error(result.message || "Upload fehlgeschlagen.");
+				});
+			}).then(function () {
+				return forget();
+			}).then(function () {
+				window.location.href = target.value.replace(/\/photos$/, "/edit");
+			}).catch(function () {
+				status.textContent = "Die Fotos bleiben auf diesem Gerät erhalten. Bitte Anmeldung, Verbindung und Bildformat (JPEG, PNG oder GIF) prüfen und erneut versuchen. Bereits gespeicherte Fotos werden beim erneuten Versuch nicht doppelt angehängt.";
+				uploading = false;
+				buttons.forEach(function (button) { button.disabled = false; });
+			});
 		});
 		root.querySelector("[data-share-discard]").addEventListener("click", function () {
 			forget().then(function () { window.location.href = "/buchungen"; }, function () { window.location.href = "/buchungen"; });
@@ -1033,6 +1069,11 @@
 		}
 		function txt(el, sel) {
 			var n = el.querySelector(sel);
+			if (n && sel === ".beleg__t") {
+				return Array.from(n.childNodes).map(function (part) {
+					return part.textContent.replace(/\s+/g, " ").trim();
+				}).filter(Boolean).join(" · ");
+			}
 			return n ? n.textContent.replace(/\s+/g, " ").trim() : "";
 		}
 
@@ -1713,10 +1754,10 @@
 				while (document.getElementById(id)) id += "-next";
 				region.id = id;
 			}
-			if (!region.hasAttribute("tabindex")) region.tabIndex = 0;
+			var authoredTabIndex = region.hasAttribute("tabindex");
 			if (!region.hasAttribute("role")) region.setAttribute("role", "region");
 			if (!region.hasAttribute("aria-label") && !region.hasAttribute("aria-labelledby")) {
-				region.setAttribute("aria-label", table.caption ? table.caption.textContent.trim() : "Datentabelle");
+				region.setAttribute("aria-label", table.caption ? table.caption.textContent.trim() : "Datentabelle " + (index + 1));
 			}
 			var tools = document.createElement("div");
 			tools.className = "table-scroll-tools no-print";
@@ -1754,13 +1795,22 @@
 				tools.appendChild(button);
 				return button;
 			}
-			var previous = arrow(-1, "Tabelle nach links scrollen");
-			var next = arrow(1, "Tabelle nach rechts scrollen");
+			var labelledBy = (region.getAttribute("aria-labelledby") || "").split(/\s+/).map(function (id) {
+				var label = document.getElementById(id);
+				return label ? label.textContent.trim() : "";
+			}).filter(Boolean).join(" ");
+			var tableName = labelledBy || region.getAttribute("aria-label");
+			var previous = arrow(-1, tableName + ": nach links scrollen");
+			var next = arrow(1, tableName + ": nach rechts scrollen");
 			region.before(tools);
 			/** Shows the tools only while the table overflows and disables the arrow at each end. */
 			function refresh() {
 				var max = region.scrollWidth - region.clientWidth;
 				var overflow = region.clientWidth > 0 && max > 1;
+				if (!authoredTabIndex) {
+					if (overflow) region.tabIndex = 0;
+					else region.removeAttribute("tabindex");
+				}
 				tools.hidden = !overflow;
 				previous.disabled = region.scrollLeft <= 1;
 				next.disabled = region.scrollLeft >= max - 1;

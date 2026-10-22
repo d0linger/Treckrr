@@ -139,10 +139,10 @@
 				while (document.getElementById(id)) id += "-next";
 				region.id = id;
 			}
-			if (!region.hasAttribute("tabindex")) region.tabIndex = 0;
+			var authoredTabIndex = region.hasAttribute("tabindex");
 			if (!region.hasAttribute("role")) region.setAttribute("role", "region");
 			if (!region.hasAttribute("aria-label") && !region.hasAttribute("aria-labelledby")) {
-				region.setAttribute("aria-label", table.caption ? table.caption.textContent.trim() : "Datentabelle");
+				region.setAttribute("aria-label", table.caption ? table.caption.textContent.trim() : "Datentabelle " + (index + 1));
 			}
 			var tools = document.createElement("div");
 			tools.className = "table-scroll-tools no-print";
@@ -180,13 +180,22 @@
 				tools.appendChild(button);
 				return button;
 			}
-			var previous = arrow(-1, "Tabelle nach links scrollen");
-			var next = arrow(1, "Tabelle nach rechts scrollen");
+			var labelledBy = (region.getAttribute("aria-labelledby") || "").split(/\s+/).map(function (id) {
+				var label = document.getElementById(id);
+				return label ? label.textContent.trim() : "";
+			}).filter(Boolean).join(" ");
+			var tableName = labelledBy || region.getAttribute("aria-label");
+			var previous = arrow(-1, tableName + ": nach links scrollen");
+			var next = arrow(1, tableName + ": nach rechts scrollen");
 			region.before(tools);
 			/** Shows the tools only while the table overflows and disables the arrow at each end. */
 			function refresh() {
 				var max = region.scrollWidth - region.clientWidth;
 				var overflow = region.clientWidth > 0 && max > 1;
+				if (!authoredTabIndex) {
+					if (overflow) region.tabIndex = 0;
+					else region.removeAttribute("tabindex");
+				}
 				tools.hidden = !overflow;
 				previous.disabled = region.scrollLeft <= 1;
 				next.disabled = region.scrollLeft >= max - 1;

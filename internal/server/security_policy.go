@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -32,27 +33,28 @@ type policyCache struct {
 // mfaSetupURL is where a blocked account is sent to add a factor.
 const mfaSetupURL = "/profile#zwei-faktor"
 
+const secondFactorRequiredMsg = "Die Anmelderichtlinie verlangt einen zweiten Faktor. Erst einen weiteren Passkey oder die Authenticator-App einrichten, dann kann dieser entfernt werden."
+
 const mfaRequiredReplayMsg = "Zwei-Faktor-Anmeldung erforderlich: Bitte zuerst einen Passkey oder die Authenticator-App einrichten, danach werden gespeicherte Buchungen erneut gesendet."
 
 // securityPolicy returns the current policy, read at most every policyCacheTTL.
-// A read error keeps the last known policy, or enforces nothing on a cold
-// cache: the request then fails on its own database access anyway.
-func (s *Server) securityPolicy(ctx context.Context) store.SecurityPolicy {
+// A failed refresh must not turn a required factor into an optional one.
+func (s *Server) securityPolicy(ctx context.Context) (store.SecurityPolicy, error) {
 	s.policy.mu.Lock()
 	defer s.policy.mu.Unlock()
 	if s.policy.ok && time.Since(s.policy.at) < policyCacheTTL {
-		return s.policy.policy
+		return s.policy.policy, nil
 	}
 	if s.store == nil {
-		return store.SecurityPolicy{}
+		return store.SecurityPolicy{}, errors.New("security policy store unavailable")
 	}
 	p, err := s.store.GetSecurityPolicy(ctx)
 	if err != nil {
 		slog.Warn("security policy read failed", "err", sanitizeLog(err.Error()))
-		return s.policy.policy
+		return store.SecurityPolicy{}, err
 	}
 	s.policy.policy, s.policy.at, s.policy.ok = p, time.Now(), true
-	return p
+	return p, nil
 }
 
 // invalidatePolicy drops the cached policy after an update.
@@ -64,9 +66,16 @@ func (s *Server) invalidatePolicy() {
 
 // mfaBlocked reports whether the user's grace period without a second factor
 // is over, so only account self-service stays reachable.
-func (s *Server) mfaBlocked(r *http.Request, user *models.User) bool {
-	deadline, applies := s.securityPolicy(r.Context()).Deadline(*user)
-	return applies && !time.Now().Before(deadline)
+func (s *Server) mfaBlocked(r *http.Request, user *models.User) (bool, error) {
+	if user.Role == models.RoleViewer {
+		return false, nil // policy never requires a factor for viewers
+	}
+	p, err := s.securityPolicy(r.Context())
+	if err != nil {
+		return false, err
+	}
+	deadline, applies := p.Deadline(*user)
+	return applies && !time.Now().Before(deadline), nil
 }
 
 // redirectToMFASetup answers a blocked request: a status for offline replays,
@@ -80,23 +89,33 @@ func (s *Server) redirectToMFASetup(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, mfaSetupURL, http.StatusSeeOther)
 }
 
-// keepsSecondFactor refuses removing an account's last factor while the policy
-// requires one; it sets the explanation and returns false in that case.
-func (s *Server) keepsSecondFactor(w http.ResponseWriter, r *http.Request, user *models.User, removingTotp bool) bool {
-	if !s.securityPolicy(r.Context()).Requires(*user) {
+// keepsSecondFactor gives an early explanation before requesting step-up
+// credentials. The store repeats this check under the user lock at removal.
+func (s *Server) keepsSecondFactor(w http.ResponseWriter, r *http.Request, user *models.User, removingTOTP bool) bool {
+	p, err := s.securityPolicy(r.Context())
+	if err != nil {
+		s.serverError(w, "security policy", err)
+		return false
+	}
+	if !p.Requires(*user) {
 		return true
 	}
-	remaining := false
-	if removingTotp {
-		remaining = user.HasPasskey
-	} else if user.TotpEnabled {
-		remaining = true
-	} else {
+	remaining := user.TotpEnabled && !removingTOTP
+	if !remaining {
 		creds, err := s.store.ListWebauthnCredentials(r.Context(), user.ID)
-		remaining = err == nil && len(creds) > 1
+		if err != nil {
+			s.serverError(w, "remaining passkeys", err)
+			return false
+		}
+		minimum := 1
+		if !removingTOTP {
+			minimum = 2
+		}
+		remaining = len(creds) >= minimum
 	}
 	if !remaining {
-		s.setFlash(w, r, "error", "Die Anmelderichtlinie verlangt einen zweiten Faktor. Erst einen weiteren Passkey oder die Authenticator-App einrichten, dann kann dieser entfernt werden.")
+		s.setFlash(w, r, "error", secondFactorRequiredMsg)
+		redirect(w, r, mfaSetupURL)
 	}
 	return remaining
 }
@@ -107,13 +126,17 @@ func (s *Server) handleSecurityPolicySave(w http.ResponseWriter, r *http.Request
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
-	grace := formInt(r, "grace_days")
-	if grace < 0 || grace > 90 {
+	grace, err := strconv.Atoi(r.FormValue("grace_days"))
+	if err != nil || grace < 0 || grace > 90 {
 		s.setFlash(w, r, "error", "Die Übergangsfrist muss zwischen 0 und 90 Tagen liegen.")
 		redirect(w, r, "/admin/users#anmelderichtlinie")
 		return
 	}
-	before := s.securityPolicy(r.Context())
+	before, err := s.securityPolicy(r.Context())
+	if err != nil {
+		s.serverError(w, "security policy", err)
+		return
+	}
 	p, err := s.store.UpdateSecurityPolicy(r.Context(), r.FormValue("require_admin") == "1", r.FormValue("require_editor") == "1", grace)
 	if err != nil {
 		s.serverError(w, "security policy save", err)

@@ -134,15 +134,20 @@ func (s *Store) CreateStatementFeedback(ctx context.Context, shareID, neighborID
 	}
 	defer func() { _ = tx.Rollback() }()
 	var recent int
+	var lockedID int64
 	err = tx.QueryRowContext(ctx, `
-		SELECT (SELECT count(*) FROM statement_feedback WHERE share_id = sh.id AND created_at > now() - interval '1 day')
+		SELECT sh.id
 		  FROM statement_shares sh
 		 WHERE sh.id = $1 AND sh.neighbor_id = $2 AND sh.billing_year_id = $3 AND sh.expires_at > now()
-		 FOR UPDATE OF sh`, shareID, neighborID, yearID).Scan(&recent)
+		 FOR UPDATE OF sh`, shareID, neighborID, yearID).Scan(&lockedID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
 	if err != nil {
+		return err
+	}
+	// Count after acquiring the link lock, with a fresh READ COMMITTED snapshot.
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM statement_feedback WHERE share_id=$1 AND created_at > now() - interval '1 day'`, lockedID).Scan(&recent); err != nil {
 		return err
 	}
 	if recent >= statementFeedbackPerDay {
@@ -159,12 +164,21 @@ func (s *Store) CreateStatementFeedback(ctx context.Context, shareID, neighborID
 
 // ListStatementFeedback returns an account's responses, newest first.
 func (s *Store) ListStatementFeedback(ctx context.Context, neighborID, yearID int64) ([]StatementFeedback, error) {
+	return s.listStatementFeedback(ctx, neighborID, yearID, 200)
+}
+
+// ListAllStatementFeedback includes older responses for data-subject exports.
+func (s *Store) ListAllStatementFeedback(ctx context.Context, neighborID, yearID int64) ([]StatementFeedback, error) {
+	return s.listStatementFeedback(ctx, neighborID, yearID, 0)
+}
+
+func (s *Store) listStatementFeedback(ctx context.Context, neighborID, yearID int64, limit int) ([]StatementFeedback, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, status, line_label, line_amount, message, created_at
 		  FROM statement_feedback
 		 WHERE neighbor_id = $1 AND billing_year_id = $2
 		 ORDER BY created_at DESC, id DESC
-		 LIMIT 200`, neighborID, yearID)
+		 LIMIT NULLIF($3, 0)`, neighborID, yearID, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -12,7 +12,9 @@ import (
 func TestAgingFromRows(t *testing.T) {
 	t.Parallel()
 	asOf := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
-	day := func(daysBefore int) time.Time { return asOf.AddDate(0, 0, -daysBefore) }
+	day := func(daysBefore int) time.Time {
+		return time.Date(2026, 10, 20-daysBefore, 0, 0, 0, 0, time.UTC)
+	}
 	d := decimal.RequireFromString
 	rows := []DunningRow{
 		{DueOn: asOf.AddDate(0, 0, 5), Open: d("100")}, // not yet due

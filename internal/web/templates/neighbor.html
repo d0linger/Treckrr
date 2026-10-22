@@ -383,7 +383,7 @@
 	<p class="muted small">Erhaltene Zahlungen — jederzeit erfassbar, auch nach Abschluss des Jahres.</p>
 	<div class="bookcards">
 		{{range .Payments}}
-		<div class="bcard">
+		<div class="bcard" id="zahlung-{{.ID}}">
 			<div class="bcard__head">
 				<span class="bcard__date">{{date .PaidOn}}</span>
 				<span class="bcard__task">{{if .Reversal}}Bankimport-Korrektur{{else}}Zahlung{{end}}{{with .ImportBatchID}} <span class="tag">Import #{{.}}</span>{{end}}</span>
@@ -440,7 +440,7 @@
 					<input class="input" type="number" step="0.1" min="0" max="10" name="skonto" placeholder="z. B. 2"></label>
 				{{end}}
 			</div>
-			{{if .HasInvoice}}<p class="muted small">Ohne Auswahl wird die älteste offene Rechnung zuerst bezahlt; Überschüsse bleiben Guthaben. Bei mehreren Rechnungen muss für Skonto eine Rechnung ausgewählt werden.</p>
+			{{if .HasInvoice}}<p class="muted small">Ohne Auswahl wird die älteste offene Rechnung zuerst bezahlt. Nicht zugeordnete Beträge bleiben im Jahreskonto und sind nicht automatisch Guthaben. Bei mehreren Rechnungen muss für Skonto eine Rechnung ausgewählt werden.</p>
 			{{range .PaymentInvoices}}<details class="disclosure" data-payment-breakdown="{{.Invoice.ID}}"{{if ne .Invoice.ID $.SelectedInvoiceID}} hidden{{end}}>
 				<summary>Zahlungsstand Rechnung {{.Invoice.Number}} · offen {{money .Remaining}}</summary>
 				{{template "settlement-lines" (dict "Rows" .SettlementLines)}}

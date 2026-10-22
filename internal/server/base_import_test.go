@@ -19,7 +19,7 @@ func TestParseRateListMapsColumnsByHeader(t *testing.T) {
 		"Allrad 120;Traktor;;120;T1;;;ja\n" +
 		"Mähwerk;Maschine;;;;3;6,50;nein\n" +
 		"Ohne PS;Traktor;;0;T2;;;\n" +
-		"MÄHWERK;Maschine;;;;2;5;\n" +
+		"Mähwerk;Maschine;;;;2;5;\n" +
 		"Pflug;Gerät;;;;1,5;x;\n" +
 		"Etwas;Sonstiges;;;;;;\n" +
 		"\n"
@@ -76,7 +76,7 @@ func TestDiffRateListAgainstSource(t *testing.T) {
 	}
 	p := diffRateList(rows,
 		[]models.LoadLevel{{Name: "mittel", CostPerPS: d("0.36")}, {Name: "schwer", CostPerPS: d("0.40")}},
-		[]models.Tractor{{Ident: "t1", Name: "Allrad", PS: d("120"), Active: true}},
+		[]models.Tractor{{Ident: "T1", Name: "Allrad", PS: d("120"), Active: true}},
 		[]models.Machine{{Name: "Mähwerk", WorkingWidth: d("3"), CostPerAB: d("5"), Active: true}})
 	if p.New != 1 || p.Changed != 2 || p.Same != 1 || p.Errors != 0 || !p.Valid {
 		t.Fatalf("counts new=%d changed=%d same=%d errors=%d", p.New, p.Changed, p.Same, p.Errors)

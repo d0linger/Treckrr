@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -250,6 +251,17 @@ func (s *Server) handleBookingPhotoUpload(w http.ResponseWriter, r *http.Request
 		added++
 	}
 	auditAdded()
+	if r.Header.Get("X-Treckrr-Share-Upload") == "1" {
+		complete := failed == 0 && dropped == 0 && added+duplicates == len(files)
+		w.Header().Set("Content-Type", "application/json")
+		if !complete {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+		}
+		_ = json.NewEncoder(w).Encode(struct {
+			Uploaded bool `json:"uploaded"`
+		}{complete})
+		return
+	}
 	over := ""
 	if dropped > 0 {
 		over = fmt.Sprintf(" %d weitere(s) Bild(er) über dem Limit von %d wurden nicht übernommen — bitte einzeln nachreichen.",

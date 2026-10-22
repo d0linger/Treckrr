@@ -97,6 +97,20 @@ func (s *Server) handleCalendarFeed(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+	owner, err := s.store.GetUser(r.Context(), userID)
+	if err != nil {
+		s.serverError(w, "calendar: owner", err)
+		return
+	}
+	blocked, err := s.mfaBlocked(r, owner)
+	if err != nil {
+		s.serverError(w, "calendar: security policy", err)
+		return
+	}
+	if blocked {
+		s.notFound(w, r)
+		return
+	}
 	company, err := s.store.GetCompany(r.Context())
 	if err != nil {
 		s.serverError(w, "calendar: company", err)
@@ -107,7 +121,6 @@ func (s *Server) handleCalendarFeed(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, "calendar: events", err)
 		return
 	}
-	_ = userID // every role may read all of these dates in the app
 	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
 	w.Header().Set("Content-Disposition", `inline; filename="treckrr.ics"`)
 	w.Header().Set("Cache-Control", "no-store")

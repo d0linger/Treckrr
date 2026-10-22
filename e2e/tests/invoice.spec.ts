@@ -143,7 +143,7 @@ test("issue an invoice, see it on the Beleg, mark sent + undo", async ({ page })
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   await expect(page.locator(".beleg__hv")).toHaveText(reminderAmount);
   await expect(page.getByRole("link", { name: "Als PDF", exact: true })).toBeVisible();
-  const scrollRight = page.locator(".beleg--reminder").getByRole("button", { name: "Tabelle nach rechts scrollen" });
+  const scrollRight = page.locator(".beleg--reminder").getByRole("button", { name: /: nach rechts scrollen$/ });
   await expect(scrollRight).toBeVisible();
   await scrollRight.click();
   await expect.poll(() => settlement.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);

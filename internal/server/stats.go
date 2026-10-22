@@ -529,8 +529,28 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["ByMachine"] = byMachine
 	data["ByMachineMax"] = maxHours(byMachine)
 	data["MachineUsage"] = machineUsage
-	data["UnitMetrics"] = unitMetrics
-	data["FieldStats"] = fieldStats
+	type unitView struct {
+		store.UnitMetric
+		URL string
+	}
+	units := make([]unitView, 0, len(unitMetrics))
+	for _, m := range unitMetrics {
+		link := fmt.Sprintf("/buchungen?year=%d&task=%s&unit=%s%s", year.ID, url.QueryEscape(m.Task), url.QueryEscape(m.Unit), period)
+		units = append(units, unitView{m, link})
+	}
+	type fieldView struct {
+		store.FieldStat
+		URL string
+	}
+	fields := make([]fieldView, 0, len(fieldStats))
+	for _, f := range fieldStats {
+		link := fmt.Sprintf("/buchungen?year=%d&neighbor_id=%d&task=%s%s", year.ID, f.NeighborID, url.QueryEscape(f.Label), period)
+		fields = append(fields, fieldView{f, link})
+	}
+	data["UnitMetrics"] = units
+	data["FieldStats"] = fields
+	data["ExportCSVURL"] = fmt.Sprintf("/stats/export.csv?year=%d%s", year.ID, period)
+	data["ExportXLSXURL"] = fmt.Sprintf("/stats/export.xlsx?year=%d%s", year.ID, period)
 	data["From"] = sanitizeQueryParam(r.URL.Query().Get("from"), maxNameLen)
 	data["To"] = sanitizeQueryParam(r.URL.Query().Get("to"), maxNameLen)
 	data["Period"] = period

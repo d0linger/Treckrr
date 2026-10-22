@@ -129,7 +129,7 @@ func (s *Store) YearDataQuality(ctx context.Context, yearID, baseID int64) (Data
 // meterReading is one booking's hour-meter pair, for the per-tractor checks.
 type meterReading struct {
 	entryID, neighborID int64
-	tractor             string
+	tractor, tractorKey string
 	date                time.Time
 	start, end, hours   decimal.Decimal
 }
@@ -142,10 +142,11 @@ type meterReading struct {
 func (s *Store) meterIssues(ctx context.Context, yearID int64) ([]DataQualityIssue, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT e.id, e.neighbor_id, COALESCE(NULLIF(btrim(t.ident), ''), t.id::text) || ' ' || t.name,
+		       CASE WHEN btrim(t.ident) <> '' THEN 'ident:' || btrim(t.ident) ELSE 'id:' || t.id::text END,
 		       e.entry_date, e.meter_start, e.meter_end, e.hours
 		  FROM entries e JOIN tractors t ON t.id = e.tractor_id
 		 WHERE e.billing_year_id = $1 AND NOT e.voided AND e.meter_end IS NOT NULL
-		 ORDER BY COALESCE(NULLIF(btrim(t.ident), ''), t.id::text), e.entry_date, e.meter_start, e.id`, yearID)
+		 ORDER BY 4, e.entry_date, e.meter_start, e.id`, yearID)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +154,7 @@ func (s *Store) meterIssues(ctx context.Context, yearID int64) ([]DataQualityIss
 	var readings []meterReading
 	for rows.Next() {
 		var m meterReading
-		if err := rows.Scan(&m.entryID, &m.neighborID, &m.tractor, &m.date, &m.start, &m.end, &m.hours); err != nil {
+		if err := rows.Scan(&m.entryID, &m.neighborID, &m.tractor, &m.tractorKey, &m.date, &m.start, &m.end, &m.hours); err != nil {
 			return nil, err
 		}
 		readings = append(readings, m)
@@ -173,7 +174,7 @@ func (s *Store) meterIssues(ctx context.Context, yearID int64) ([]DataQualityIss
 	}
 	for i, m := range readings {
 		day := m.date.Format("02.01.2006")
-		if i > 0 && readings[i-1].tractor == m.tractor {
+		if i > 0 && readings[i-1].tractorKey == m.tractorKey {
 			prev := readings[i-1]
 			switch {
 			case m.start.LessThan(prev.end):

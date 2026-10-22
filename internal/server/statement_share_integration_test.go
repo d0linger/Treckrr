@@ -83,7 +83,23 @@ func TestStatementShareIntegration(t *testing.T) {
 	if status != http.StatusBadRequest {
 		t.Fatalf("stale line choice: status %d, want 400", status)
 	}
-	status, location, _ := fetch(http.MethodPost, "/s/konto/"+token+"/feedback", url.Values{"status": {"disputed"}, "line": {"0"}, "message": {"Nur eine Stunde"}})
+	content, err := e.st.BuildPendingInvoiceContent(e.ctx, e.yearID64, e.neighborID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection := "0:" + content.Lines[0].FeedbackKey()
+	// The line still occupies index zero after an edit, but is no longer what
+	// the neighbor selected. Reject it until the public page is loaded again.
+	if _, err := e.pool.ExecContext(e.ctx, `UPDATE entries SET task_label='CHANGED LINE' WHERE neighbor_id=$1 AND billing_year_id=$2`, e.neighborID, e.yearID64); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _ := fetch(http.MethodPost, "/s/konto/"+token+"/feedback", url.Values{"status": {"disputed"}, "line": {selection}, "message": {"stale"}}); code != http.StatusBadRequest {
+		t.Fatalf("changed line accepted: %d", code)
+	}
+	if _, err := e.pool.ExecContext(e.ctx, `UPDATE entries SET task_label='SICHTBARE LEISTUNG' WHERE neighbor_id=$1 AND billing_year_id=$2`, e.neighborID, e.yearID64); err != nil {
+		t.Fatal(err)
+	}
+	status, location, _ := fetch(http.MethodPost, "/s/konto/"+token+"/feedback", url.Values{"status": {"disputed"}, "line": {selection}, "message": {"Nur eine Stunde"}})
 	if status != http.StatusSeeOther || location != "/s/konto/"+token+"?feedback=disputed" {
 		t.Fatalf("objection: status %d location %q", status, location)
 	}

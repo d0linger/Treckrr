@@ -675,6 +675,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	measuredPersonHours := entry.Hours
 	applyBillingRule(entry, machineIDs, year.Base)
 	entry.NeighborID = neighborID
 	entry.BillingYearID = year.ID
@@ -705,7 +706,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		personHours, personRate := entry.Hours, person.HourlyRate
+		personHours, personRate := measuredPersonHours, person.HourlyRate
 		for _, field := range []struct {
 			key    string
 			target *decimal.Decimal

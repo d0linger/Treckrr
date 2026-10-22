@@ -67,6 +67,11 @@ func (s *Store) ConfigureTwoFactor(ctx context.Context, change TwoFactorChange) 
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if !change.Enabled {
+		if err := checkFactorRemovalTx(ctx, tx, change.UserID, 0, true); err != nil {
+			return err
+		}
+	}
 	// Enabling records the step the confirmation code matched, so the code typed
 	// at enrollment is already consumed; disabling clears replay state with the
 	// factor.

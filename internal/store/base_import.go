@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/shopspring/decimal"
 )
@@ -47,8 +46,9 @@ type RateListImport struct {
 	GespanneSkipped []string
 }
 
-// rateKey normalizes the per-basis identity of an item (name or Kennung).
-func rateKey(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+// rateKey follows the database's case-sensitive per-basis identity. Folding
+// case can silently attach a copied rig to a different valid catalog item.
+func rateKey(s string) string { return s }
 
 // CreateBaseFromRateList creates a new, unlocked basis from an imported list in
 // one transaction. File order becomes the sort order. With a comparison basis,

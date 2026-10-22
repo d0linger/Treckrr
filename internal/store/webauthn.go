@@ -155,6 +155,9 @@ func (s *Store) DeleteWebauthnCredential(ctx context.Context, userID, id int64) 
 		return "", err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if err := checkFactorRemovalTx(ctx, tx, userID, id, false); err != nil {
+		return "", err
+	}
 	err = tx.QueryRowContext(ctx,
 		`DELETE FROM webauthn_credentials WHERE id=$1 AND user_id=$2 RETURNING name`, id, userID).Scan(&name)
 	if errors.Is(err, sql.ErrNoRows) {

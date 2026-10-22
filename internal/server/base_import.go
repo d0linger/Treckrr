@@ -29,6 +29,10 @@ const (
 var rateListHeader = []string{"Art", "Kennung", "Name", "PS", "Kosten je PS·h", "Arbeitsbreite (m)",
 	"Kosten je m·h", "Kategorie", "Selbstkosten je h", "Aktiv"}
 
+// An explicit marker makes spreadsheet escaping reversible without stripping
+// literal apostrophes from ordinary, unmarked CSV uploads.
+const rateTextEncoding = "Treckrr-Textformat: Apostroph-v1"
+
 // rateColumn names a logical column of the rate-list format.
 type rateColumn int
 
@@ -141,21 +145,29 @@ func parseRateList(raw []byte) ([]rateListRow, string) {
 	var rows []rateListRow
 	seen := map[string]int{}
 	line := 0
+	encodedText := false
 	for {
 		rec, err := cr.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
+			var parseErr *csv.ParseError
+			if errors.As(err, &parseErr) {
+				line = parseErr.Line - 1
+			}
 			return nil, "Die CSV-Datei konnte nicht gelesen werden (Zeile " + strconv.Itoa(line+1) + ")."
 		}
-		line++
+		line, _ = cr.FieldPos(0)
 		if strings.TrimSpace(strings.Join(rec, "")) == "" {
 			continue
 		}
 		if columns == nil {
 			columns = map[rateColumn]int{}
 			for i, cell := range rec {
+				if strings.TrimSpace(cell) == rateTextEncoding {
+					encodedText = true
+				}
 				if c, ok := rateHeaderNames[normalizeRateHeader(cell)]; ok {
 					if _, dup := columns[c]; !dup {
 						columns[c] = i
@@ -174,6 +186,13 @@ func parseRateList(raw []byte) ([]rateListRow, string) {
 		}
 		cell := func(c rateColumn) string {
 			if i, ok := columns[c]; ok && i < len(rec) {
+				if encodedText && (c == colIdent || c == colName || c == colCategory) {
+					value := rec[i]
+					if rest, escaped := strings.CutPrefix(value, "'"); escaped && (strings.HasPrefix(rest, "'") || csvSafe(rest) != rest) {
+						return rest
+					}
+					return value
+				}
 				return strings.TrimSpace(rec[i])
 			}
 			return ""
@@ -181,7 +200,7 @@ func parseRateList(raw []byte) ([]rateListRow, string) {
 		row := rateListRow{Line: line, Kind: parseRateKind(cell(colKind)), Ident: cell(colIdent), Name: cell(colName), Category: cell(colCategory)}
 		row.Err = validateRateRow(&row, cell)
 		if row.Err == "" {
-			key := row.Kind + "\x00" + strings.ToLower(row.Key())
+			key := row.Kind + "\x00" + row.Key()
 			if first, dup := seen[key]; dup {
 				row.Err = "Doppelt, bereits in Zeile " + strconv.Itoa(first)
 			} else {
@@ -293,13 +312,13 @@ func diffRateList(rows []rateListRow, loads []models.LoadLevel, tractors []model
 	inFile := map[string]bool{}
 	loadBy, tractorBy, machineBy := map[string]models.LoadLevel{}, map[string]models.Tractor{}, map[string]models.Machine{}
 	for _, l := range loads {
-		loadBy[strings.ToLower(l.Name)] = l
+		loadBy[l.Name] = l
 	}
 	for _, t := range tractors {
-		tractorBy[strings.ToLower(t.Ident)] = t
+		tractorBy[t.Ident] = t
 	}
 	for _, m := range machines {
-		machineBy[strings.ToLower(m.Name)] = m
+		machineBy[m.Name] = m
 	}
 	for i := range p.Rows {
 		row := &p.Rows[i]
@@ -307,7 +326,7 @@ func diffRateList(rows []rateListRow, loads []models.LoadLevel, tractors []model
 			p.Errors++
 			continue
 		}
-		key := strings.ToLower(row.Key())
+		key := row.Key()
 		inFile[row.Kind+"\x00"+key] = true
 		var changes []string
 		found := false
@@ -369,17 +388,17 @@ func diffRateList(rows []rateListRow, loads []models.LoadLevel, tractors []model
 		}
 	}
 	for _, l := range loads {
-		if !inFile["load\x00"+strings.ToLower(l.Name)] {
+		if !inFile["load\x00"+l.Name] {
 			p.Removed = append(p.Removed, rateRemoved{rateKindLabel("load"), l.Name})
 		}
 	}
 	for _, t := range tractors {
-		if !inFile["tractor\x00"+strings.ToLower(t.Ident)] {
+		if !inFile["tractor\x00"+t.Ident] {
 			p.Removed = append(p.Removed, rateRemoved{rateKindLabel("tractor"), t.Ident})
 		}
 	}
 	for _, m := range machines {
-		if !inFile["machine\x00"+strings.ToLower(m.Name)] {
+		if !inFile["machine\x00"+m.Name] {
 			p.Removed = append(p.Removed, rateRemoved{rateKindLabel("machine"), m.Name})
 		}
 	}
@@ -456,6 +475,9 @@ func (s *Server) handleBaseExport(w http.ResponseWriter, r *http.Request) {
 func rateListCSV(loads []models.LoadLevel, tractors []models.Tractor, machines []models.Machine, spreadsheet bool) ([]byte, error) {
 	text := func(s string) string {
 		if spreadsheet {
+			if strings.HasPrefix(s, "'") {
+				return "'" + s
+			}
 			return csvSafe(s)
 		}
 		return s
@@ -470,7 +492,11 @@ func rateListCSV(loads []models.LoadLevel, tractors []models.Tractor, machines [
 	buf.WriteString("\uFEFF")
 	cw := csv.NewWriter(&buf)
 	cw.Comma = ';'
-	_ = cw.Write(rateListHeader)
+	header := append([]string(nil), rateListHeader...)
+	if spreadsheet {
+		header = append(header, rateTextEncoding)
+	}
+	_ = cw.Write(header)
 	for _, l := range loads {
 		_ = cw.Write([]string{"Belastungsstufe", "", text(l.Name), "", rateNum(l.CostPerPS), "", "", "", "", "ja"})
 	}
@@ -490,6 +516,9 @@ var upliftSteps = []string{"0.01", "0.0001", "0.05", "0.1"}
 
 // upliftRate raises a rate by pct percent and rounds to the step.
 func upliftRate(rate, pct, step decimal.Decimal) decimal.Decimal {
+	if pct.IsZero() {
+		return rate
+	}
 	raised := rate.Mul(decimal.NewFromInt(100).Add(pct)).Div(decimal.NewFromInt(100))
 	return raised.Div(step).Round(0).Mul(step)
 }

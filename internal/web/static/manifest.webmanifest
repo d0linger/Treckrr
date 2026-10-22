@@ -19,7 +19,7 @@
 		"action": "/share-target",
 		"method": "POST",
 		"enctype": "multipart/form-data",
-		"params": { "files": [{ "name": "photos", "accept": ["image/*", ".jpg", ".jpeg", ".png", ".webp"] }] }
+		"params": { "files": [{ "name": "photos", "accept": ["image/jpeg", "image/png", "image/gif", ".jpg", ".jpeg", ".png", ".gif"] }] }
 	},
 	"shortcuts": [
 		{ "name": "Neue Buchung", "short_name": "Buchen", "description": "Nachbarn des laufenden Jahres zum Buchen öffnen", "url": "/#nachbarn",

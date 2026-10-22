@@ -70,8 +70,17 @@ func Write(w io.Writer, sheets ...Sheet) error {
 	}
 	z := zip.NewWriter(w)
 	names := make([]string, len(sheets))
+	used := make(map[string]bool, len(sheets))
 	for i, s := range sheets {
-		names[i] = sheetName(s.Name, i)
+		base := sheetName(s.Name, i)
+		name := base
+		for n := 2; used[strings.ToLower(name)]; n++ {
+			suffix := fmt.Sprintf(" (%d)", n)
+			runes := []rune(base)
+			name = strings.TrimRight(string(runes[:min(len(runes), 31-len(suffix))]), "'") + suffix
+		}
+		used[strings.ToLower(name)] = true
+		names[i] = name
 	}
 	files := []struct {
 		name string
@@ -267,10 +276,11 @@ func sheetName(name string, i int) string {
 			return '_'
 		}
 		return r
-	}, strings.TrimSpace(name))
+	}, strings.Trim(strings.TrimSpace(name), "'"))
 	if r := []rune(name); len(r) > 31 {
 		name = string(r[:31])
 	}
+	name = strings.Trim(name, "'")
 	if name == "" {
 		name = fmt.Sprintf("Tabelle%d", i+1)
 	}

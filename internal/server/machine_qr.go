@@ -110,16 +110,23 @@ func (s *Server) loadScanTarget(w http.ResponseWriter, r *http.Request, kind str
 			s.serverError(w, "scan: load rig", err)
 			return scanTarget{}, false
 		}
-		return s.gespannTarget(r, *g), true
+		target, err := s.gespannTarget(r, *g)
+		if err != nil {
+			s.serverError(w, "scan: rig parts", err)
+			return scanTarget{}, false
+		}
+		return target, true
 	}
 }
 
 // gespannTarget names the rig's parts; a missing part only shortens the detail.
-func (s *Server) gespannTarget(r *http.Request, g models.Gespann) scanTarget {
+func (s *Server) gespannTarget(r *http.Request, g models.Gespann) (scanTarget, error) {
 	var parts []string
 	if g.TractorID != nil {
 		if t, err := s.store.GetTractor(r.Context(), *g.TractorID); err == nil {
 			parts = append(parts, t.Label())
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return scanTarget{}, err
 		}
 	}
 	if len(g.MachineIDs) > 0 {
@@ -127,10 +134,12 @@ func (s *Server) gespannTarget(r *http.Request, g models.Gespann) scanTarget {
 			for _, m := range machines {
 				parts = append(parts, m.Name)
 			}
+		} else {
+			return scanTarget{}, err
 		}
 	}
 	return scanTarget{Kind: "gespann", KindLabel: "Gespann", ID: g.ID, BaseID: g.BaseID, Name: g.Name,
-		Detail: strings.Join(parts, " + "), Active: true}
+		Detail: strings.Join(parts, " + "), Active: true}, nil
 }
 
 // renderScan shows the scan landing: open years of the item's basis and their
@@ -256,7 +265,12 @@ func (s *Server) handleMachineLabels(w http.ResponseWriter, r *http.Request) {
 	}
 	targets := make([]scanTarget, 0, len(machines)+len(tractors)+len(gespanne))
 	for _, g := range gespanne {
-		targets = append(targets, s.gespannTarget(r, g))
+		target, err := s.gespannTarget(r, g)
+		if err != nil {
+			s.serverError(w, "labels: rig parts", err)
+			return
+		}
+		targets = append(targets, target)
 	}
 	for _, t := range tractors {
 		targets = append(targets, tractorTarget(t))

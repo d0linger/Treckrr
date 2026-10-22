@@ -48,7 +48,7 @@
 		<form method="post" action="/s/konto/{{$.StatementToken}}/feedback"><input type="hidden" name="status" value="confirmed"><button class="btn btn--primary" type="submit">Stand bestätigen</button></form>
 		<details class="disclosure"><summary>Einwand melden</summary><form method="post" action="/s/konto/{{$.StatementToken}}/feedback" class="form">
 			<input type="hidden" name="status" value="disputed">
-			{{with .Pending}}<label class="field"><span>Betroffene Position (optional)</span><select class="select" name="line"><option value="">Gesamter Stand</option>{{range $i, $line := .Lines}}<option value="{{$i}}">{{date $line.Date}} · {{$line.Label}} · {{money $line.Cost}}</option>{{end}}</select></label>{{end}}
+			{{with .Pending}}<label class="field"><span>Betroffene Position (optional)</span><select class="select" name="line"><option value="">Gesamter Stand</option>{{range $i, $line := .Lines}}<option value="{{$i}}:{{$line.FeedbackKey}}">{{date $line.Date}} · {{$line.Label}} · {{money $line.Cost}}</option>{{end}}</select></label>{{end}}
 			<label class="field"><span>Einwand</span><textarea class="input" name="message" rows="3" maxlength="500" required></textarea></label>
 			<button class="btn btn--ghost" type="submit">Einwand senden</button>
 		</form></details>

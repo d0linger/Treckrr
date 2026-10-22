@@ -161,7 +161,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
-	if user.HasPasskey && s.securityPolicy(r.Context()).Requires(*user) {
+	policy, err := s.securityPolicy(r.Context())
+	if err != nil {
+		s.serverError(w, "login: security policy", err)
+		return
+	}
+	if user.HasPasskey && policy.Requires(*user) {
 		s.clearPending2FA(w, r)
 		s.setFlash(w, r, "error", "Für dein Konto ist eine Zwei-Faktor-Anmeldung vorgeschrieben. Bitte mit deinem Passkey anmelden.")
 		redirect(w, r, "/login")

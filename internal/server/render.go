@@ -40,7 +40,8 @@ func (s *Server) newPage(w http.ResponseWriter, r *http.Request, title, active s
 		p["BackupHealth"] = s.backupHealth()
 	}
 	if u != nil {
-		if deadline, applies := s.securityPolicy(r.Context()).Deadline(*u); applies {
+		policy, _ := s.securityPolicy(r.Context()) // auth middleware already enforces successful policy reads
+		if deadline, applies := policy.Deadline(*u); applies {
 			p["MFADeadline"] = deadline
 			p["MFAOverdue"] = !time.Now().Before(deadline)
 		}

@@ -80,8 +80,8 @@ func agingFromRows(rows []DunningRow, asOf time.Time) InvoiceAging {
 			continue
 		}
 		i := 0
-		if asOf.After(row.DueOn) {
-			switch days := calc.DaysBetween(row.DueOn, asOf); {
+		if days := calc.DaysBetween(row.DueOn, asOf); days > 0 {
+			switch {
 			case days <= 30:
 				i = 1
 			case days <= 60:

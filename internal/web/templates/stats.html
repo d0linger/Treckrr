@@ -16,8 +16,8 @@
 		<div class="btnrow">
 			<button class="btn btn--ghost btn--sm" type="submit">Zeitraum anwenden</button>
 			{{if or .From .To}}<a class="btn btn--ghost btn--sm" href="/stats?year={{.Year.ID}}">Ganzes Jahr</a>{{end}}
-			<a class="btn btn--ghost btn--sm" href="/stats/export.csv?year={{.Year.ID}}{{.Period}}">Export CSV</a>
-			<a class="btn btn--ghost btn--sm" href="/stats/export.xlsx?year={{.Year.ID}}{{.Period}}">Export Excel</a>
+			<a class="btn btn--ghost btn--sm" href="{{.ExportCSVURL}}">Export CSV</a>
+			<a class="btn btn--ghost btn--sm" href="{{.ExportXLSXURL}}">Export Excel</a>
 			<a class="btn btn--ghost btn--sm" href="/years/{{.Year.ID}}/bericht.pdf">Jahresbericht (PDF)</a>
 		</div>
 		<p class="muted small">Alle Zahlen und Diagramme unten gelten für den gewählten Zeitraum. In „Umsatz je Nachbar“ und „Umsatz je Tätigkeit“ öffnen verlinkte Zeilenbeschriftungen die zugehörigen Buchungen.{{if .PeriodActive}} Jahresvergleich und Trendlinien sind ausgeblendet — die zeigen ganze Jahre.{{end}}</p>
@@ -121,7 +121,7 @@
 				<tbody>
 					{{range .UnitMetrics}}
 					<tr>
-						<td><a href="/buchungen?year={{$.Year.ID}}&task={{.Task}}&unit={{.Unit}}{{$.Period}}">{{.Task}}</a></td>
+						<td><a href="{{.URL}}">{{.Task}}</a></td>
 						<td>{{.Unit}}</td>
 						<td class="num">{{num .Quantity}}</td>
 						<td class="num">{{.Bookings}}</td>
@@ -146,7 +146,7 @@
 					{{range .FieldStats}}
 					<tr>
 						<td>{{.NeighborName}}</td>
-						<td><a href="/buchungen?year={{$.Year.ID}}&neighbor_id={{.NeighborID}}&task={{.Label}}{{$.Period}}">{{.Label}}</a></td>
+						<td><a href="{{.URL}}">{{.Label}}</a></td>
 						<td class="num">{{if .AreaHa.IsPositive}}{{num .AreaHa}} ha{{else}}–{{end}}</td>
 						<td class="num">{{.Count}}</td>
 						<td class="num">{{num .Hours}}</td>

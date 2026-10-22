@@ -351,7 +351,6 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 	}
 	user := userFromCtx(r)
 	if !s.keepsSecondFactor(w, r, user, true) {
-		redirect(w, r, mfaSetupURL)
 		return
 	}
 	if !s.sensitiveAdmit(w, r, user.ID, "/account/2fa") {
@@ -372,7 +371,11 @@ func (s *Server) handleTwoFactorDisable(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.sensitiveReset(r, user.ID)
-	if err := s.store.ConfigureTwoFactor(r.Context(), store.TwoFactorChange{UserID: user.ID}); err != nil {
+	if err := s.store.ConfigureTwoFactor(r.Context(), store.TwoFactorChange{UserID: user.ID}); errors.Is(err, store.ErrSecondFactorRequired) {
+		s.setFlash(w, r, "error", secondFactorRequiredMsg)
+		redirect(w, r, mfaSetupURL)
+		return
+	} else if err != nil {
 		s.serverError(w, "2fa disable: clear totp", err)
 		return
 	}

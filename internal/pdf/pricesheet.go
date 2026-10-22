@@ -175,13 +175,27 @@ func RenderPriceSheet(p PriceSheet) ([]byte, error) {
 				y = 56
 				header()
 			}
-			gtext(pdf, marginL, y, 9.5, false, clip(g.Name, 28))
 			lines, err := settlementTextLines(pdf, g.Parts, 9, contentW-260)
 			if err != nil {
 				return nil, err
 			}
+			if len(lines) == 0 {
+				lines = []string{""}
+			}
+			if y+float64(min(len(lines), 50))*12+4 > 770 {
+				pdf.AddPage()
+				y = 56
+				header()
+			}
+			gtext(pdf, marginL, y, 9.5, false, clip(g.Name, 28))
 			gtextR(pdf, right, y, 9.5, true, money(g.Rate))
 			for _, line := range lines {
+				if y > 770 {
+					pdf.AddPage()
+					y = 56
+					header()
+					gtext(pdf, marginL, y, 9.5, false, clip(g.Name, 22)+" (Forts.)")
+				}
 				gtext(pdf, marginL+170, y, 9, false, line)
 				y += 12
 			}
@@ -209,6 +223,7 @@ func RenderPriceSheet(p PriceSheet) ([]byte, error) {
 			return nil, err
 		}
 		for _, line := range lines {
+			newPageIfNeeded(11)
 			gtext(pdf, marginL, y, 8, false, line)
 			y += 11
 		}

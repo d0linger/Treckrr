@@ -58,6 +58,13 @@ tables, default values and calculated report behavior need separate validation.
 Authentication state, audit sealing, notification/mail processing and backup
 status are operational changes, outside this business-row fingerprint.
 
+The schema guard does not prove that a restore contains the production data.
+Compare restored row counts and fingerprints with a baseline captured from the
+live system before the upgrade. Two empty/schema-only snapshots can match each
+other and still be an incomplete restore. Without that live baseline, report
+restore completeness as unverified; do not require every business table to be
+nonempty, since empty invoices or payments can be legitimate.
+
 For an upgrade from before migration 0081, review the intentional reminder and
 closing-checklist changes separately: invoice debt is separated from other
 account debt, and an old annual sent marker does not establish that a particular

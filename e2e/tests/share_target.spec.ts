@@ -65,7 +65,7 @@ test("parked photos are attached and uploaded to the chosen booking once", async
   await page.route("**/entries/7/photos", async route => {
     target = new URL(route.request().url()).pathname;
     body = route.request().postDataBuffer()?.toString("latin1") || "";
-    return route.fulfill({ contentType: "text/html", body: "ok" });
+	return route.fulfill({ contentType: "application/json", body: JSON.stringify({ uploaded: true }) });
   });
   await page.getByLabel("Buchung 7").check();
   await page.getByRole("button", { name: "Fotos anhängen" }).click();
@@ -74,7 +74,31 @@ test("parked photos are attached and uploaded to the chosen booking once", async
   expect(body).toContain('name="photo"; filename="beleg-2.png"');
   expect(body).toContain('name="csrf_token"');
 
+  await expect(page).toHaveURL("http://share-target.test/entries/7/edit");
   await page.goto("http://share-target.test/fixture");
   await expect(page.locator("[data-share-empty]")).toBeVisible();
   await expect(page.locator("[data-share-form]")).toBeHidden();
 });
+
+for (const failure of ["network", "rejected", "partial", "login"]) {
+	test(`parked photos survive ${failure} upload failures and can be retried`, async ({ page }) => {
+		await openFixture(page);
+		await park(page, 2);
+		await page.route("**/entries/7/photos", route => {
+			if (failure === "network") return route.abort();
+			if (failure === "login") return route.fulfill({ contentType: "text/html", body: "Anmelden" });
+			return route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ uploaded: false }) });
+		});
+		await page.getByLabel("Buchung 7").check();
+		await page.getByRole("button", { name: "Fotos anhängen" }).click();
+		await expect(page.getByRole("status")).toContainText("Fotos bleiben auf diesem Gerät erhalten");
+		await page.reload();
+		await expect(page.locator("[data-share-count]")).toHaveText("2 Fotos bereit");
+		await page.route("**/entries/7/photos", route => route.fulfill({ contentType: "application/json", body: JSON.stringify({ uploaded: true }) }));
+		await page.getByLabel("Buchung 7").check();
+		await page.getByRole("button", { name: "Fotos anhängen" }).click();
+		await expect(page).toHaveURL("http://share-target.test/entries/7/edit");
+		await page.goto("http://share-target.test/fixture");
+		await expect(page.locator("[data-share-empty]")).toBeVisible();
+	});
+}

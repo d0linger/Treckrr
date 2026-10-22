@@ -4,7 +4,8 @@
 -- existing values. Stop all writers first; see docs/upgrade-validation.md.
 \set ON_ERROR_STOP on
 
--- Refuse an empty/unrelated database instead of generating a vacuous pass.
+-- Refuse an unrelated schema. Completeness requires comparison with a known
+-- live baseline; an existing installation may legitimately have empty tables.
 SELECT 1 / CASE WHEN to_regclass('public.entries') IS NOT NULL
                      AND to_regclass('public.invoices') IS NOT NULL
                      AND to_regclass('public.payments') IS NOT NULL

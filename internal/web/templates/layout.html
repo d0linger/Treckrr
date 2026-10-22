@@ -13,7 +13,7 @@
 	<link rel="stylesheet" href="/static/css/app.css?v={{.AssetVersion}}">
 </head>
 <body{{if .User}} class="has-nav"{{end}}>
-{{if .DemoMode}}<div class="demo-banner" role="note" data-demo-banner><strong>Übungsinstanz</strong> <span>Alle Daten sind Beispieldaten. E-Mail-Versand und externe Backups sind abgeschaltet.</span></div>{{end}}
+{{if not .User}}{{template "demo-banner" .}}{{end}}
 {{/* Shared SVG gradient defs for chart bars (referenced via fill: url(#…) in
     app.css). Stop colours are set by CSS class so they follow the theme. */}}
 <svg class="gradient-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs>
@@ -48,6 +48,7 @@
 	<canvas id="app-bg" class="app-bg" aria-hidden="true"></canvas>
 	<a class="skip" href="#main">Zum Inhalt springen</a>
 	<div class="topstack">
+		{{template "demo-banner" .}}
 		<header class="appbar">
 			<a class="appbar__brand" href="/" aria-label="Treckrr – zur Übersicht">
 				<svg class="appbar__brand-mark" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#m-traktor"/></svg>
@@ -261,3 +262,5 @@
 	{{block "scripts" .}}{{end}}
 </body>
 </html>{{end}}
+
+{{define "demo-banner"}}{{if .DemoMode}}<div class="demo-banner" role="note" data-demo-banner><strong>Übungsinstanz</strong> <span>Alle Daten sind Beispieldaten. E-Mail-Versand und externe Backups sind abgeschaltet.</span></div>{{end}}{{end}}

@@ -449,7 +449,12 @@ func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store, srv *se
 			// failure raises an admin notification on the next refresh.
 			maintenanceTask(taskCtx, 5*time.Minute, func(bg context.Context) {
 				due, err := st.AuditChainVerifyDue(bg, 24*time.Hour)
-				if err != nil || !due {
+				if err != nil {
+					metrics.Inc(metrics.MaintenanceFails)
+					slog.Error("check audit chain verification schedule", "err", err)
+					return
+				}
+				if !due {
 					return
 				}
 				if report, err := st.VerifyAuditChain(bg); err != nil {

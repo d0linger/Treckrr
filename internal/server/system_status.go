@@ -27,7 +27,11 @@ func (s *Server) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	backupView := s.backupHealth()
 	backupState := s.currentBackupStatus()
-	policy := s.securityPolicy(r.Context())
+	policy, err := s.securityPolicy(r.Context())
+	if err != nil {
+		s.serverError(w, "security policy", err)
+		return
+	}
 	chainHeads, err := s.store.AuditChainHeads(r.Context())
 	if err != nil {
 		s.serverError(w, "system status: audit chain", err)

@@ -83,3 +83,19 @@ test("the stopwatch survives a reload and fills whole minutes on stop", async ({
   await expect(page.getByRole("button", { name: "Stoppuhr starten" })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem("treckrr-stopwatch-7"))).toBeNull();
 });
+
+test("stopping or clearing the stopwatch in another tab clears the initiating tab", async ({ page, context }) => {
+	await openFixture(page);
+	await page.getByText("Zeit erfassen").click();
+	await page.locator("[data-stopwatch-toggle]").click();
+	const other = await context.newPage();
+	await openFixture(other);
+	await expect(other.locator("[data-stopwatch-toggle]")).toHaveAttribute("aria-pressed", "true");
+	await other.locator("[data-stopwatch-toggle]").click();
+	await expect(page.locator("[data-stopwatch-toggle]")).toHaveAttribute("aria-pressed", "false");
+	await expect(page.locator("[data-hours]")).toHaveValue("");
+	await page.locator("[data-stopwatch-toggle]").click();
+	await expect(other.locator("[data-stopwatch-toggle]")).toHaveAttribute("aria-pressed", "true");
+	await other.evaluate(() => localStorage.clear());
+	await expect(page.locator("[data-stopwatch-toggle]")).toHaveAttribute("aria-pressed", "false");
+});

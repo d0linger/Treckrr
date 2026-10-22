@@ -69,7 +69,7 @@
 					<td><a href="/neighbors/{{$.Neighbor.ID}}?year={{.BillingYearID}}">{{.Year}}</a></td>
 					<td>{{if .Method}}{{.Method}}{{else}}—{{end}}</td>
 					<td>{{if .InvoiceNumber}}{{.InvoiceNumber}}{{else}}—{{end}}</td>
-					<td>{{if .Note}}{{.Note}}{{else}}—{{end}} <a class="link small" href="/neighbors/{{$.Neighbor.ID}}?year={{.BillingYearID}}&amp;view=payments#zahlungen">Aktuelle Zuordnung</a></td>
+					<td>{{if .Note}}{{.Note}}{{else}}—{{end}} <a class="link small" href="/neighbors/{{$.Neighbor.ID}}?year={{.BillingYearID}}&amp;view=payments#zahlung-{{.ID}}">Aktuelle Zuordnung</a></td>
 					<td class="num">{{money .Amount}}</td>
 				</tr>
 				{{end}}

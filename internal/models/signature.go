@@ -3,6 +3,7 @@ package models
 import (
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // EntrySignature is the neighbor's on-site confirmation of one booking: a
@@ -36,5 +37,12 @@ func SignatureSummary(e Entry) string {
 		qty, unit = e.Quantity, e.Unit
 	}
 	cost := strings.Replace(e.Cost.StringFixed(2), ".", ",", 1)
-	return e.Date.Format("02.01.2006") + " · " + label + " · " + ledgerDecimal(qty) + " " + unit + " · " + cost + " €"
+	prefix := e.Date.Format("02.01.2006") + " · "
+	suffix := " · " + ledgerDecimal(qty) + " " + unit + " · " + cost + " €"
+	// confirmed_text is limited to 500 characters. Legacy bookings can use a
+	// full-length note as their label; retain the date, quantity and total.
+	if limit := 500 - utf8.RuneCountInString(prefix+suffix); utf8.RuneCountInString(label) > limit && limit > 0 {
+		label = string([]rune(label)[:limit-1]) + "…"
+	}
+	return prefix + label + suffix
 }

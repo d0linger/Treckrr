@@ -113,6 +113,14 @@ func TestSecondFactorPolicyIntegration(t *testing.T) {
 	if status, _ := location("/profile"); status != http.StatusOK {
 		t.Fatalf("profile must stay reachable, got %d", status)
 	}
+	// e.status follows the setup redirect, just as a browser does.
+	if status, body := e.status(http.MethodPost, "/account/calendar", nil); status != http.StatusOK || !strings.Contains(body, "Bitte zuerst einen Passkey") {
+		t.Fatalf("blocked calendar creation: %d", status)
+	}
+	var feeds int
+	if err := e.pool.QueryRowContext(e.ctx, `SELECT count(*) FROM calendar_feeds WHERE user_id=(SELECT id FROM users WHERE username=$1)`, e.uname).Scan(&feeds); err != nil || feeds != 0 {
+		t.Fatalf("MFA-blocked account created a feed: count=%d err=%v", feeds, err)
+	}
 	if got := e.replay("/entries", url.Values{"year_id": {itoa64(e.yearID64)}}, false); got.status != http.StatusConflict {
 		t.Fatalf("offline replay: status %d, want 409", got.status)
 	}

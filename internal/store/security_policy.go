@@ -2,10 +2,48 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/d0linger/treckrr/internal/models"
 )
+
+// ErrSecondFactorRequired prevents self-service removal of the last required
+// factor. Explicit administrator recovery uses separate reset operations.
+var ErrSecondFactorRequired = errors.New("security policy requires a second factor")
+
+// Both factor-removal paths lock the same user before counting remaining
+// factors. The subsequent statement gets a fresh READ COMMITTED snapshot after
+// a concurrent removal commits; a count inside the locking statement would not.
+func checkFactorRemovalTx(ctx context.Context, tx *sql.Tx, userID, credentialID int64, removingTOTP bool) error {
+	var u models.User
+	err := tx.QueryRowContext(ctx, `SELECT role, totp_enabled FROM users WHERE id=$1 AND NOT disabled FOR UPDATE`, userID).
+		Scan(&u.Role, &u.TotpEnabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	var p SecurityPolicy
+	if err := tx.QueryRowContext(ctx, `SELECT require_mfa_admin, require_mfa_editor FROM security_policy WHERE id=1 FOR SHARE`).
+		Scan(&p.RequireAdmin, &p.RequireEditor); err != nil {
+		return err
+	}
+	if !p.Requires(u) || (!removingTOTP && u.TotpEnabled) {
+		return nil
+	}
+	var remaining bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM webauthn_credentials WHERE user_id=$1 AND id<>$2)`, userID, credentialID).
+		Scan(&remaining); err != nil {
+		return err
+	}
+	if !remaining {
+		return ErrSecondFactorRequired
+	}
+	return nil
+}
 
 // SecurityPolicy says which roles must sign in with a second factor (TOTP or
 // passkey) and how long a newly affected account may still work without one.

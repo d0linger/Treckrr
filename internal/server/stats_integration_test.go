@@ -2,7 +2,9 @@ package server
 
 import (
 	"fmt"
+	"html"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -53,6 +55,30 @@ func TestStatsPeriodDrilldownExportIntegration(t *testing.T) {
 	}
 	// March only: 2 × 92,00 + 100,00 = 284,00.
 	page = e.get(fmt.Sprintf("/stats?year=%d&from=2026-03-01&to=2026-03-31", yid))
+	checkedLinks := 0
+	for _, match := range regexp.MustCompile(`href="([^"]+)"`).FindAllStringSubmatch(page, -1) {
+		link, err := url.Parse(html.UnescapeString(match[1]))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if link.Path != "/stats/export.csv" && link.Path != "/stats/export.xlsx" && link.Path != "/buchungen" {
+			continue
+		}
+		if !strings.Contains(link.RawQuery, "year=") {
+			continue
+		}
+		q := link.Query()
+		if link.Path == "/buchungen" && q.Get("task") == "" && q.Get("neighbor_id") == "" {
+			continue
+		}
+		if q.Get("year") != itoa64(yid) || q.Get("from") != "2026-03-01" || q.Get("to") != "2026-03-31" {
+			t.Errorf("malformed period URL: %s", link)
+		}
+		checkedLinks++
+	}
+	if checkedLinks < 5 {
+		t.Fatalf("missing period links: %d", checkedLinks)
+	}
 	if !strings.Contains(page, "284,00") {
 		t.Errorf("March window does not total 284,00")
 	}

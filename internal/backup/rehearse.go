@@ -339,6 +339,39 @@ func (s *Service) recordAuditHeads(ctx context.Context, probe *sql.DB) error {
 	}
 	defer rows.Close()
 	source := "Restore-Probe " + time.Now().Format("02.01.2006 15:04")
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Match sealing/pruning/verification's lock order. A backup left behind by
+	// an intentional restore can belong to a discarded future or another branch
+	// of history; never turn that archive into a permanent live-chain anchor.
+	liveRows, err := tx.QueryContext(ctx, `SELECT chain, anchor_seq, anchor_hash FROM audit_chain_heads ORDER BY chain FOR UPDATE`)
+	if err != nil {
+		return err
+	}
+	type liveHead struct {
+		anchor int64
+		hash   []byte
+	}
+	live := map[string]liveHead{}
+	for liveRows.Next() {
+		var chain string
+		var h liveHead
+		if err := liveRows.Scan(&chain, &h.anchor, &h.hash); err != nil {
+			_ = liveRows.Close()
+			return err
+		}
+		live[chain] = h
+	}
+	if err := liveRows.Err(); err != nil {
+		_ = liveRows.Close()
+		return err
+	}
+	if err := liveRows.Close(); err != nil {
+		return err
+	}
 	for rows.Next() {
 		var chain string
 		var seq int64
@@ -346,11 +379,30 @@ func (s *Service) recordAuditHeads(ctx context.Context, probe *sql.DB) error {
 		if err := rows.Scan(&chain, &seq, &hash); err != nil {
 			return err
 		}
-		if _, err := s.db.ExecContext(ctx, `
+		h, exists := live[chain]
+		if !exists {
+			return fmt.Errorf("backup chain %s is absent from live history", chain)
+		}
+		if seq < h.anchor {
+			continue // already pruned; cannot establish a new trusted anchor
+		}
+		got := h.hash
+		if seq > h.anchor {
+			if err := tx.QueryRowContext(ctx, `SELECT row_hash FROM audit_log WHERE chain=$1 AND chain_seq=$2`, chain, seq).Scan(&got); err != nil {
+				return fmt.Errorf("backup chain %s at %d is not verifiable in live history (restore or integrity conflict): %w", chain, seq, err)
+			}
+		}
+		if !bytes.Equal(hash, got) {
+			return fmt.Errorf("backup chain %s at %d differs from live history (restore or integrity conflict)", chain, seq)
+		}
+		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO audit_chain_backup_heads (chain, seq, hash, source) VALUES ($1, $2, $3, $4)
 			ON CONFLICT (chain, seq, hash) DO NOTHING`, chain, seq, hash, source); err != nil {
 			return err
 		}
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

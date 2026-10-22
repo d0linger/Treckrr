@@ -301,8 +301,9 @@ func (s *Server) handleStatementFeedback(w http.ResponseWriter, r *http.Request)
 	var label string
 	var amount decimal.NullDecimal
 	if raw := strings.TrimSpace(r.FormValue("line")); raw != "" && status == "disputed" {
-		idx, err := strconv.Atoi(raw)
-		if err != nil || idx < 0 || utf8.RuneCountInString(raw) > 6 {
+		index, key, keyed := strings.Cut(raw, ":")
+		idx, err := strconv.Atoi(index)
+		if err != nil || idx < 0 || len(index) > 6 || !keyed || len(key) != 64 {
 			s.badRequest(w, "Ungültige Position.")
 			return
 		}
@@ -311,7 +312,7 @@ func (s *Server) handleStatementFeedback(w http.ResponseWriter, r *http.Request)
 			s.serverError(w, "statement feedback: lines", err)
 			return
 		}
-		if err != nil || idx >= len(content.Lines) {
+		if err != nil || idx >= len(content.Lines) || content.Lines[idx].FeedbackKey() != key {
 			s.badRequest(w, "Die Positionen haben sich inzwischen geändert. Bitte die Seite neu laden und den Einwand erneut senden.")
 			return
 		}

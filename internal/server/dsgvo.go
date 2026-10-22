@@ -232,6 +232,7 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 		Notice:     "DSGVO Art. 15/20 Datenauskunft — strukturierte Nachbardaten; ergänzende Unterlagen gemäß Prüfliste separat bereitstellen.",
 		Subject:    dsgvoSubjectFromNeighbor(n),
 		AdditionalDelivery: []string{
+			"Unterschriften: Die angegebenen Bild-URLs benötigen eine interne Anmeldung. Berechtigte Unterschriftsbilder herunterladen und als Dateien sicher mitliefern; URLs allein sind keine vollständige Kopie.",
 			"Fotos: Die angegebenen URLs benötigen eine interne Anmeldung. Berechtigte Fotos herunterladen und als Dateien sicher mitliefern; URLs allein sind keine vollständige Kopie.",
 			"E-Mail-Anhänge: Gespeicherte Dateien anhand der mail_outbox-ID und Anhangsmetadaten prüfen und separat sicher mitliefern; Anhangsbytes und technische SMTP-Fehler sind nicht enthalten.",
 			"Protokolle: Personenbezogene Audit- und Betriebsprotokolle durch einen Administrator prüfen, fremde Daten und Zugangsdaten entfernen und einen berechtigten Auszug separat mitliefern. Eine Namenssuche allein ist nicht vollständig.",
@@ -324,7 +325,7 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
-		statementFeedback, err := s.store.ListStatementFeedback(r.Context(), n.ID, y.ID)
+		statementFeedback, err := s.store.ListAllStatementFeedback(r.Context(), n.ID, y.ID)
 		if err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
