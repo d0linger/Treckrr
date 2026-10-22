@@ -76,10 +76,10 @@ test("a second share preserves all pending photos and shows a recovery message",
   await expect(page.getByRole("alert")).toContainText("erneut");
   expect(await page.locator("[data-share-thumbs] img").evaluateAll(images => images.map(image => image.getAttribute("alt"))))
     .toEqual(["original-a.png", "original-b.png"]);
-  expect(imagePolicyErrors).toEqual([]);
   await expect.poll(() => page.locator("[data-share-thumbs] img").evaluateAll(images =>
-    images.every(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0),
+    images.length === 2 && images.every(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0),
   )).toBe(true);
+  expect(imagePolicyErrors).toEqual([]);
   await test.info().attach("pending-share-warning", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
 });
 
@@ -94,7 +94,7 @@ test("ten photos are parked completely with a unique share identity", async ({ p
   await expect(page.locator("[data-share-count]")).toHaveText("10 Fotos bereit");
   await expect(page.locator("[data-share-thumbs] img")).toHaveCount(10);
   await expect.poll(() => page.locator("[data-share-thumbs] img").evaluateAll(images =>
-    images.every(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0),
+    images.length === 10 && images.every(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0),
   )).toBe(true);
   await page.getByRole("button", { name: "Verwerfen", exact: true }).click();
   await expect(page).toHaveURL(/\/buchungen$/);
