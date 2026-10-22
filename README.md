@@ -163,6 +163,7 @@ deletes its data so the next start is fresh.
 | **DEMO_MODE** | `true` marks a practice instance: banner, PDF watermark, and mail, S3 and rehearsals forced off | `false` | No |
 | **UPDATE_CHECK** | `true` looks up the newest release once a day and notifies administrators; the only outbound call the app makes on its own | `false` | No |
 | **UPDATE_CHECK_URL** | Release feed for the update check (https only) | GitHub releases API | No |
+| **RETENTION_YEARS** | Full calendar years after which an archived neighbor is offered for anonymization under *Aufbewahrung* (1–30); never anonymized automatically | `7` | No |
 | **LOG_FORMAT** / **LOG_LEVEL** | `text`\|`json`, `debug`\|`info`\|`warn`\|`error` | `text` / `info` | No |
 
 ### Rotating the backup key

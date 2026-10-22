@@ -115,6 +115,10 @@ type Config struct {
 	// unless the operator opts in. UpdateCheckURL is the releases endpoint.
 	UpdateCheck    bool
 	UpdateCheckURL string
+	// RetentionYears (RETENTION_YEARS, default 7 full calendar years) is when
+	// an archived neighbor is offered for anonymization by the retention
+	// assistant. It never anonymizes on its own.
+	RetentionYears int
 }
 
 // DefaultUpdateCheckURL is the public release feed of the project.
@@ -174,6 +178,10 @@ func Load() (*Config, error) {
 		DemoMode:            strings.EqualFold(getenv("DEMO_MODE", "false"), "true"),
 		UpdateCheck:         strings.EqualFold(getenv("UPDATE_CHECK", "false"), "true"),
 		UpdateCheckURL:      strings.TrimSpace(getenv("UPDATE_CHECK_URL", DefaultUpdateCheckURL)),
+		RetentionYears:      getenvInt("RETENTION_YEARS", 7),
+	}
+	if c.RetentionYears < 1 || c.RetentionYears > 30 {
+		return nil, fmt.Errorf("RETENTION_YEARS must be between 1 and 30 full years")
 	}
 	if c.UpdateCheck && !strings.HasPrefix(c.UpdateCheckURL, "https://") {
 		return nil, fmt.Errorf("UPDATE_CHECK_URL must be an https:// URL")

@@ -52,7 +52,7 @@ func (s *Server) RefreshNotifications(ctx context.Context) error {
 			}
 		}
 	}
-	return s.store.RefreshNotifications(ctx, backupNotice, updateNotice, chainNotice)
+	return s.store.RefreshNotifications(ctx, backupNotice, updateNotice, chainNotice, s.retentionNotice(ctx))
 }
 
 // handleNotifications renders the signed-in user's notification stream and

@@ -271,6 +271,7 @@ func (s *Server) registerAdminRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /admin/legacy-inventory", s.admin(s.handleLegacyInventory))
 	mux.Handle("GET /admin/audit", s.admin(s.handleAudit))
 	mux.Handle("GET /admin/audit/export", s.admin(s.handleAuditExport))
+	mux.Handle("GET /admin/aufbewahrung", s.admin(s.handleRetention))
 	mux.Handle("GET /admin/mail", s.admin(s.handleMailOutbox))
 	mux.Handle("GET /admin/mail/{id}", s.admin(s.handleMailOutboxDetail))
 	mux.Handle("POST /admin/mail/{id}/retry", s.admin(s.handleMailRetry))

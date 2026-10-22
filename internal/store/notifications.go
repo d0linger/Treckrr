@@ -105,7 +105,7 @@ func validateNotificationSource(source NotificationSource) error {
 		return errors.New("notification source has invalid dedupe key")
 	}
 	switch source.Kind {
-	case "due", "recurring", "import", "mail", "backup", "feedback", "security", "update":
+	case "due", "recurring", "import", "mail", "backup", "feedback", "security", "update", "privacy":
 	default:
 		return fmt.Errorf("notification source has invalid kind %q", source.Kind)
 	}

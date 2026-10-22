@@ -587,9 +587,13 @@ func (s *Server) handleNeighborAnonymize(w http.ResponseWriter, r *http.Request)
 	}
 	// Ausbaukarte 88: typed confirmation, like the restore. This deletes free
 	// text and photos for good; a mis-aimed click must not be enough.
+	back := "/neighbors"
+	if r.FormValue("back") == retentionPath {
+		back = retentionPath
+	}
 	if strings.TrimSpace(r.FormValue("confirm")) != "ANONYMISIEREN" {
 		s.setFlash(w, r, "error", "Zum Anonymisieren bitte ANONYMISIEREN eintippen (Großschreibung beachten).")
-		redirect(w, r, "/neighbors")
+		redirect(w, r, back)
 		return
 	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
@@ -607,5 +611,5 @@ func (s *Server) handleNeighborAnonymize(w http.ResponseWriter, r *http.Request)
 		s.audit(r, "anonymize", "neighbor", id, detail)
 		s.setFlash(w, r, "success", "Nachbar anonymisiert. Rechnungen bleiben aufbewahrungspflichtig erhalten.")
 	}
-	redirect(w, r, "/neighbors")
+	redirect(w, r, back)
 }
