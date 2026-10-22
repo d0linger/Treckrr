@@ -183,6 +183,34 @@ func TestHandleUserCreatePasswordBoundary(t *testing.T) {
 	}
 }
 
+func TestHandlersRejectMalformedForm(t *testing.T) {
+	s := testAdminServer(t)
+	tests := []struct {
+		name    string
+		path    string
+		handler http.HandlerFunc
+	}{
+		{name: "reset totp", path: "/admin/users/123/reset-totp", handler: s.handleUserResetTotp},
+		{name: "delete user", path: "/admin/users/123/delete", handler: s.handleUserDelete},
+		{name: "delete accounting profile", path: "/admin/accounting-profile/123/delete", handler: s.handleAccountingProfileDelete},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader("data=%XX"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.SetPathValue("id", "123")
+			rr := httptest.NewRecorder()
+
+			tc.handler(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+			}
+		})
+	}
+}
+
 func TestHandleUserCreateValidation(t *testing.T) {
 	s := testAdminServer(t)
 

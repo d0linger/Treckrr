@@ -238,6 +238,10 @@ func (s *Server) handleAccountingProfileDelete(w http.ResponseWriter, r *http.Re
 		s.notFound(w, r)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
 	back := "/rechnungsjournal"
 	if yearID := s.yearIDFromForm(r); yearID != 0 {
 		back += "?year=" + strconv.FormatInt(yearID, 10)
