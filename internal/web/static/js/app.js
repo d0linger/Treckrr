@@ -716,12 +716,16 @@
 			e.preventDefault();
 			if (uploading) return;
 			var target = form.querySelector('input[name="target"]:checked');
-			if (!target || !/^\/entries\/\d+\/photos$/.test(target.value) || !input.files.length) return;
+			var targetValue = target ? target.value : "";
+			var entry = /^\/entries\/([1-9]\d*)\/photos$/.exec(targetValue);
+			if (!entry || entry[0] !== targetValue || !input.files.length) return;
+			// Keep upload and navigation bound to this entry across asynchronous work.
+			var entryPath = "/entries/" + encodeURIComponent(entry[1]);
 			uploading = true;
 			var buttons = form.querySelectorAll("button");
 			buttons.forEach(function (button) { button.disabled = true; });
 			status.textContent = "Fotos werden angehängt …";
-			fetch(target.value, { method: "POST", body: new FormData(form), credentials: "same-origin", redirect: "error",
+			fetch(entryPath + "/photos", { method: "POST", body: new FormData(form), credentials: "same-origin", redirect: "error",
 				headers: { "X-Treckrr-Share-Upload": "1" } }).then(function (response) {
 				return response.json().then(function (result) {
 					if (!response.ok || result.uploaded !== true) throw new Error(result.message || "Upload fehlgeschlagen.");
@@ -729,7 +733,7 @@
 			}).then(function () {
 				return forget();
 			}).then(function () {
-				window.location.href = target.value.replace(/\/photos$/, "/edit");
+				window.location.href = entryPath + "/edit";
 			}).catch(function () {
 				status.textContent = "Die Fotos bleiben auf diesem Gerät erhalten. Bitte Anmeldung, Verbindung und Bildformat (JPEG, PNG oder GIF) prüfen und erneut versuchen. Bereits gespeicherte Fotos werden beim erneuten Versuch nicht doppelt angehängt.";
 				uploading = false;

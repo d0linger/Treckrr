@@ -102,3 +102,55 @@ for (const failure of ["network", "rejected", "partial", "login"]) {
 		await expect(page.locator("[data-share-empty]")).toBeVisible();
 	});
 }
+
+for (const replacement of [
+  { name: "another booking", value: "/entries/8/photos" },
+  { name: "a script URL", value: "javascript:void(window.__shareTargetScriptRan=true)" },
+  { name: "an external URL", value: "https://attacker.invalid/entries/7/photos" },
+]) {
+  test(`upload stays bound to its original booking when the target changes to ${replacement.name}`, async ({ page }) => {
+    await openFixture(page);
+    await park(page, 1);
+    await page.route("**/entries/7/photos", async route => {
+      await page.locator('input[name="target"]').evaluate((input, value) => {
+        (input as HTMLInputElement).value = value;
+      }, replacement.value);
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ uploaded: true }) });
+    });
+    await page.getByLabel("Buchung 7").check();
+    await page.getByRole("button", { name: "Fotos anhängen" }).click();
+    await expect(page).toHaveURL("http://share-target.test/entries/7/edit");
+    await page.goto("http://share-target.test/fixture");
+    await expect(page.locator("[data-share-empty]")).toBeVisible();
+  });
+}
+
+for (const invalid of [
+  { name: "script URLs", value: "javascript:void(0)" },
+  { name: "data URLs", value: "data:text/html,test" },
+  { name: "external origins", value: "https://attacker.invalid/entries/7/photos" },
+  { name: "protocol-relative URLs", value: "//attacker.invalid/entries/7/photos" },
+  { name: "zero IDs", value: "/entries/0/photos" },
+  { name: "negative IDs", value: "/entries/-1/photos" },
+  { name: "query strings", value: "/entries/7/photos?next=/other" },
+  { name: "trailing newlines", value: "/entries/7/photos\n" },
+  { name: "path traversal", value: "/entries/7/photos/../photos" },
+  { name: "encoded path separators", value: "/entries/7%2fedit/photos" },
+]) {
+  test(`invalid share targets reject ${invalid.name} without uploading or losing parked photos`, async ({ page }) => {
+    await openFixture(page);
+    await park(page, 1);
+    const posts: string[] = [];
+    page.on("request", request => { if (request.method() === "POST") posts.push(request.url()); });
+    await page.locator('input[name="target"]').evaluate((input, value) => {
+      (input as HTMLInputElement).value = value;
+    }, invalid.value);
+    await page.getByLabel("Buchung 7").check();
+    await page.getByRole("button", { name: "Fotos anhängen" }).click();
+    await expect(page.getByRole("status")).toBeEmpty();
+    await expect(page).toHaveURL("http://share-target.test/fixture");
+    await page.reload();
+    await expect(page.locator("[data-share-count]")).toHaveText("1 Foto bereit");
+    expect(posts).toEqual([]);
+  });
+}
