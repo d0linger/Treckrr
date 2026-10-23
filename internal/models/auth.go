@@ -18,9 +18,16 @@ type User struct {
 	IsAdmin            bool
 	MustChangePassword bool
 	TotpEnabled        bool
-	Disabled           bool
-	CreatedAt          time.Time
+	// HasPasskey reports at least one registered WebAuthn credential; a
+	// passkey sign-in is itself a second factor (user verification required).
+	HasPasskey bool
+	Disabled   bool
+	CreatedAt  time.Time
 }
+
+// HasSecondFactor reports whether the account can sign in with more than a
+// password: TOTP or a passkey.
+func (u User) HasSecondFactor() bool { return u.TotpEnabled || u.HasPasskey }
 
 // CanWrite permits only active users with an explicitly recognized write role.
 func (u User) CanWrite() bool {

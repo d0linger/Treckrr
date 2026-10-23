@@ -41,6 +41,7 @@ func savedBookingQuery(r *http.Request, yearID int64) string {
 		}
 		return false
 	})
+	copyValue("view", func(v string) bool { return v == "kalender" })
 	copyValue("from", func(v string) bool { return !parseDay(v).IsZero() })
 	copyValue("to", func(v string) bool { return !parseDay(v).IsZero() })
 	copyValue("unit", func(v string) bool { return len(v) <= 30 })

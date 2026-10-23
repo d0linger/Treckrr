@@ -126,6 +126,12 @@ func (s *Server) handleJournal(w http.ResponseWriter, r *http.Request) {
 	}
 	data["AccountingProfiles"] = profiles
 	data["AccountingColumns"] = accountingColumns
+	data["AccountingPresets"] = accountingPresets
+	presetLabels := map[string]string{}
+	for _, p := range accountingPresets {
+		presetLabels[p.Key] = p.Label
+	}
+	data["AccountingPresetLabels"] = presetLabels
 	// Kleinunternehmer ceiling (Nr. 55): only when configured (>0) and relevant.
 	if company.TaxMode == "kleinunternehmer" && company.SmallBusinessLimit.IsPositive() {
 		kuSum, err := s.store.KUCalendarYearGross(r.Context(), year.Year)
@@ -161,6 +167,15 @@ var accountingColumnLabels = func() map[string]string {
 	return m
 }()
 
+// allAccountingColumns is the complete free mapping in display order.
+func allAccountingColumns() string {
+	keys := make([]string, len(accountingColumns))
+	for i, col := range accountingColumns {
+		keys[i] = col.Key
+	}
+	return strings.Join(keys, ",")
+}
+
 func validAccountingColumns(raw string) ([]string, bool) {
 	parts := strings.Split(raw, ",")
 	seen := make(map[string]bool, len(parts))
@@ -185,8 +200,26 @@ func (s *Server) handleAccountingProfileSave(w http.ResponseWriter, r *http.Requ
 	if yearID := s.yearIDFromForm(r); yearID != 0 {
 		back += "?year=" + strconv.FormatInt(yearID, 10)
 	}
+	if len(r.PostForm["columns"]) > maxFormListLen {
+		s.setFlash(w, r, "error", "Zu viele Exportspalten ausgewählt.")
+		redirect(w, r, back)
+		return
+	}
 	name := trimmed(r, "name")
 	columns := strings.Join(r.PostForm["columns"], ",")
+	if s.tooLong(w, r, "Exportspalten", columns, maxNoteLen) {
+		redirect(w, r, back)
+		return
+	}
+	format := r.FormValue("format")
+	preset := accountingPresetFor(format)
+	if preset == nil {
+		format = "custom"
+	} else {
+		// A preset fixes its own layout; the stored mapping keeps every column
+		// so switching the profile back to "custom" starts complete.
+		columns = allAccountingColumns()
+	}
 	if name == "" || s.tooLong(w, r, "Profilname", name, maxNameLen) {
 		if name == "" {
 			s.setFlash(w, r, "error", "Ein Profilname ist erforderlich.")
@@ -207,7 +240,10 @@ func (s *Server) handleAccountingProfileSave(w http.ResponseWriter, r *http.Requ
 		ID: formInt64(r, "id"), Name: name, RevenueAccount: trimmed(r, "revenue_account"),
 		ReceivableAccount: trimmed(r, "receivable_account"), TaxCode: trimmed(r, "tax_code"),
 		CostCenter: trimmed(r, "cost_center"), Columns: columns, Delimiter: delimiter,
-		DecimalComma: r.FormValue("decimal_comma") == "true", DecimalCommaSet: true,
+		DecimalComma: r.FormValue("decimal_comma") == "true", DecimalCommaSet: true, Format: format,
+	}
+	if preset != nil {
+		p.Delimiter, p.DecimalComma = ";", true
 	}
 	for label, value := range map[string]string{
 		"Erlöskonto": p.RevenueAccount, "Debitorenkonto": p.ReceivableAccount,
@@ -236,6 +272,14 @@ func (s *Server) handleAccountingProfileDelete(w http.ResponseWriter, r *http.Re
 	id, err := pathID(r)
 	if err != nil {
 		s.notFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	back := "/rechnungsjournal"
@@ -300,14 +344,26 @@ func (s *Server) handleAccountingCSV(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+	preset := accountingPresetFor(profile.Format)
 	columns, ok := validAccountingColumns(profile.Columns)
-	if !ok {
+	if !ok && preset == nil {
 		s.serverError(w, r.URL.Path, errors.New("invalid accounting export profile columns"))
 		return
 	}
 	rows, err := s.store.ListInvoiceJournal(r.Context(), year.ID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	if preset != nil {
+		cw, finish := csvDownload(w, r, fmt.Sprintf("buchhaltung-%d-%d-%s.csv", year.Year, profile.ID, preset.Key))
+		defer finish()
+		_ = cw.Write(preset.header)
+		for _, row := range rows {
+			if row.CountsForRevenue() {
+				_ = cw.Write(preset.row(row, profile))
+			}
+		}
 		return
 	}
 	filename := fmt.Sprintf("buchhaltung-%d-%d.csv", year.Year, profile.ID)
@@ -340,21 +396,25 @@ func (s *Server) handleAccountingCSV(w http.ResponseWriter, r *http.Request) {
 
 // writeJournalCSV writes the journal in the export CSV dialect (BOM + ';').
 func writeJournalCSV(w *csv.Writer, rows []store.JournalRow) {
-	_ = w.Write([]string{"Nummer", "Datum", "Art", "Status", "Nachbar", "Netto (€)", "USt-Satz (%)", "USt (€)", "Brutto (€)"})
-	kinds := map[string]string{"invoice": "Rechnung", "storno": "Storno", "gutschrift": "Gutschrift", "anzahlung": "Abschlag"}
+	t := journalTable(rows, "")
+	t.writeCSV(w)
+}
+
+// journalTable is the invoice journal as CSV/XLSX: one row per document and
+// the signed totals.
+func journalTable(rows []store.JournalRow, sheet string) exportTable {
+	t := exportTable{sheet: sheet, header: []string{"Nummer", "Datum", "Art", "Status", "Nachbar", "Netto (€)", "USt-Satz (%)", "USt (€)", "Brutto (€)"}}
 	status := map[string]string{"issued": "ausgestellt", "canceled": "storniert"}
 	for _, j := range rows {
-		// csvSafe on the free-text columns, like every other export: a neighbor
-		// name or invoice number starting with = + - @ would otherwise be
-		// evaluated as a formula by the spreadsheet this file is opened in.
-		// Amount columns stay raw — a quote would break the negative sign.
-		_ = w.Write([]string{
-			csvSafe(j.Number), j.IssuedOn.Format("02.01.2006"), orKey(kinds, j.Kind), orKey(status, j.Status), csvSafe(j.NeighborName),
-			deDecimal(j.Net), deDecimal(j.VATRate), deDecimal(j.VATAmount), deDecimal(j.Gross),
-		})
+		// Free text is neutralized in CSV and an inline string in XLSX, like
+		// every other export; amount columns stay numbers.
+		t.add(cellText(j.Number), cellDate(j.IssuedOn), cellLabel(orKey(documentKindLabels, j.Kind)), cellLabel(orKey(status, j.Status)),
+			cellText(j.NeighborName), cellMoney(j.Net), cellNumber(j.VATRate), cellMoney(j.VATAmount), cellMoney(j.Gross))
 	}
 	net, vat, gross := journalTotals(rows)
-	_ = w.Write([]string{"", "", "", "", "Summe (signiert)", deDecimal(net), "", deDecimal(vat), deDecimal(gross)})
+	empty := cellEmpty()
+	t.add(empty, empty, empty, empty, cellLabel("Summe (signiert)"), cellMoney(net), empty, cellMoney(vat), cellMoney(gross))
+	return t
 }
 
 func orKey(m map[string]string, k string) string {
@@ -375,10 +435,7 @@ func (s *Server) handleJournalCSV(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	filename := fmt.Sprintf("rechnungsjournal-%d.csv", year.Year)
-	cw, finish := csvDownload(w, r, filename)
-	defer finish()
-	writeJournalCSV(cw, rows)
+	s.writeExport(w, r, fmt.Sprintf("rechnungsjournal-%d", year.Year), journalTable(rows, fmt.Sprintf("Rechnungsjournal %d", year.Year)))
 }
 
 var zipNameSafe = regexp.MustCompile(`[^A-Za-z0-9._-]`)

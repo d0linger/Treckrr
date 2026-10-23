@@ -53,6 +53,10 @@ type Server struct {
 	backgroundTasks map[uint64]backgroundTask
 	// photoSlots bounds concurrent image decodes; see maxConcurrentPhotoDecodes.
 	photoSlots chan struct{}
+	// policy caches the sign-in policy (second factor per role).
+	policy policyCache
+	// updates holds the optional daily release lookup (UPDATE_CHECK).
+	updates updateState
 }
 
 // New constructs a Server and parses templates.
@@ -368,6 +372,17 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 			http.Redirect(w, r, "/account/password", http.StatusSeeOther)
 			return
 		}
+		// A required second factor past its grace period leaves only account
+		// self-service reachable, which is where it can be set up.
+		blocked, err := s.mfaBlocked(r, user)
+		if err != nil {
+			s.serverError(w, "security policy", err)
+			return
+		}
+		if blocked && !isMFASetupPath(r.URL.Path) {
+			s.redirectToMFASetup(w, r)
+			return
+		}
 		// Viewers may not mutate data, except managing their own account.
 		if r.Method == http.MethodPost && !user.CanWrite() && !isSelfServicePath(r.URL.Path) {
 			// A replay would read the redirect as neither success nor rejection and
@@ -402,7 +417,27 @@ func isOfflineReplay(r *http.Request) bool {
 
 // isSelfServicePath allows viewers to POST to their own account management.
 func isSelfServicePath(p string) bool {
-	return strings.HasPrefix(p, "/account") || strings.HasPrefix(p, "/profile")
+	return p == "/profile" || strings.HasPrefix(p, "/account/") || isPersonalNotificationPath(p)
+}
+
+// MFA enrollment grants only the endpoints needed to set up a factor and secure
+// the account. Calendar feeds and other account features still require MFA.
+func isMFASetupPath(p string) bool {
+	return p == "/profile" || p == "/account/password" || p == "/account/2fa" ||
+		strings.HasPrefix(p, "/account/2fa/") || p == "/account/passkeys" ||
+		strings.HasPrefix(p, "/account/passkeys/") || strings.HasPrefix(p, "/account/sessions/")
+}
+
+func isPersonalNotificationPath(p string) bool {
+	if p == "/notifications/read-all" {
+		return true
+	}
+	parts := strings.Split(p, "/")
+	if len(parts) != 4 || parts[1] != "notifications" || (parts[3] != "open" && parts[3] != "dismiss") {
+		return false
+	}
+	id, err := strconv.ParseInt(parts[2], 10, 64)
+	return err == nil && id > 0
 }
 
 // admin wraps a handler requiring an authenticated admin user.
@@ -431,6 +466,15 @@ func (s *Server) admin(h http.HandlerFunc) http.Handler {
 				return
 			}
 			http.Redirect(w, r, "/account/password", http.StatusSeeOther)
+			return
+		}
+		blocked, err := s.mfaBlocked(r, user)
+		if err != nil {
+			s.serverError(w, "security policy", err)
+			return
+		}
+		if blocked {
+			s.redirectToMFASetup(w, r)
 			return
 		}
 		s.refreshSessionCookie(w, r)

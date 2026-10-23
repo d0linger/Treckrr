@@ -17,4 +17,6 @@ if [ "$((server_version / 10000))" != "$PG_MAJOR" ]; then
   echo "Test server/client major versions differ; set PG_MAJOR to match the isolated server."
   exit 1
 fi
-go test -race -tags=integration -p 1 ./...
+# internal/server and internal/store each run 6-10 minutes under -race; the
+# default 10-minute per-package timeout would fail them on a busy machine.
+go test -race -tags=integration -p 1 -timeout 30m ./...

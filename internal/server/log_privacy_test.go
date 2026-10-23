@@ -18,7 +18,8 @@ func TestShareTokenLogRedaction(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	s := &Server{cfg: &config.Config{}}
 	token := strings.Repeat("a", 64)
-	for _, path := range []string{"/s/beleg/" + token, "/s/beleg/" + token + "/extra"} {
+	for _, path := range []string{"/s/beleg/" + token, "/s/beleg/" + token + "/extra",
+		"/s/portal/" + token + "/invoice.pdf", "/s/konto/" + token, "/s/konto/" + token + "/feedback", "/cal/" + token + ".ics"} {
 		r := httptest.NewRequest(http.MethodGet, path, nil)
 		s.accessLog(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -27,8 +28,10 @@ func TestShareTokenLogRedaction(t *testing.T) {
 	if strings.Contains(output.String(), token) {
 		t.Fatal("bearer token leaked into access log")
 	}
-	if !strings.Contains(output.String(), "/s/beleg/[redacted]") {
-		t.Fatal("redacted route missing")
+	for _, want := range []string{"/s/beleg/[redacted]", "/s/portal/[redacted]/invoice.pdf", "/s/konto/[redacted]/feedback", "/cal/[redacted]"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("redacted route %s missing", want)
+		}
 	}
 	if logRequestPath("/entries/12") != "/entries/12" {
 		t.Fatal("ordinary route changed")

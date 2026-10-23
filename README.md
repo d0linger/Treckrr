@@ -65,7 +65,7 @@ neighbour that satisfies § 11 UStG.
 - **Account statement** per neighbour across all years, as a page and as PDF.
 - **Dunning** (Mahnwesen): overdue list, printable reminder, PDF, EPC QR, CSV export.
 - **Import/export**: CSV bookings with preview, bank statement payment matching, per-neighbour GDPR export, year and neighbour CSV.
-- **Authentication**: password + optional TOTP with recovery codes, passkeys (WebAuthn, user verification required), roles (admin / editor / viewer), and session management with per-device revocation.
+- **Authentication**: password + optional TOTP with recovery codes, passkeys (WebAuthn, user verification required), roles (admin / editor / viewer), an optional sign-in policy that requires a second factor for admins and/or editors after a grace period, and session management with per-device revocation.
 - **Append-only audit log** enforced by a database trigger, filterable and exportable, with staggered retention (1 year operational, 7 years for § 132 BAO records).
 - **Encrypted backups** (AES-256-GCM) on a schedule, optional off-box S3 target, guarded GUI restores and an offline CLI recovery workflow.
 - **PWA** with offline booking capture that replays under the user who captured it when the connection returns.
@@ -106,6 +106,24 @@ The GHCR profile is the production/TLS path: it forces Secure cookies, enables
 proxy trust, and requires `TRUSTED_PROXIES`. Pin a release rather than tracking
 `latest` with `TRECKRR_TAG=1.4`.
 
+### Practice instance (Übungsinstanz)
+
+Issued invoices, numbering and Storno cannot be undone, so try workflows on a
+separate practice stack first. It runs beside the real one with its own project
+name, database volume and port, reads no `.env`, and starts with invented sample
+data (four neighbours, a rate basis, bookings and payments):
+
+```bash
+make demo          # or: docker compose -f compose.demo.yml up -d --build --wait
+                   #     docker compose -f compose.demo.yml exec -T db psql -U treckrr_demo -d treckrr_demo -v ON_ERROR_STOP=1 < demo/seed.sql
+```
+
+Open **http://localhost:8090** and sign in as `admin` / `uebung-admin-2026`.
+`DEMO_MODE=true` puts a banner on every page and a watermark on every PDF, and
+switches off e-mail, S3 off-box backups and restore rehearsals even if real
+credentials end up in its environment. `make demo-down` stops it; `make demo-reset`
+deletes its data so the next start is fresh.
+
 ---
 
 ## ⚙️ Configuration / Environment Variables
@@ -142,6 +160,10 @@ proxy trust, and requires `TRUSTED_PROXIES`. Pin a release rather than tracking
 | **SMTP_PORT** / **SMTP_USER** / **SMTP_PASSWORD** | SMTP credentials | `587` | No |
 | **SMTP_STARTTLS** | Use STARTTLS | `true` | No |
 | **METRICS_TOKEN** | Min. 16 chars; enables `GET /metrics` behind a bearer token | — | No |
+| **DEMO_MODE** | `true` marks a practice instance: banner, PDF watermark, and mail, S3 and rehearsals forced off | `false` | No |
+| **UPDATE_CHECK** | `true` looks up the newest release once a day and notifies administrators; the only outbound call the app makes on its own | `false` | No |
+| **UPDATE_CHECK_URL** | Release feed for the update check (https only) | GitHub releases API | No |
+| **RETENTION_YEARS** | Full calendar years after which an archived neighbor is offered for anonymization under *Aufbewahrung* (1–30); never anonymized automatically | `7` | No |
 | **LOG_FORMAT** / **LOG_LEVEL** | `text`\|`json`, `debug`\|`info`\|`warn`\|`error` | `text` / `info` | No |
 
 ### Rotating the backup key
@@ -203,6 +225,10 @@ The backup schedule is a cron expression set in the admin Backup panel, not an e
 - **RAM**: the compose files cap the app at 768 MB and Postgres at 1 GB, so keep ~1.8 GB free. Idle use is roughly 15 MB and 31 MB.
 - **Port 8080** published on the host (`HOST_PORT`). The database port is not published.
 - Migrations run automatically at startup and are forward-only — **take a backup before upgrading**.
+
+Use the [upgrade validation procedure](docs/upgrade-validation.md) for a production
+backup rehearsal, a read-only comparison of existing business values, and cutover
+and recovery checks.
 
 Persist these two named volumes:
 
@@ -362,6 +388,14 @@ move when requests are queuing for a connection.
 curl -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:8080/metrics
 ```
 
+Ready-made monitoring: import [`docs/grafana/treckrr.json`](docs/grafana/treckrr.json)
+into Grafana (backup and restore-test age, HTTP classes and p95, database pool,
+sign-in protection, mail and maintenance) and load
+[`docs/prometheus/treckrr-alerts.yml`](docs/prometheus/treckrr-alerts.yml) as
+Prometheus rules (backup failed or stale, overdue restore test, server errors,
+panics, failed sign-ins, mail backlog, saturated pool, failing maintenance).
+A test keeps both files limited to series the app actually emits.
+
 ---
 
 ## 🌐 Running behind a reverse proxy
@@ -470,7 +504,7 @@ Report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
 | **CI** | `go vet`, `go test -race` against a real PostgreSQL service, `go build`, module verification and a tidiness check, golangci-lint |
 | **Security** | gosec static scan and govulncheck, weekly as well as on push |
 | **Supply chain** | Trivy over the repository *and* over the built image (the Alpine layer nothing else inspects), CycloneDX SBOM generated from the image |
-| **E2E** | Playwright smoke test: login → booking → Beleg |
+| **E2E** | Playwright suite on a disposable stack (`node e2e/run.mjs`), then visual regression on a second fresh stack (`node e2e/run.mjs --visual`): ten key pages in light and dark, phone and desktop, against the baselines in `e2e/visual-baselines` (refresh with `node e2e/run.mjs --visual --update-snapshots` after an intended change) |
 | **DeadCode** | unreachable-function detection |
 | **GODep / GitSecret** | dependency review on PRs, gitleaks secret scanning |
 | **Docker** | multi-arch image (amd64 + arm64) to GHCR — **gated on the tests passing**, so a red build publishes nothing |

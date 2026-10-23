@@ -20,7 +20,7 @@ func TestBookingFilterWhere(t *testing.T) {
 		{name: "incoming_labor", f: BookingFilter{EntryFilter: EntryFilter{YearID: 7}, Direction: "in", Kind: "labor"}, args: []any{int64(7), "in", "labor"}, want: " WHERE e.billing_year_id = $1 AND e.direction = $2 AND e.kind = $3"},
 		{name: "malicious_choices", f: BookingFilter{EntryFilter: EntryFilter{YearID: 7}, Direction: "in OR true", Kind: "cost; DELETE FROM entries"}, args: []any{int64(7)}, want: " WHERE e.billing_year_id = $1"},
 		{name: "literal_shared_search", f: BookingFilter{EntryFilter: EntryFilter{YearID: 7, Unit: "ha", Task: ` 50%_A\B `, Voided: "hide"}}, args: []any{int64(7), "ha", `%50\%\_a\\b%`},
-			want: ` WHERE e.billing_year_id = $1 AND e.unit = $2 AND NOT e.voided AND (lower(e.task_label) LIKE $3 ESCAPE '\' OR lower(e.note) LIKE $3 ESCAPE '\' OR lower(e.detail) LIKE $3 ESCAPE '\')`},
+			want: ` WHERE e.billing_year_id = $1 AND e.unit = $2 AND NOT e.voided AND (lower(e.task_label) LIKE $3 ESCAPE '\' OR lower(e.note) LIKE $3 ESCAPE '\' OR lower(e.detail) LIKE $3 ESCAPE '\' OR lower(e.field_label) LIKE $3 ESCAPE '\')`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

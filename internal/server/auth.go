@@ -161,6 +161,17 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
+	policy, err := s.securityPolicy(r.Context())
+	if err != nil {
+		s.serverError(w, "login: security policy", err)
+		return
+	}
+	if user.HasPasskey && policy.Requires(*user) {
+		s.clearPending2FA(w, r)
+		s.setFlash(w, r, "error", "Für dein Konto ist eine Zwei-Faktor-Anmeldung vorgeschrieben. Bitte mit deinem Passkey anmelden.")
+		redirect(w, r, "/login")
+		return
+	}
 	s.establishSession(w, r, user)
 }
 
@@ -287,6 +298,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user *mode
 		Value:  token,
 		MaxAge: int(sessionTTL.Seconds()),
 	})
+	s.noteSignIn(r, user)
 	return true
 }
 
@@ -444,5 +456,6 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		}
 		data["RecoveryRemaining"] = remaining
 	}
+	s.calendarProfileData(w, r, data, user.ID)
 	s.render(w, r, "profile", data)
 }

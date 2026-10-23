@@ -1,0 +1,28 @@
+{{define "content"}}
+<section class="stack">
+	<div class="pagehead">
+		<a class="backbtn" href="/admin/system" aria-label="Zurück zum Systemzustand">{{template "ic-back"}}</a>
+		<h2 class="pagehead__t">Aufbewahrung</h2>
+	</div>
+	<p class="muted">Archivierte Nachbarn, deren letzte Buchung, Kontoposition, Zahlung und Rechnung vor dem {{date .RetentionCutoff}} liegen, haben die Aufbewahrungsfrist von {{.RetentionYears}} vollen Kalenderjahren hinter sich. Sie können hier anonymisiert werden: Name, Adresse, Kontakt, Notizen, Fotos und Freitexte werden gelöscht; festgeschriebene Rechnungen bleiben unverändert erhalten. Treckrr anonymisiert nie von selbst.</p>
+	{{if .Candidates}}
+	<div class="stack stack--tight" data-retention-list>
+		{{range .Candidates}}
+		<div class="card row-between">
+			<div><strong>{{.Name}}</strong><br><span class="muted small">Letzte Aktivität {{date .LastActivity}}{{if .Invoices}} · {{.Invoices}} Rechnung(en) bleiben erhalten{{end}}</span></div>
+			<form method="post" action="/neighbors/{{.NeighborID}}/anonymize" class="btnrow">
+				<input type="hidden" name="back" value="/admin/aufbewahrung">
+				<label class="field"><span class="sr-only">Zur Bestätigung ANONYMISIEREN eintippen ({{.Name}})</span><input class="input" name="confirm" placeholder="ANONYMISIEREN" autocomplete="off" required pattern="ANONYMISIEREN"></label>
+				<button class="btn btn--danger btn--sm" type="submit">Anonymisieren</button>
+			</form>
+		</div>
+		{{end}}
+	</div>
+	{{else}}
+	<div class="card empty empty--slim">
+		<span class="empty__title">Nichts zu tun</span>
+		<span class="empty__sub">Kein archivierter Nachbar hat die Aufbewahrungsfrist überschritten.</span>
+	</div>
+	{{end}}
+</section>
+{{end}}

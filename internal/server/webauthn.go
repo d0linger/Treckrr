@@ -196,6 +196,9 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 // Missing or foreign credentials are treated as an already-completed deletion.
 func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 	user := userFromCtx(r)
+	if !s.keepsSecondFactor(w, r, user, false) {
+		return
+	}
 	id, err := pathID(r)
 	if err != nil {
 		s.notFound(w, r)
@@ -203,6 +206,8 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = s.store.DeleteWebauthnCredential(r.Context(), user.ID, id)
 	switch {
+	case errors.Is(err, store.ErrSecondFactorRequired):
+		s.setFlash(w, r, "error", secondFactorRequiredMsg)
 	case errors.Is(err, store.ErrNotFound):
 		// Already gone (double-submit, stale page, or someone else's id): the
 		// desired end state — no such passkey for this user — already holds, so
@@ -211,6 +216,7 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.setFlash(w, r, "error", "Passkey konnte nicht entfernt werden.")
 	default:
+		s.notifySecurity(r, user, securityEvent{Key: "passkey-remove", Title: "Passkey entfernt", Mail: true})
 		s.setFlash(w, r, "success", "Passkey entfernt.")
 	}
 	redirect(w, r, "/profile")
@@ -321,6 +327,7 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	s.notifySecurity(r, user, securityEvent{Key: "passkey-add", Title: "Passkey hinzugefügt", Detail: deviceLabel(r.UserAgent()), Mail: true})
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 

@@ -103,8 +103,15 @@ test("Undo remains available and field errors preserve useful instructions", asy
   await number.evaluate((node: HTMLInputElement) => { node.setCustomValidity("Bitte den vereinbarten Satz prüfen."); node.checkValidity(); });
   await expect(page.locator("#polish-number-err")).toHaveText("Bitte den vereinbarten Satz prüfen.");
 
+  // Set the value in the DOM instead of typing it: under the installed test
+  // clock the number field could still hold focus when fill() typed, and the
+  // text then landed there ("2--e"; reproduced 1 in 30 with --repeat-each).
+  // This check is about the message, not about keystrokes.
   const email = page.locator("#polish-email");
-  await email.fill("not-an-address");
+  await email.evaluate((node: HTMLInputElement) => {
+    node.value = "not-an-address";
+    node.dispatchEvent(new Event("input", { bubbles: true }));
+  });
   await expect(email).toHaveValue("not-an-address");
   await email.evaluate((node: HTMLInputElement) => {
     if (!node.validity.typeMismatch) throw new Error("email fixture must have a type mismatch");
@@ -112,6 +119,7 @@ test("Undo remains available and field errors preserve useful instructions", asy
   });
   await expect(page.locator("#polish-email-err")).toContainText("gültige E-Mail-Adresse");
   await email.focus();
+  await expect(email).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.locator("#polish-radio")).toBeFocused();
   await expect(page.locator("#polish-radio + span")).toHaveCSS("outline-style", "solid");

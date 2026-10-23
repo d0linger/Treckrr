@@ -1,0 +1,94 @@
+# Prometheus alert rules for Treckrr's GET /metrics (enable with METRICS_TOKEN).
+# Scrape job example (bearer token from the app's environment):
+#
+#   - job_name: treckrr
+#     scheme: https
+#     authorization: { credentials_file: /etc/prometheus/treckrr-token }
+#     static_configs: [{ targets: ["treckrr.example.org"] }]
+#
+# Thresholds assume a daily backup schedule and monthly restore rehearsals;
+# adjust them to the schedules configured on the admin backup page.
+groups:
+  - name: treckrr
+    rules:
+      - alert: TreckrrDown
+        expr: up{job="treckrr"} == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Treckrr is not reachable"
+          description: "The metrics endpoint has not answered for 5 minutes."
+
+      - alert: TreckrrBackupFailed
+        expr: treckrr_backup_configured == 1 and treckrr_backup_ok == 0
+        for: 30m
+        labels: { severity: critical }
+        annotations:
+          summary: "The last Treckrr backup failed"
+          description: "Check Verwaltung > Backup; the status file reports a failed run."
+
+      - alert: TreckrrBackupStale
+        expr: treckrr_backup_age_seconds > 36 * 3600
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "No successful Treckrr backup for more than 36 hours"
+          description: "Last success {{ $value | humanizeDuration }} ago."
+
+      - alert: TreckrrOffsiteBackupFailed
+        expr: treckrr_backup_s3_ok == 0
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "The last off-host (S3) backup upload failed"
+
+      - alert: TreckrrRestoreTestOverdue
+        expr: treckrr_backup_restore_tested_age_seconds > 45 * 86400
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "No successful restore rehearsal for more than 45 days"
+
+      - alert: TreckrrServerErrors
+        expr: sum(rate(treckrr_http_responses_total{class="5xx"}[10m])) > 0.05
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Treckrr answers with server errors"
+          description: "More than 3 server errors per minute over 10 minutes."
+
+      - alert: TreckrrPanics
+        expr: increase(treckrr_http_panics_total[15m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "A Treckrr request panicked"
+          description: "See the application log for the stack trace."
+
+      - alert: TreckrrLoginFailures
+        expr: increase(treckrr_login_failed_total[15m]) > 20
+        labels: { severity: warning }
+        annotations:
+          summary: "Many failed Treckrr sign-ins"
+          description: "{{ $value }} failed logins in 15 minutes; check the audit log for the source."
+
+      - alert: TreckrrMailBacklog
+        expr: treckrr_mail_outbox_pending > 0
+        for: 2h
+        labels: { severity: warning }
+        annotations:
+          summary: "Treckrr mails have been waiting for more than 2 hours"
+          description: "Check Verwaltung > Mailausgang and the SMTP settings."
+
+      - alert: TreckrrDatabasePoolSaturated
+        expr: treckrr_db_connections_max_open > 0 and treckrr_db_connections_in_use >= treckrr_db_connections_max_open
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "All Treckrr database connections are in use"
+
+      - alert: TreckrrMaintenanceFailing
+        expr: increase(treckrr_maintenance_failures_total[1h]) > 2
+        labels: { severity: warning }
+        annotations:
+          summary: "Treckrr maintenance tasks keep failing"
+          description: "Recurring bookings, notifications or purges failed repeatedly; see the application log."

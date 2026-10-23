@@ -19,6 +19,9 @@ type AccountingExportProfile struct {
 	Delimiter         string
 	DecimalComma      bool
 	DecimalCommaSet   bool
+	// Format is "custom" (free column mapping) or a built-in preset ("bmd",
+	// "rzl") whose layout replaces Columns, Delimiter and DecimalComma.
+	Format string
 }
 
 // accountingExportCreateDefaults applies database-equivalent defaults to new profiles.
@@ -29,12 +32,15 @@ func accountingExportCreateDefaults(p AccountingExportProfile) AccountingExportP
 	if !p.DecimalCommaSet {
 		p.DecimalComma = true
 	}
+	if p.Format == "" {
+		p.Format = "custom"
+	}
 	return p
 }
 
 // ListAccountingExportProfiles returns the configured profiles by name.
 func (s *Store) ListAccountingExportProfiles(ctx context.Context) ([]AccountingExportProfile, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,name,revenue_account,receivable_account,tax_code,cost_center,columns,delimiter,decimal_comma
+	rows, err := s.db.QueryContext(ctx, `SELECT id,name,revenue_account,receivable_account,tax_code,cost_center,columns,delimiter,decimal_comma,format
 		FROM accounting_export_profiles ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -44,7 +50,7 @@ func (s *Store) ListAccountingExportProfiles(ctx context.Context) ([]AccountingE
 	for rows.Next() {
 		var p AccountingExportProfile
 		if err := rows.Scan(&p.ID, &p.Name, &p.RevenueAccount, &p.ReceivableAccount, &p.TaxCode,
-			&p.CostCenter, &p.Columns, &p.Delimiter, &p.DecimalComma); err != nil {
+			&p.CostCenter, &p.Columns, &p.Delimiter, &p.DecimalComma, &p.Format); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -55,10 +61,10 @@ func (s *Store) ListAccountingExportProfiles(ctx context.Context) ([]AccountingE
 // GetAccountingExportProfile returns one configured profile.
 func (s *Store) GetAccountingExportProfile(ctx context.Context, id int64) (AccountingExportProfile, error) {
 	var p AccountingExportProfile
-	err := s.db.QueryRowContext(ctx, `SELECT id,name,revenue_account,receivable_account,tax_code,cost_center,columns,delimiter,decimal_comma
+	err := s.db.QueryRowContext(ctx, `SELECT id,name,revenue_account,receivable_account,tax_code,cost_center,columns,delimiter,decimal_comma,format
 		FROM accounting_export_profiles WHERE id=$1`, id).Scan(
 		&p.ID, &p.Name, &p.RevenueAccount, &p.ReceivableAccount, &p.TaxCode,
-		&p.CostCenter, &p.Columns, &p.Delimiter, &p.DecimalComma,
+		&p.CostCenter, &p.Columns, &p.Delimiter, &p.DecimalComma, &p.Format,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
@@ -71,16 +77,16 @@ func (s *Store) SaveAccountingExportProfile(ctx context.Context, p AccountingExp
 	if p.ID == 0 {
 		p = accountingExportCreateDefaults(p)
 		err := s.db.QueryRowContext(ctx, `INSERT INTO accounting_export_profiles
-			(name,revenue_account,receivable_account,tax_code,cost_center,columns,delimiter,decimal_comma)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, p.Name, p.RevenueAccount,
-			p.ReceivableAccount, p.TaxCode, p.CostCenter, p.Columns, p.Delimiter, p.DecimalComma).Scan(&p.ID)
+			(name,revenue_account,receivable_account,tax_code,cost_center,columns,delimiter,decimal_comma,format)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, p.Name, p.RevenueAccount,
+			p.ReceivableAccount, p.TaxCode, p.CostCenter, p.Columns, p.Delimiter, p.DecimalComma, p.Format).Scan(&p.ID)
 		return p.ID, err
 	}
 	res, err := s.db.ExecContext(ctx, `UPDATE accounting_export_profiles SET
 		name=$1,revenue_account=$2,receivable_account=$3,tax_code=$4,cost_center=$5,
-		columns=$6,delimiter=$7,decimal_comma=$8,updated_at=now() WHERE id=$9`, p.Name,
+		columns=$6,delimiter=$7,decimal_comma=$8,format=COALESCE(NULLIF($10,''),format),updated_at=now() WHERE id=$9`, p.Name,
 		p.RevenueAccount, p.ReceivableAccount, p.TaxCode, p.CostCenter, p.Columns,
-		p.Delimiter, p.DecimalComma, p.ID)
+		p.Delimiter, p.DecimalComma, p.ID, p.Format)
 	if err != nil {
 		return 0, err
 	}

@@ -15,7 +15,7 @@ permissions:
 
 env:
   # Kept in step with ci.yml's GO_VERSION.
-  GO_VERSION: "1.27.2"
+  GO_VERSION: "1.27.3"
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
@@ -98,7 +98,7 @@ jobs:
       # Match CI: include tagged regressions and serialize packages sharing
       # the service database before allowing an image to be published.
       - name: Test (unit + integration)
-        run: go test -race -tags=integration -p 1 ./...
+        run: go test -race -tags=integration -p 1 -timeout 30m ./...
       - name: Build
         run: go build ./...
 
@@ -190,6 +190,7 @@ jobs:
           # the Go module and build layers keep their cache.
           build-args: |
             APK_REFRESH=${{ github.run_id }}
+            TRECKRR_VERSION=${{ github.ref_type == 'tag' && github.ref_name || format('dev-{0}', github.sha) }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

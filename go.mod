@@ -10,13 +10,13 @@ go 1.26.6
 require (
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/minio/minio-go/v7 v7.3.0
+	github.com/minio/minio-go/v7 v7.4.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shopspring/decimal v1.5.0
-	github.com/signintech/gopdf v0.38.1
+	github.com/signintech/gopdf v0.38.2
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.47.0
-	golang.org/x/net v0.60.0
+	golang.org/x/net v0.61.0
 	rsc.io/qr v0.2.0
 )
 

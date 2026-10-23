@@ -38,6 +38,11 @@ func RenderMahnung(m MahnungData) ([]byte, error) {
 	if !m.Open.IsPositive() || !m.Fee.IsZero() {
 		return nil, errors.New("reminder requires an open invoice and no unbooked fee")
 	}
+	if m.SettlementLines != nil {
+		if _, err := models.SettlementLines(m.SettlementLines, m.Paid); err != nil {
+			return nil, err
+		}
+	}
 	pdf, err := newDoc()
 	if err != nil {
 		return nil, err

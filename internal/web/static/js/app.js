@@ -555,6 +555,289 @@
 		});
 	});
 
+
+	// Time helper on the booking form: "Von – Bis minus Pause", or a stopwatch that
+	// survives reloads and app switches, fills the existing hours field. Its inputs
+	// carry no name, so the submitted form, the draft store and the offline queue
+	// never see them and the stacked submit handlers stay untouched.
+	document.querySelectorAll("[data-time-helper]").forEach(function (box) {
+		var form = box.closest("form");
+		var hours = form && form.querySelector("[data-hours]");
+		if (!hours) return;
+		var from = box.querySelector("[data-time-from]"), to = box.querySelector("[data-time-to]"),
+			pause = box.querySelector("[data-time-break]"), status = box.querySelector("[data-time-status]"),
+			toggle = box.querySelector("[data-stopwatch-toggle]"), display = box.querySelector("[data-stopwatch-display]"),
+			discard = box.querySelector("[data-stopwatch-reset]");
+		var uid = document.querySelector('meta[name="user-id"]');
+		var key = "treckrr-stopwatch-" + (uid ? uid.content : "anon");
+		var memo = null, timer = null; // memo keeps the stopwatch when storage is blocked
+		/** Parses "HH:MM" from a time input into minutes after midnight, or null. */
+		function minutesOf(value) {
+			var m = /^(\d{1,2}):(\d{2})/.exec(value || "");
+			return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+		}
+		/** Formats whole minutes as "2 h 20 min". */
+		function duration(minutes) { return Math.floor(minutes / 60) + " h " + (minutes % 60) + " min"; }
+		/** Writes the minutes as decimal hours (two places, at least 0.01) and lets the price preview react. */
+		function apply(minutes) {
+			var h = Math.max(0.01, Math.round(minutes / 60 * 100) / 100);
+			hours.value = h.toFixed(2);
+			hours.dispatchEvent(new Event("input", { bubbles: true }));
+			hours.dispatchEvent(new Event("change", { bubbles: true }));
+			status.textContent = duration(minutes) + " → " + h.toFixed(2).replace(".", ",") + " h übernommen.";
+		}
+		/** Applies Von – Bis minus Pause once both times are set; a Bis before Von crosses midnight. */
+		function fromRange() {
+			var a = minutesOf(from.value), b = minutesOf(to.value);
+			if (a === null || b === null) return;
+			var span = b - a;
+			if (span <= 0) span += 1440;
+			var rest = Math.max(0, Math.floor(Number(pause.value) || 0));
+			if (rest >= span) { status.textContent = "Die Pause ist so lang wie die Arbeitszeit oder länger."; return; }
+			apply(span - rest);
+		}
+		[from, to, pause].forEach(function (el) { el.addEventListener("input", fromRange); el.addEventListener("change", fromRange); });
+		/** Returns the running stopwatch {start} from storage or memory, or null. */
+		function running() {
+			try {
+				var saved = JSON.parse(localStorage.getItem(key) || "null");
+				if (saved && typeof saved.start === "number" && saved.start <= Date.now()) return saved;
+			} catch (e) { /* storage blocked: fall back to this page's memory */ }
+			return memo;
+		}
+		/** Persists the stopwatch so another tab or a reload continues it. */
+		function store(value) {
+			memo = value;
+			try {
+				if (value) localStorage.setItem(key, JSON.stringify(value)); else localStorage.removeItem(key);
+			} catch (e) { /* private mode: the stopwatch lasts this page only */ }
+		}
+		/** Formats elapsed milliseconds as H:MM:SS. */
+		function clock(ms) {
+			var s = Math.max(0, Math.floor(ms / 1000)), m = Math.floor(s % 3600 / 60), r = s % 60;
+			return Math.floor(s / 3600) + ":" + (m < 10 ? "0" : "") + m + ":" + (r < 10 ? "0" : "") + r;
+		}
+		/** Formats a Date as HH:MM for the time inputs. */
+		function hhmm(d) { return (d.getHours() < 10 ? "0" : "") + d.getHours() + ":" + (d.getMinutes() < 10 ? "0" : "") + d.getMinutes(); }
+		/** Syncs button label, discard button and the ticking display with the stopwatch state. */
+		function render() {
+			var run = running();
+			toggle.textContent = run ? "Stoppuhr anhalten und übernehmen" : "Stoppuhr starten";
+			toggle.setAttribute("aria-pressed", run ? "true" : "false");
+			discard.hidden = !run;
+			display.textContent = clock(run ? Date.now() - run.start : 0);
+			if (run && !timer) timer = setInterval(render, 1000);
+			if (!run && timer) { clearInterval(timer); timer = null; }
+		}
+		toggle.addEventListener("click", function () {
+			var run = running();
+			if (!run) {
+				store({ start: Date.now() });
+				status.textContent = "Stoppuhr läuft seit " + hhmm(new Date()) + " Uhr, auch wenn die Seite geschlossen wird.";
+			} else {
+				var minutes = Math.max(1, Math.round((Date.now() - run.start) / 60000));
+				from.value = hhmm(new Date(run.start));
+				to.value = hhmm(new Date());
+				pause.value = "";
+				store(null);
+				apply(minutes);
+			}
+			render();
+		});
+		discard.addEventListener("click", function () { store(null); status.textContent = "Stoppuhr verworfen."; render(); });
+		window.addEventListener("storage", function (e) {
+			if (e.key === key || e.key === null) {
+				memo = null;
+				render();
+			}
+		});
+		if (running()) box.open = true;
+		render();
+	});
+
+	// Share target picker: photos shared into the installed app wait in
+	// IndexedDB (written by sw.js). They are moved into the form's file input
+	// and uploaded through the normal booking photo route, CSRF included.
+	document.querySelectorAll("[data-share-target]").forEach(function (root) {
+		var form = root.querySelector("[data-share-form]");
+		if (!form || !("indexedDB" in window) || typeof DataTransfer !== "function") return;
+		var input = form.querySelector("[data-share-files]"), preview = root.querySelector("[data-share-preview]"),
+			empty = root.querySelector("[data-share-empty]"), thumbs = root.querySelector("[data-share-thumbs]");
+		var parkedAt = null, parkedID = null, uploading = false;
+		var shareErrors = {
+			empty: "Es wurden keine Fotos übernommen. Bitte Fotos in der Galerie auswählen und erneut teilen.",
+			"too-many": "Die neuen Fotos wurden nicht übernommen. Bitte höchstens 10 Fotos auf einmal teilen. Bereits wartende Fotos bleiben erhalten.",
+			unsupported: "Die neuen Dateien wurden nicht übernommen. Bitte nur JPEG-, PNG- oder GIF-Fotos teilen. Bereits wartende Fotos bleiben erhalten.",
+			pending: "Die neuen Fotos wurden nicht übernommen, weil noch andere Fotos auf diesem Gerät warten. Bitte diese zuerst anhängen oder verwerfen und die neuen Fotos danach erneut teilen.",
+			storage: "Die neuen Fotos konnten auf diesem Gerät nicht gespeichert werden. Bitte erneut teilen oder direkt in der Buchung anhängen."
+		};
+		var shareError = new URLSearchParams(window.location.search).get("share-error");
+		if (Object.prototype.hasOwnProperty.call(shareErrors, shareError)) {
+			var warning = document.createElement("p");
+			warning.className = "flash flash--error";
+			warning.setAttribute("role", "alert");
+			warning.textContent = shareErrors[shareError];
+			root.insertBefore(warning, form);
+		}
+		var status = document.createElement("p");
+		status.className = "muted small";
+		status.setAttribute("role", "status");
+		form.appendChild(status);
+		/** Runs one request against the parked-share store and resolves with its result. */
+		function withStore(mode, work) {
+			return new Promise(function (resolve, reject) {
+				var open = indexedDB.open("treckrr-share", 1);
+				open.onupgradeneeded = function () { open.result.createObjectStore("pending"); };
+				open.onerror = function () { reject(open.error); };
+				open.onsuccess = function () {
+					var db = open.result, tx = db.transaction("pending", mode), req = work(tx.objectStore("pending"));
+					tx.oncomplete = function () { db.close(); resolve(req ? req.result : undefined); };
+					tx.onerror = function () { db.close(); reject(tx.error); };
+					tx.onabort = function () { db.close(); reject(tx.error); };
+				};
+			});
+		}
+		/** Removes only the displayed share; another tab may have parked newer photos. */
+		function forget() {
+			return withStore("readwrite", function (store) {
+				var req = store.get("shared");
+				req.onsuccess = function () {
+					var current = req.result;
+					if (current && (parkedID ? current.id === parkedID : !current.id && current.at === parkedAt)) store.delete("shared");
+				};
+				return req;
+			});
+		}
+		withStore("readonly", function (store) { return store.get("shared"); }).then(function (record) {
+			var files = record && Array.isArray(record.files) ? record.files : [];
+			if (!files.length) return;
+			parkedAt = record.at;
+			parkedID = record.id || null;
+			var list = new DataTransfer();
+			files.forEach(function (f, i) {
+				var file = new File([f.blob], f.name || ("foto-" + (i + 1) + ".jpg"), { type: f.type || "image/jpeg" });
+				list.items.add(file);
+				var img = document.createElement("img");
+				img.alt = file.name;
+				img.width = 96;
+				img.height = 96;
+				thumbs.appendChild(img);
+				function unavailable() {
+					var hint = document.createElement("span");
+					hint.className = "muted small";
+					hint.textContent = file.name + " – Vorschau nicht verfügbar";
+					if (img.parentNode === thumbs) thumbs.replaceChild(hint, img);
+				}
+				// The image policy permits data URLs; the original file stays in
+				// the form and parked store even if its preview cannot be read.
+				var reader = new FileReader();
+				reader.onload = function () {
+					if (typeof reader.result === "string") img.src = reader.result;
+					else unavailable();
+				};
+				reader.onerror = reader.onabort = img.onerror = unavailable;
+				try { reader.readAsDataURL(file); } catch (e) { unavailable(); }
+			});
+			input.files = list.files;
+			root.querySelector("[data-share-count]").textContent = files.length + (files.length === 1 ? " Foto" : " Fotos") + " bereit";
+			preview.hidden = false;
+			form.hidden = false;
+			empty.hidden = true;
+		}).catch(function () { /* nothing parked or storage blocked: the empty hint stays */ });
+		form.addEventListener("submit", function (e) {
+			e.preventDefault();
+			if (uploading) return;
+			var target = form.querySelector('input[name="target"]:checked');
+			var targetValue = target ? target.value : "";
+			var entry = /^\/entries\/([1-9]\d*)\/photos$/.exec(targetValue);
+			if (!entry || entry[0] !== targetValue || !input.files.length) return;
+			// Keep upload and navigation bound to this entry across asynchronous work.
+			var entryPath = "/entries/" + encodeURIComponent(entry[1]);
+			uploading = true;
+			var buttons = form.querySelectorAll("button");
+			buttons.forEach(function (button) { button.disabled = true; });
+			status.textContent = "Fotos werden angehängt …";
+			fetch(entryPath + "/photos", { method: "POST", body: new FormData(form), credentials: "same-origin", redirect: "error",
+				headers: { "X-Treckrr-Share-Upload": "1" } }).then(function (response) {
+				return response.json().then(function (result) {
+					if (!response.ok || result.uploaded !== true) throw new Error(result.message || "Upload fehlgeschlagen.");
+				});
+			}).then(function () {
+				return forget();
+			}).then(function () {
+				window.location.href = entryPath + "/edit";
+			}).catch(function () {
+				status.textContent = "Die Fotos bleiben auf diesem Gerät erhalten. Bitte Anmeldung, Verbindung und Bildformat (JPEG, PNG oder GIF) prüfen und erneut versuchen. Bereits gespeicherte Fotos werden beim erneuten Versuch nicht doppelt angehängt.";
+				uploading = false;
+				buttons.forEach(function (button) { button.disabled = false; });
+			});
+		});
+		root.querySelector("[data-share-discard]").addEventListener("click", function () {
+			forget().then(function () { window.location.href = "/buchungen"; }, function () { window.location.href = "/buchungen"; });
+		});
+	});
+
+	// On-site signature (Ausbaukarte II #22). Draws with pointer events and keeps
+	// the PNG in a hidden field, so the booking POST, the offline queue and the
+	// replay carry it like any other control. No submit handler: the booking form
+	// already stacks several, and the pad only writes field values.
+	document.querySelectorAll("[data-signature-pad]").forEach(function (pad) {
+		var canvas = pad.querySelector("canvas"), data = pad.querySelector("[data-signature-data]"), at = pad.querySelector("[data-signature-at]");
+		var ctx = canvas.getContext("2d"), drawing = false, last = null;
+		function reset() {
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			data.value = "";
+			at.value = "";
+		}
+		function point(e) {
+			var rect = canvas.getBoundingClientRect();
+			return { x: (e.clientX - rect.left) * canvas.width / rect.width, y: (e.clientY - rect.top) * canvas.height / rect.height };
+		}
+		ctx.lineWidth = 3;
+		ctx.lineCap = "round";
+		ctx.lineJoin = "round";
+		ctx.strokeStyle = "#111";
+		canvas.addEventListener("pointerdown", function (e) {
+			e.preventDefault();
+			drawing = true;
+			last = point(e);
+			canvas.setPointerCapture(e.pointerId);
+			ctx.beginPath();
+			ctx.arc(last.x, last.y, ctx.lineWidth / 2, 0, Math.PI * 2);
+			ctx.fillStyle = ctx.strokeStyle;
+			ctx.fill();
+		});
+		canvas.addEventListener("pointermove", function (e) {
+			if (!drawing) return;
+			var p = point(e);
+			ctx.beginPath();
+			ctx.moveTo(last.x, last.y);
+			ctx.lineTo(p.x, p.y);
+			ctx.stroke();
+			last = p;
+		});
+		function finish() {
+			if (!drawing) return;
+			drawing = false;
+			data.value = canvas.toDataURL("image/png");
+			at.value = new Date().toISOString();
+		}
+		canvas.addEventListener("pointerup", finish);
+		canvas.addEventListener("pointercancel", finish);
+		pad.querySelector("[data-signature-clear]").addEventListener("click", reset);
+		var form = pad.closest("form");
+		if (form) form.addEventListener("reset", reset);
+	});
+
+	// Field picker (Ausbaukarte II #29): "Anderes Feld" reveals the free-text
+	// name. Value-only like the other helpers; no submit handler.
+	document.querySelectorAll("[data-field-select]").forEach(function (select) {
+		var text = select.closest("[data-field-picker]").querySelector("[data-field-text]");
+		if (!text) return;
+		function sync() { text.hidden = select.value !== "other"; }
+		select.addEventListener("change", sync);
+		sync();
+	});
 	// Recovery-code gate: "Fertig" stays disabled until the user confirms they
 	// saved the codes. Without JS the link works normally (no lockout).
 	(function () {
@@ -822,6 +1105,11 @@
 		}
 		function txt(el, sel) {
 			var n = el.querySelector(sel);
+			if (n && sel === ".beleg__t") {
+				return Array.from(n.childNodes).map(function (part) {
+					return part.textContent.replace(/\s+/g, " ").trim();
+				}).filter(Boolean).join(" · ");
+			}
 			return n ? n.textContent.replace(/\s+/g, " ").trim() : "";
 		}
 
@@ -1376,7 +1664,8 @@
 			{ label: "Nachbarn", sub: "verwalten", url: "/neighbors", kw: "nachbar kontakte" },
 			{ label: "Grundlagen", sub: "Traktoren · Maschinen · Belastungsstufen · Preise", url: "/bases", kw: "grundlagen bemessung preise preisliste traktoren maschinen belastungsstufen laststufen gespanne" },
 			{ label: "Jahre", sub: "Abrechnungsjahre", url: "/years", kw: "jahr abrechnung" },
-			{ label: "Mahnwesen", sub: "Offene Posten", url: "/mahnwesen", kw: "mahnung offen faellig zahlung" }
+			{ label: "Mahnwesen", sub: "Offene Posten", url: "/mahnwesen", kw: "mahnung offen faellig zahlung" },
+			{ label: "Hilfe & Begriffe", sub: "Glossar", url: "/hilfe", kw: "hilfe glossar begriffe erklaerung bemessungsgrundlage belastungsstufe gespann gegenleistung verrechnung guthaben festschreibung storno gutschrift zwischenstand neuberechnung" }
 		];
 		function fold(x) { return x.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, ""); }
 		function localCommands(q) {
@@ -1501,10 +1790,10 @@
 				while (document.getElementById(id)) id += "-next";
 				region.id = id;
 			}
-			if (!region.hasAttribute("tabindex")) region.tabIndex = 0;
+			var authoredTabIndex = region.hasAttribute("tabindex");
 			if (!region.hasAttribute("role")) region.setAttribute("role", "region");
 			if (!region.hasAttribute("aria-label") && !region.hasAttribute("aria-labelledby")) {
-				region.setAttribute("aria-label", table.caption ? table.caption.textContent.trim() : "Datentabelle");
+				region.setAttribute("aria-label", table.caption ? table.caption.textContent.trim() : "Datentabelle " + (index + 1));
 			}
 			var tools = document.createElement("div");
 			tools.className = "table-scroll-tools no-print";
@@ -1542,13 +1831,22 @@
 				tools.appendChild(button);
 				return button;
 			}
-			var previous = arrow(-1, "Tabelle nach links scrollen");
-			var next = arrow(1, "Tabelle nach rechts scrollen");
+			var labelledBy = (region.getAttribute("aria-labelledby") || "").split(/\s+/).map(function (id) {
+				var label = document.getElementById(id);
+				return label ? label.textContent.trim() : "";
+			}).filter(Boolean).join(" ");
+			var tableName = labelledBy || region.getAttribute("aria-label");
+			var previous = arrow(-1, tableName + ": nach links scrollen");
+			var next = arrow(1, tableName + ": nach rechts scrollen");
 			region.before(tools);
 			/** Shows the tools only while the table overflows and disables the arrow at each end. */
 			function refresh() {
 				var max = region.scrollWidth - region.clientWidth;
 				var overflow = region.clientWidth > 0 && max > 1;
+				if (!authoredTabIndex) {
+					if (overflow) region.tabIndex = 0;
+					else region.removeAttribute("tabindex");
+				}
 				tools.hidden = !overflow;
 				previous.disabled = region.scrollLeft <= 1;
 				next.disabled = region.scrollLeft >= max - 1;

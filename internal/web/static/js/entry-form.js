@@ -35,6 +35,34 @@
 	var unitCustomInput = form.querySelector("[data-unit-custom-input]");
 	var noTractorNote = form.querySelector("[data-no-tractor-note]");
 
+	// Mirrors models.PriceBase.BilledHours: the basis' increment rounds catalog
+	// machine hours up and its minimum sets a floor. Whole thousandths of an hour
+	// keep 1,1 / 0,1 from drifting past 11 steps in floating point.
+	var billingIncrement = Math.round((parseFloat(form.dataset.billingIncrement) || 0) * 1000);
+	var billingMinimum = Math.round((parseFloat(form.dataset.billingMinimum) || 0) * 1000);
+	function billedHours(hours) {
+		if (!(hours > 0) || (billingIncrement <= 0 && billingMinimum <= 0)) return hours;
+		var milli = Math.round(hours * 1000);
+		if (billingIncrement > 0) milli = Math.ceil(milli / billingIncrement) * billingIncrement;
+		if (billingMinimum > 0 && milli < billingMinimum) milli = billingMinimum;
+		return milli / 1000;
+	}
+
+	// Mirrors applyPriceTerm: the neighbor's standing term effective on the
+	// booking date discounts own catalog machine rates, never incoming work.
+	var priceTerms = [];
+	try { priceTerms = JSON.parse(form.dataset.priceTerms || "[]"); } catch (_) { priceTerms = []; }
+	function effectivePriceTerm() {
+		var direction = form.querySelector('[name="booking_direction"]:checked');
+		if (direction && direction.value !== "out") return null;
+		var date = (form.querySelector('[name="entry_date"]') || {}).value || "";
+		var selected = null;
+		priceTerms.forEach(function (term) {
+			if (term.from <= date && (!term.to || date <= term.to) && (!selected || term.from > selected.from)) selected = term;
+		});
+		return selected;
+	}
+
 	function decVal(el) { return parseFloat((((el && el.value) || "0")).replace(",", ".")) || 0; }
 	function isHours() {
 		var u = ((unitEl && unitEl.value) || "").trim();
@@ -162,7 +190,34 @@
 		return { ps: tr.ps, loadCost: lo.cost, machineIds: ids, hasTractor: true };
 	}
 
+	// Hour meter (Ausbaukarte II #30): once the operator opens the meter
+	// section, the start reading is prefilled with the selected tractor's last
+	// end reading, until it is typed over. Values only; no submit handler.
+	var meterBox = form.querySelector("[data-meter]");
+	var meterStart = form.querySelector("[data-meter-start]");
+	var meterLast = {};
+	try { meterLast = JSON.parse(form.dataset.meterLast || "{}"); } catch (_) { meterLast = {}; }
+	function currentTractorId() {
+		if (currentMode() === "gespann") {
+			var gid = parseInt((form.querySelector("[data-gespann-select]") || {}).value, 10);
+			var g = pricing && gid ? byId(pricing.gespanne, gid) : null;
+			return g && g.tractor ? g.tractor : 0;
+		}
+		return parseInt((form.querySelector("[data-tractor-select]") || {}).value, 10) || 0;
+	}
+	function syncMeter() {
+		if (!meterBox || !meterBox.open || !meterStart) return;
+		var last = meterLast[String(currentTractorId())];
+		if (last !== undefined && (meterStart.value === "" || meterStart.dataset.autofilled === "1")) {
+			meterStart.value = last;
+			meterStart.dataset.autofilled = "1";
+		}
+	}
+	if (meterBox) meterBox.addEventListener("toggle", syncMeter);
+	if (meterStart) meterStart.addEventListener("input", function () { meterStart.dataset.autofilled = ""; });
+
 	function update() {
+		syncMeter();
 		if (unified && !unified.standard()) { unified.update(); return; }
 		if (!isHours()) {
 			var q = decVal(qtyEl), p = decVal(unitPriceEl);
@@ -181,10 +236,12 @@
 		}
 		var adjustment = effectiveAdjustment();
 		var rate = round2(round2(sel.ps * sel.loadCost) + machineRates(sel.machineIds) + (adjustment ? adjustment.amount : 0));
+		var term = effectivePriceTerm();
+		if (term) rate = Math.round(rate * (100 - term.pct)) / 100;
 		rateEl.textContent = fmt(rate) + " / h";
-		var hours = parseFloat((hoursEl.value || "0").replace(",", "."));
+		var hours = billedHours(parseFloat((hoursEl.value || "0").replace(",", ".")));
 		costEl.textContent = hours > 0 ? fmt(round2(hours * rate)) : "–";
-		if (unified) unified.update(hours > 0 ? round2(hours * rate) : null, rate, adjustment);
+		if (unified) unified.update(hours > 0 ? round2(hours * rate) : null, rate, adjustment, hours > 0 ? hours : null, term);
 	}
 
 	function applyMode() {

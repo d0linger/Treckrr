@@ -13,6 +13,7 @@
 		<strong>Dieses Jahr ist bereits abgeschlossen.</strong>
 		<p class="muted small">Rechnungen, Storni, Gutschriften und Abschläge sind gesperrt. Für eine Korrektur muss das Jahr mit Begründung wieder geöffnet werden. Zahlungen bleiben jederzeit erfassbar.</p>
 		<a class="btn btn--primary btn--sm" href="/years/{{.Year.ID}}/wechsel">Geführten Jahreswechsel starten</a>
+		<a class="btn btn--ghost btn--sm" href="/years/{{.Year.ID}}/bericht.pdf">Jahresbericht (PDF)</a>
 		{{if .ArchiveCount}}<a class="btn btn--ghost btn--sm" href="/rechnungsjournal/archiv.zip?year={{.Year.ID}}">Jahresunterlagen herunterladen</a>
 		<p class="muted small">{{.ArchiveCount}} Dokument(e) als PDF, vorhandene E-Rechnungen und das Rechnungsjournal als CSV. Noch nicht ausgestellte Rechnungen sind nicht enthalten.</p>
 		{{else}}<p class="muted small">Für dieses Jahr sind noch keine Rechnungsunterlagen vorhanden.</p>{{end}}

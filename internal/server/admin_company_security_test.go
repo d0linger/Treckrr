@@ -59,6 +59,9 @@ type mockCompanySecRows struct {
 }
 
 func (r *mockCompanySecRows) Columns() []string {
+	if strings.Contains(r.query, "FROM security_policy") {
+		return []string{"require_mfa_admin", "require_mfa_editor", "grace_days", "enforced_since", "updated_at"}
+	}
 	if strings.Contains(r.query, "SELECT name, address") && strings.Contains(r.query, "einvoice_street") {
 		return []string{"name", "address", "tax_id", "tax_note", "tax_mode", "vat_rate", "iban", "payment_term_days", "dunning_fee_1", "dunning_fee_2", "dunning_grace_days", "skonto_pct", "skonto_days", "invoice_prefix", "invoice_start", "small_business_limit", "travel_flat", "travel_per_km", "mail_signature", "mail_cc", "einvoice_street", "einvoice_zip", "einvoice_town", "einvoice_country_code"}
 	}
@@ -68,7 +71,7 @@ func (r *mockCompanySecRows) Columns() []string {
 	if strings.Contains(r.query, "company") {
 		return []string{"name", "address", "tax_id", "tax_note", "tax_mode", "vat_rate", "iban", "payment_term_days", "dunning_fee_1", "dunning_fee_2", "dunning_grace_days", "skonto_pct", "skonto_days", "invoice_prefix", "invoice_start", "small_business_limit", "travel_flat", "travel_per_km", "mail_signature", "mail_cc"}
 	}
-	return []string{"id", "username", "email", "role", "is_admin", "must_change_password", "totp_enabled", "created_at", "disabled"}
+	return []string{"id", "username", "email", "role", "is_admin", "must_change_password", "totp_enabled", "created_at", "disabled", "has_passkey"}
 }
 
 func (r *mockCompanySecRows) Close() error { return nil }
@@ -78,6 +81,10 @@ func (r *mockCompanySecRows) Next(dest []driver.Value) error {
 		return io.EOF
 	}
 	r.hasRead = true
+	if strings.Contains(r.query, "FROM security_policy") {
+		dest[0], dest[1], dest[2], dest[3], dest[4] = false, false, int64(7), nil, time.Now()
+		return nil
+	}
 	if strings.Contains(r.query, "einvoice_street") && !strings.Contains(r.query, "SELECT name, address") {
 		dest[0], dest[1], dest[2], dest[3] = "", "", "", "AT"
 		return nil
@@ -114,6 +121,7 @@ func (r *mockCompanySecRows) Next(dest []driver.Value) error {
 		dest[6] = false
 		dest[7] = time.Now()
 		dest[8] = false
+		dest[9] = false
 	}
 	return nil
 }

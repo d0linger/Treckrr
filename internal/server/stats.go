@@ -432,6 +432,11 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	fieldStats, err := s.store.FieldStatsForYear(r.Context(), year.ID, nil, from, to)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 
 	// Payment split (paid vs open), computed in a single query.
 	paidCost, openCost, creditCost, err := s.store.YearPaymentTotals(r.Context(), year.ID)
@@ -524,7 +529,28 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	data["ByMachine"] = byMachine
 	data["ByMachineMax"] = maxHours(byMachine)
 	data["MachineUsage"] = machineUsage
-	data["UnitMetrics"] = unitMetrics
+	type unitView struct {
+		store.UnitMetric
+		URL string
+	}
+	units := make([]unitView, 0, len(unitMetrics))
+	for _, m := range unitMetrics {
+		link := fmt.Sprintf("/buchungen?year=%d&task=%s&unit=%s%s", year.ID, url.QueryEscape(m.Task), url.QueryEscape(m.Unit), period)
+		units = append(units, unitView{m, link})
+	}
+	type fieldView struct {
+		store.FieldStat
+		URL string
+	}
+	fields := make([]fieldView, 0, len(fieldStats))
+	for _, f := range fieldStats {
+		link := fmt.Sprintf("/buchungen?year=%d&neighbor_id=%d&task=%s%s", year.ID, f.NeighborID, url.QueryEscape(f.Label), period)
+		fields = append(fields, fieldView{f, link})
+	}
+	data["UnitMetrics"] = units
+	data["FieldStats"] = fields
+	data["ExportCSVURL"] = fmt.Sprintf("/stats/export.csv?year=%d%s", year.ID, period)
+	data["ExportXLSXURL"] = fmt.Sprintf("/stats/export.xlsx?year=%d%s", year.ID, period)
 	data["From"] = sanitizeQueryParam(r.URL.Query().Get("from"), maxNameLen)
 	data["To"] = sanitizeQueryParam(r.URL.Query().Get("to"), maxNameLen)
 	data["Period"] = period
@@ -629,18 +655,20 @@ func (s *Server) handleStatsExport(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	fields, err := s.store.FieldStatsForYear(r.Context(), year.ID, nil, from, to)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
 
-	filename := fmt.Sprintf("statistik-%d.csv", year.Year)
-	cw, finish := csvDownload(w, r, filename)
-	defer finish()
-	_ = cw.Write([]string{"Auswertung", "Bezeichnung", "Einheit", "Menge", "Stunden", "Betrag (€)", "je Einheit (€)"})
-	// csvSafe on every free-text column, like every other export: a neighbor,
-	// task or machine name starting with = + - @ would otherwise be evaluated as
-	// a formula by the spreadsheet this file is opened in. Amount columns stay
-	// raw — a quote would break the negative sign.
+	t := exportTable{sheet: fmt.Sprintf("Statistik %d", year.Year),
+		header: []string{"Auswertung", "Bezeichnung", "Einheit", "Menge", "Stunden", "Betrag (€)", "je Einheit (€)"}}
+	// Free text (neighbor, task, machine names) is neutralized in CSV and an
+	// inline string in XLSX, like every other export; amounts stay numbers.
+	empty := cellEmpty()
 	writeAgg := func(section string, rows []aggRow) {
 		for _, row := range rows {
-			_ = cw.Write([]string{section, csvSafe(row.Label), "", "", deDecimal(row.Hours), deDecimal(row.Cost), ""})
+			t.add(cellLabel(section), cellText(row.Label), empty, empty, cellNumber(row.Hours), cellMoney(row.Cost), empty)
 		}
 	}
 	writeAgg("Nachbar", byNeighbor)
@@ -653,15 +681,24 @@ func (s *Server) handleStatsExport(w http.ResponseWriter, r *http.Request) {
 			section = "Maschine · enthält Altbestandsschätzung zu aktuellen Sätzen"
 			marginSection = "Maschine · Deckungsbeitrag · enthält Altbestandsschätzung zu aktuellen Sätzen"
 		}
-		_ = cw.Write([]string{section, csvSafe(m.Name), "h", deDecimal(m.Hours), deDecimal(m.Hours),
-			deDecimal(m.Revenue), deDecimal(m.Rate)})
+		t.add(cellLabel(section), cellText(m.Name), cellLabel("h"), cellNumber(m.Hours), cellNumber(m.Hours),
+			cellMoney(m.Revenue), cellMoney(m.Rate))
 		if m.HasMargin() {
-			_ = cw.Write([]string{marginSection, csvSafe(m.Name), "h", deDecimal(m.Hours), "",
-				deDecimal(m.Margin), deDecimal(m.SelfCost)})
+			t.add(cellLabel(marginSection), cellText(m.Name), cellLabel("h"), cellNumber(m.Hours), empty,
+				cellMoney(m.Margin), cellMoney(m.SelfCost))
 		}
 	}
 	for _, u := range units {
-		_ = cw.Write([]string{"Kennzahl", csvSafe(u.Task), csvSafe(u.Unit), deDecimal(u.Quantity), "",
-			deDecimal(u.Cost), deDecimal(u.PerUnit)})
+		t.add(cellLabel("Kennzahl"), cellText(u.Task), cellText(u.Unit), cellNumber(u.Quantity), empty,
+			cellMoney(u.Cost), cellMoney(u.PerUnit))
 	}
+	for _, f := range fields {
+		perHa := empty
+		if f.AreaHa.IsPositive() {
+			perHa = cellMoney(f.PerHa())
+		}
+		t.add(cellLabel("Feld"), cellText(f.NeighborName+" · "+f.Label), cellLabel("ha"), cellNumber(f.AreaHa), cellNumber(f.Hours),
+			cellMoney(f.Cost), perHa)
+	}
+	s.writeExport(w, r, fmt.Sprintf("statistik-%d", year.Year), t)
 }

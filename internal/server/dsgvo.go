@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -21,6 +22,8 @@ type dsgvoExport struct {
 	Notice             string                          `json:"notice"`
 	Subject            dsgvoSubject                    `json:"subject"`
 	LegacyEquipment    []models.NeighborEquipment      `json:"neighbor_equipment,omitempty"`
+	PriceTerms         []dsgvoPriceTerm                `json:"price_terms,omitempty"`
+	Fields             []models.Field                  `json:"fields,omitempty"`
 	BillingYears       []dsgvoYear                     `json:"billing_years"`
 	Recurring          []store.NeighborRecurringExport `json:"recurring_rules"`
 	Mail               []store.NeighborMailExport      `json:"mail_outbox"`
@@ -56,11 +59,16 @@ type dsgvoYear struct {
 	Photos         []dsgvoPhoto                        `json:"photos,omitempty"`
 	Sends          []dsgvoSend                         `json:"sends,omitempty"`
 	ShareLinks     []dsgvoShare                        `json:"share_links,omitempty"`
-	Installments   []dsgvoInstallment                  `json:"installments,omitempty"`
+	// Running statement links and what the neighbor answered through them.
+	StatementLinks    []dsgvoShare             `json:"statement_links,omitempty"`
+	StatementFeedback []dsgvoStatementFeedback `json:"statement_feedback,omitempty"`
+	Installments      []dsgvoInstallment       `json:"installments,omitempty"`
 	// The dunning history is personal data too — arguably the most sensitive
 	// record held about a neighbor: which Mahnstufe went out when, through which
 	// channel, with what fee. An Auskunft omitting it is incomplete.
 	Dunning []dsgvoDunning `json:"dunning_notices,omitempty"`
+	// On-site signatures: the signer's name and handwriting are personal data.
+	Signatures []dsgvoSignature `json:"signatures,omitempty"`
 }
 
 type dsgvoDunning struct {
@@ -94,6 +102,15 @@ type dsgvoLedger struct {
 	Booking     *models.LedgerBooking `json:"booking,omitempty"`
 }
 
+type dsgvoSignature struct {
+	EntryID    int64     `json:"entry_id"`
+	SignerName string    `json:"signer_name"`
+	SignedAt   time.Time `json:"signed_at"`
+	ReceivedAt time.Time `json:"received_at"`
+	Confirmed  string    `json:"confirmed"`
+	URL        string    `json:"url"`
+}
+
 type dsgvoPhoto struct {
 	EntryDate time.Time `json:"entry_date"`
 	Task      string    `json:"task,omitempty"`
@@ -115,10 +132,26 @@ type dsgvoShare struct {
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
+type dsgvoStatementFeedback struct {
+	CreatedAt  time.Time        `json:"created_at"`
+	Status     string           `json:"status"`
+	Line       string           `json:"line,omitempty"`
+	LineAmount *decimal.Decimal `json:"line_amount,omitempty"`
+	Message    string           `json:"message,omitempty"`
+}
+
 type dsgvoInstallment struct {
 	DueOn  time.Time       `json:"due_on"`
 	Amount decimal.Decimal `json:"amount"`
 	Note   string          `json:"note,omitempty"`
+}
+
+type dsgvoPriceTerm struct {
+	Label       string          `json:"label"`
+	DiscountPct decimal.Decimal `json:"discount_pct"`
+	ValidFrom   time.Time       `json:"valid_from"`
+	ValidTo     *time.Time      `json:"valid_to,omitempty"`
+	Created     time.Time       `json:"created"`
 }
 
 type dsgvoEntry struct {
@@ -135,6 +168,8 @@ type dsgvoEntry struct {
 	Note       string          `json:"note,omitempty"`
 	Voided     bool            `json:"voided"`
 	VoidReason string          `json:"void_reason,omitempty"`
+	PriceTerm  string          `json:"price_term,omitempty"`
+	Field      string          `json:"field,omitempty"`
 }
 
 type dsgvoInvoice struct {
@@ -160,7 +195,8 @@ func dsgvoEntryFrom(e models.Entry) dsgvoEntry {
 		ID: e.ID, Date: e.Date, Task: e.TaskLabel, Tractor: e.TractorLabel, Load: e.LoadLabel,
 		Machines: e.MachineLabels, Unit: e.Unit, Quantity: e.Quantity,
 		UnitPrice: e.UnitPrice, Cost: e.Cost, Note: e.Note,
-		Voided: e.Voided, VoidReason: e.VoidReason,
+		Voided: e.Voided, VoidReason: e.VoidReason, PriceTerm: models.PriceTermNote(e.PriceTermLabel, e.PriceTermPct),
+		Field: e.FieldLabel,
 	}
 }
 
@@ -196,6 +232,7 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 		Notice:     "DSGVO Art. 15/20 Datenauskunft — strukturierte Nachbardaten; ergänzende Unterlagen gemäß Prüfliste separat bereitstellen.",
 		Subject:    dsgvoSubjectFromNeighbor(n),
 		AdditionalDelivery: []string{
+			"Unterschriften: Die angegebenen Bild-URLs benötigen eine interne Anmeldung. Berechtigte Unterschriftsbilder herunterladen und als Dateien sicher mitliefern; URLs allein sind keine vollständige Kopie.",
 			"Fotos: Die angegebenen URLs benötigen eine interne Anmeldung. Berechtigte Fotos herunterladen und als Dateien sicher mitliefern; URLs allein sind keine vollständige Kopie.",
 			"E-Mail-Anhänge: Gespeicherte Dateien anhand der mail_outbox-ID und Anhangsmetadaten prüfen und separat sicher mitliefern; Anhangsbytes und technische SMTP-Fehler sind nicht enthalten.",
 			"Protokolle: Personenbezogene Audit- und Betriebsprotokolle durch einen Administrator prüfen, fremde Daten und Zugangsdaten entfernen und einen berechtigten Auszug separat mitliefern. Eine Namenssuche allein ist nicht vollständig.",
@@ -211,6 +248,21 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
+	}
+	out.Fields, err = s.store.ListFields(r.Context(), n.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	terms, err := s.store.ListPriceTerms(r.Context(), n.ID)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	for _, t := range terms {
+		out.PriceTerms = append(out.PriceTerms, dsgvoPriceTerm{
+			Label: t.Label, DiscountPct: t.DiscountPct, ValidFrom: t.ValidFrom, ValidTo: t.ValidTo, Created: t.Created,
+		})
 	}
 	out.Mail, err = s.store.ListNeighborMailExport(r.Context(), n.ID)
 	if err != nil {
@@ -268,13 +320,29 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
+		statementLinks, err := s.store.ListAllStatementShares(r.Context(), n.ID, y.ID)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
+		statementFeedback, err := s.store.ListAllStatementFeedback(r.Context(), n.ID, y.ID)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
 		dunning, err := s.store.ListDunningNotices(r.Context(), y.ID, n.ID)
 		if err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
+		signatures, err := s.store.SignaturesByNeighborYear(r.Context(), n.ID, y.ID)
+		if err != nil {
+			s.serverError(w, r.URL.Path, err)
+			return
+		}
 		if len(entries) == 0 && len(invoices) == 0 && len(payments) == 0 && len(paymentImports) == 0 && len(ledger) == 0 &&
-			len(photos) == 0 && len(sends) == 0 && len(shares) == 0 && len(plans) == 0 && len(dunning) == 0 {
+			len(photos) == 0 && len(sends) == 0 && len(shares) == 0 && len(plans) == 0 && len(dunning) == 0 &&
+			len(statementLinks) == 0 && len(statementFeedback) == 0 && len(signatures) == 0 {
 			continue // a year with no data for this person adds nothing.
 		}
 		dy := dsgvoYear{Year: y.Year, PaymentImports: paymentImports, InvoiceSources: sources}
@@ -316,6 +384,26 @@ func (s *Server) handleNeighborDataExport(w http.ResponseWriter, r *http.Request
 				CreatedBy: sh.CreatedBy, LastUsedAt: sh.LastUsedAt, InvoiceID: sh.InvoiceID,
 			})
 		}
+		for _, sh := range statementLinks {
+			dy.StatementLinks = append(dy.StatementLinks, dsgvoShare{
+				CreatedAt: sh.CreatedAt, ExpiresAt: sh.ExpiresAt, CreatedBy: sh.CreatedBy, LastUsedAt: sh.LastUsedAt,
+			})
+		}
+		for _, f := range statementFeedback {
+			item := dsgvoStatementFeedback{CreatedAt: f.CreatedAt, Status: f.Status, Line: f.LineLabel, Message: f.Message}
+			if f.LineAmount.Valid {
+				amount := f.LineAmount.Decimal
+				item.LineAmount = &amount
+			}
+			dy.StatementFeedback = append(dy.StatementFeedback, item)
+		}
+		for _, sig := range signatures {
+			dy.Signatures = append(dy.Signatures, dsgvoSignature{
+				EntryID: sig.EntryID, SignerName: sig.SignerName, SignedAt: sig.SignedAt, ReceivedAt: sig.ReceivedAt,
+				Confirmed: sig.ConfirmedText, URL: "/entries/" + itoa64(sig.EntryID) + "/signature.png",
+			})
+		}
+		sort.Slice(dy.Signatures, func(i, j int) bool { return dy.Signatures[i].EntryID < dy.Signatures[j].EntryID })
 		for _, pl := range plans {
 			dy.Installments = append(dy.Installments, dsgvoInstallment{
 				DueOn: pl.DueOn, Amount: pl.Amount, Note: pl.Note,

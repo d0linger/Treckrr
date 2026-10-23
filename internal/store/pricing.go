@@ -16,7 +16,7 @@ import (
 // ListBases returns all pricing bases, newest year first.
 func (s *Store) ListBases(ctx context.Context) ([]models.PriceBase, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, year, name, locked, created_at FROM price_bases ORDER BY year DESC`)
+		`SELECT id, year, name, locked, created_at, billing_increment_h, minimum_h FROM price_bases ORDER BY year DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +24,7 @@ func (s *Store) ListBases(ctx context.Context) ([]models.PriceBase, error) {
 	var out []models.PriceBase
 	for rows.Next() {
 		var b models.PriceBase
-		if err := rows.Scan(&b.ID, &b.Year, &b.Name, &b.Locked, &b.Created); err != nil {
+		if err := rows.Scan(&b.ID, &b.Year, &b.Name, &b.Locked, &b.Created, &b.BillingIncrementH, &b.MinimumH); err != nil {
 			return nil, err
 		}
 		out = append(out, b)
@@ -36,8 +36,8 @@ func (s *Store) ListBases(ctx context.Context) ([]models.PriceBase, error) {
 func (s *Store) GetBase(ctx context.Context, id int64) (*models.PriceBase, error) {
 	var b models.PriceBase
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, year, name, locked, created_at FROM price_bases WHERE id=$1`, id).
-		Scan(&b.ID, &b.Year, &b.Name, &b.Locked, &b.Created)
+		`SELECT id, year, name, locked, created_at, billing_increment_h, minimum_h FROM price_bases WHERE id=$1`, id).
+		Scan(&b.ID, &b.Year, &b.Name, &b.Locked, &b.Created, &b.BillingIncrementH, &b.MinimumH)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -48,8 +48,8 @@ func (s *Store) GetBase(ctx context.Context, id int64) (*models.PriceBase, error
 func (s *Store) LatestBase(ctx context.Context) (*models.PriceBase, error) {
 	var b models.PriceBase
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, year, name, locked, created_at FROM price_bases ORDER BY year DESC LIMIT 1`).
-		Scan(&b.ID, &b.Year, &b.Name, &b.Locked, &b.Created)
+		`SELECT id, year, name, locked, created_at, billing_increment_h, minimum_h FROM price_bases ORDER BY year DESC LIMIT 1`).
+		Scan(&b.ID, &b.Year, &b.Name, &b.Locked, &b.Created, &b.BillingIncrementH, &b.MinimumH)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -68,6 +68,20 @@ func (s *Store) CreateEmptyBase(ctx context.Context, year int, name string) (int
 	err := s.db.QueryRowContext(ctx,
 		`INSERT INTO price_bases (year, name) VALUES ($1,$2) RETURNING id`, year, name).Scan(&id)
 	return id, err
+}
+
+// UpdateBaseBillingRule sets the billing increment and minimum of an unlocked
+// basis; a locked basis is left unchanged (ErrNotFound).
+func (s *Store) UpdateBaseBillingRule(ctx context.Context, id int64, increment, minimum decimal.Decimal) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE price_bases SET billing_increment_h=$1, minimum_h=$2 WHERE id=$3 AND NOT locked`, increment, minimum, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // UpdateBase renames a basis and updates its "valid from" year.
@@ -103,7 +117,8 @@ func (s *Store) CloneBase(ctx context.Context, srcBaseID int64, newYear int, nam
 
 	var newID int64
 	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO price_bases (year, name) VALUES ($1,$2) RETURNING id`, newYear, name).
+		`INSERT INTO price_bases (year, name, billing_increment_h, minimum_h)
+		 SELECT $1, $2, billing_increment_h, minimum_h FROM price_bases WHERE id = $3 RETURNING id`, newYear, name, srcBaseID).
 		Scan(&newID); err != nil {
 		return 0, fmt.Errorf("create base: %w", err)
 	}

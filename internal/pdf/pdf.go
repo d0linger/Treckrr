@@ -7,6 +7,7 @@ package pdf
 import (
 	"bytes"
 	"strings"
+	"sync/atomic"
 
 	"github.com/signintech/gopdf"
 	"golang.org/x/image/font/gofont/gobold"
@@ -18,6 +19,17 @@ const (
 	fontBold    = "go-b"
 )
 
+// watermark is the process-wide page stamp of a practice instance; empty (the
+// default) leaves every document byte-for-byte unchanged.
+var watermark atomic.Pointer[string]
+
+// SetWatermark stamps text at the top of every page of every document rendered
+// afterwards. The practice instance calls it once at startup.
+func SetWatermark(text string) {
+	text = strings.TrimSpace(text)
+	watermark.Store(&text)
+}
+
 // newDoc starts an A4 document with the Go fonts registered.
 func newDoc() (*gopdf.GoPdf, error) {
 	pdf := &gopdf.GoPdf{}
@@ -27,6 +39,16 @@ func newDoc() (*gopdf.GoPdf, error) {
 	}
 	if err := pdf.AddTTFFontData(fontBold, gobold.TTF); err != nil {
 		return nil, err
+	}
+	if mark := watermark.Load(); mark != nil && *mark != "" {
+		text := *mark
+		// The header runs inside AddPage, above the content margin, so the stamp
+		// never overlaps document content and appears on continuation pages too.
+		pdf.AddHeader(func() {
+			pdf.SetTextColor(176, 32, 32)
+			gtext(pdf, marginL, 14, 8.5, true, text)
+			pdf.SetTextColor(0, 0, 0)
+		})
 	}
 	return pdf, nil
 }

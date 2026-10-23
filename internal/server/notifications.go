@@ -32,7 +32,27 @@ func (s *Server) RefreshNotifications(ctx context.Context) error {
 			Title: health.Title, Detail: health.AgeLabel, Href: "/admin/backup", AdminOnly: true,
 		}
 	}
-	return s.store.RefreshNotifications(ctx, backupNotice)
+	var updateNotice *store.NotificationSource
+	if u := s.updateStatus(); u.Newer {
+		updateNotice = &store.NotificationSource{
+			DedupeKey: "update:" + u.Latest, Kind: "update", Tone: "info",
+			Title: "Neue Treckrr-Version " + u.Latest, Detail: "Installiert: " + u.Current, Href: "/admin/system", AdminOnly: true,
+		}
+	}
+	var chainNotice *store.NotificationSource
+	if heads, err := s.store.AuditChainHeads(ctx); err == nil {
+		for _, h := range heads {
+			if h.VerifiedOK != nil && !*h.VerifiedOK && h.VerifiedAt != nil {
+				// One episode per failed run: a dismissed alarm does not hide the next.
+				chainNotice = &store.NotificationSource{
+					DedupeKey: "audit-chain:" + h.Chain + ":" + h.VerifiedAt.UTC().Format(time.RFC3339), Kind: "security", Tone: "bad",
+					Title: "Prüfkette des Protokolls verletzt", Detail: h.VerifyNote, Href: "/admin/system", AdminOnly: true,
+				}
+				break
+			}
+		}
+	}
+	return s.store.RefreshNotifications(ctx, backupNotice, updateNotice, chainNotice, s.retentionNotice(ctx))
 }
 
 // handleNotifications renders the signed-in user's notification stream and

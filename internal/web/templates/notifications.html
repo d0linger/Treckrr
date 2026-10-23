@@ -21,7 +21,7 @@
 	{{if .Notifications}}
 	<div class="btnrow btnrow--split">
 		<span class="muted small">Neueste 100 Hinweise</span>
-		{{if .User.CanWrite}}<form method="post" action="/notifications/read-all"><button class="btn btn--ghost btn--sm" type="submit">Alle als gelesen</button></form>{{end}}
+		<form method="post" action="/notifications/read-all"><button class="btn btn--ghost btn--sm" type="submit">Alle als gelesen</button></form>
 	</div>
 	<ol class="noticefeed" aria-label="Benachrichtigungen">
 		{{range .Notifications}}
@@ -32,10 +32,10 @@
 				{{if .Detail}}<span class="notice__detail">{{.Detail}}</span>{{end}}
 				<span class="muted small">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>
 			</div>
-			{{if $.User.CanWrite}}<div class="notice__actions">
+			<div class="notice__actions">
 				<form method="post" action="/notifications/{{.ID}}/open"><button class="btn btn--primary btn--sm" type="submit">Öffnen</button></form>
 				<form method="post" action="/notifications/{{.ID}}/dismiss"><button class="iconact" type="submit" aria-label="Hinweis ausblenden">×</button></form>
-			</div>{{end}}
+			</div>
 		</li>
 		{{end}}
 	</ol>

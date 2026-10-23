@@ -45,13 +45,15 @@ type NotificationPreferences struct {
 // RefreshNotifications snapshots current operational signals into per-user,
 // deduplicated notifications. Repeated maintenance ticks cannot duplicate an
 // event because (user_id, dedupe_key) is unique.
-func (s *Store) RefreshNotifications(ctx context.Context, backup *NotificationSource) error {
+func (s *Store) RefreshNotifications(ctx context.Context, extra ...*NotificationSource) error {
 	sources, err := s.notificationSources(ctx)
 	if err != nil {
 		return err
 	}
-	if backup != nil {
-		sources = append(sources, *backup)
+	for _, source := range extra {
+		if source != nil {
+			sources = append(sources, *source)
+		}
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -103,7 +105,7 @@ func validateNotificationSource(source NotificationSource) error {
 		return errors.New("notification source has invalid dedupe key")
 	}
 	switch source.Kind {
-	case "due", "recurring", "import", "mail", "backup":
+	case "due", "recurring", "import", "mail", "backup", "feedback", "security", "update", "privacy":
 	default:
 		return fmt.Errorf("notification source has invalid kind %q", source.Kind)
 	}
@@ -188,6 +190,48 @@ func (s *Store) notificationSources(ctx context.Context) ([]NotificationSource, 
 			Title: "Zahlungsimport prüfen", Detail: detail,
 			Href: "/payments/import/batches/" + strconv.FormatInt(id, 10), WriterOnly: true,
 		})
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// A neighbor's objection through a statement or invoice link needs a writer's
+	// answer; confirmations do not. Only recent objections are offered.
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT 'statement', f.id, f.neighbor_id, f.billing_year_id, 0::bigint, n.name, f.line_label
+		  FROM statement_feedback f JOIN neighbors n ON n.id=f.neighbor_id
+		 WHERE f.status='disputed' AND f.created_at>now()-interval '60 days' AND NOT n.anonymized
+		UNION ALL
+		SELECT 'invoice', f.id, f.neighbor_id, f.billing_year_id, f.invoice_id, n.name, ''
+		  FROM beleg_feedback f JOIN neighbors n ON n.id=f.neighbor_id
+		 WHERE f.status='disputed' AND f.created_at>now()-interval '60 days' AND NOT n.anonymized`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var source, name, label string
+		var id, neighborID, yearID, invoiceID int64
+		if err := rows.Scan(&source, &id, &neighborID, &yearID, &invoiceID, &name, &label); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		account := "/neighbors/" + strconv.FormatInt(neighborID, 10) + "?year=" + strconv.FormatInt(yearID, 10)
+		notice := NotificationSource{
+			DedupeKey: fmt.Sprintf("feedback:%s:%d", source, id), Kind: "feedback", Tone: "warn",
+			Title: "Einwand zum Zwischenstand", Detail: name, Href: account, WriterOnly: true,
+		}
+		if label != "" {
+			notice.Detail = name + " · " + label
+		}
+		if source == "invoice" {
+			notice.Title = "Einwand zur Rechnung"
+			notice.Href = "/neighbors/" + strconv.FormatInt(neighborID, 10) + "/beleg?year=" +
+				strconv.FormatInt(yearID, 10) + "&invoice_id=" + strconv.FormatInt(invoiceID, 10)
+		}
+		sources = append(sources, notice)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

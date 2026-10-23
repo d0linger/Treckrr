@@ -57,6 +57,13 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 	data := s.newPage(w, r, "Benutzerverwaltung", "admin")
 	data["Users"] = users
 	data["Roles"] = []string{models.RoleAdmin, models.RoleEditor, models.RoleViewer}
+	policy, err := s.securityPolicy(r.Context())
+	if err != nil {
+		s.serverError(w, "security policy", err)
+		return
+	}
+	data["Policy"] = policy
+	data["GraceOptions"] = []int{0, 3, 7, 14, 30}
 	s.render(w, r, "admin", data)
 }
 
@@ -122,6 +129,7 @@ func (s *Server) handleUserPassword(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/admin/users")
 		return
 	}
+	s.notifySecurityByID(r, id, securityEvent{Key: "admin-password", Title: "Passwort von einem Administrator zurückgesetzt", Mail: true})
 	s.setFlash(w, r, "success", "Passwort gesetzt. Bestehende Sitzungen wurden beendet und Passkeys entfernt.")
 	redirect(w, r, "/admin/users")
 }
@@ -158,6 +166,7 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 		slog.Error("set role failed", "user", id, "err", sanitizeLog(err.Error()))
 		s.setFlash(w, r, "error", "Änderung fehlgeschlagen.")
 	default:
+		s.notifySecurityByID(r, id, securityEvent{Key: "role", Title: "Rolle geändert", Mail: true})
 		s.setFlash(w, r, "success", "Rolle aktualisiert. Sitzungen des Benutzers wurden beendet.")
 	}
 	redirect(w, r, "/admin/users")
@@ -229,6 +238,14 @@ func (s *Server) handleUserResetTotp(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
 	target, err := s.store.GetUser(r.Context(), id)
 	if err != nil {
 		s.notFound(w, r)
@@ -244,6 +261,7 @@ func (s *Server) handleUserResetTotp(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, "2fa reset", err)
 		return
 	}
+	s.notifySecurity(r, target, securityEvent{Key: "admin-2fa-reset", Title: "Zwei-Faktor-Anmeldung von einem Administrator zurückgesetzt", Mail: true})
 	s.setFlash(w, r, "success", "2FA für "+target.Username+" zurückgesetzt, bestehende Sitzungen beendet und Passkeys entfernt. Der Benutzer kann beides neu einrichten.")
 	redirect(w, r, "/admin/users")
 }
@@ -254,6 +272,14 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		s.notFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	current := userFromCtx(r)

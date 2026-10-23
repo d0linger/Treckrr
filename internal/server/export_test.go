@@ -49,7 +49,7 @@ func TestWriteCSVTextCellBoundaries(t *testing.T) {
 			rr := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodGet, "/export", nil)
 			s := testServer()
-			s.writeCSV(rr, r, "test.csv", []models.Entry{entry}, map[int64]string{1: tc.input})
+			s.writeExport(rr, r, "test", entriesTable("Buchungen", []models.Entry{entry}, map[int64]string{1: tc.input}))
 
 			reader := csv.NewReader(strings.NewReader(strings.TrimPrefix(rr.Body.String(), "\uFEFF")))
 			reader.Comma = ';'

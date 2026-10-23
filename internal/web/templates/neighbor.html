@@ -46,9 +46,65 @@
 			<div class="action-list">
 				<a href="/neighbors/{{.Neighbor.ID}}/overview"><span><strong>Verlauf aller Jahre</strong><small>Jahresübergreifendes Nachbarkonto</small></span><span aria-hidden="true">›</span></a>
 				<a href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}"><span><strong>CSV exportieren</strong><small>Buchungsdaten herunterladen</small></span><span aria-hidden="true">›</span></a>
+				<a href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;format=xlsx"><span><strong>Excel exportieren</strong><small>Buchungsdaten als Tabelle mit echten Zahlen</small></span><span aria-hidden="true">›</span></a>
 			</div>
 		</details>
 	</section>
+	{{if or .User.CanWrite .StatementFeedback}}
+	<details class="card disclosure" id="zwischenstand" {{if .StatementShareToken}}open{{end}}>
+		<summary>Zwischenstand teilen{{with .StatementFeedback}} <span class="muted small">{{len .}} Rückmeldung{{if gt (len .) 1}}en{{end}}</span>{{end}}</summary>
+		<p class="muted small">Der Link zeigt {{.Neighbor.Name}} die noch nicht abgerechneten Leistungen {{.Year.Year}} und den Kontostand, ohne Notizen, Fotos oder andere Nachbarn. Dort kann der Stand bestätigt oder ein Einwand gemeldet werden, solange eine Korrektur noch keine Rechnung betrifft.</p>
+		{{if .User.CanWrite}}
+		{{if .StatementShareToken}}<label class="field"><span>Öffentlicher Link – jetzt kopieren, nur einmal sichtbar</span><input class="input" readonly value="{{.StatementShareURL}}" data-copy-src></label><button class="btn btn--ghost btn--sm" type="button" data-copy-src-btn>Link kopieren</button><img class="qr" src="/zwischenstand/share-qr.png" width="180" height="180" alt="QR-Code zum Zwischenstand-Link">{{end}}
+		{{range .StatementShares}}<div class="btnrow"><span>Gültig bis {{date .ExpiresAt}}{{with .LastUsedAt}} · zuletzt geöffnet {{pdate .}}{{end}}</span><form method="post" action="/neighbors/{{$.Neighbor.ID}}/zwischenstand/revoke?year={{$.Year.ID}}" data-confirm-danger data-confirm="Diesen Zwischenstand-Link widerrufen?"><input type="hidden" name="share_id" value="{{.ID}}"><button class="btn btn--danger btn--sm" type="submit">Widerrufen</button></form></div>{{end}}
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/zwischenstand/share?year={{.Year.ID}}" class="form">
+			<label class="field"><span>Linkdauer</span><select class="select" name="days">{{range .ShareDayOptions}}<option value="{{.}}" {{if eq . $.ShareDefaultDays}}selected{{end}}>{{.}} Tage</option>{{end}}</select></label>
+			<button class="btn btn--ghost" type="submit">Link erzeugen</button>
+		</form>
+		{{end}}
+		{{with .StatementFeedback}}<h3>Rückmeldungen</h3>
+		<ul class="statement-feedback">{{range .}}<li><strong>{{if eq .Status "confirmed"}}Bestätigt{{else}}Einwand{{end}}</strong> <span class="muted small">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>{{with .LineLabel}}<br><span class="small">{{.}}</span>{{end}}{{if .LineAmount.Valid}} <span class="small">· {{money .LineAmount.Decimal}}</span>{{end}}{{with .Message}}<br>{{.}}{{end}}</li>{{end}}</ul>{{end}}
+	</details>
+	{{end}}
+	{{if or .User.CanWrite .PriceTerms}}
+	<details class="card disclosure" id="konditionen">
+		<summary>Preisvereinbarung{{with .PriceTermToday}} <span class="muted small">heute: {{num .DiscountPct}} % {{.Label}}</span>{{end}}</summary>
+		<p class="muted small">Ein vereinbarter Rabatt {{template "help-link" "preisvereinbarung"}} auf eigene Maschinenstunden aus dem Katalog an {{.Neighbor.Name}}. Er gilt für neue und bearbeitete Buchungen im Gültigkeitszeitraum und steht auf Beleg und Rechnung; offene Buchungen ändern sich erst über „Neu berechnen“. Mannstunden, Mengen und Gegenleistungen bleiben unverändert.</p>
+		{{if .PriceTerms}}<ul class="action-list">{{range .PriceTerms}}<li class="btnrow"><span><strong>{{num .DiscountPct}} % {{.Label}}</strong> <span class="muted small">ab {{date .ValidFrom}}{{with .ValidTo}} bis {{date .}}{{end}}</span></span>
+			{{if $.User.CanWrite}}<form method="post" action="/neighbors/{{$.Neighbor.ID}}/price-terms/delete?year={{$.Year.ID}}" data-confirm-danger data-confirm="Preisvereinbarung {{.Label}} löschen? Gebuchte Leistungen behalten ihren Preis bis zur Neuberechnung."><input type="hidden" name="term_id" value="{{.ID}}"><button class="btn btn--ghost btn--sm" type="submit">Löschen</button></form>{{end}}</li>{{end}}</ul>{{end}}
+		{{if .User.CanWrite}}{{if not .Neighbor.Anonymized}}
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/price-terms?year={{.Year.ID}}" class="form" data-price-term-form>
+			<div class="form__grid">
+				<label class="field"><span>Bezeichnung</span><input class="input" name="label" maxlength="100" required placeholder="z. B. Familienrabatt"></label>
+				<label class="field"><span>Rabatt (%)</span><input class="input" type="number" name="discount_pct" min="0.01" max="99.99" step="0.01" inputmode="decimal" required></label>
+				<label class="field"><span>Gültig ab</span><input class="input" type="date" name="valid_from" required></label>
+				<label class="field"><span>Gültig bis (optional)</span><input class="input" type="date" name="valid_to"></label>
+			</div>
+			<div class="btnrow"><button class="btn btn--ghost" type="submit">Preisvereinbarung speichern</button></div>
+		</form>
+		{{end}}{{end}}
+	</details>
+	{{end}}
+	{{if or .User.CanWrite .Fields}}
+	<details class="card disclosure" id="felder">
+		<summary>Felder{{with .Fields}} <span class="muted small">{{len .}}</span>{{end}}</summary>
+		<p class="muted small">Felder von {{.Neighbor.Name}}, die beim Buchen eigener Leistungen gewählt werden können. Die Buchung behält den Feldnamen, auch wenn das Feld später archiviert wird. Leistungen {{.Year.Year}} je Feld stehen daneben.</p>
+		{{if .Fields}}<ul class="action-list">{{range .Fields}}{{$stat := index $.FieldStats .ID}}<li class="btnrow"><span><strong>{{.Label}}</strong>{{if .Archived}} <span class="tag">archiviert</span>{{end}}{{if $stat.Count}} <span class="muted small">{{$stat.Count}} Buchung(en) · {{money $stat.Cost}}{{if .AreaHa.IsPositive}} · {{money $stat.PerHa}} je ha{{end}}</span>{{end}}</span>
+			{{if $.User.CanWrite}}<form method="post" action="/neighbors/{{$.Neighbor.ID}}/fields/archive?year={{$.Year.ID}}"><input type="hidden" name="field_id" value="{{.ID}}"><input type="hidden" name="archived" value="{{if .Archived}}0{{else}}1{{end}}"><button class="btn btn--ghost btn--sm" type="submit">{{if .Archived}}Wieder aktivieren{{else}}Archivieren{{end}}</button></form>
+			<form method="post" action="/neighbors/{{$.Neighbor.ID}}/fields/delete?year={{$.Year.ID}}" data-confirm-danger data-confirm="Feld {{.Name}} löschen? Gebuchte Felder lassen sich nur archivieren."><input type="hidden" name="field_id" value="{{.ID}}"><button class="btn btn--ghost btn--sm" type="submit">Löschen</button></form>{{end}}</li>{{end}}</ul>{{end}}
+		{{with .LooseFieldStats}}<p class="muted small">Als Freitext gebucht: {{range $i, $s := .}}{{if $i}}, {{end}}{{$s.Label}} ({{money $s.Cost}}){{end}}</p>{{end}}
+		{{if .User.CanWrite}}{{if not .Neighbor.Anonymized}}
+		<form method="post" action="/neighbors/{{.Neighbor.ID}}/fields?year={{.Year.ID}}" class="form" data-field-form>
+			<div class="form__grid">
+				<label class="field"><span>Feldname</span><input class="input" name="name" maxlength="100" required placeholder="z. B. Hinterfeld"></label>
+				<label class="field"><span>Fläche (ha, optional)</span><input class="input" type="number" name="area_ha" min="0.0001" step="0.0001" inputmode="decimal"></label>
+				<label class="field"><span>Schlagnummer (optional)</span><input class="input" name="plot_number" maxlength="40"></label>
+			</div>
+			<div class="btnrow"><button class="btn btn--ghost" type="submit">Feld anlegen</button></div>
+		</form>
+		{{end}}{{end}}
+	</details>
+	{{end}}
 	{{end}}
 
 	{{if .Completed}}
@@ -56,7 +112,7 @@
 	{{end}}
 	{{if and (eq .Section "booking") (not .Completed)}}
 	<h2 class="section-title" id="neue-buchung">Neue Buchung erfassen</h2>
-	{{with .PrefilledMachine}}<div class="flash flash--info"><strong>{{.Name}}</strong> wurde über den Maschinen-QR vorausgewählt. Bitte Nachbar, Richtung, Datum und Stunden prüfen; gespeichert wird erst mit „Buchung speichern“.</div>{{end}}
+	{{with .Prefilled}}<div class="flash flash--info"><strong>{{.Name}}</strong> wurde über den {{.KindLabel}}-QR vorausgewählt. Bitte Nachbar, Richtung, Datum und Stunden prüfen; gespeichert wird erst mit „Buchung speichern“.</div>{{end}}
 	{{if .HasInvoice}}<p class="flash flash--info">Neue Leistungen werden getrennt von bereits festgeschriebenen Rechnungen erfasst.</p>{{end}}
 	{{template "booking-form" .}}
 	{{if .User.CanWrite}}
@@ -221,7 +277,7 @@
 	<div class="bcard__summary"><span class="muted">Meine Leistungen · {{num .TotalHours}} Maschinen-h</span><span>{{money .TotalCost}}</span></div>
 	{{end}}
 
-	<h2 class="section-title" id="verrechnung">Nachbarleistungen &amp; Verrechnung</h2>
+	<h2 class="section-title" id="verrechnung">Nachbarleistungen &amp; Verrechnung {{template "help-link" "gegenleistung"}}</h2>
 	<p class="muted small">Leistungen des Nachbarn werden mit Maschinenleistung und Mannstunden vollständig aufgeschlüsselt. Sie reduzieren den Saldo, bleiben aber von meiner Rechnung und eigenen Maschinennutzung getrennt.</p>
 	<div class="bookcards">
 		{{range .Ledger}}
@@ -327,7 +383,7 @@
 	<p class="muted small">Erhaltene Zahlungen — jederzeit erfassbar, auch nach Abschluss des Jahres.</p>
 	<div class="bookcards">
 		{{range .Payments}}
-		<div class="bcard">
+		<div class="bcard" id="zahlung-{{.ID}}">
 			<div class="bcard__head">
 				<span class="bcard__date">{{date .PaidOn}}</span>
 				<span class="bcard__task">{{if .Reversal}}Bankimport-Korrektur{{else}}Zahlung{{end}}{{with .ImportBatchID}} <span class="tag">Import #{{.}}</span>{{end}}</span>
@@ -384,7 +440,7 @@
 					<input class="input" type="number" step="0.1" min="0" max="10" name="skonto" placeholder="z. B. 2"></label>
 				{{end}}
 			</div>
-			{{if .HasInvoice}}<p class="muted small">Ohne Auswahl wird die älteste offene Rechnung zuerst bezahlt; Überschüsse bleiben Guthaben. Bei mehreren Rechnungen muss für Skonto eine Rechnung ausgewählt werden.</p>
+			{{if .HasInvoice}}<p class="muted small">Ohne Auswahl wird die älteste offene Rechnung zuerst bezahlt. Nicht zugeordnete Beträge bleiben im Jahreskonto und sind nicht automatisch Guthaben. Bei mehreren Rechnungen muss für Skonto eine Rechnung ausgewählt werden.</p>
 			{{range .PaymentInvoices}}<details class="disclosure" data-payment-breakdown="{{.Invoice.ID}}"{{if ne .Invoice.ID $.SelectedInvoiceID}} hidden{{end}}>
 				<summary>Zahlungsstand Rechnung {{.Invoice.Number}} · offen {{money .Remaining}}</summary>
 				{{template "settlement-lines" (dict "Rows" .SettlementLines)}}
@@ -476,6 +532,7 @@
 		{{if .User.CanWrite}}<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;view=payments#zahlung-erfassen">Zahlung verbuchen</a>{{end}}
 		<a class="btn btn--ghost btn--sm" href="/neighbors/{{.Neighbor.ID}}/beleg?year={{.Year.ID}}">Beleg</a>
 		<a class="btn btn--ghost btn--sm" href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}">CSV Export</a>
+		<a class="btn btn--ghost btn--sm" href="/export/neighbor/{{.Neighbor.ID}}?year={{.Year.ID}}&amp;format=xlsx">Excel Export</a>
 	</span>
 </div>
 {{end}}

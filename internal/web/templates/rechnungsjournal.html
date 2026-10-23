@@ -3,7 +3,8 @@
 	<div class="pagehead">
 		<a class="backbtn" href="/?year={{.Year.ID}}" aria-label="Zurück zur Übersicht">{{template "ic-back"}}</a>
 		<h2 class="pagehead__t">Rechnungsjournal · {{.Year.Year}}</h2>
-		{{if .Rows}}<a class="btn btn--ghost btn--sm pagehead__action" href="/rechnungsjournal/export.csv?year={{.Year.ID}}">{{template "ic-copy"}} Export CSV</a>{{end}}
+		{{if .Rows}}<a class="btn btn--ghost btn--sm pagehead__action" href="/rechnungsjournal/export.csv?year={{.Year.ID}}">{{template "ic-copy"}} Export CSV</a>
+		<a class="btn btn--ghost btn--sm pagehead__action" href="/rechnungsjournal/export.xlsx?year={{.Year.ID}}">{{template "ic-copy"}} Export Excel</a>{{end}}
 	</div>
 	<p class="muted small">Alle ausgestellten Dokumente des Jahres mit Netto, USt und Brutto — die Grundlage für Buchhaltung und Steuerberater. Stornierte Rechnungen bleiben sichtbar; die Summe zählt Rechnung und Storno gegeneinander.</p>
 
@@ -59,7 +60,7 @@
 	<div class="stack stack--sm">
 		{{range .AccountingProfiles}}
 		<div class="card row-between">
-			<div><strong>{{.Name}}</strong><br><span class="muted small">Erlös {{if .RevenueAccount}}{{.RevenueAccount}}{{else}}–{{end}} · Debitor {{if .ReceivableAccount}}{{.ReceivableAccount}}{{else}}–{{end}} · Steuercode {{if .TaxCode}}{{.TaxCode}}{{else}}–{{end}}</span></div>
+			<div><strong>{{.Name}}</strong>{{with index $.AccountingPresetLabels .Format}} <span class="badge">{{.}} · Vorlage</span>{{end}}<br><span class="muted small">Erlös {{if .RevenueAccount}}{{.RevenueAccount}}{{else}}–{{end}} · Debitor {{if .ReceivableAccount}}{{.ReceivableAccount}}{{else}}–{{end}} · Steuercode {{if .TaxCode}}{{.TaxCode}}{{else}}–{{end}}</span></div>
 			<div class="btnrow"><a class="btn btn--ghost btn--sm" href="/rechnungsjournal/buchhaltung.csv?year={{$.Year.ID}}&profile={{.ID}}">CSV laden</a>{{if $.User.IsAdmin}}<form method="post" action="/rechnungsjournal/profile/{{.ID}}/delete" data-confirm="Exportprofil löschen?"><input type="hidden" name="year_id" value="{{$.Year.ID}}"><button class="btn btn--danger btn--sm" type="submit">Löschen</button></form>{{end}}</div>
 		</div>
 		{{end}}
@@ -70,6 +71,9 @@
 		<summary>Exportprofil anlegen</summary>
 		<form method="post" action="/rechnungsjournal/profile" class="form">
 			<input type="hidden" name="year_id" value="{{.Year.ID}}">
+			<label class="field"><span>Format</span><select class="select" name="format"><option value="custom">Frei zusammengestellt (Spalten unten)</option>{{range .AccountingPresets}}<option value="{{.Key}}">{{.Label}}</option>{{end}}</select></label>
+			<div class="flash flash--info small">Die Vorlagen für BMD NTCS und RZL folgen deren CSV-Buchungsimport, sind aber noch nicht mit einer echten Kanzlei geprüft. Bitte vor der ersten Übergabe einen Testimport mit der Steuerberatung machen. Konten, Steuercode und Kostenstelle kommen aus diesem Profil; Trennzeichen, Dezimalkomma und Spalten legt die Vorlage fest.
+				<ul>{{range .AccountingPresets}}<li><strong>{{.Label}}:</strong> {{.Hint}}</li>{{end}}</ul></div>
 			<div class="formgrid"><label class="field"><span>Name</span><input class="input" name="name" maxlength="60" required placeholder="z. B. Steuerberatung"></label><label class="field"><span>Erlöskonto</span><input class="input" name="revenue_account" maxlength="60"></label><label class="field"><span>Debitorenkonto</span><input class="input" name="receivable_account" maxlength="60"></label><label class="field"><span>Steuercode</span><input class="input" name="tax_code" maxlength="60"></label><label class="field"><span>Kostenstelle</span><input class="input" name="cost_center" maxlength="60"></label><label class="field"><span>Trennzeichen</span><select class="select" name="delimiter"><option value=";">Semikolon</option><option value=",">Komma</option></select></label></div>
 			<label class="check"><input type="checkbox" name="decimal_comma" value="true" checked> Dezimalkomma verwenden</label>
 			<fieldset class="fieldset"><legend>Spalten in dieser Reihenfolge</legend><div class="checkgroup">{{range .AccountingColumns}}<label class="check"><input type="checkbox" name="columns" value="{{.Key}}" checked> {{.Label}}</label>{{end}}</div></fieldset>

@@ -1,0 +1,109 @@
+{
+  "title": "Treckrr",
+  "uid": "treckrr-overview",
+  "description": "Treckrr operations: HTTP, database pool, backups, mail outbox and sign-in signals from GET /metrics (METRICS_TOKEN).",
+  "tags": ["treckrr"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus"
+      },
+      {
+        "name": "job",
+        "label": "Job",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(treckrr_uptime_seconds, job)",
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat", "title": "Last backup (hours ago)", "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "refId": "A", "expr": "treckrr_backup_age_seconds{job=\"$job\"} / 3600" }],
+      "fieldConfig": { "defaults": { "unit": "h", "decimals": 1, "thresholds": { "mode": "absolute", "steps": [
+        { "color": "green", "value": null }, { "color": "orange", "value": 26 }, { "color": "red", "value": 36 } ] } } }
+    },
+    {
+      "type": "stat", "title": "Last restore test (days ago)", "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "refId": "A", "expr": "treckrr_backup_restore_tested_age_seconds{job=\"$job\"} / 86400" }],
+      "fieldConfig": { "defaults": { "unit": "d", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [
+        { "color": "green", "value": null }, { "color": "orange", "value": 31 }, { "color": "red", "value": 45 } ] } } }
+    },
+    {
+      "type": "stat", "title": "Backup / S3 OK", "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "refId": "A", "expr": "treckrr_backup_ok{job=\"$job\"}", "legendFormat": "Backup" },
+        { "refId": "B", "expr": "treckrr_backup_s3_ok{job=\"$job\"}", "legendFormat": "S3" }
+      ],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "0": { "text": "Fehler", "color": "red" }, "1": { "text": "OK", "color": "green" } } }] } }
+    },
+    {
+      "type": "stat", "title": "Mails waiting", "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "refId": "A", "expr": "treckrr_mail_outbox_pending{job=\"$job\"}" }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [
+        { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] } } }
+    },
+    {
+      "type": "timeseries", "title": "HTTP responses per second by class", "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "refId": "A", "expr": "sum by (class) (rate(treckrr_http_responses_total{job=\"$job\"}[5m]))", "legendFormat": "{{class}}" }],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "type": "timeseries", "title": "Request duration p95", "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(treckrr_http_request_duration_seconds_bucket{job=\"$job\"}[5m])))", "legendFormat": "p95" }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "type": "timeseries", "title": "Core operations p95", "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(treckrr_operation_duration_seconds_bucket{job=\"$job\"}[15m])))", "legendFormat": "{{operation}}" }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "type": "timeseries", "title": "Database connections", "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "refId": "A", "expr": "treckrr_db_connections_in_use{job=\"$job\"}", "legendFormat": "in use" },
+        { "refId": "B", "expr": "treckrr_db_connections_open{job=\"$job\"}", "legendFormat": "open" },
+        { "refId": "C", "expr": "treckrr_db_connections_max_open{job=\"$job\"}", "legendFormat": "max" },
+        { "refId": "D", "expr": "rate(treckrr_db_wait_total{job=\"$job\"}[5m])", "legendFormat": "waits/s" }
+      ]
+    },
+    {
+      "type": "timeseries", "title": "Sign-in and request protection", "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "refId": "A", "expr": "increase(treckrr_login_failed_total{job=\"$job\"}[15m])", "legendFormat": "failed logins" },
+        { "refId": "B", "expr": "increase(treckrr_login_blocked_total{job=\"$job\"}[15m])", "legendFormat": "blocked logins" },
+        { "refId": "C", "expr": "increase(treckrr_csrf_rejected_total{job=\"$job\"}[15m])", "legendFormat": "CSRF rejected" },
+        { "refId": "D", "expr": "increase(treckrr_rate_limit_trips_total{job=\"$job\"}[15m])", "legendFormat": "rate limit trips" }
+      ]
+    },
+    {
+      "type": "timeseries", "title": "Mail and maintenance", "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "refId": "A", "expr": "increase(treckrr_mail_sent_total{job=\"$job\"}[1h])", "legendFormat": "mails sent/h" },
+        { "refId": "B", "expr": "increase(treckrr_mail_failed_total{job=\"$job\"}[1h])", "legendFormat": "mails failed/h" },
+        { "refId": "C", "expr": "increase(treckrr_maintenance_failures_total{job=\"$job\"}[1h])", "legendFormat": "maintenance failures/h" },
+        { "refId": "D", "expr": "increase(treckrr_http_panics_total{job=\"$job\"}[1h])", "legendFormat": "panics/h" }
+      ]
+    }
+  ]
+}

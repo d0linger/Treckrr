@@ -100,9 +100,15 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 		for _, q := range []string{
 			`DELETE FROM neighbor_equipment WHERE neighbor_id = $1`,
 			`DELETE FROM entry_photos WHERE entry_id IN (SELECT id FROM entries WHERE neighbor_id = $1)`,
+			`DELETE FROM entry_signatures WHERE entry_id IN (SELECT id FROM entries WHERE neighbor_id = $1)`,
 			`DELETE FROM ledger_photos WHERE ledger_id IN (SELECT id FROM neighbor_ledger WHERE neighbor_id = $1)`,
-			`UPDATE entries SET note = '', task_label = '', person_name = '', void_reason = '', request_fingerprint = NULL
-			 WHERE neighbor_id = $1 AND (note <> '' OR task_label <> '' OR person_name <> '' OR void_reason <> '' OR request_fingerprint IS NOT NULL)`,
+			`UPDATE entries SET note = '', task_label = '', person_name = '', void_reason = '', request_fingerprint = NULL,
+			        price_term_label = CASE WHEN price_term_pct > 0 THEN 'Preisvereinbarung' ELSE '' END,
+			        field_label = '', field_id = NULL
+			 WHERE neighbor_id = $1 AND (note <> '' OR task_label <> '' OR person_name <> '' OR void_reason <> '' OR request_fingerprint IS NOT NULL
+			        OR (price_term_label <> '' AND price_term_label <> 'Preisvereinbarung') OR field_label <> '' OR field_id IS NOT NULL)`,
+			`DELETE FROM neighbor_fields WHERE neighbor_id = $1`,
+			`DELETE FROM neighbor_price_terms WHERE neighbor_id = $1`,
 			`UPDATE neighbor_ledger SET description = '', void_reason = '',
 			 booking = (booking - ARRAY[
 				'task_label', 'note', 'partner_label', 'partner_person', 'unit',
@@ -123,6 +129,8 @@ func (s *Store) AnonymizeNeighbor(ctx context.Context, id int64) error {
 			`DELETE FROM beleg_shares WHERE neighbor_id = $1`,
 			`DELETE FROM beleg_share_events WHERE neighbor_id = $1`,
 			`DELETE FROM beleg_feedback WHERE neighbor_id = $1`,
+			`DELETE FROM statement_shares WHERE neighbor_id = $1`,
+			`DELETE FROM statement_feedback WHERE neighbor_id = $1`,
 			// Ratenplan notes are operator-typed free text about the person
 			// ("zahlt monatlich, Sohn holt das Geld") — the same class as the
 			// booking notes above.
@@ -312,16 +320,18 @@ func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 		   (neighbor_id, billing_year_id, entry_date, task_label, gespann_id, tractor_id, load_level_id,
 		    tractor_label, load_label, machine_labels, hours, hourly_rate,
 		    fuel_adjustment_label, fuel_adjustment_per_h, cost, note,
-		    unit, quantity, unit_price, idempotency_key, person_id, linked_entry_id, request_fingerprint, person_name)
+		    unit, quantity, unit_price, idempotency_key, person_id, linked_entry_id, request_fingerprint, person_name,
+		    price_term_label, price_term_pct, price_term_per_h, field_id, field_label, meter_start, meter_end)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,
-		         COALESCE(NULLIF($24,''),(SELECT name FROM persons WHERE id=$21),''))
+		         COALESCE(NULLIF($24,''),(SELECT name FROM persons WHERE id=$21),''), $25, $26, $27, $28, $29, $30, $31)
 		 ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
 		 RETURNING id`,
 		e.NeighborID, e.BillingYearID, e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID),
 		nullInt(e.LoadLevelID), e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours,
 		e.HourlyRate, e.FuelAdjustmentLabel, e.FuelAdjustmentPerH, e.Cost, e.Note,
 		e.Unit, e.Quantity, e.UnitPrice, nullStr(e.IdempotencyKey), nullInt(e.PersonID),
-		nullInt(e.LinkedEntryID), nullStr(e.RequestFingerprint), e.PersonName).Scan(&id)
+		nullInt(e.LinkedEntryID), nullStr(e.RequestFingerprint), e.PersonName,
+		e.PriceTermLabel, e.PriceTermPct, e.PriceTermPerH, nullInt(e.FieldID), e.FieldLabel, e.MeterStart, e.MeterEnd).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		var neighborID, yearID int64
 		if err := tx.QueryRowContext(ctx,
@@ -346,6 +356,11 @@ func insertEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 	}
 	if err := replaceEntryMachineSnapshotsTx(ctx, tx, id, machineIDs); err != nil {
 		return 0, err
+	}
+	if e.Signature != nil {
+		if err := insertSignatureTx(ctx, tx, id, e); err != nil {
+			return 0, err
+		}
 	}
 	return id, nil
 }
@@ -1195,11 +1210,14 @@ func updateEntryTx(ctx context.Context, tx *sql.Tx, e *models.Entry, machineIDs 
 			load_level_id=$5, tractor_label=$6, load_label=$7, machine_labels=$8,
 			hours=$9, hourly_rate=$10, fuel_adjustment_label=$11, fuel_adjustment_per_h=$12,
 			cost=$13, note=$14, unit=$15, quantity=$16, unit_price=$17, person_id=$19,
-			person_name=COALESCE(NULLIF($20,''),(SELECT name FROM persons WHERE id=$19),'') WHERE id=$18`,
+			person_name=COALESCE(NULLIF($20,''),(SELECT name FROM persons WHERE id=$19),''),
+			price_term_label=$21, price_term_pct=$22, price_term_per_h=$23, field_id=$24, field_label=$25,
+			meter_start=$26, meter_end=$27 WHERE id=$18`,
 		e.Date, e.TaskLabel, nullInt(e.GespannID), nullInt(e.TractorID), nullInt(e.LoadLevelID),
 		e.TractorLabel, e.LoadLabel, e.MachineLabels, e.Hours, e.HourlyRate,
 		e.FuelAdjustmentLabel, e.FuelAdjustmentPerH, e.Cost, e.Note, e.Unit,
-		e.Quantity, e.UnitPrice, e.ID, nullInt(e.PersonID), e.PersonName)
+		e.Quantity, e.UnitPrice, e.ID, nullInt(e.PersonID), e.PersonName,
+		e.PriceTermLabel, e.PriceTermPct, e.PriceTermPerH, nullInt(e.FieldID), e.FieldLabel, e.MeterStart, e.MeterEnd)
 	if err != nil {
 		return err
 	}
@@ -1254,7 +1272,8 @@ func (s *Store) SetEntryVoided(ctx context.Context, id int64, voided bool, reaso
 const entryCols = `id, neighbor_id, billing_year_id, entry_date, task_label, gespann_id,
 	tractor_id, load_level_id, tractor_label, load_label, machine_labels,
 	hours, hourly_rate, fuel_adjustment_label, fuel_adjustment_per_h, cost, note, voided, void_reason, created_at,
-	unit, quantity, unit_price, person_id, linked_entry_id, request_fingerprint, person_name`
+	unit, quantity, unit_price, person_id, linked_entry_id, request_fingerprint, person_name,
+	price_term_label, price_term_pct, price_term_per_h, field_id, field_label, meter_start, meter_end`
 
 const entrySelect = `SELECT ` + entryCols + `,
 	EXISTS(SELECT 1 FROM invoice_entries ie WHERE ie.entry_id=entries.id AND ie.active) AS invoice_locked
@@ -1282,18 +1301,23 @@ func scanEntry(sc scanner) (models.Entry, error) {
 		person      sql.NullInt64
 		linked      sql.NullInt64
 		fingerprint sql.NullString
+		field       sql.NullInt64
 		date        time.Time
 	)
 	dest := []any{&e.ID, &e.NeighborID, &e.BillingYearID, &date, &e.TaskLabel, &gespann,
 		&tractor, &load, &e.TractorLabel, &e.LoadLabel, &e.MachineLabels,
 		&e.Hours, &e.HourlyRate, &e.FuelAdjustmentLabel, &e.FuelAdjustmentPerH,
 		&e.Cost, &e.Note, &e.Voided, &e.VoidReason, &e.Created,
-		&e.Unit, &e.Quantity, &e.UnitPrice, &person, &linked, &fingerprint, &e.PersonName, &e.InvoiceLocked}
+		&e.Unit, &e.Quantity, &e.UnitPrice, &person, &linked, &fingerprint, &e.PersonName,
+		&e.PriceTermLabel, &e.PriceTermPct, &e.PriceTermPerH, &field, &e.FieldLabel, &e.MeterStart, &e.MeterEnd, &e.InvoiceLocked}
 	if err := sc.Scan(dest...); err != nil {
 		return e, err
 	}
 	if person.Valid {
 		e.PersonID = &person.Int64
+	}
+	if field.Valid {
+		e.FieldID = &field.Int64
 	}
 	if linked.Valid {
 		e.LinkedEntryID = &linked.Int64

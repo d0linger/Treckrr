@@ -47,7 +47,11 @@ try {
   await docker(['exec', '-T', 'db', 'psql', '-U', 'treckrr_e2e', '-d', 'treckrr_e2e', '-v', 'ON_ERROR_STOP=1'],
     await readFile(path.join(root, 'e2e', 'seed.sql')));
   if (interrupted) throw new Error('interrupted');
-  await docker(['run', '--rm', '--no-deps', 'browser', 'npx', 'playwright', 'test', ...process.argv.slice(2)]);
+  // --visual runs only the visual regression projects on this fresh stack.
+  const visual = process.argv.includes('--visual');
+  const args = process.argv.slice(2).filter((arg) => arg !== '--visual');
+  await docker(['run', '--rm', '--no-deps', ...(visual ? ['-e', 'TRECKRR_E2E_VISUAL=1'] : []),
+    'browser', 'npx', 'playwright', 'test', ...args]);
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

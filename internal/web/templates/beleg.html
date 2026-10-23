@@ -56,7 +56,7 @@
 			{{range $i, $e := .Entries}}
 			<div class="beleg__lrow{{if $i}} beleg__lrow--daycont{{else}} beleg__lrow--dayfirst{{end}}{{if $e.Voided}} beleg__lrow--void{{end}}">
 				<span class="beleg__d">{{if eq $i 0}}{{$day.Date}}{{end}}</span>
-				<span class="beleg__t">{{if $e.TaskLabel}}{{$e.TaskLabel}}{{else if $e.Note}}{{$e.Note}}{{else}}Sonstige{{end}}{{if $e.Voided}} · storniert{{end}}{{if ne $e.Unit "h"}}<small>{{num $e.Quantity}} {{$e.Unit}} × {{money $e.UnitPrice}}</small>{{end}}</span>
+				<span class="beleg__t">{{if $e.TaskLabel}}{{$e.TaskLabel}}{{else if $e.Note}}{{$e.Note}}{{else}}Sonstige{{end}}{{if $e.Voided}} · storniert{{end}}{{if ne $e.Unit "h"}}<small>{{num $e.Quantity}} {{$e.Unit}} × {{money $e.UnitPrice}}</small>{{end}}{{if $e.PriceTermPct.IsPositive}}<small>abzgl. {{num $e.PriceTermPct}} % {{$e.PriceTermLabel}}</small>{{end}}{{if $e.FieldLabel}}<small>Feld: {{$e.FieldLabel}}</small>{{end}}{{with $e.Signed}}<small data-beleg-signed>vor Ort unterschrieben: {{.SignerName}}, {{.SignedAt.Format "02.01.2006 15:04"}}</small>{{end}}</span>
 				<span class="beleg__h beleg__r">{{if $e.Voided}}—{{else if eq $e.Unit "h"}}{{num $e.Hours}}{{else}}—{{end}}</span>
 				<span class="beleg__b beleg__r">{{money $e.Cost}}</span>
 			</div>
@@ -69,6 +69,8 @@
 					<div><span>Gespeicherter Zeilenbetrag</span><strong>{{money $e.Calculation.Stored}}</strong></div>
 					{{if $e.Calculation.MachineParts}}<div class="beleg__calc-parts"><span>Maschinen-Snapshots</span><ul>{{range $e.Calculation.MachineParts}}<li>{{.Label}} · {{money .HourlyRate}}/h</li>{{end}}</ul></div>
 					{{else if $e.Calculation.LegacyMachines}}<div><span>Maschinen</span><strong>{{$e.Calculation.MachineLabels}}<small>Historische Buchung ohne Komponenten-Snapshot; maßgeblich ist der gespeicherte Gesamtsatz.</small></strong></div>{{end}}
+					{{if $e.HasMeter}}<div><span>Betriebsstundenzähler</span><strong>{{num $e.MeterStart.Decimal}} → {{num $e.MeterEnd.Decimal}} h ({{num $e.MeterHours}} h) <small>Nachweis; verrechnet sind die gebuchten Stunden.</small></strong></div>{{end}}
+					{{if $e.PriceTermPerH.IsPositive}}<div><span>{{$e.PriceTermLabel}} ({{num $e.PriceTermPct}} %)</span><strong>−{{money $e.PriceTermPerH}}/h <small>Im gespeicherten Gesamtsatz enthalten.</small></strong></div>{{end}}
 					{{if $e.Calculation.FuelAdjustmentPerH.IsPositive}}<div><span>{{$e.Calculation.FuelAdjustmentLabel}}</span><strong>+{{money $e.Calculation.FuelAdjustmentPerH}}/h <small>Im gespeicherten Gesamtsatz enthalten.</small></strong></div>{{end}}
 				</div>
 			</details>{{end}}

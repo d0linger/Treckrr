@@ -54,7 +54,7 @@ type neighborDetailView struct {
 	BookingValues      map[string]string
 	SelectedMachineIDs []int64
 	BookingPrefilled   bool
-	PrefilledMachine   *models.Machine
+	Prefilled          *scanTarget
 	BookingLocked      bool
 	BookingAction      string
 }
@@ -104,7 +104,7 @@ func (v neighborDetailView) bind(data pageData) {
 	data["BookingValues"] = v.BookingValues
 	data["SelectedMachineIDs"] = v.SelectedMachineIDs
 	data["BookingPrefilled"] = v.BookingPrefilled
-	data["PrefilledMachine"] = v.PrefilledMachine
+	data["Prefilled"] = v.Prefilled
 	data["BookingLocked"] = v.BookingLocked
 	data["BookingAction"] = v.BookingAction
 }

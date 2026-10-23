@@ -2,11 +2,13 @@ package server
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	netmail "net/mail"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -296,6 +298,13 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	view.bind(data)
+	// Open invoice amounts of all years by age, with the Mahnwesen terms.
+	// Best-effort: a failed read only hides the bar.
+	if aging, err := s.store.ReadInvoiceAging(r.Context(), company.EffectiveTermDays(), time.Now()); err == nil && aging.Total.IsPositive() {
+		data["Aging"] = aging
+	} else if err != nil {
+		slog.Error("dashboard: invoice aging", "err", sanitizeLog(err.Error()))
+	}
 	s.render(w, r, "dashboard", data)
 }
 
@@ -307,7 +316,7 @@ func (s *Server) handleYearAddNeighbor(w http.ResponseWriter, r *http.Request) {
 	}
 	yearID := s.yearIDFromForm(r)
 	neighborID := formInt64(r, "neighbor_id")
-	if yearID == 0 || neighborID == 0 {
+	if yearID <= 0 || neighborID <= 0 {
 		s.setFlash(w, r, "error", "Bitte einen Nachbarn wählen.")
 		redirect(w, r, dashboardURL(yearID))
 		return
@@ -336,6 +345,11 @@ func (s *Server) handleYearRemoveNeighbor(w http.ResponseWriter, r *http.Request
 	}
 	yearID := s.yearIDFromForm(r)
 	neighborID := formInt64(r, "neighbor_id")
+	if yearID <= 0 || neighborID <= 0 {
+		s.setFlash(w, r, "error", "Bitte einen Nachbarn wählen.")
+		redirect(w, r, dashboardURL(yearID))
+		return
+	}
 	err := s.store.RemoveNeighborFromYear(r.Context(), yearID, neighborID)
 	var inUse *store.MembershipInUseError
 	switch {
@@ -578,9 +592,13 @@ func (s *Server) handleNeighborAnonymize(w http.ResponseWriter, r *http.Request)
 	}
 	// Ausbaukarte 88: typed confirmation, like the restore. This deletes free
 	// text and photos for good; a mis-aimed click must not be enough.
+	back := "/neighbors"
+	if r.FormValue("back") == retentionPath {
+		back = retentionPath
+	}
 	if strings.TrimSpace(r.FormValue("confirm")) != "ANONYMISIEREN" {
 		s.setFlash(w, r, "error", "Zum Anonymisieren bitte ANONYMISIEREN eintippen (Großschreibung beachten).")
-		redirect(w, r, "/neighbors")
+		redirect(w, r, back)
 		return
 	}
 	before, _ := s.store.GetNeighbor(r.Context(), id)
@@ -598,5 +616,5 @@ func (s *Server) handleNeighborAnonymize(w http.ResponseWriter, r *http.Request)
 		s.audit(r, "anonymize", "neighbor", id, detail)
 		s.setFlash(w, r, "success", "Nachbar anonymisiert. Rechnungen bleiben aufbewahrungspflichtig erhalten.")
 	}
-	redirect(w, r, "/neighbors")
+	redirect(w, r, back)
 }

@@ -249,6 +249,13 @@ func TestMultipleInvoiceDocumentIsolationIntegration(t *testing.T) {
 
 	public := &http.Client{Timeout: 10 * time.Second}
 	portalPath := "/s/portal/" + token
+	for _, result := range []string{"confirmed", "disputed", "invalid", ""} {
+		feedbackPage := string(get(public, portalPath+"?feedback="+result, 200))
+		want := result == "confirmed" || result == "disputed"
+		if got := strings.Contains(feedbackPage, "Die Rückmeldung wurde gespeichert."); got != want {
+			t.Errorf("feedback=%q: confirmation shown=%v, want %v", result, got, want)
+		}
+	}
 	publicHTML := string(get(public, portalPath+"?invoice_id="+itoa64(second.ID), 200))
 	if !strings.Contains(publicHTML, "ONLY DOCUMENT A") || strings.Contains(publicHTML, "ONLY DOCUMENT B") ||
 		strings.Contains(publicHTML, "PENDING WORK C") || strings.Contains(publicHTML, "LIVE RECIPIENT") {

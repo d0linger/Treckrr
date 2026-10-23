@@ -11,7 +11,6 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/d0linger/treckrr/internal/models"
-	"github.com/d0linger/treckrr/internal/web"
 )
 
 // sanitizeFilename reduces a user-supplied name to characters safe inside a
@@ -59,8 +58,7 @@ func (s *Server) handleExportYear(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
-	filename := fmt.Sprintf("treckrr_%d.csv", year.Year)
-	s.writeCSV(w, r, filename, entries, names)
+	s.writeExport(w, r, fmt.Sprintf("treckrr_%d", year.Year), entriesTable(fmt.Sprintf("Buchungen %d", year.Year), entries, names))
 }
 
 // handleExportNeighbor exports one neighbor's entries within a billing year.
@@ -85,8 +83,8 @@ func (s *Server) handleExportNeighbor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	names := map[int64]string{neighbor.ID: neighbor.Name}
-	filename := fmt.Sprintf("treckrr_%s_%d.csv", sanitizeFilename(neighbor.Name), year.Year)
-	s.writeCSV(w, r, filename, entries, names)
+	s.writeExport(w, r, fmt.Sprintf("treckrr_%s_%d", sanitizeFilename(neighbor.Name), year.Year),
+		entriesTable(fmt.Sprintf("Buchungen %d", year.Year), entries, names))
 }
 
 func (s *Server) neighborNames(r *http.Request) (map[int64]string, error) {
@@ -101,7 +99,6 @@ func (s *Server) neighborNames(r *http.Request) (map[int64]string, error) {
 	return m, nil
 }
 
-// writeCSV renders entries as a German-locale, semicolon-separated CSV that
 // csvDownload is the one CSV response preamble: content type, attachment
 // name, UTF-8 BOM (Excel needs it for umlauts), semicolon delimiter — a wire
 // contract with Excel/LibreOffice that had drifted across six hand-written
@@ -122,16 +119,13 @@ func csvDownload(w http.ResponseWriter, r *http.Request, filename string) (*csv.
 	}
 }
 
-// opens cleanly in Excel/LibreOffice.
-func (s *Server) writeCSV(w http.ResponseWriter, r *http.Request, filename string, entries []models.Entry, names map[int64]string) {
-	cw, finish := csvDownload(w, r, filename)
-	defer finish()
-
-	_ = cw.Write([]string{
+// entriesTable is the bookings export (year or one neighbor): the same columns
+// as CSV and XLSX, with a total row.
+func entriesTable(sheet string, entries []models.Entry, names map[int64]string) exportTable {
+	t := exportTable{sheet: sheet, header: []string{
 		"Nachbar", "Datum", "Tätigkeit", "Traktor", "Belastung",
 		"Maschinen", "Einheit", "Menge", "Satz/Einheit (€)", "Kosten (€)", "Notiz",
-	})
-
+	}}
 	var total decimal.Decimal
 	for _, e := range entries {
 		// Skip voided (stornierte) bookings so the export matches every other
@@ -139,22 +133,14 @@ func (s *Server) writeCSV(w http.ResponseWriter, r *http.Request, filename strin
 		if e.Voided {
 			continue
 		}
-		_ = cw.Write([]string{
-			csvSafe(names[e.NeighborID]),
-			web.Date(e.Date),
-			csvSafe(e.TaskLabel),
-			csvSafe(e.TractorLabel),
-			csvSafe(e.LoadLabel),
-			csvSafe(e.MachineLabels),
-			csvSafe(e.Unit),
-			deDecimal(e.Quantity),
-			deDecimal(e.UnitPrice),
-			deDecimal(e.Cost),
-			csvSafe(e.Note),
-		})
+		t.add(cellText(names[e.NeighborID]), cellDate(e.Date), cellText(e.TaskLabel), cellText(e.TractorLabel),
+			cellText(e.LoadLabel), cellText(e.MachineLabels), cellText(e.Unit), cellNumber(e.Quantity),
+			cellMoney(e.UnitPrice), cellMoney(e.Cost), cellText(e.Note))
 		total = total.Add(e.Cost)
 	}
-	_ = cw.Write([]string{"", "", "", "", "", "", "", "", "Gesamt", deDecimal(total), ""})
+	empty := cellEmpty()
+	t.add(empty, empty, empty, empty, empty, empty, empty, empty, cellLabel("Gesamt"), cellMoney(total), empty)
+	return t
 }
 
 // deDecimal formats an exact decimal with a comma separator for German

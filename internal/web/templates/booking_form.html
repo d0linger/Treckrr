@@ -3,7 +3,7 @@
 {{$v := or .BookingValues (dict)}}{{$kind := or (index $v "booking_kind") "equipment"}}{{$direction := or (index $v "booking_direction") "out"}}{{$mode := or (index $v "mode") "gespann"}}{{$unit := index $v "unit"}}
 <form method="post" action="{{or .BookingAction "/entries"}}" class="card form" data-entry-form data-unified-booking
 	{{if .BookingEdit}}data-entry-edit{{else}}data-entry-create{{if and (not .BookingCopy) (not .BookingPrefilled)}} data-entry-defaults{{end}}{{end}}
- data-pricing-url="/api/base/{{.Base.ID}}/pricing" data-neighbor-name="{{.Neighbor.Name}}" {{if .BookingLocked}}data-booking-locked{{end}}>
+ data-pricing-url="/api/base/{{.Base.ID}}/pricing"{{with .MeterReadingsJSON}} data-meter-last="{{.}}"{{end}}{{with .PriceTermsJSON}} data-price-terms="{{.}}"{{end}}{{if .Base.HasBillingRule}} data-billing-increment="{{numInput .Base.BillingIncrementH}}" data-billing-minimum="{{numInput .Base.MinimumH}}"{{end}} data-neighbor-name="{{.Neighbor.Name}}" {{if .BookingLocked}}data-booking-locked{{end}}>
 	<input type="hidden" name="booking_form_version" value="{{or .BookingFormVersion "3"}}">
 	<input type="hidden" name="year_id" value="{{.Year.ID}}">
 	<input type="hidden" name="neighbor_id" value="{{.Neighbor.ID}}">
@@ -59,6 +59,30 @@
 		<label class="field"><span data-booking-hours-label>Stunden</span><input class="input" type="number" name="hours" min="0.0001" max="999999999" step="0.0001" value="{{index $v "hours"}}" inputmode="decimal" data-hours data-booking-required></label>
 		<div class="rate-preview" data-rate-preview data-booking-catalog-rate><span class="rate-preview__main"><span class="rate-preview__lbl">Maschinenkosten</span><strong class="rate-preview__cost" data-cost>–</strong></span><span class="rate-preview__rate">Satz <strong data-rate>–</strong></span></div>
 	</div>
+	{{if .Base.HasBillingRule}}<p class="muted small" data-booking-catalog-rate data-billing-rule-note>Abrechnung laut Grundlage: Maschinenstunden {{if .Base.BillingIncrementH.IsPositive}}auf {{num .Base.BillingIncrementH}} h aufgerundet{{end}}{{if and .Base.BillingIncrementH.IsPositive .Base.MinimumH.IsPositive}}, {{end}}{{if .Base.MinimumH.IsPositive}}mindestens {{num .Base.MinimumH}} h je Einsatz{{end}}. Mannstunden bleiben genau.</p>{{end}}
+	{{with .PriceTermToday}}<p class="muted small" data-booking-catalog-rate data-price-term-note>Preisvereinbarung mit {{$.Neighbor.Name}}: eigene Maschinenstunden abzgl. {{num .DiscountPct}} % {{.Label}} (maßgeblich ist das Buchungsdatum).</p>{{end}}
+	<details class="disclosure form-details" data-booking-panel="equipment:out" data-meter {{if index $v "meter_start"}}open{{end}}>
+		<summary>Betriebsstundenzähler <span class="muted small">optional, mit Traktor</span></summary>
+		<div class="form__grid form__grid--two">
+			<label class="field"><span>Anfangsstand (h)</span><input class="input" type="number" name="meter_start" min="0" step="0.01" inputmode="decimal" value="{{index $v "meter_start"}}" data-meter-start></label>
+			<label class="field"><span>Endstand (h)</span><input class="input" type="number" name="meter_end" min="0" step="0.01" inputmode="decimal" value="{{index $v "meter_end"}}" data-meter-end></label>
+		</div>
+		<p class="muted small" data-meter-note>Nachweis zur Buchung: verrechnet werden die oben eingegebenen Stunden. Der Anfangsstand wird mit dem letzten Endstand dieses Traktors vorbelegt.</p>
+	</details>
+	<details class="disclosure form-details time-helper" data-booking-panel="equipment:out equipment:in labor:out labor:in" data-time-helper>
+		<summary>Zeit erfassen <span class="muted small">Von – Bis oder Stoppuhr</span></summary>
+		<div class="time-helper__grid">
+			<label class="field"><span>Von</span><input class="input" type="time" data-time-from></label>
+			<label class="field"><span>Bis</span><input class="input" type="time" data-time-to></label>
+			<label class="field"><span>Pause (Min.)</span><input class="input" type="number" min="0" max="1440" step="1" inputmode="numeric" data-time-break></label>
+		</div>
+		<div class="time-helper__watch">
+			<button class="btn btn--ghost btn--sm" type="button" data-stopwatch-toggle aria-pressed="false">Stoppuhr starten</button>
+			<span class="time-helper__clock" data-stopwatch-display aria-hidden="true">0:00:00</span>
+			<button class="btn btn--ghost btn--xs" type="button" data-stopwatch-reset hidden>Verwerfen</button>
+		</div>
+		<p class="muted small" data-time-status role="status"></p>
+	</details>
 	<div class="stack stack--tight" data-booking-panel="quantity:out quantity:in">
 		<label class="field"><span>Einheit</span><select class="select" name="unit" data-unit>
 			<option value="h" hidden {{if eq $unit "h"}}selected{{end}}>Stunden (h)</option>
@@ -82,9 +106,22 @@
 		<p class="muted small" data-person-status role="status"></p>
 		{{if not .Persons}}<p class="muted small">Noch keine gepflegte Person vorhanden. Freie Namen sind möglich. <a class="link" href="/personen">Personen verwalten</a></p>{{end}}
 	</details>
+	{{$fieldSel := index $v "field_id"}}
+	<div class="form__grid form__grid--two" data-booking-panel="equipment:out labor:out quantity:out fixed:out" data-field-picker>
+		<label class="field"><span>Feld <span class="muted small">optional</span></span><select class="select" name="field_id" data-field-select>
+			<option value="">— kein Feld —</option>
+			{{range .Fields}}{{if or (not .Archived) (eq (printf "%d" .ID) $fieldSel)}}<option value="{{.ID}}" {{if eq (printf "%d" .ID) $fieldSel}}selected{{end}}>{{.Label}}</option>{{end}}{{end}}
+			<option value="other" {{if eq $fieldSel "other"}}selected{{end}}>Anderes Feld (Freitext)</option>
+		</select></label>
+		<label class="field" data-field-text {{if ne $fieldSel "other"}}hidden{{end}}><span>Feldname</span><input class="input" name="field_label" maxlength="100" value="{{index $v "field_label"}}" placeholder="z. B. Wiese am Bach"></label>
+	</div>
 	<label class="field"><span>Tätigkeit / Beschreibung</span><input class="input" name="task_label" maxlength="100" value="{{index $v "task_label"}}" placeholder="z. B. Mähen oder Materialkosten" data-booking-task {{if or (eq $kind "quantity") (eq $kind "fixed")}}required{{end}}><span class="sr-only" data-booking-task-help></span></label>
 	<details class="disclosure form-details" {{if index $v "note"}}open{{end}}><summary>Weitere Angaben <span class="muted small">optional</span></summary><label class="field"><span>Notiz / Belegreferenz</span><input class="input" name="note" maxlength="2000" value="{{index $v "note"}}"></label>{{if and (not .BookingEdit) (not .BookingCopy)}}<button class="btn btn--ghost btn--xs" type="button" data-defaults-reset>Gemerkte Vorgaben löschen</button>{{end}}</details>
 	<div class="booking-preview" data-booking-preview role="status" aria-live="polite" aria-atomic="true"><p class="muted small">Leistung auswählen und positive Stunden oder Beträge eingeben.</p></div>
+	{{if and (not .BookingEdit) (not .BookingLocked)}}<details class="disclosure form-details" data-booking-panel="equipment:out labor:out quantity:out fixed:out" data-signature-panel>
+		<summary>Unterschrift vor Ort <span class="muted small">optional</span></summary>
+		{{template "signature-pad" .}}
+	</details>{{end}}
 	<p class="muted small" data-pricing-status role="status"></p>
 	<button class="btn btn--primary btn--block" type="submit" title="Strg + Enter" {{if .BookingLocked}}disabled{{end}}>{{if .BookingEdit}}Änderungen speichern{{else if .BookingCopy}}Kopie speichern{{else}}Buchung speichern{{end}}</button>
 	{{if and (not .BookingEdit) (not .BookingCopy)}}<button class="btn btn--ghost btn--block" type="submit" name="continue_next" value="1" data-booking-next {{if .BookingLocked}}disabled{{end}}>Speichern &amp; nächste Buchung</button>{{end}}
@@ -133,6 +170,7 @@
 
 {{define "booking-extras"}}
 {{if .PhotoAction}}{{template "booking_attachments" .}}{{end}}
+{{if .SignatureAction}}{{template "booking_signature" .}}{{end}}
 {{if and .User.CanWrite .RecurringAction}}
 <details class="card disclosure"><summary>Als Serie wiederholen</summary><p class="muted small">Wiederholt diese Leistung im offenen Jahr. Gespann, vereinbarte Preise und alle ausgewählten Personen werden aus der Buchung übernommen.</p>
 	<form method="post" action="{{.RecurringAction}}" class="form"><div class="form__grid"><label class="field"><span>Rhythmus</span><select class="select" name="interval_kind"><option value="weekly">wöchentlich</option><option value="monthly">monatlich</option></select></label><label class="field"><span>Erster Lauf</span><input class="input" type="date" name="next_run" value="{{.NextWeek}}" required></label><label class="field"><span>Endet am <em>(optional)</em></span><input class="input" type="date" name="ends_on"></label></div>

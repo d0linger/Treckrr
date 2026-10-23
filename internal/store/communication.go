@@ -60,6 +60,22 @@ func (s *Store) NeighborCommunication(ctx context.Context, neighborID int64, lim
 			       'öffentlicher Belegzugriff', 'used', sh.id
 			  FROM beleg_shares sh JOIN billing_years y ON y.id=sh.billing_year_id
 			 WHERE sh.neighbor_id=$1 AND sh.last_used_at IS NOT NULL
+			UNION ALL
+			SELECT sh.created_at, y.year, 'share', 'Zwischenstand-Link erstellt',
+			       'widerrufbar', CASE WHEN sh.expires_at>now() THEN 'active' ELSE 'expired' END, sh.id
+			  FROM statement_shares sh JOIN billing_years y ON y.id=sh.billing_year_id
+			 WHERE sh.neighbor_id=$1
+			UNION ALL
+			SELECT sh.last_used_at, y.year, 'share', 'Zwischenstand-Link geöffnet',
+			       'öffentlicher Zwischenstand', 'used', sh.id
+			  FROM statement_shares sh JOIN billing_years y ON y.id=sh.billing_year_id
+			 WHERE sh.neighbor_id=$1 AND sh.last_used_at IS NOT NULL
+			UNION ALL
+			SELECT f.created_at, y.year, 'share',
+			       CASE f.status WHEN 'confirmed' THEN 'Zwischenstand bestätigt' ELSE 'Einwand zum Zwischenstand' END,
+			       f.line_label, f.status, f.id
+			  FROM statement_feedback f JOIN billing_years y ON y.id=f.billing_year_id
+			 WHERE f.neighbor_id=$1
 		) event
 		ORDER BY occurred_at DESC, reference DESC
 		LIMIT $2`, neighborID, limit)

@@ -467,3 +467,109 @@ func assertFormRedirect(
 		t.Errorf("flash = %q, want %q", got, message)
 	}
 }
+
+func TestMutationHandlersRejectMalformedForms(t *testing.T) {
+	// A valid header token bypasses the CSRF middleware's form parser. Each
+	// handler must still reject an unreadable body before any store access.
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	for _, tc := range []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{name: "reset TOTP", handler: s.handleUserResetTotp},
+		{name: "deactivate user", handler: s.handleUserDelete},
+		{name: "delete accounting profile", handler: s.handleAccountingProfileDelete},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, body := range []struct {
+				name, contentType, data string
+			}{
+				{name: "urlencoded", contentType: "application/x-www-form-urlencoded", data: "data=%XX"},
+				{name: "multipart without boundary", contentType: "multipart/form-data", data: "unreadable"},
+				{
+					name: "truncated multipart", contentType: "multipart/form-data; boundary=test-boundary",
+					data: "--test-boundary\r\nContent-Disposition: form-data; name=\"data\"\r\n\r\nvalue",
+				},
+			} {
+				t.Run(body.name, func(t *testing.T) {
+					r := httptest.NewRequest(http.MethodPost, "/validation", strings.NewReader(body.data))
+					r.Header.Set("Content-Type", body.contentType)
+					r.SetPathValue("id", "1")
+					r.AddCookie(&http.Cookie{Name: sessionCookie, Value: "mutation-validation-session"})
+					r.Header.Set(csrfHeaderName, s.csrfToken(r))
+					w := httptest.NewRecorder()
+					s.csrf(tc.handler).ServeHTTP(w, r)
+					if w.Code != http.StatusBadRequest {
+						t.Fatalf("status = %d, want 400", w.Code)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestInvoiceHandlersRejectInvalidYearIDs(t *testing.T) {
+	s := &Server{}
+	for _, tc := range []struct {
+		name, field string
+		handler     http.HandlerFunc
+	}{
+		{name: "confirm", field: "year", handler: s.handleInvoiceConfirm},
+		{name: "issue", field: "year_id", handler: s.handleInvoiceIssue},
+		{name: "storno", field: "year_id", handler: s.handleInvoiceStorno},
+		{name: "credit", field: "year_id", handler: s.handleInvoiceGutschrift},
+	} {
+		for _, raw := range []string{"0", "-1", "9223372036854775808", "-9223372036854775809", "broken"} {
+			t.Run(tc.name+"/"+raw, func(t *testing.T) {
+				r := httptest.NewRequest(http.MethodPost, "/validation", strings.NewReader(url.Values{tc.field: {raw}}.Encode()))
+				r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				r.SetPathValue("id", "1")
+				w := httptest.NewRecorder()
+				tc.handler(w, r)
+				if w.Code != http.StatusBadRequest {
+					t.Fatalf("status = %d, want 400", w.Code)
+				}
+			})
+		}
+	}
+}
+
+func TestYearHandlersRejectNonPositiveIDs(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	for _, tc := range []struct {
+		name, back string
+		form       url.Values
+		handler    http.HandlerFunc
+	}{
+		{name: "create", back: "/years", form: url.Values{"year": {"2026"}, "base_id": {"-1"}}, handler: s.handleYearCreate},
+		{name: "update", back: "/years", form: url.Values{"base_id": {"0"}}, handler: s.handleYearUpdate},
+		{name: "add", back: dashboardURL(1), form: url.Values{"year_id": {"1"}, "neighbor_id": {"-5"}}, handler: s.handleYearAddNeighbor},
+		{name: "remove", back: dashboardURL(-1), form: url.Values{"year_id": {"-1"}, "neighbor_id": {"1"}}, handler: s.handleYearRemoveNeighbor},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			message := "Bitte einen Nachbarn wählen."
+			if tc.back == "/years" {
+				message = "Bitte eine Bemessungsgrundlage wählen."
+			}
+			assertFormRedirect(t, s, tc.handler, tc.form, tc.back, message)
+		})
+	}
+}
+
+func TestAccountingProfileColumnLimits(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	for _, format := range []string{"custom", "bmd", "rzl"} {
+		for _, tc := range []struct {
+			name, message string
+			columns       []string
+		}{
+			{name: "count", columns: make([]string, maxFormListLen+1), message: "Zu viele Exportspalten ausgewählt."},
+			{name: "length", columns: []string{strings.Repeat("x", maxNoteLen+1)}, message: fmt.Sprintf("Exportspalten darf höchstens %d Zeichen lang sein.", maxNoteLen)},
+		} {
+			t.Run(format+"/"+tc.name, func(t *testing.T) {
+				assertFormRedirect(t, s, s.handleAccountingProfileSave,
+					url.Values{"name": {"Profile"}, "format": {format}, "columns": tc.columns}, "/rechnungsjournal", tc.message)
+			})
+		}
+	}
+}

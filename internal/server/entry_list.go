@@ -92,11 +92,6 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 		s.handleBookingListExport(w, r, year, f)
 		return
 	}
-	rows, total, sum, err := s.store.FilterBookings(r.Context(), f)
-	if err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
-	}
 	neighbors, err := s.store.ListYearNeighbors(r.Context(), year.ID)
 	if err != nil {
 		s.serverError(w, r.URL.Path, err)
@@ -110,6 +105,36 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 	views, err := s.store.ListSavedViews(r.Context(), userFromCtx(r).ID, "bookings")
 	if err != nil {
 		s.serverError(w, "booking views", err)
+		return
+	}
+	data := s.newPage(w, r, "Buchungen", "entries")
+	if err := s.withYearSelector(r, data, year); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	data["Year"] = year
+	data["Neighbors"] = neighbors
+	data["Units"] = units
+	data["Completed"] = year.Completed()
+	data["SavedViews"] = views
+	data["SavedQuery"] = savedBookingQuery(r, year.ID)
+	data["Filter"] = map[string]string{
+		"from": sanitizeQueryParam(r.URL.Query().Get("from"), maxNameLen),
+		"to":   sanitizeQueryParam(r.URL.Query().Get("to"), maxNameLen),
+		"task": f.Task, "unit": f.Unit, "voided": f.Voided,
+		"neighbor_id": sanitizeQueryParam(r.URL.Query().Get("neighbor_id"), maxNameLen),
+		"sort":        f.Sort, "dir": sanitizeQueryParam(r.URL.Query().Get("dir"), maxNameLen),
+		"direction": f.Direction, "kind": f.Kind,
+	}
+	data["ListViewURL"] = entryListURL(r, year.ID, 1, "")
+	data["CalendarViewURL"] = entryListURL(r, year.ID, 1, "") + "&view=kalender"
+	if r.URL.Query().Get("view") == "kalender" {
+		s.handleBookingCalendar(w, r, year, f, data)
+		return
+	}
+	rows, total, sum, err := s.store.FilterBookings(r.Context(), f)
+	if err != nil {
+		s.serverError(w, r.URL.Path, err)
 		return
 	}
 	// Only the rows on THIS page — aggregating the whole year hashed every
@@ -136,23 +161,12 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 
 	page := f.Offset/entryPageSize + 1
 	pages := (total + entryPageSize - 1) / entryPageSize
-	data := s.newPage(w, r, "Buchungen", "entries")
-	if err := s.withYearSelector(r, data, year); err != nil {
-		s.serverError(w, r.URL.Path, err)
-		return
-	}
-	data["Year"] = year
 	data["Rows"] = rows
 	data["Total"] = total
 	data["SumCost"] = sum
-	data["Neighbors"] = neighbors
-	data["Units"] = units
 	data["PhotoCounts"] = photoCounts
 	data["LedgerPhotoCounts"] = ledgerPhotoCounts
 	data["HasEntryRows"] = len(pageIDs) > 0
-	data["Completed"] = year.Completed()
-	data["SavedViews"] = views
-	data["SavedQuery"] = savedBookingQuery(r, year.ID)
 	data["Page"] = page
 	data["Pages"] = pages
 	data["HasPrev"] = page > 1
@@ -165,14 +179,6 @@ func (s *Server) handleEntryList(w http.ResponseWriter, r *http.Request) {
 	data["SortCostURL"] = entryListURL(r, year.ID, 1, "cost")
 	data["SortNeighborURL"] = entryListURL(r, year.ID, 1, "neighbor")
 	data["ExportURL"] = entryListURL(r, year.ID, 1, "") + "&export=csv"
-	data["Filter"] = map[string]string{
-		"from": sanitizeQueryParam(r.URL.Query().Get("from"), maxNameLen),
-		"to":   sanitizeQueryParam(r.URL.Query().Get("to"), maxNameLen),
-		"task": f.Task, "unit": f.Unit, "voided": f.Voided,
-		"neighbor_id": sanitizeQueryParam(r.URL.Query().Get("neighbor_id"), maxNameLen),
-		"sort":        f.Sort, "dir": sanitizeQueryParam(r.URL.Query().Get("dir"), maxNameLen),
-		"direction": f.Direction, "kind": f.Kind,
-	}
 	data["ReturnTo"] = entryListURL(r, year.ID, page, "")
 	s.render(w, r, "entries", data)
 }

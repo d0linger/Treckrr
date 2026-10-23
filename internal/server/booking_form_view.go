@@ -74,6 +74,31 @@ func (s *Server) setEntryBookingForm(r *http.Request, data pageData, entry *mode
 	if err != nil {
 		return err
 	}
+	switch {
+	case entry.FieldID != nil:
+		v["field_id"] = strconv.FormatInt(*entry.FieldID, 10)
+	case entry.FieldLabel != "":
+		v["field_id"], v["field_label"] = "other", entry.FieldLabel
+	}
+	// A copy is new work on the same tractor: its readings start fresh, from
+	// the tractor's last end reading.
+	if entry.HasMeter() && !copyMode {
+		v["meter_start"], v["meter_end"] = entry.MeterStart.Decimal.String(), entry.MeterEnd.Decimal.String()
+	}
+	if copyMode {
+		year, err := s.store.GetBillingYear(r.Context(), entry.BillingYearID)
+		if err != nil {
+			return err
+		}
+		if data["MeterReadingsJSON"], err = s.meterReadingsAttr(r.Context(), year.BaseID); err != nil {
+			return err
+		}
+	}
+	fields, err := s.store.ListFields(r.Context(), entry.NeighborID)
+	if err != nil {
+		return err
+	}
+	data["Fields"] = fields
 	data["BookingAction"] = "/entries/" + strconv.FormatInt(entry.ID, 10) + "/update"
 	if copyMode {
 		data["BookingAction"] = "/entries"
@@ -84,6 +109,9 @@ func (s *Server) setEntryBookingForm(r *http.Request, data pageData, entry *mode
 	data["BookingEdit"], data["BookingCopy"] = !copyMode, copyMode
 	data["PhotoAction"], data["RecurringAction"] = "/entries/"+strconv.FormatInt(entry.ID, 10)+"/photos", "/entries/"+strconv.FormatInt(entry.ID, 10)+"/recur"
 	data["BookingVoided"] = entry.Voided
+	if !copyMode {
+		return s.signatureView(r, data, entry)
+	}
 	return nil
 }
 

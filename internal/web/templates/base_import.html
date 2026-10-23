@@ -1,0 +1,53 @@
+{{define "content"}}
+<section class="stack">
+	<a class="backlink" href="/bases#preisliste">‹ Bemessungsgrundlagen</a>
+	{{with .Preview}}
+	<div class="card stack stack--tight">
+		<h2>Preisliste für {{$.ImportYear}} prüfen</h2>
+		<p class="muted">{{if .SourceName}}Verglichen mit {{.SourceName}}.{{else}}Ohne Vergleichsgrundlage: jede Position ist neu.{{end}} Angelegt wird eine neue Grundlage „{{$.ImportName}}“; bestehende Grundlagen, Jahre und Buchungen bleiben unverändert.</p>
+		<p class="rate-import__counts">
+			<span class="tag">{{.New}} neu</span>
+			<span class="tag">{{.Changed}} geändert</span>
+			<span class="tag">{{.Same}} unverändert</span>
+			{{if .Removed}}<span class="tag">{{len .Removed}} entfallen</span>{{end}}
+			{{if .Errors}}<span class="tag tag--danger">{{.Errors}} fehlerhaft</span>{{end}}
+		</p>
+		{{if .Errors}}<p class="flash flash--error" role="alert">Fehlerhafte Zeilen zuerst in der Datei korrigieren und erneut hochladen. Angelegt wird erst, wenn alle Zeilen gültig sind.</p>{{end}}
+	</div>
+
+	<div class="card">
+		<div class="tablewrap" role="region" aria-label="Positionen der Preisliste" tabindex="0">
+			<table class="dtable">
+				<thead><tr><th>Zeile</th><th>Art</th><th>Position</th><th>Status</th><th>Änderung</th></tr></thead>
+				<tbody>
+					{{range .Rows}}{{if ne .Status "gleich"}}
+					<tr{{if .Err}} class="is-error"{{end}}>
+						<td class="num">{{.Line}}</td>
+						<td>{{.KindLabel}}</td>
+						<td>{{if .Key}}{{.Key}}{{else}}—{{end}}</td>
+						<td>{{if .Err}}<strong>Fehler</strong>{{else}}{{.Status}}{{end}}</td>
+						<td>{{if .Err}}{{.Err}}{{else}}{{range $i, $c := .Changes}}{{if $i}}<br>{{end}}{{$c}}{{end}}{{end}}</td>
+					</tr>
+					{{end}}{{end}}
+					{{range .Removed}}
+					<tr><td class="num">—</td><td>{{.KindLabel}}</td><td>{{.Key}}</td><td>entfällt</td><td>Nicht in der Preisliste, wird nicht übernommen</td></tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+		{{if .Same}}<p class="muted small">{{.Same}} unveränderte Position{{if gt .Same 1}}en werden{{else}} wird{{end}} ohne Zeile übernommen.</p>{{end}}
+	</div>
+
+	{{if .Valid}}
+	<form method="post" action="/bases/import" class="card form">
+		<input type="hidden" name="year" value="{{$.ImportYear}}">
+		<input type="hidden" name="name" value="{{$.ImportName}}">
+		<input type="hidden" name="source_base_id" value="{{if $.ImportSourceID}}{{$.ImportSourceID}}{{end}}">
+		<input type="hidden" name="csv" value="{{$.ImportCSV}}">
+		{{if .SourceName}}<p class="muted small">Gespanne der Vergleichsgrundlage werden übernommen, wenn Traktor, Belastungsstufe und alle Maschinen wieder vorkommen.</p>{{end}}
+		<button class="btn btn--primary" type="submit">Grundlage {{$.ImportYear}} anlegen</button>
+	</form>
+	{{end}}
+	{{end}}
+</section>
+{{end}}

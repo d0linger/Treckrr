@@ -181,7 +181,7 @@ func (s *Server) handleYearRolloverCreate(w http.ResponseWriter, r *http.Request
 		for _, base := range bases {
 			valid = valid || base.ID == baseID
 		}
-		if baseID == 0 || !valid {
+		if baseID <= 0 || !valid {
 			s.setFlash(w, r, "error", "Bitte eine gültige Preisgrundlage auswählen.")
 			redirect(w, r, back)
 			return

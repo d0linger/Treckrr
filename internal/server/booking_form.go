@@ -131,7 +131,7 @@ func bookingEntryPerson(p models.BookingPerson, main *models.Entry) *models.Entr
 		Date: main.Date, TaskLabel: "Mannstunden " + p.Name, Unit: models.UnitMannstunde,
 		Quantity: p.Hours, UnitPrice: p.Rate, Cost: money.Amount(p.Hours, p.Rate),
 		PersonID: p.PersonID, PersonName: p.Name, Voided: p.Voided,
-		RequestFingerprint: main.RequestFingerprint,
+		RequestFingerprint: main.RequestFingerprint, FieldID: main.FieldID, FieldLabel: main.FieldLabel,
 	}
 }
 
@@ -235,9 +235,21 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 			if err := s.applyResolvedFuelAdjustment(r.Context(), year.Base.ID, resolved, ids); err != nil {
 				return bookingDraft{}, "", err
 			}
+			// A standing price term is what I grant the neighbor; work they
+			// bill me keeps the catalog rate.
+			if direction == "out" {
+				if err := s.applyNeighborPriceTerm(r.Context(), resolved, ids, main.NeighborID); err != nil {
+					return bookingDraft{}, "", err
+				}
+			}
 			resolved.NeighborID, resolved.BillingYearID = main.NeighborID, main.BillingYearID
 			resolved.IdempotencyKey, resolved.RequestFingerprint = main.IdempotencyKey, main.RequestFingerprint
 			main, machines = resolved, ids
+			if direction == "out" && main.TractorID != nil {
+				if main.MeterStart, main.MeterEnd, msg = meterFromForm(r); msg != "" {
+					return bookingDraft{}, msg, nil
+				}
+			}
 			b.GespannID, b.TractorID, b.LoadLevelID, b.MachineIDs = main.GespannID, main.TractorID, main.LoadLevelID, ids
 			b.PartnerLabel = strings.Trim(strings.Join([]string{main.TractorLabel, main.LoadLabel, main.MachineLabels}, " · "), " ·")
 			if main.GespannID != nil {
@@ -269,6 +281,11 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 				return bookingDraft{}, "Bitte den vereinbarten Maschinensatz angeben.", nil
 			}
 		}
+		if mode != "free" && year.Base != nil {
+			// The basis' billing increment and minimum apply to catalog machine
+			// hours only; agreed free-text rates are billed exactly as typed.
+			hours = year.Base.BilledHours(hours)
+		}
 		main.Unit, main.Hours, main.Quantity, main.HourlyRate, main.UnitPrice = "h", hours, hours, rate, rate
 		main.Cost = money.Amount(hours, rate)
 		b.Mode, b.Unit, b.Quantity, b.UnitPrice = mode, "h", hours, rate
@@ -296,6 +313,20 @@ func (s *Server) parseBookingV2(r *http.Request, previous []models.BookingPerson
 		in := &store.LedgerBookingInput{YearID: year.ID, NeighborID: main.NeighborID, Date: date,
 			Incoming: direction == "in", Booking: b, IdempotencyKey: main.IdempotencyKey}
 		return bookingDraft{LedgerInput: in, BookedPeople: people}, "", nil
+	}
+	// The field the work was done on (a listed field of the neighbor or free
+	// text) is frozen on the own booking and its helper lines.
+	if main.FieldID, main.FieldLabel, msg, err = s.bookingFieldFromForm(r, main.NeighborID, creating); msg != "" || err != nil {
+		return bookingDraft{}, msg, err
+	}
+	// An on-site signature is captured only with a new own booking; it is
+	// stored with the main entry in the booking's transaction (online or replayed).
+	if creating {
+		signature, message := signatureFromForm(r)
+		if message != "" {
+			return bookingDraft{}, message, nil
+		}
+		main.Signature = signature
 	}
 	return bookingDraft{Entry: main, MachineIDs: machines, BookedPeople: people}, "", nil
 }
@@ -414,4 +445,24 @@ func (s *Server) handleBookingCreateV2(w http.ResponseWriter, r *http.Request) {
 		msg = "Personen zur bereits erfassten Buchung erg\u00e4nzt."
 	}
 	s.bookingSuccess(w, r, msg)
+}
+
+// maxMeterReading bounds an hour-meter reading (NUMERIC(10,2)).
+var maxMeterReading = decimal.NewFromInt(100_000_000)
+
+// meterFromForm reads the optional hour-meter readings of a tractor booking:
+// both or neither, non-negative, end not below start, at most two decimals.
+func meterFromForm(r *http.Request) (decimal.NullDecimal, decimal.NullDecimal, string) {
+	rawStart, rawEnd := trimmed(r, "meter_start"), trimmed(r, "meter_end")
+	if rawStart == "" && rawEnd == "" {
+		return decimal.NullDecimal{}, decimal.NullDecimal{}, ""
+	}
+	const msg = "Bitte Anfangs- und Endstand des Betriebsstundenzählers angeben (Ende nicht kleiner als Anfang, höchstens zwei Nachkommastellen) oder beide leer lassen."
+	start, okStart := parseGermanDecimalOK(rawStart)
+	end, okEnd := parseGermanDecimalOK(rawEnd)
+	if !okStart || !okEnd || start.IsNegative() || end.LessThan(start) || end.GreaterThanOrEqual(maxMeterReading) ||
+		!start.Equal(start.Round(2)) || !end.Equal(end.Round(2)) {
+		return decimal.NullDecimal{}, decimal.NullDecimal{}, msg
+	}
+	return decimal.NewNullDecimal(start), decimal.NewNullDecimal(end), ""
 }

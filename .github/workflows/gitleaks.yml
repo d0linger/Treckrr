@@ -13,6 +13,9 @@ permissions:
 
 jobs:
   gitleaks:
+    permissions:
+      contents: read
+      pull-requests: read
     name: Gitleaks (scan repo history for secrets)
     runs-on: ubuntu-latest
     steps:
@@ -25,3 +28,5 @@ jobs:
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_VERSION: "8.30.1"

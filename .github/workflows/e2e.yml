@@ -28,3 +28,7 @@ jobs:
       # Same disposable stack, seed, browser image and command as local.
       - name: Run isolated E2E
         run: node e2e/run.mjs
+      # Visual regression on its own fresh stack: the other specs write to the
+      # database, which would change what the pages show.
+      - name: Run visual regression
+        run: node e2e/run.mjs --visual

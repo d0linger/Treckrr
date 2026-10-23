@@ -15,7 +15,6 @@ import (
 	"github.com/d0linger/treckrr/internal/calc"
 	"github.com/d0linger/treckrr/internal/models"
 	"github.com/d0linger/treckrr/internal/money"
-	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/store"
 )
 
@@ -251,18 +250,39 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if raw := r.URL.Query().Get("machine"); raw != "" {
-		if machineID, err := strconv.ParseInt(raw, 10, 64); err == nil && machineID > 0 {
-			for _, machine := range machines {
-				if machine.ID == machineID {
-					bookingValues["mode"] = "manual"
-					view.SelectedMachineIDs = []int64{machineID}
-					view.BookingPrefilled = true
-					machineCopy := machine
-					view.PrefilledMachine = &machineCopy
-					view.Section = "booking"
-					break
-				}
+	// A scanned QR label (machine, tractor or rig) preselects that item in the
+	// existing form. Only items bookable in this year's basis qualify.
+	prefill := func(target scanTarget) {
+		view.BookingPrefilled = true
+		view.Prefilled = &target
+		view.Section = "booking"
+	}
+	query := r.URL.Query()
+	if machineID, err := strconv.ParseInt(query.Get("machine"), 10, 64); err == nil && machineID > 0 {
+		for _, machine := range machines {
+			if machine.ID == machineID {
+				bookingValues["mode"] = "manual"
+				view.SelectedMachineIDs = []int64{machineID}
+				prefill(machineTarget(machine))
+				break
+			}
+		}
+	} else if tractorID, err := strconv.ParseInt(query.Get("tractor"), 10, 64); err == nil && tractorID > 0 {
+		for _, tractor := range tractors {
+			if tractor.ID == tractorID {
+				bookingValues["mode"] = "manual"
+				bookingValues["tractor_id"] = strconv.FormatInt(tractorID, 10)
+				prefill(tractorTarget(tractor))
+				break
+			}
+		}
+	} else if gespannID, err := strconv.ParseInt(query.Get("gespann"), 10, 64); err == nil && gespannID > 0 {
+		for _, g := range gespanne {
+			if g.ID == gespannID {
+				bookingValues["mode"] = "gespann"
+				bookingValues["gespann_id"] = strconv.FormatInt(gespannID, 10)
+				prefill(scanTarget{Kind: "gespann", KindLabel: "Gespann", ID: g.ID, BaseID: g.BaseID, Name: g.Name, Active: true})
+				break
 			}
 		}
 	}
@@ -270,6 +290,24 @@ func (s *Server) handleNeighborDetail(w http.ResponseWriter, r *http.Request) {
 	view.BookingLocked = year.Completed()
 	view.BookingAction = "/entries"
 	view.bind(data)
+	if err := s.priceTermsData(r.Context(), data, neighbor.ID); err != nil {
+		s.serverError(w, "neighbor: price terms", err)
+		return
+	}
+	if err := s.fieldsData(r.Context(), data, neighbor.ID, year.ID); err != nil {
+		s.serverError(w, "neighbor: fields", err)
+		return
+	}
+	if data["MeterReadingsJSON"], err = s.meterReadingsAttr(r.Context(), base.ID); err != nil {
+		s.serverError(w, "neighbor: meter readings", err)
+		return
+	}
+	if view.Section == "overview" {
+		if err := s.statementShareData(w, r, data, neighbor.ID, year.ID); err != nil {
+			s.serverError(w, "neighbor: statement links", err)
+			return
+		}
+	}
 	if len(ledger) > 0 {
 		targets, err := s.store.LedgerTransferTargets(r.Context(), year.ID, neighbor.ID)
 		if err != nil {
@@ -359,6 +397,7 @@ func (s *Server) handleNeighborOverview(w http.ResponseWriter, r *http.Request) 
 	data["TotalRemaining"] = totalRemaining
 	data["Payments"] = payments
 	data["PaidTotal"] = paidTotal
+	data["MailEnabled"] = s.cfg.MailEnabled()
 	communication, err := s.store.NeighborCommunication(r.Context(), neighbor.ID, 200)
 	if err != nil {
 		s.serverError(w, "neighbor communication", err)
@@ -410,36 +449,8 @@ func (s *Server) handleNeighborOverviewPDF(w http.ResponseWriter, r *http.Reques
 		s.notFound(w, r)
 		return
 	}
-	statement, err := s.store.ReadNeighborStatement(r.Context(), id)
-	if err != nil {
-		s.serverError(w, "overview pdf: history", err)
-		return
-	}
-	history := statement.Years
 	company, _ := s.store.GetCompany(r.Context())
-	sd := pdf.StatementData{
-		IssuerName: company.Name, IssuerAddress: company.Address,
-		RecipientName: neighbor.Name, RecipientAddr: neighbor.Address, Today: time.Now(),
-	}
-	for _, h := range history {
-		sd.Rows = append(sd.Rows, pdf.StatementYear{
-			Year:       h.Year,
-			Cost:       h.Net,
-			Hours:      h.Hours,
-			PaidAmount: h.PaidAmount,
-			Remaining:  h.Remaining,
-			Paid:       h.Paid,
-			Credit:     h.Credit,
-		})
-		sd.TotalCost = sd.TotalCost.Add(h.Net)
-		sd.TotalHours = sd.TotalHours.Add(h.Hours)
-	}
-	payments := statement.Payments
-	for _, payment := range payments {
-		sd.Payments = append(sd.Payments, pdf.StatementPayment{Year: payment.Year, Date: payment.PaidOn,
-			Amount: payment.Amount, Reference: payment.InvoiceNumber, Reversal: payment.Reversal})
-	}
-	blob, err := pdf.RenderStatement(sd)
+	blob, err := s.statementPDF(r.Context(), neighbor, company, time.Now())
 	if err != nil {
 		s.serverError(w, "overview pdf", err)
 		return
@@ -660,6 +671,12 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r.URL.Path, err)
 		return
 	}
+	if err := s.applyNeighborPriceTerm(r.Context(), entry, machineIDs, neighborID); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	measuredPersonHours := entry.Hours
+	applyBillingRule(entry, machineIDs, year.Base)
 	entry.NeighborID = neighborID
 	entry.BillingYearID = year.ID
 	entry.IdempotencyKey = idempotencyKey
@@ -689,7 +706,7 @@ func (s *Server) handleEntryCreate(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		personHours, personRate := entry.Hours, person.HourlyRate
+		personHours, personRate := measuredPersonHours, person.HourlyRate
 		for _, field := range []struct {
 			key    string
 			target *decimal.Decimal
@@ -960,6 +977,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var catalogBaseID int64
+	var catalogBase *models.PriceBase
 	if msg == "" {
 		// Edits stay on the year's price basis too, but may keep a tractor or
 		// machine that was deactivated after it was booked (as V2 edits do).
@@ -968,7 +986,7 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 			s.serverError(w, r.URL.Path, err)
 			return
 		}
-		catalogBaseID = year.Base.ID
+		catalogBaseID, catalogBase = year.Base.ID, year.Base
 		if msg, err = s.checkBookingCatalog(r, entry, machineIDs, year.Base.ID, false); err != nil {
 			s.serverError(w, r.URL.Path, err)
 			return
@@ -982,6 +1000,19 @@ func (s *Server) handleEntryUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := s.applyResolvedFuelAdjustment(r.Context(), catalogBaseID, entry, machineIDs); err != nil {
 		s.serverError(w, r.URL.Path, err)
 		return
+	}
+	if err := s.applyNeighborPriceTerm(r.Context(), entry, machineIDs, existing.NeighborID); err != nil {
+		s.serverError(w, r.URL.Path, err)
+		return
+	}
+	// The older form has no field picker or meter readings; an edit through it
+	// keeps both as stored.
+	entry.FieldID, entry.FieldLabel = existing.FieldID, existing.FieldLabel
+	entry.MeterStart, entry.MeterEnd = existing.MeterStart, existing.MeterEnd
+	// A synced pair keeps one shared hour value for machine and helper; rounding
+	// it would bill the helper's hours by the machine increment as well.
+	if r.FormValue("sync_pair") != "1" {
+		applyBillingRule(entry, machineIDs, catalogBase)
 	}
 	// Validate the target column before saving either half. Otherwise a four-
 	// decimal labor quantity would save first, then round only machine hours.
@@ -1913,6 +1944,10 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 	if err != nil {
 		return 0, 0, err
 	}
+	terms, err := s.store.ListPriceTerms(r.Context(), neighborID)
+	if err != nil {
+		return 0, 0, err
+	}
 	// The same rig repeats across the rows of one submit — that is what quick
 	// entry is FOR — so each distinct Gespann is resolved once (5 queries) and
 	// reused, instead of 5 queries per row (a 100-row submit was ~500 SELECTs).
@@ -1963,6 +1998,9 @@ func (s *Server) createQuickRows(r *http.Request, year *models.BillingYear, neig
 		entry.Hours = row.hours
 		entry.Cost = calc.Cost(row.hours, entry.HourlyRate)
 		entry.Quantity, entry.UnitPrice = decimal.Decimal{}, decimal.Decimal{}
+		entry.Date = row.date
+		applyPriceTerm(&entry, rig.machineIDs, models.EffectivePriceTerm(terms, row.date))
+		applyBillingRule(&entry, rig.machineIDs, year.Base)
 		entry.Date = row.date
 		entry.NeighborID = neighborID
 		entry.BillingYearID = year.ID

@@ -60,6 +60,10 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
 	const req = event.request;
+	if (req.method === "POST" && new URL(req.url).pathname === "/share-target") {
+		event.respondWith(receiveShare(req));
+		return;
+	}
 	if (req.method !== "GET") return; // never cache mutations
 
 	const url = new URL(req.url);
@@ -97,6 +101,47 @@ self.addEventListener("fetch", (event) => {
 		);
 	}
 });
+
+// receiveShare handles the Web Share Target: up to ten shared images are parked
+// in IndexedDB on this device and the picker page opens. Nothing reaches the
+// server here; the picker uploads through the normal booking photo route.
+async function receiveShare(req) {
+	try {
+		const form = await req.formData();
+		const incoming = form.getAll("photos");
+		if (!incoming.length) return Response.redirect("/share-target?share-error=empty", 303);
+		if (incoming.length > 10) return Response.redirect("/share-target?share-error=too-many", 303);
+		if (incoming.some((f) => !f || typeof f !== "object" || !/^(image\/jpeg|image\/png|image\/gif)$/.test(f.type))) {
+			return Response.redirect("/share-target?share-error=unsupported", 303);
+		}
+		const files = incoming.map((f) => ({ name: f.name, type: f.type, blob: f }));
+		const record = { files, at: Date.now(), id: crypto.randomUUID() };
+		const pending = await new Promise((resolve, reject) => {
+			const open = indexedDB.open("treckrr-share", 1);
+			open.onupgradeneeded = () => open.result.createObjectStore("pending");
+			open.onerror = () => reject(open.error);
+			open.onsuccess = () => {
+				const db = open.result;
+				const tx = db.transaction("pending", "readwrite");
+				const store = tx.objectStore("pending");
+				let occupied = false;
+				// Keep the check and write together: simultaneous shares must not
+				// replace photos that have not been attached or discarded yet.
+				const current = store.get("shared");
+				current.onsuccess = () => {
+					occupied = !!(current.result && Array.isArray(current.result.files) && current.result.files.length);
+					if (!occupied) store.put(record, "shared");
+				};
+				tx.oncomplete = () => { db.close(); resolve(occupied); };
+				tx.onerror = () => { db.close(); reject(tx.error); };
+				tx.onabort = () => { db.close(); reject(tx.error); };
+			};
+		});
+		return Response.redirect(pending ? "/share-target?share-error=pending" : "/share-target", 303);
+	} catch (e) {
+		return Response.redirect("/share-target?share-error=storage", 303);
+	}
+}
 
 // OFFLINE_FALLBACK is the SW's own tiny branded page, used only when the cached
 // /offline shell is unavailable. Kept inline so it needs no network or cache.

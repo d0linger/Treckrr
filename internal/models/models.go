@@ -70,6 +70,9 @@ type RecurTemplate struct {
 	HourlyRate          decimal.Decimal `json:"hourly_rate"`
 	FuelAdjustmentLabel string          `json:"fuel_adjustment_label,omitempty"`
 	FuelAdjustmentPerH  decimal.Decimal `json:"fuel_adjustment_per_h,omitempty"`
+	PriceTermLabel      string          `json:"price_term_label,omitempty"`
+	PriceTermPct        decimal.Decimal `json:"price_term_pct,omitempty"`
+	PriceTermPerH       decimal.Decimal `json:"price_term_per_h,omitempty"`
 	Cost                decimal.Decimal `json:"cost"`
 	GespannID           *int64          `json:"gespann_id,omitempty"`
 	TractorID           *int64          `json:"tractor_id,omitempty"`
@@ -194,6 +197,27 @@ type PriceBase struct {
 	Name    string
 	Locked  bool
 	Created time.Time
+	// BillingIncrementH rounds billed machine hours UP to this step (0 = off);
+	// MinimumH is the least billed per catalog machine booking (0 = off).
+	BillingIncrementH decimal.Decimal
+	MinimumH          decimal.Decimal
+}
+
+// HasBillingRule reports whether the basis rounds or floors machine hours.
+func (b PriceBase) HasBillingRule() bool {
+	return b.BillingIncrementH.IsPositive() || b.MinimumH.IsPositive()
+}
+
+// BilledHours applies the basis' increment (rounding up) and minimum to
+// measured machine hours. Without a rule the hours stay unchanged.
+func (b PriceBase) BilledHours(hours decimal.Decimal) decimal.Decimal {
+	if b.BillingIncrementH.IsPositive() {
+		hours = hours.Div(b.BillingIncrementH).Ceil().Mul(b.BillingIncrementH)
+	}
+	if b.MinimumH.IsPositive() && hours.LessThan(b.MinimumH) {
+		hours = b.MinimumH
+	}
+	return hours
 }
 
 // Billing year workflow statuses.
@@ -351,7 +375,13 @@ type Entry struct {
 	// operating-cost addition used when a catalog equipment rate was booked.
 	FuelAdjustmentLabel string
 	FuelAdjustmentPerH  decimal.Decimal
-	Cost                decimal.Decimal
+	// PriceTermLabel, PriceTermPct and PriceTermPerH snapshot the neighbor's
+	// standing price term (if any) applied to a catalog machine rate: HourlyRate
+	// is already discounted, PriceTermPerH is what the term took off per hour.
+	PriceTermLabel string
+	PriceTermPct   decimal.Decimal
+	PriceTermPerH  decimal.Decimal
+	Cost           decimal.Decimal
 	// Unit/Quantity/UnitPrice generalize billing beyond hours: cost = quantity ×
 	// unit price. For hour bookings Unit is "h", Quantity == Hours and UnitPrice
 	// == HourlyRate. Other units: "ha", "Ballen", "m3", "Fuhre", "t" (or custom).
@@ -373,6 +403,17 @@ type Entry struct {
 	PersonID *int64
 	// PersonName preserves the booked name even without a master-data link.
 	PersonName string
+	// FieldID and FieldLabel name the neighbor's field the work was done on:
+	// a listed field (FieldID) or free text, with the name frozen in FieldLabel.
+	FieldID    *int64
+	FieldLabel string
+	// MeterStart and MeterEnd are the tractor's hour-meter readings for an own
+	// booking (both or neither). Evidence only: Hours stays what is billed.
+	MeterStart decimal.NullDecimal
+	MeterEnd   decimal.NullDecimal
+	// Signature is an on-site signature captured with a new booking; the store
+	// writes it in the booking's transaction. Never loaded with the entry.
+	Signature *EntrySignature `json:"-"`
 	// LinkedEntryID connects a companion booking to the machine booking it was
 	// created with (person booked alongside the Gespann): the Mannstunden entry
 	// points at the machine entry. Nil for everything else. The link is

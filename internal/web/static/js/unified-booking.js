@@ -11,7 +11,7 @@
 	var rows = form.querySelector("[data-person-rows]"), details = form.querySelector("[data-person-details]");
 	var preview = form.querySelector("[data-booking-preview]");
 	var locked = form.hasAttribute("data-booking-locked");
-	var drafts = Object.create(null), lastKey = "", machineCost = null, machineRate = null, machineAdjustment = null, serial = 0;
+	var drafts = Object.create(null), lastKey = "", machineCost = null, machineRate = null, machineAdjustment = null, machineHours = null, machineTerm = null, serial = 0;
 	var user = document.querySelector('meta[name="user-id"]');
 	var storagePrefix = "treckrr:booking-defaults:v3:" + (user ? user.content : "anonymous") + ":" + value("year_id") + ":" + value("neighbor_id") + ":";
 	var remembered = ["mode", "gespann_id", "tractor_id", "load_level_id", "machine_ids", "unit", "unit_custom", "task_label"];
@@ -83,7 +83,7 @@
 		try { localStorage.setItem(storagePrefix + key(), JSON.stringify(saved)); } catch (_) { /* Private storage is optional. */ }
 	}
 	function selectDraft() {
-		if (lastKey && lastKey !== key()) { drafts[lastKey] = saveDraft(); restoreDraft(drafts[key()]); if (!drafts[key()]) restoreDefaults(); machineCost = null; machineRate = null; machineAdjustment = null; }
+		if (lastKey && lastKey !== key()) { drafts[lastKey] = saveDraft(); restoreDraft(drafts[key()]); if (!drafts[key()]) restoreDefaults(); machineCost = null; machineRate = null; machineAdjustment = null; machineHours = null; machineTerm = null; }
 		lastKey = key();
 		if (kind.value === "quantity") { if (!unit.value || unit.value === "h") unit.value = "ha"; } else unit.value = "h";
 		identifyRows(); refreshVisibility(); updatePreview();
@@ -106,7 +106,7 @@
 		field("task_label").required = (kind.value === "quantity" || kind.value === "fixed") && !locked;
 		form.querySelector("[data-booking-task-help]").textContent = kind.value === "equipment" ? "Optional – ohne Eingabe wird das gewählte Gespann oder Gefährt übernommen." : kind.value === "labor" ? "Optional – ohne Eingabe wird die gewählte Person übernommen." : "Bitte die Leistung oder Kostenposition beschreiben.";
 		form.querySelector("[data-booking-hours-label]").textContent = kind.value === "labor" ? "Standard-Mannstunden (optional)" : "Stunden";
-		form.querySelector("[data-booking-catalog-rate]").hidden = !catalogEquipment();
+		form.querySelectorAll("[data-booking-catalog-rate]").forEach(function (node) { node.hidden = !catalogEquipment(); });
 		form.querySelector("[data-person-heading]").textContent = kind.value === "labor" ? "Personen und Mannstunden" : "Personen mitbuchen";
 		form.querySelector("[data-person-help]").textContent = (kind.value === "equipment" || kind.value === "labor" ? "Leere Mannstunden übernehmen die Stunden oben. " : "Mannstunden bitte je Person eingeben. ") + "Der Stammsatz wird übernommen und kann je Person geändert werden.";
 		var own = direction() === "out", legacyFixed = own && kind.value === "fixed" && value("booking_form_version") !== "3";
@@ -137,13 +137,13 @@
 		form.querySelectorAll("[data-unit-label]").forEach(function (label) { label.textContent = unit.value === "__custom" ? value("unit_custom") || "Einheit" : unit.value; });
 	}
 	/** Mirrors per-person rounding without trusting a client-computed total on save. */
-	function updatePreview(cost, rate, adjustment) {
-		if (arguments.length) { machineCost = cost; machineRate = rate; machineAdjustment = adjustment || null; }
+	function updatePreview(cost, rate, adjustment, billedHours, term) {
+		if (arguments.length) { machineCost = cost; machineRate = rate; machineAdjustment = adjustment || null; machineHours = billedHours || null; machineTerm = term || null; }
 		var lines = [], total = 0, valid = true;
 		var add = function (label, qty, price) { if (!positive(qty) || !positive(price)) { valid = false; return; } var amount = round(qty * price); total = round(total + amount); lines.push({ label: label, qty: qty, price: price, amount: amount }); };
 		if (kind.value === "fixed") add("Material / Pauschale", 1, number("amount"));
 		else if (kind.value === "quantity") add("Mengenleistung · " + (unit.value === "__custom" ? value("unit_custom") : unit.value), number("quantity"), number("unit_price"));
-		else if (kind.value === "equipment") { if (catalogEquipment()) { if (positive(machineCost) && positive(machineRate)) add("Maschinenleistung" + (machineAdjustment && positive(machineAdjustment.amount) ? " inkl. " + machineAdjustment.label + " (+" + fmt(machineAdjustment.amount) + "/h)" : ""), number("hours"), machineRate); else valid = false; } else add(value("partner_label") || "Maschinenleistung", number("hours"), number("partner_rate")); }
+		else if (kind.value === "equipment") { if (catalogEquipment()) { if (positive(machineCost) && positive(machineRate)) add("Maschinenleistung" + (machineAdjustment && positive(machineAdjustment.amount) ? " inkl. " + machineAdjustment.label + " (+" + fmt(machineAdjustment.amount) + "/h)" : "") + (machineTerm ? " abzgl. " + machineTerm.pct.toLocaleString("de-DE") + " % " + machineTerm.label : ""), positive(machineHours) ? machineHours : number("hours"), machineRate); else valid = false; } else add(value("partner_label") || "Maschinenleistung", number("hours"), number("partner_rate")); }
 		var count = 0;
 		activeRows().forEach(function (row) {
 			var selected = rowField(row, "person_id"); if (selected.disabled || rowField(row, "person_state").value !== "active" || !populated(row)) return;

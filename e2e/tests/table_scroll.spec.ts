@@ -41,8 +41,8 @@ test("overflow-only controls scroll real tables and preserve their content", asy
   await openFixture(page);
   const table = page.locator("#wide");
   const before = await table.innerText();
-  const left = page.getByRole("button", { name: "Tabelle nach links scrollen" });
-  const right = page.getByRole("button", { name: "Tabelle nach rechts scrollen" });
+  const left = page.getByRole("button", { name: "Rechnungspositionen: nach links scrollen" });
+  const right = page.getByRole("button", { name: "Rechnungspositionen: nach rechts scrollen" });
   await expect(right).toHaveCount(1);
   await expect(right).toBeVisible();
   await expect(left).toBeDisabled();
@@ -62,7 +62,7 @@ test("overflow-only controls scroll real tables and preserve their content", asy
   await page.keyboard.press("ArrowRight");
   await expect.poll(() => table.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
   await expect(page.locator("#narrow")).toHaveAttribute("role", "region");
-  await expect(page.locator("#narrow")).toHaveAttribute("tabindex", "0");
+  await expect(page.locator("#narrow")).not.toHaveAttribute("tabindex");
   expect(errors).toEqual([]);
 });
 
@@ -71,12 +71,17 @@ test("overflow hints react to disclosure, resizing and print without duplicate d
   await page.getByText("Weitere Tabelle", { exact: true }).click();
   await expect(page.locator(".table-scroll-tools:visible")).toHaveCount(2);
   await expect(page.locator("#disclosed")).toHaveAttribute("aria-describedby", "disclosed-hint");
+  await expect(page.locator("#disclosed")).toHaveAttribute("tabindex", "0");
+  const labels = await page.getByRole("button", { name: /: nach rechts scrollen/ }).evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-label")));
+  expect(new Set(labels).size).toBe(labels.length);
   await page.setViewportSize({ width: 1440, height: 900 });
   // The invoice card has a max-width; explicitly widen it for the no-overflow state.
   await page.locator("#beleg").evaluate(node => { node.style.maxWidth = "none"; });
   await expect(page.locator(".table-scroll-tools:visible")).toHaveCount(0);
   await expect(page.locator("#wide")).toHaveAttribute("aria-describedby", "context");
   await expect(page.locator("#disclosed")).not.toHaveAttribute("aria-describedby");
+  await expect(page.locator("#disclosed")).not.toHaveAttribute("tabindex");
+  await expect(page.locator("#wide")).toHaveAttribute("tabindex", "0"); // authored focusability survives
   await page.setViewportSize({ width: 375, height: 812 });
   await expect(page.locator(".table-scroll-tools:visible")).toHaveCount(2);
   await expect(page.locator("#wide")).toHaveAttribute("aria-describedby", "context wide-hint");

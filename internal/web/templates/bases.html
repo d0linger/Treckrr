@@ -1,7 +1,7 @@
 {{define "content"}}
 <section class="stack">
 	{{template "readonly-notice" .}}
-	<p class="muted">Eine <strong>Bemessungsgrundlage</strong> erscheint nur alle paar Jahre neu
+	<p class="muted">Eine <strong>Bemessungsgrundlage</strong> {{template "help-link" "bemessungsgrundlage"}} erscheint nur alle paar Jahre neu
 		und wird von mehreren Abrechnungsjahren genutzt. Eine neue Grundlage kann die Werte
 		einer bestehenden übernehmen — die Ausgangsgrundlage bleibt unverändert.
 		Das Jahr ist das „gültig ab"-Jahr. Gesperrte Grundlagen sind schreibgeschützt.</p>
@@ -9,13 +9,14 @@
 	<div class="list">
 		{{range .BaseViews}}
 		{{$b := .Base}}
-		<div class="card stack stack--tight">
+		<div class="card stack stack--tight" id="grundlage-{{$b.ID}}">
 			<div class="list__row list__row--plain">
 				<div class="list__main">
 					<span class="list__title">{{$b.Year}} — {{$b.Name}}</span>
 					<span class="list__sub">
 						{{if $b.Locked}}{{template "ic-lock"}} gesperrt{{else}}{{template "ic-edit"}} bearbeitbar{{end}}
 						{{if .InUse}} · in Verwendung{{else}} · nicht verwendet{{end}}
+						{{if $b.HasBillingRule}} · {{if $b.BillingIncrementH.IsPositive}}Takt {{num $b.BillingIncrementH}} h{{end}}{{if and $b.BillingIncrementH.IsPositive $b.MinimumH.IsPositive}}, {{end}}{{if $b.MinimumH.IsPositive}}mind. {{num $b.MinimumH}} h{{end}}{{end}}
 					</span>
 				</div>
 			</div>
@@ -24,9 +25,11 @@
 			<div class="btnrow">
 				<a class="btn btn--ghost btn--sm" href="/prices?base={{$b.ID}}">Kosten</a>
 				<a class="btn btn--ghost btn--sm" href="/gespanne?base={{$b.ID}}">Gespanne</a>
+				<a class="btn btn--ghost btn--sm" href="/bases/{{$b.ID}}/export.csv" download>Als CSV</a>
+				<a class="btn btn--ghost btn--sm" href="/bases/{{$b.ID}}/preisblatt.pdf">Preisblatt (PDF)</a>
 			</div>
 			{{if $.User.CanWrite}}<details class="disclosure disclosure--plain">
-				<summary>Umbenennen / Sperren / Löschen</summary>
+				<summary>Umbenennen / Abrechnung / Sperren / Löschen</summary>
 				<form method="post" action="/bases/{{$b.ID}}/update" class="form">
 					<div class="form__grid">
 						<label class="field"><span>Name</span>
@@ -36,6 +39,21 @@
 					</div>
 					<div class="btnrow"><button class="btn btn--primary btn--sm" type="submit">Speichern</button></div>
 				</form>
+				{{if not $b.Locked}}
+				<form method="post" action="/bases/{{$b.ID}}/billing-rule" class="form" data-billing-rule-form>
+					<p class="muted small">Maschinenstunden aus dem Katalog im Takt aufrunden und eine Mindestzeit je Einsatz verrechnen {{template "help-link" "abrechnungstakt"}}.
+						Gilt für neue und bearbeitete Buchungen; bestehende Buchungen bleiben unverändert. Leer oder 0 = aus.</p>
+					<div class="form__grid">
+						<label class="field"><span>Abrechnungstakt (h)</span>
+							<input class="input" type="number" name="billing_increment_h" min="0" max="24" step="0.001" inputmode="decimal"
+								value="{{if $b.BillingIncrementH.IsPositive}}{{numInput $b.BillingIncrementH}}{{end}}" placeholder="z. B. 0,25"></label>
+						<label class="field"><span>Mindestzeit je Einsatz (h)</span>
+							<input class="input" type="number" name="minimum_h" min="0" max="24" step="0.001" inputmode="decimal"
+								value="{{if $b.MinimumH.IsPositive}}{{numInput $b.MinimumH}}{{end}}" placeholder="z. B. 1"></label>
+					</div>
+					<div class="btnrow"><button class="btn btn--primary btn--sm" type="submit">Abrechnungsregel speichern</button></div>
+				</form>
+				{{end}}
 				<div class="btnrow">
 					{{if $b.Locked}}
 					<form method="post" action="/bases/{{$b.ID}}/unlock">
@@ -85,6 +103,39 @@
 					<input class="input" name="name" placeholder="Bemessungsgrundlage"></label>
 			</details>
 			<button class="btn btn--primary" type="submit">Anlegen</button>
+		</form>
+	</details>
+	{{if .Bases}}<details class="card disclosure" id="anpassen">
+		<summary>Neue Grundlage mit Preisanpassung (%)</summary>
+		<p class="muted small">Übernimmt eine bestehende Grundlage mit allen Traktoren, Maschinen und Gespannen und erhöht oder senkt die Kosten je PS·h und je m·h um einen Prozentsatz. Vor dem Anlegen zeigt eine Vorschau jede geänderte Position; die Ausgangsgrundlage bleibt unverändert.</p>
+		<form method="post" action="/bases/uplift/preview" class="form">
+			<div class="form__grid">
+				<label class="field"><span>Ausgangsgrundlage</span>
+					<select class="select" name="source_base_id" required>{{range .Bases}}<option value="{{.ID}}">{{.Year}} — {{.Name}}</option>{{end}}</select></label>
+				<label class="field"><span>Gültig ab (Jahr)</span><input class="input" type="number" name="year" min="1900" max="3000" value="{{if .NextYear}}{{.NextYear}}{{end}}" required></label>
+				<label class="field"><span>Belastungsstufen (€/PS·h) in %</span><input class="input" name="pct_load" inputmode="decimal" placeholder="z. B. 4,5"></label>
+				<label class="field"><span>Maschinen (€/m·h) in %</span><input class="input" name="pct_machine" inputmode="decimal" placeholder="z. B. 4,5"></label>
+				<label class="field"><span>Runden auf</span><select class="select" name="round"><option value="0.01">0,01 €</option><option value="0.0001">0,0001 € (exakt)</option><option value="0.05">0,05 €</option><option value="0.1">0,10 €</option></select></label>
+				<label class="field"><span>Name <em>(optional)</em></span><input class="input" name="name" maxlength="100" placeholder="Bemessungsgrundlage"></label>
+			</div>
+			<button class="btn btn--ghost" type="submit">Vorschau anzeigen</button>
+		</form>
+	</details>{{end}}
+	<details class="card disclosure" id="preisliste">
+		<summary>Neue Grundlage aus Preisliste (CSV)</summary>
+		<p class="muted small">Eine bestehende Grundlage „Als CSV“ herunterladen, die Werte in der Tabellenkalkulation anpassen und hier hochladen. Vor dem Anlegen zeigt eine Vorschau jede neue, geänderte und entfallene Position. Bestehende Grundlagen und Buchungen bleiben unverändert.</p>
+		<form method="post" action="/bases/import/preview" enctype="multipart/form-data" class="form">
+			<div class="form__grid">
+				<label class="field"><span>Preisliste (CSV, Semikolon)</span><input class="input" type="file" name="file" accept=".csv,text/csv" required></label>
+				<label class="field"><span>Gültig ab (Jahr)</span><input class="input" type="number" name="year" min="1900" max="3000" value="{{if .NextYear}}{{.NextYear}}{{end}}" required></label>
+				<label class="field"><span>Vergleichen mit (Gespanne übernehmen)</span>
+					<select class="select" name="source_base_id">
+						<option value="">— ohne Vergleich —</option>
+						{{range .Bases}}<option value="{{.ID}}">{{.Year}} — {{.Name}}</option>{{end}}
+					</select></label>
+				<label class="field"><span>Name <em>(optional)</em></span><input class="input" name="name" maxlength="100" placeholder="Bemessungsgrundlage"></label>
+			</div>
+			<button class="btn btn--ghost" type="submit">Vorschau anzeigen</button>
 		</form>
 	</details>{{end}}
 </section>

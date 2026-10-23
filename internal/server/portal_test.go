@@ -16,6 +16,26 @@ import (
 	"github.com/d0linger/treckrr/internal/store"
 )
 
+func TestFeedbackResult(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, input, want string
+	}{
+		{name: "confirmed", input: "confirmed", want: "confirmed"},
+		{name: "disputed", input: "disputed", want: "disputed"},
+		{name: "unknown", input: "invalid"},
+		{name: "oversized", input: strings.Repeat("x", 1000)},
+		{name: "empty"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/?feedback="+url.QueryEscape(tc.input), nil)
+			if got := feedbackResult(r); got != tc.want {
+				t.Fatalf("feedback = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // portalValidationDB permits only the limiter and share lookups. Invoice reads
 // return no rows, so the tests can distinguish validation from persistence.
 type portalValidationDB struct {

@@ -25,6 +25,7 @@ func TestDunningYearParam(t *testing.T) {
 		{name: "text", raw: "year"},
 		{name: "decimal", raw: "1.5"},
 		{name: "overflow", raw: "9223372036854775808"},
+		{name: "oversized", raw: strings.Repeat("0", 50) + "1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "/?year="+url.QueryEscape(tc.raw), nil)

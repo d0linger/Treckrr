@@ -18,6 +18,11 @@
 		}
 		function txt(el, sel) {
 			var n = el.querySelector(sel);
+			if (n && sel === ".beleg__t") {
+				return Array.from(n.childNodes).map(function (part) {
+					return part.textContent.replace(/\s+/g, " ").trim();
+				}).filter(Boolean).join(" · ");
+			}
 			return n ? n.textContent.replace(/\s+/g, " ").trim() : "";
 		}
 

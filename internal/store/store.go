@@ -88,12 +88,13 @@ func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 // ---- Users ---------------------------------------------------------------
 
 // userCols is the shared column list for scanning a models.User.
-const userCols = `id, username, email, role, is_admin, must_change_password, totp_enabled, created_at, disabled`
+const userCols = `id, username, email, role, is_admin, must_change_password, totp_enabled, created_at, disabled,
+	EXISTS(SELECT 1 FROM webauthn_credentials wc WHERE wc.user_id = users.id)`
 
 func scanUser(sc scanner) (models.User, error) {
 	var u models.User
 	if err := sc.Scan(&u.ID, &u.Username, &u.Email, &u.Role, &u.IsAdmin,
-		&u.MustChangePassword, &u.TotpEnabled, &u.CreatedAt, &u.Disabled); err != nil {
+		&u.MustChangePassword, &u.TotpEnabled, &u.CreatedAt, &u.Disabled, &u.HasPasskey); err != nil {
 		return u, err
 	}
 	// Role is authoritative; keep the legacy IsAdmin flag in sync.
@@ -294,7 +295,7 @@ func (s *Store) AuthenticateUser(ctx context.Context, username, password string)
 	err := s.db.QueryRowContext(ctx,
 		`SELECT `+userCols+`, password_hash FROM users WHERE username=$1 AND NOT disabled`, username).
 		Scan(&u.ID, &u.Username, &u.Email, &u.Role, &u.IsAdmin, &u.MustChangePassword,
-			&u.TotpEnabled, &u.CreatedAt, &u.Disabled, &hash)
+			&u.TotpEnabled, &u.CreatedAt, &u.Disabled, &u.HasPasskey, &hash)
 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
@@ -528,7 +529,8 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Durati
 func (s *Store) UserFromSession(ctx context.Context, token string, slideTTL, absoluteTTL time.Duration) (*models.User, error) {
 	th := HashToken(token)
 	u, err := scanUser(s.db.QueryRowContext(ctx,
-		`SELECT u.id, u.username, u.email, u.role, u.is_admin, u.must_change_password, u.totp_enabled, u.created_at, u.disabled
+		`SELECT u.id, u.username, u.email, u.role, u.is_admin, u.must_change_password, u.totp_enabled, u.created_at, u.disabled,
+		        EXISTS(SELECT 1 FROM webauthn_credentials wc WHERE wc.user_id = u.id)
 		   FROM sessions s JOIN users u ON u.id = s.user_id
 		  WHERE s.token=$1 AND s.expires_at > now() AND NOT u.disabled
 		    AND s.created_at > now() - make_interval(secs => $2)`, th, absoluteTTL.Seconds()))

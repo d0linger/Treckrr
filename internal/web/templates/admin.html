@@ -11,6 +11,8 @@
 				<span class="list__title">{{.Username}}
 					<span class="chip {{if .IsAdmin}}chip--accent{{end}}">{{.RoleLabel}}</span>
 					{{if .TotpEnabled}}<span class="chip">2FA</span>{{end}}
+					{{if .HasPasskey}}<span class="chip">Passkey</span>{{end}}
+					{{if and ($.Policy.Requires .) (not .HasSecondFactor)}}<span class="chip chip--warn">2. Faktor fehlt</span>{{end}}
 					{{if .Disabled}}<span class="chip">Deaktiviert</span>{{end}}
 				</span>
 				<span class="list__sub muted">seit {{date .CreatedAt}}</span>
@@ -55,7 +57,7 @@
 			<div class="dangerzone">
 				<div class="dangerzone__lbl">{{template "ic-warn"}} Gefahrenzone</div>
 				<div class="btnrow">
-					{{if .TotpEnabled}}
+					{{if .HasSecondFactor}}
 					<form method="post" action="/admin/users/{{.ID}}/reset-2fa"
 						data-confirm-danger data-confirm="2FA für {{.Username}} zurücksetzen? Auch alle Passkeys werden entfernt; der Benutzer muss beides neu einrichten.">
 						<button class="btn btn--ghost btn--sm" type="submit">2FA zurücksetzen</button>
@@ -73,6 +75,18 @@
 		</details>
 		{{end}}
 	</div>
+
+	<details class="card disclosure" id="anmelderichtlinie">
+		<summary>Anmelderichtlinie{{if or .Policy.RequireAdmin .Policy.RequireEditor}} <span class="chip">2FA vorgeschrieben</span>{{end}}</summary>
+		<form method="post" action="/admin/security-policy" class="form">
+			<label class="check"><input type="checkbox" name="require_admin" value="1" {{if .Policy.RequireAdmin}}checked{{end}}><span>Administratoren brauchen einen zweiten Faktor (Passkey oder Authenticator-App)</span></label>
+			<label class="check"><input type="checkbox" name="require_editor" value="1" {{if .Policy.RequireEditor}}checked{{end}}><span>Bearbeiter ebenfalls</span></label>
+			<label class="field"><span>Übergangsfrist für Konten ohne zweiten Faktor</span>
+				<select class="select" name="grace_days">{{range .GraceOptions}}<option value="{{.}}" {{if eq . $.Policy.GraceDays}}selected{{end}}>{{if eq . 0}}keine{{else}}{{.}} Tage{{end}}</option>{{end}}</select></label>
+			<p class="muted small">Betroffene Konten sehen bis zum Fristende einen Hinweis und erreichen danach nur noch ihre Kontoeinstellungen, bis ein zweiter Faktor eingerichtet ist. Nur-Lese-Konten sind ausgenommen. Verliert jemand den zweiten Faktor, setzt ein Administrator ihn zurück; das Konto richtet ihn nach der nächsten Anmeldung neu ein.</p>
+			<button class="btn btn--primary btn--sm" type="submit">Richtlinie speichern</button>
+		</form>
+	</details>
 
 	<details class="card disclosure">
 		<summary>{{template "ic-plus"}} Benutzer anlegen</summary>

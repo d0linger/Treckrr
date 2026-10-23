@@ -13,7 +13,7 @@
 # pinning without that discipline freezes a known-vulnerable base, which is worse
 # than following the tag. The weekly image scan in sbom.yml is the backstop that
 # makes a stale pin visible.
-FROM golang:1.27.2-alpine3.24@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
+FROM golang:1.27.3-alpine3.24@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS build
 
 WORKDIR /src
 
@@ -32,8 +32,13 @@ RUN go mod download && go mod verify
 COPY . .
 
 # Build a static binary. CGO is off so the resulting binary is self-contained.
+# TRECKRR_VERSION names the release (the publish workflow passes the git tag);
+# the system page and the optional update check compare against it.
+ARG TRECKRR_VERSION=dev
 ENV CGO_ENABLED=0 GOOS=linux
-RUN go build -trimpath -mod=readonly -ldflags="-s -w" -o /out/treckrr ./cmd/treckrr
+RUN go build -trimpath -mod=readonly \
+    -ldflags="-s -w -X github.com/d0linger/treckrr/internal/server.releaseVersion=${TRECKRR_VERSION}" \
+    -o /out/treckrr ./cmd/treckrr
 
 # ---------- Runtime stage ----------
 FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b

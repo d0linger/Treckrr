@@ -24,6 +24,7 @@ import (
 	"github.com/d0linger/treckrr/internal/mail"
 	"github.com/d0linger/treckrr/internal/metrics"
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/pdf"
 	"github.com/d0linger/treckrr/internal/server"
 	"github.com/d0linger/treckrr/internal/store"
 )
@@ -136,6 +137,10 @@ func run() error {
 	// TRUST_PROXY=true (or COOKIE_SECURE=true).
 	if !cfg.CookieSecure && !cfg.TrustProxy {
 		slog.Warn("auth cookies are not Secure and no trusted proxy is set — use HTTPS behind a TLS proxy (TRUST_PROXY=true) or COOKIE_SECURE=true in production")
+	}
+	if cfg.DemoMode {
+		slog.Warn("DEMO_MODE: practice instance — e-mail, S3 off-box backups and restore rehearsals are disabled; PDFs carry a watermark")
+		pdf.SetWatermark(config.DemoWatermark)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -362,6 +367,8 @@ func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store, srv *se
 					}
 				}
 			})
+			// Optional daily release lookup (UPDATE_CHECK); a no-op otherwise.
+			maintenanceTask(taskCtx, 30*time.Second, srv.CheckForUpdate)
 			// Snapshot actionable states into the per-user notification center.
 			// Stable event keys make every 15-minute refresh idempotent.
 			maintenanceTask(taskCtx, time.Minute, func(bg context.Context) {
@@ -420,6 +427,14 @@ func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store, srv *se
 					slog.Error("purge sent mail", "err", err)
 				}
 			})
+			// Seal new audit rows into the hash chain before the purge, so the
+			// purge only ever removes sealed prefixes (0091).
+			maintenanceTask(taskCtx, time.Minute, func(bg context.Context) {
+				if _, err := st.SealAuditLog(bg); err != nil {
+					metrics.Inc(metrics.MaintenanceFails)
+					slog.Error("seal audit log", "err", err)
+				}
+			})
 			maintenanceTask(taskCtx, time.Minute, func(bg context.Context) {
 				shortCutoff, longCutoff := auditRetentionCutoffs(time.Now())
 				if n, err := st.PurgeAuditLog(bg, shortCutoff, longCutoff); err != nil {
@@ -428,6 +443,27 @@ func purgeLoop(ctx context.Context, cfg *config.Config, st *store.Store, srv *se
 				} else if n > 0 {
 					metrics.Add(metrics.AuditPurged, n)
 					slog.Info("audit log purged", "count", n)
+				}
+			})
+			// Nightly-ish: recompute the whole chain once it is a day old. A
+			// failure raises an admin notification on the next refresh.
+			maintenanceTask(taskCtx, 5*time.Minute, func(bg context.Context) {
+				due, err := st.AuditChainVerifyDue(bg, 24*time.Hour)
+				if err != nil {
+					metrics.Inc(metrics.MaintenanceFails)
+					slog.Error("check audit chain verification schedule", "err", err)
+					return
+				}
+				if !due {
+					return
+				}
+				if report, err := st.VerifyAuditChain(bg); err != nil {
+					metrics.Inc(metrics.MaintenanceFails)
+					slog.Error("verify audit chain", "err", err)
+				} else if !report.OK() {
+					slog.Error("audit chain verification failed", "problems", report.Problems)
+				} else {
+					slog.Info("audit chain verified", "rows", report.Checked)
 				}
 			})
 		})

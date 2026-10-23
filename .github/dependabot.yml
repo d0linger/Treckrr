@@ -56,7 +56,7 @@ updates:
       timezone: "Europe/Vienna"
     labels:
       - "dependencies"
-      - "e2e"
+      - "javascript"
     commit-message:
       prefix: "e2e"
     groups:
@@ -90,6 +90,6 @@ updates:
       day: "monday"
     labels:
       - "dependencies"
-      - "e2e"
+      - "docker"
     commit-message:
       prefix: "e2e"

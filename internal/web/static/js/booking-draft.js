@@ -20,7 +20,7 @@
 	var saved = null, dirty = false, restoring = false, queued = false, conflicted = false, lastStored = null;
 	var paused = [];
 	function resumeEditing() { paused.forEach(function (el) { el.inert = false; }); paused = []; }
-	var excluded = ["csrf_token", "year_id", "neighbor_id", "booking_form_version", "continue_booking", "copy_mode"];
+	var excluded = ["csrf_token", "year_id", "neighbor_id", "booking_form_version", "continue_booking", "copy_mode", "signature_name", "signature_png", "signature_at"];
 	function controls() {
 		return Array.from(form.querySelectorAll("input[name], select[name], textarea[name]")).filter(function (el) {
 			return excluded.indexOf(el.name) < 0 && el.type !== "submit" && el.type !== "file" && !el.closest("[data-person-row][hidden]");

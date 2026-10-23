@@ -21,3 +21,34 @@
 	{{end}}
 </section>
 {{end}}
+
+{{define "signature-pad"}}
+<p class="muted small">Der Nachbar bestätigt die Leistung mit Namen und Unterschrift auf diesem Gerät. Das ist ein Nachweis der Zustimmung, keine qualifizierte elektronische Signatur.</p>
+<label class="field"><span>Name der unterschreibenden Person</span><input class="input" name="signature_name" maxlength="100" autocomplete="off"></label>
+<div class="signature-pad" data-signature-pad>
+	<canvas class="signature-pad__canvas" width="600" height="200" role="img" aria-label="Unterschriftsfeld – mit Finger oder Stift unterschreiben"></canvas>
+	<input type="hidden" name="signature_png" data-signature-data>
+	<input type="hidden" name="signature_at" data-signature-at>
+	<button class="btn btn--ghost btn--xs" type="button" data-signature-clear>Unterschrift löschen</button>
+</div>
+{{end}}
+
+{{define "booking_signature"}}
+<section class="card stack stack--tight" id="unterschrift" aria-label="Unterschrift vor Ort">
+	<h3 class="section-title">Unterschrift vor Ort</h3>
+	{{with .Signature}}
+	<figure class="signature-view">
+		<img src="{{$.SignatureAction}}.png" alt="Unterschrift von {{.SignerName}}" width="300" height="100">
+		<figcaption>{{.SignerName}} · unterschrieben am {{.SignedAt.Format "02.01.2006 15:04"}}{{if gt (.ReceivedAt.Sub .SignedAt).Minutes 10.0}} · übertragen am {{.ReceivedAt.Format "02.01.2006 15:04"}}{{end}}</figcaption>
+	</figure>
+	<p class="small">Bestätigt: {{.ConfirmedText}}</p>
+	{{if $.SignatureChanged}}<div class="flash flash--info" data-signature-changed>Die Buchung wurde nach der Unterschrift geändert. Die Unterschrift bestätigt nur den oben genannten Stand; bei Bedarf entfernen und neu unterschreiben lassen.</div>{{end}}
+	{{if and $.User.CanWrite (not $.BookingLocked)}}<form method="post" action="{{$.SignatureAction}}/delete" data-confirm-danger data-confirm="Unterschrift von {{.SignerName}} entfernen?"><button class="btn btn--ghost btn--sm" type="submit">Unterschrift entfernen</button></form>{{end}}
+	{{else}}
+	{{if and .User.CanWrite (not .BookingLocked)}}<form method="post" action="{{.SignatureAction}}" class="form stack stack--tight">
+		{{template "signature-pad" .}}
+		<button class="btn btn--ghost btn--sm" type="submit">Unterschrift speichern</button>
+	</form>{{else}}<p class="muted small">Nicht vor Ort unterschrieben.</p>{{end}}
+	{{end}}
+</section>
+{{end}}

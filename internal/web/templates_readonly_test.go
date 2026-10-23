@@ -2,7 +2,9 @@ package web
 
 import (
 	"bytes"
+	"fmt"
 	"maps"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -170,39 +172,48 @@ func TestReadOnlyBookingListNoticeIncludesEmptyResults(t *testing.T) {
 // machine cost assumption and the computed proposal as read-only values.
 func TestReadOnlyMachineCostAssumptionsRemainVisible(t *testing.T) {
 	t.Parallel()
-	d := decimal.NewFromInt
-	page := mainContent(t, execPage(t, "prices", map[string]any{
-		"User": &models.User{Role: models.RoleViewer}, "EditMode": true, "PriceSection": "machines",
-		"Base": models.PriceBase{ID: 1, Year: 2026},
-		"MachineViews": []map[string]any{{
-			"Machine": models.Machine{
-				ID: 7, Name: "Testmaschine", Active: true, SortOrder: 3,
-				SelfCostPerH: d(18), AcquisitionCost: d(12000), ResidualValue: d(2000),
-				UsefulYears: 8, AnnualHours: d(500), FuelCostPerH: d(9),
-				AnnualMaintenance: d(800), AnnualInsurance: d(300), AnnualOtherCost: d(200),
-			},
-			"Rate": d(50), "HasProposal": true, "Proposal": decimal.RequireFromString("14.10"),
-		}},
-		"TractorViews": []map[string]any{}, "Loads": []models.LoadLevel{},
-	}))
-	for _, row := range []string{
-		`<span>Reihenfolge</span><strong>3</strong>`,
-		`<span>Selbstkosten</span><strong>18,00 €/h</strong>`,
-		`<span>Anschaffungskosten</span><strong>12.000,00 €</strong>`,
-		`<span>Restwert</span><strong>2.000,00 €</strong>`,
-		`<span>Nutzungsdauer</span><strong>8 Jahre</strong>`,
-		`<span>Einsatzstunden pro Jahr</span><strong>500 h</strong>`,
-		`<span>Treibstoff</span><strong>9,00 €/h</strong>`,
-		`<span>Wartung</span><strong>800,00 €/Jahr</strong>`,
-		`<span>Versicherung</span><strong>300,00 €/Jahr</strong>`,
-		`<span>Sonstige Kosten</span><strong>200,00 €/Jahr</strong>`,
-		`<span>Berechneter Vorschlag</span><strong>14,10 €/h</strong>`,
+	for _, tc := range []struct {
+		role   string
+		locked bool
+	}{
+		{models.RoleViewer, false}, {models.RoleEditor, true}, {models.RoleAdmin, true},
 	} {
-		if !strings.Contains(page, row) {
-			t.Errorf("read-only cost model lost stored value %s", row)
-		}
+		t.Run(tc.role, func(t *testing.T) {
+			d := decimal.NewFromInt
+			page := mainContent(t, execPage(t, "prices", map[string]any{
+				"User": &models.User{Role: tc.role}, "Locked": tc.locked, "EditMode": true, "PriceSection": "machines",
+				"Base": models.PriceBase{ID: 1, Year: 2026},
+				"MachineViews": []map[string]any{{
+					"Machine": models.Machine{
+						ID: 7, Name: "Testmaschine", Active: true, SortOrder: 3,
+						SelfCostPerH: d(18), AcquisitionCost: d(12000), ResidualValue: d(2000),
+						UsefulYears: 8, AnnualHours: d(500), FuelCostPerH: d(9),
+						AnnualMaintenance: d(800), AnnualInsurance: d(300), AnnualOtherCost: d(200),
+					},
+					"Rate": d(50), "HasProposal": true, "Proposal": decimal.RequireFromString("14.10"),
+				}},
+				"TractorViews": []map[string]any{}, "Loads": []models.LoadLevel{},
+			}))
+			for _, row := range []string{
+				`<span>Reihenfolge</span><strong>3</strong>`,
+				`<span>Selbstkosten</span><strong>18,00 €/h</strong>`,
+				`<span>Anschaffungskosten</span><strong>12.000,00 €</strong>`,
+				`<span>Restwert</span><strong>2.000,00 €</strong>`,
+				`<span>Nutzungsdauer</span><strong>8 Jahre</strong>`,
+				`<span>Einsatzstunden pro Jahr</span><strong>500 h</strong>`,
+				`<span>Treibstoff</span><strong>9,00 €/h</strong>`,
+				`<span>Wartung</span><strong>800,00 €/Jahr</strong>`,
+				`<span>Versicherung</span><strong>300,00 €/Jahr</strong>`,
+				`<span>Sonstige Kosten</span><strong>200,00 €/Jahr</strong>`,
+				`<span>Berechneter Vorschlag</span><strong>14,10 €/h</strong>`,
+			} {
+				if !strings.Contains(page, row) {
+					t.Errorf("read-only cost model lost stored value %s", row)
+				}
+			}
+			assertReadOnlyForms(t, page)
+		})
 	}
-	assertReadOnlyForms(t, page)
 }
 
 // TestBatchInvoiceCompanySetupActionMatchesRole links incomplete company data to
@@ -292,9 +303,16 @@ func TestReadOnlyNoticeHandlesAnonymousUser(t *testing.T) {
 // inheritance. Personal account preferences remain intentionally writable.
 func assertReadOnlyForms(t *testing.T, source string) {
 	t.Helper()
+	checkReadOnlyForms(source, t.Errorf)
+}
+
+var personalNotificationForm = regexp.MustCompile(`^/notifications/(read-all|[1-9][0-9]*/(open|dismiss))$`)
+
+func checkReadOnlyForms(source string, report func(string, ...any)) {
 	doc, err := html.Parse(strings.NewReader(source))
 	if err != nil {
-		t.Fatalf("parse rendered HTML: %v", err)
+		report("parse rendered HTML: %v", err)
+		return
 	}
 	attr := func(n *html.Node, key string) (string, bool) {
 		for _, a := range n.Attr {
@@ -310,16 +328,19 @@ func assertReadOnlyForms(t *testing.T, source string) {
 			if n.Data == "form" {
 				if method, _ := attr(n, "method"); strings.EqualFold(method, "post") {
 					form, _ = attr(n, "action")
+					if form == "" {
+						form = "(current page)"
+					}
 				}
 			}
 			_, ownDisabled := attr(n, "disabled")
 			disabled = disabled || ownDisabled
-			if form != "" && !strings.HasPrefix(form, "/account/") && !disabled {
+			if form != "" && !strings.HasPrefix(form, "/account/") && !personalNotificationForm.MatchString(form) && !disabled {
 				switch n.Data {
 				case "input", "select", "textarea", "button":
 					kind, _ := attr(n, "type")
 					if kind != "hidden" && kind != "button" {
-						t.Errorf("read-only page exposes enabled <%s> in POST %s", n.Data, form)
+						report("read-only page exposes enabled <%s> in POST %s", n.Data, form)
 					}
 				}
 			}
@@ -329,4 +350,25 @@ func assertReadOnlyForms(t *testing.T, source string) {
 		}
 	}
 	walk(doc, "", false)
+}
+
+func TestReadOnlyFormInspectionIncludesActionlessPosts(t *testing.T) {
+	for _, tc := range []struct {
+		source   string
+		problems int
+	}{
+		{`<form method="post"><button>Submit</button></form>`, 1},
+		{`<form method="post" action=""><input name="amount"></form>`, 1},
+		{`<form method="get"><button>Search</button></form>`, 0},
+		{`<form method="post"><fieldset disabled><button>Submit</button></fieldset></form>`, 0},
+		{`<form method="post" action="/account/password"><button>Save</button></form>`, 0},
+		{`<form method="post" action="/notifications/7/dismiss"><button>Dismiss</button></form>`, 0},
+		{`<form method="post" action="/notifications/7/delete"><button>Delete</button></form>`, 1},
+	} {
+		var problems []string
+		checkReadOnlyForms(tc.source, func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) })
+		if len(problems) != tc.problems {
+			t.Errorf("%s: got %v, want %d problems", tc.source, problems, tc.problems)
+		}
+	}
 }
