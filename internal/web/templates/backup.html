@@ -194,7 +194,7 @@
 
 			<div class="bkp__danger">
 				<div class="bkp__sec bkp__sec--danger">Zerstörerisch</div>
-				<p class="bkp__note bkp__note--lead-lg">Überschreibt die Live-DB vollständig — admin-only, auditiert.</p>
+				<p class="bkp__note bkp__note--lead-lg">Überschreibt die Live-DB vollständig — admin-only, auditiert. Nur Backups mit dem <code>BACKUP_ENCRYPTION_KEY</code> dieser Instanz; Backups mit einem anderen Schlüssel offline per CLI wiederherstellen.</p>
 				<label class="bkp__lbl bkp__lbl--flush">Zum Ausführen <code>RESTORE</code> eintippen</label>
 				<input class="input bkp__restore-confirm" type="text" name="confirm" placeholder="RESTORE" autocomplete="off" aria-label="RESTORE eintippen">
 				<div class="bkp__btnrow bkp__btnrow--near">

@@ -83,3 +83,80 @@ func TestOversizedBackupKeyRejected(t *testing.T) {
 		}
 	})
 }
+
+// TestRestoreRequiresExactInstanceKey lets a GUI restore past the key gate only
+// with this instance's exact backup key; foreign, trimmed or padded variants
+// get the refusal message.
+func TestRestoreRequiresExactInstanceKey(t *testing.T) {
+	const key = "test-backup-secret"
+	for _, tc := range []struct {
+		name, configured, supplied string
+		wantRefusal                bool
+	}{
+		{name: "instance key", configured: key, supplied: key},
+		{name: "foreign key", configured: key, supplied: "foreign-backup-secret", wantRefusal: true},
+		{name: "padded instance key", configured: " " + key + " ", supplied: " " + key + " "},
+		{name: "trimmed instance key", configured: " " + key + " ", supplied: key, wantRefusal: true},
+		{name: "extra whitespace", configured: key, supplied: " " + key + " ", wantRefusal: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := testServer()
+			s.store = closedTestStore(t)
+			s.backup = backup.New(backup.Options{EncKey: tc.configured, SkipStartupCleanup: true}, nil)
+			req := multipartKeyRequest(t, "/admin/backup/restore", tc.supplied)
+			rr := httptest.NewRecorder()
+			s.handleBackupRestore(rr, req)
+			if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/admin/backup" {
+				t.Fatalf("expected backup redirect, got %d %q", rr.Code, rr.Header().Get("Location"))
+			}
+			want := "Bitte eine Backup-Datei (.dump.enc) wählen."
+			if tc.wantRefusal {
+				want = foreignKeyRestoreMsg
+			}
+			if got := flashText(t, s, rr); got != want {
+				t.Fatalf("flash = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// TestBackupValidationAllowsForeignKey keeps validation open to an older or
+// foreign key, in form and JSON responses, so an archive can be checked
+// before a key rotation.
+func TestBackupValidationAllowsForeignKey(t *testing.T) {
+	for _, jsonResponse := range []bool{false, true} {
+		t.Run(map[bool]string{false: "form", true: "JSON"}[jsonResponse], func(t *testing.T) {
+			s := testServer()
+			s.backup = backup.New(backup.Options{EncKey: "instance-backup-secret", SkipStartupCleanup: true}, nil)
+			req := multipartKeyRequest(t, "/admin/backup/validate", "old-backup-secret")
+			if jsonResponse {
+				req.Header.Set("Accept", "application/json")
+			}
+			rr := httptest.NewRecorder()
+			s.handleBackupValidate(rr, req)
+			var msg string
+			if jsonResponse {
+				var resp struct {
+					OK      bool   `json:"ok"`
+					Message string `json:"message"`
+				}
+				if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+					t.Fatal(err)
+				}
+				if rr.Code != http.StatusOK || resp.OK {
+					t.Fatalf("expected a failed file validation response, got %d %+v", rr.Code, resp)
+				}
+				msg = resp.Message
+			} else {
+				if rr.Code != http.StatusSeeOther {
+					t.Fatalf("status = %d, want 303", rr.Code)
+				}
+				msg = flashText(t, s, rr)
+			}
+			// File validation, rather than the instance-key gate, must be reached.
+			if msg != "Bitte eine Backup-Datei (.dump.enc) wählen." {
+				t.Fatalf("foreign validation key was rejected early: %q", msg)
+			}
+		})
+	}
+}

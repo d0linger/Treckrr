@@ -10,6 +10,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/binary"
 	"encoding/json"
@@ -1211,6 +1212,14 @@ func (s *Service) verifyRestorable(ctx context.Context, enc []byte) error {
 // restore, where the key is re-entered rather than taken from the environment.
 func DecryptWith(enc []byte, keySecret string) ([]byte, error) {
 	return decrypt(enc, []byte(keySecret))
+}
+
+// MatchesKey reports whether keySecret is exactly this instance's encryption
+// key. GUI restore requires the deployment secret because archive validation
+// does not make the SQL executed by pg_restore safe. Preserve raw key bytes,
+// including whitespace, just as encryption and CLI restore do.
+func (s *Service) MatchesKey(keySecret string) bool {
+	return len(s.secret) != 0 && subtle.ConstantTimeCompare([]byte(keySecret), s.secret) == 1
 }
 
 // Restore decrypts a backup file (with the service key) and restores it. CLI use.

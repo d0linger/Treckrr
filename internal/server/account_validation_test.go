@@ -118,8 +118,46 @@ func testAccountServer(t *testing.T) *Server {
 	}
 }
 
+// TestHandleAccountPasswordSubmitValidation rejects oversized and reused
+// passwords with a specific message before any admission attempt is spent.
 func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 	s := testAccountServer(t)
+
+	t.Run("oversized password fields rejected before admission", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, field, value string
+		}{
+			{name: "current ASCII", field: "current_password", value: strings.Repeat("a", 73)},
+			{name: "new ASCII", field: "new_password", value: strings.Repeat("a", 73)},
+			{name: "confirmation ASCII", field: "new_password_confirm", value: strings.Repeat("a", 73)},
+			{name: "new multibyte", field: "new_password", value: strings.Repeat("ä", 37)},
+			{name: "confirmation multibyte", field: "new_password_confirm", value: strings.Repeat("ä", 37)},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				testAccountAdmissionQueries.Store(0)
+				form := url.Values{
+					"current_password":     {"SecurePassword123"},
+					"new_password":         {"NewSecurePassword456"},
+					"new_password_confirm": {"NewSecurePassword456"},
+				}
+				form.Set(tc.field, tc.value)
+				req := httptest.NewRequest(http.MethodPost, "/account/password", strings.NewReader(form.Encode()))
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				req = req.WithContext(context.WithValue(req.Context(), userCtxKey, &models.User{ID: 123, Username: "testuser", Role: "editor"}))
+				rr := httptest.NewRecorder()
+				s.handleAccountPasswordSubmit(rr, req)
+				if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/account/password" {
+					t.Fatalf("expected password redirect, got %d %q", rr.Code, rr.Header().Get("Location"))
+				}
+				if got := flashText(t, s, rr); got != "Passwort darf höchstens 72 Byte lang sein." {
+					t.Errorf("flash = %q, want byte-limit error", got)
+				}
+				if got := testAccountAdmissionQueries.Load(); got != 0 {
+					t.Errorf("local validation consumed %d admission attempts", got)
+				}
+			})
+		}
+	})
 
 	t.Run("same new password is rejected", func(t *testing.T) {
 		testAccountAdmissionQueries.Store(0)
@@ -195,12 +233,12 @@ func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("different new password is accepted", func(t *testing.T) {
+	t.Run("72-byte new password is accepted", func(t *testing.T) {
 		testAccountAdmissionQueries.Store(0)
 		form := url.Values{}
 		form.Set("current_password", "SecurePassword123")
-		form.Set("new_password", "NewSecurePassword456")
-		form.Set("new_password_confirm", "NewSecurePassword456")
+		form.Set("new_password", strings.Repeat("A", 71)+"1")
+		form.Set("new_password_confirm", strings.Repeat("A", 71)+"1")
 
 		req := httptest.NewRequest(http.MethodPost, "/account/password", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

@@ -161,6 +161,11 @@ func run() error {
 		return err
 	}
 	slog.Info("migrations applied")
+	if super, err := db.IsSuperuser(ctx, pool); err != nil {
+		slog.Warn("could not check database role privileges", "err", err)
+	} else if super {
+		slog.Warn("DATABASE_URL connects as a PostgreSQL superuser; use a dedicated non-superuser role (see README, APP_DB_USER)")
+	}
 
 	st := store.New(pool, cfg.EncryptionSecret)
 	if err := st.EnsureAdmin(ctx, cfg.AdminUsername, cfg.AdminPassword, cfg.AdminPasswordReset); err != nil {

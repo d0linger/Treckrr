@@ -72,20 +72,25 @@ func (s *Server) handleAccountPasswordForm(w http.ResponseWriter, r *http.Reques
 	s.render(w, r, "account_password", data)
 }
 
+// handleAccountPasswordSubmit changes the signed-in user's password. Length,
+// confirmation, reuse and policy are checked before the rate-limited step-up
+// admission, so a typo costs no attempt; on success every other session ends,
+// this browser gets a fresh session and the user is notified.
 func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	current := r.FormValue("current_password")
-	if s.passwordTooLong(w, r, current) {
+	next := r.FormValue("new_password")
+	confirm := r.FormValue("new_password_confirm")
+	if s.passwordTooLong(w, r, current) || s.passwordTooLong(w, r, next) || s.passwordTooLong(w, r, confirm) {
 		redirect(w, r, "/account/password")
 		return
 	}
 	user := userFromCtx(r)
-	next := r.FormValue("new_password")
 
-	if next != r.FormValue("new_password_confirm") {
+	if next != confirm {
 		s.setFlash(w, r, "error", "Die beiden neuen Passwörter stimmen nicht überein.")
 		redirect(w, r, "/account/password")
 		return
