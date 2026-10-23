@@ -121,6 +121,44 @@ func testAccountServer(t *testing.T) *Server {
 func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 	s := testAccountServer(t)
 
+	t.Run("oversized new passwords rejected", func(t *testing.T) {
+		passwords := []struct {
+			name    string
+			current string
+			next    string
+			confirm string
+		}{
+			{name: "next over 72 bytes", current: "SecurePassword123", next: strings.Repeat("a", 73), confirm: strings.Repeat("a", 73)},
+			{name: "confirm over 72 bytes", current: "SecurePassword123", next: "NewSecurePassword456", confirm: strings.Repeat("b", 73)},
+		}
+		for _, tc := range passwords {
+			t.Run(tc.name, func(t *testing.T) {
+				testAccountAdmissionQueries.Store(0)
+				form := url.Values{
+					"current_password":     {tc.current},
+					"new_password":         {tc.next},
+					"new_password_confirm": {tc.confirm},
+				}
+				req := httptest.NewRequest(http.MethodPost, "/account/password", strings.NewReader(form.Encode()))
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				req = req.WithContext(context.WithValue(req.Context(), userCtxKey, &models.User{ID: 123, Username: "testuser", Role: "editor"}))
+				rr := httptest.NewRecorder()
+
+				s.handleAccountPasswordSubmit(rr, req)
+
+				if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/account/password" {
+					t.Fatalf("status = %d, location = %q; want redirect to /account/password", rr.Code, rr.Header().Get("Location"))
+				}
+				if got := flashText(t, s, rr); got != "Passwort darf höchstens 72 Byte lang sein." {
+					t.Errorf("flash = %q, want byte-limit error", got)
+				}
+				if got := testAccountAdmissionQueries.Load(); got != 0 {
+					t.Errorf("local validation consumed %d admission attempts", got)
+				}
+			})
+		}
+	})
+
 	t.Run("same new password is rejected", func(t *testing.T) {
 		testAccountAdmissionQueries.Store(0)
 		form := url.Values{}
