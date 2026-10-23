@@ -154,7 +154,7 @@ existing development database.
 
 ### Completed local validation (2026-10-13)
 
-- Linux/Go 1.27.2/PostgreSQL 16: every Go package passed race/integration tests
+- Linux/Go 1.27.3/PostgreSQL 16: every Go package passed race/integration tests
   across the full run and the final database/server/web regression rerun. Initial
   failures exposed incomplete test addresses, obsolete single-invoice/UI
   expectations and a stale generated CSS bundle; these were corrected and the
