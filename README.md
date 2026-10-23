@@ -87,7 +87,7 @@ openssl rand -hex 32   # SESSION_SECRET
 openssl rand -hex 32   # BACKUP_ENCRYPTION_KEY (optional, enables backups)
 ```
 
-Set at minimum **SESSION_SECRET**, **ADMIN_PASSWORD** and **POSTGRES_PASSWORD** — and put the same database password inside **DATABASE_URL**. The app refuses to start while any of them still holds the documented placeholder value. The local source-build profile explicitly enables direct HTTP for development; do not reuse that setting in production.
+For a fresh installation, set **SESSION_SECRET**, **ADMIN_PASSWORD**, **POSTGRES_PASSWORD** and a separate **APP_DB_PASSWORD**. Put the application password in **DATABASE_URL**, using the `APP_DB_USER` role from `.env.example`. The app refuses the documented placeholder secrets. Existing databases need the [role conversion procedure](deploy/database-role.md) before switching credentials. The local source-build profile enables direct HTTP on loopback for development; do not reuse that setting in production.
 
 ```bash
 docker compose up -d
@@ -99,12 +99,15 @@ Open **http://localhost:8080** and log in as `admin`. You are forced to change t
 
 ```bash
 TRUSTED_PROXIES='REPLACE_WITH_PROXY_SOURCE_IP_OR_CIDR' \
+TRECKRR_TAG='sha-REPLACE_WITH_REVIEWED_COMMIT' \
 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
 The GHCR profile is the production/TLS path: it forces Secure cookies, enables
-proxy trust, and requires `TRUSTED_PROXIES`. Pin a release rather than tracking
-`latest` with `TRECKRR_TAG=1.4`.
+proxy trust, and requires `TRUSTED_PROXIES` and an explicit `TRECKRR_TAG`.
+Use a reviewed release or per-build tag; for an immutable deployment append
+`@sha256:<reviewed-digest>` to that tag. `TRECKRR_IMAGE` can override the image
+repository, whose default remains `ghcr.io/d0linger/treckrr`.
 
 ### Practice instance (Übungsinstanz)
 
@@ -133,12 +136,14 @@ deletes its data so the next start is fresh.
 | **DATABASE_URL** | Postgres DSN (URL or keyword/value form) | — | Yes |
 | **SESSION_SECRET** | Signing key, min. 32 chars, not the placeholder | — | Yes |
 | **ADMIN_PASSWORD** | Bootstrap admin password, changed at first login | — | Yes |
-| **POSTGRES_PASSWORD** | Database password; must match `DATABASE_URL` | — | Yes |
-| **POSTGRES_USER** / **POSTGRES_DB** | Database role and name | `treckrr` | No |
+| **POSTGRES_PASSWORD** | Bootstrap superuser password; separate from the application password | — | Yes |
+| **POSTGRES_USER** / **POSTGRES_DB** | Bootstrap superuser and database name | `treckrr` | No |
+| **APP_DB_USER** / **APP_DB_PASSWORD** | Optional non-superuser role created only for an empty volume; set matching `DATABASE_URL` credentials | — (`.env.example`: `treckrr_app`) | No |
+| **TRECKRR_TAG** / **TRECKRR_IMAGE** | Reviewed GHCR tag, optionally with digest; image repository override | No tag default / `ghcr.io/d0linger/treckrr` | Tag required for GHCR |
 | **ADMIN_USERNAME** | Bootstrap admin login name. Created only while no active admin exists; a restart never promotes an existing account with this name | `admin` | No |
 | **APP_PORT** | Port inside the container | `8080` | No |
 | **HOST_PORT** | Published port on the host | `8080` | No |
-| **HOST_BIND** | Host interface to bind; `127.0.0.1` only reaches a proxy on the host itself | `0.0.0.0` | No |
+| **HOST_BIND** | Host interface to bind; a remote TLS proxy needs an explicitly reachable address | `127.0.0.1` (source build) / `0.0.0.0` (GHCR) | No |
 | **COOKIE_SECURE** | Force the `Secure` cookie flag | `true` (local Compose overrides to `false`) | No |
 | **ALLOW_INSECURE_HTTP** | Explicit direct-HTTP opt-in for local development only | `false` (local Compose sets `true`) | No |
 | **TRUST_PROXY** | Honour `X-Forwarded-For` / `-Proto` from a reverse proxy | `false` | No |
@@ -243,7 +248,12 @@ Do not mirror the volume wholesale: `.treckrr-plain-*.tmp` files are private but
 temporarily contain plaintext database archives during backup and restore work.
 
 **Restore** is available to administrators in the Backup panel and as an offline
-CLI command. Both require typed confirmation. For the CLI, stop **all** app
+CLI command. Both require typed confirmation. The panel accepts only the exact
+configured `BACKUP_ENCRYPTION_KEY`, including any whitespace, before decryption
+or restore. Archives encrypted with an old or different installation's key use
+the offline CLI with that archive's key in `BACKUP_ENCRYPTION_KEY`. Only restore
+trusted archives: structural validation does not make embedded database SQL safe.
+For the CLI, stop **all** app
 instances and external schedulers first; leave PostgreSQL running:
 
 ```bash
@@ -456,8 +466,24 @@ the root filesystem stays read-only. `/tmp` is a **capped** tmpfs because
 multipart uploads spill there, and a tmpfs is RAM: uncapped, a large upload
 writes its way into host memory instead of failing cleanly.
 
-The database port is **not published**. The app port is, on `HOST_BIND`
-(default `0.0.0.0`); set it to `127.0.0.1` if your proxy is local.
+The database port is **not published**. The app port uses `HOST_BIND`: the plain
+HTTP source-build profile defaults to `127.0.0.1`, and GHCR defaults to
+`0.0.0.0` for existing remote TLS proxy deployments. `.env.example` explicitly
+sets loopback for both; change it when your TLS proxy runs on another host.
+
+### Database role
+
+The PostgreSQL image creates `POSTGRES_USER` as a superuser. New installations
+should use a separate `APP_DB_USER` / `APP_DB_PASSWORD` in `DATABASE_URL`.
+On the first start of an empty volume, `deploy/postgres-init/10-app-role.sh`
+creates that role with database/schema ownership for migrations and restores,
+without superuser, role creation, database creation, replication or RLS bypass.
+The app warns at startup while its connection still uses a superuser.
+
+Existing volumes and credentials stay unchanged. They need a backup and a
+rehearsed ownership conversion before switching `DATABASE_URL`; follow the
+[database role and recovery guide](deploy/database-role.md). The optional
+`BACKUP_REHEARSE_URL` needs a separate role allowed to create scratch databases.
 
 Everything works the same under rootless Docker or Podman.
 

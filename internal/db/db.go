@@ -101,6 +101,14 @@ func ResetPool(pool *sql.DB) {
 	pool.SetMaxIdleConns(maxIdleConns)
 }
 
+// IsSuperuser reports whether the connection's effective database role is a
+// PostgreSQL superuser. Runtime roles should not have server-level privileges.
+func IsSuperuser(ctx context.Context, pool *sql.DB) (bool, error) {
+	var super bool
+	err := pool.QueryRowContext(ctx, `SELECT rolsuper FROM pg_roles WHERE rolname = current_user`).Scan(&super)
+	return super, err
+}
+
 // migrateLockKey is a fixed advisory-lock key that serializes Migrate across
 // instances (any constant works as long as it's unique to this concern).
 const migrateLockKey = 4711
