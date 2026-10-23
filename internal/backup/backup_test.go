@@ -257,6 +257,45 @@ func TestDecryptLegacyTRKBK1(t *testing.T) {
 	}
 }
 
+func TestMatchesKeyPreservesRawBytes(t *testing.T) {
+	for _, key := range []string{"test-backup-secret", " test-backup-secret", "test-backup-secret ", "\ttest-backup-secret\n"} {
+		t.Run(fmt.Sprintf("key_%q", key), func(t *testing.T) {
+			s := New(Options{EncKey: key, SkipStartupCleanup: true}, nil)
+			if !s.MatchesKey(key) {
+				t.Fatal("exact instance key must match")
+			}
+			for _, other := range []string{"", key + "x", "other-backup-secret"} {
+				if s.MatchesKey(other) {
+					t.Errorf("different key %q must not match", other)
+				}
+			}
+			if trimmed := strings.TrimSpace(key); trimmed != key && s.MatchesKey(trimmed) {
+				t.Error("trimming the instance key must not produce an accepted alternative key")
+			}
+		})
+	}
+	if New(Options{SkipStartupCleanup: true}, nil).MatchesKey("") {
+		t.Fatal("disabled service must not match an empty key")
+	}
+}
+
+func TestDecryptWithPreservesPaddedKey(t *testing.T) {
+	const key = " \ttest-backup-secret\n "
+	s := New(Options{EncKey: key, SkipStartupCleanup: true}, nil)
+	plain := []byte("database dump with the original configured key bytes")
+	enc, err := encrypt(plain, s.secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := DecryptWith(enc, key)
+	if err != nil || !bytes.Equal(got, plain) {
+		t.Fatalf("raw-key round trip failed: %v", err)
+	}
+	if _, err := DecryptWith(enc, strings.TrimSpace(key)); err == nil {
+		t.Fatal("trimmed key must not decrypt an archive encrypted with the raw key")
+	}
+}
+
 // TestContentSanity pins the verify-before-promote content floor against the REAL
 // pg_restore --list TOC format, so it rejects an empty/foreign/truncated dump but
 // never a legitimate one (a false reject would fail-close all future backups).

@@ -508,8 +508,8 @@ func (s *Server) handleBackupValidate(w http.ResponseWriter, r *http.Request) {
 		reply(false, "Upload fehlgeschlagen (Datei zu groß?).")
 		return
 	}
-	key := strings.TrimSpace(r.FormValue("key"))
-	if key == "" {
+	key := r.FormValue("key")
+	if strings.TrimSpace(key) == "" {
 		reply(false, "Bitte den Backup-Schlüssel eingeben.")
 		return
 	}
@@ -542,8 +542,15 @@ func (s *Server) handleBackupValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "backup_validate", "backup", 0, fmt.Sprintf("Upload validiert · %d Objekte", objects))
-	reply(true, fmt.Sprintf("Gültig ✓ — entschlüsselt, %d Objekte im Archiv.", objects))
+	msg := fmt.Sprintf("Gültig ✓ — entschlüsselt, %d Objekte im Archiv.", objects)
+	if !s.backup.MatchesKey(key) {
+		msg += " " + foreignKeyRestoreMsg
+	}
+	reply(true, msg)
 }
+
+const foreignKeyRestoreMsg = "Über die Oberfläche lassen sich nur Backups mit dem BACKUP_ENCRYPTION_KEY dieser Instanz einspielen. " +
+	"Backups mit einem anderen Schlüssel bitte offline per CLI wiederherstellen und dabei den zugehörigen Schlüssel als BACKUP_ENCRYPTION_KEY setzen."
 
 // handleBackupRestore validates an uploaded backup and, only after the operator
 // re-enters the key and types RESTORE, overwrites the live database.
@@ -567,14 +574,22 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 		redirect(w, r, "/admin/backup")
 		return
 	}
-	key := strings.TrimSpace(r.FormValue("key"))
-	if key == "" {
+	key := r.FormValue("key")
+	if strings.TrimSpace(key) == "" {
 		s.setFlash(w, r, "error", "Bitte den Backup-Schlüssel eingeben.")
 		redirect(w, r, "/admin/backup")
 		return
 	}
 	if len(key) > maxBackupInputLen {
 		s.setFlash(w, r, "error", "Backup-Schlüssel darf höchstens 100 Zeichen lang sein.")
+		redirect(w, r, "/admin/backup")
+		return
+	}
+	// An application admin must also know the deployment key before supplying
+	// SQL to pg_restore. The CLI remains available for old or foreign keys.
+	if doRestore && !s.backup.MatchesKey(key) {
+		s.audit(r, "backup_restore_failed", "backup", 0, "Schlüssel entspricht nicht dem BACKUP_ENCRYPTION_KEY dieser Instanz")
+		s.setFlash(w, r, "error", foreignKeyRestoreMsg)
 		redirect(w, r, "/admin/backup")
 		return
 	}
@@ -614,8 +629,11 @@ func (s *Server) backupUpload(w http.ResponseWriter, r *http.Request, doRestore 
 	}
 	if !doRestore {
 		s.audit(r, "backup_validate", "backup", 0, fmt.Sprintf("Upload validiert · %d Objekte", objects))
-		s.setFlash(w, r, "success",
-			fmt.Sprintf("Backup gültig ✓ — entschlüsselt, %d Objekte im Archiv. Zum Einspielen unten RESTORE eintippen.", objects))
+		msg := fmt.Sprintf("Backup gültig ✓ — entschlüsselt, %d Objekte im Archiv. Zum Einspielen unten RESTORE eintippen.", objects)
+		if !s.backup.MatchesKey(key) {
+			msg = fmt.Sprintf("Backup gültig ✓ — entschlüsselt, %d Objekte im Archiv. %s", objects, foreignKeyRestoreMsg)
+		}
+		s.setFlash(w, r, "success", msg)
 		redirect(w, r, "/admin/backup")
 		return
 	}

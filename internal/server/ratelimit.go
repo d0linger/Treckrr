@@ -134,8 +134,8 @@ func shareKey(ip string) string { return "share:" + rateLimitIP(ip) }
 func (l *loginLimiter) shareBlocked(ctx context.Context, ip string) bool {
 	b, err := l.store.RateLimitBlocked(ctx, shareKey(ip), shareMaxMisses, shareWindow)
 	if err != nil {
-		slog.Warn("ratelimit degraded (share)", "err", sanitizeLog(err.Error()))
-		return false // fail open, but visibly
+		slog.Warn("ratelimit degraded (share), refusing", "err", sanitizeLog(err.Error()))
+		return true // Public token resolution requires a functioning limiter.
 	}
 	return b
 }

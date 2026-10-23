@@ -78,14 +78,15 @@ func (s *Server) handleAccountPasswordSubmit(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	current := r.FormValue("current_password")
-	if s.passwordTooLong(w, r, current) {
+	next := r.FormValue("new_password")
+	confirm := r.FormValue("new_password_confirm")
+	if s.passwordTooLong(w, r, current) || s.passwordTooLong(w, r, next) || s.passwordTooLong(w, r, confirm) {
 		redirect(w, r, "/account/password")
 		return
 	}
 	user := userFromCtx(r)
-	next := r.FormValue("new_password")
 
-	if next != r.FormValue("new_password_confirm") {
+	if next != confirm {
 		s.setFlash(w, r, "error", "Die beiden neuen Passwörter stimmen nicht überein.")
 		redirect(w, r, "/account/password")
 		return
