@@ -84,6 +84,9 @@ func TestOversizedBackupKeyRejected(t *testing.T) {
 	})
 }
 
+// TestRestoreRequiresExactInstanceKey lets a GUI restore past the key gate only
+// with this instance's exact backup key; foreign, trimmed or padded variants
+// get the refusal message.
 func TestRestoreRequiresExactInstanceKey(t *testing.T) {
 	const key = "test-backup-secret"
 	for _, tc := range []struct {
@@ -117,6 +120,9 @@ func TestRestoreRequiresExactInstanceKey(t *testing.T) {
 	}
 }
 
+// TestBackupValidationAllowsForeignKey keeps validation open to an older or
+// foreign key, in form and JSON responses, so an archive can be checked
+// before a key rotation.
 func TestBackupValidationAllowsForeignKey(t *testing.T) {
 	for _, jsonResponse := range []bool{false, true} {
 		t.Run(map[bool]string{false: "form", true: "JSON"}[jsonResponse], func(t *testing.T) {

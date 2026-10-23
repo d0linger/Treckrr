@@ -257,6 +257,8 @@ func TestDecryptLegacyTRKBK1(t *testing.T) {
 	}
 }
 
+// TestMatchesKeyPreservesRawBytes accepts only the exact configured key bytes,
+// including surrounding whitespace, and never a trimmed or empty variant.
 func TestMatchesKeyPreservesRawBytes(t *testing.T) {
 	for _, key := range []string{"test-backup-secret", " test-backup-secret", "test-backup-secret ", "\ttest-backup-secret\n"} {
 		t.Run(fmt.Sprintf("key_%q", key), func(t *testing.T) {
@@ -279,6 +281,8 @@ func TestMatchesKeyPreservesRawBytes(t *testing.T) {
 	}
 }
 
+// TestDecryptWithPreservesPaddedKey round-trips an archive with a padded key
+// and refuses the trimmed key, so whitespace is never silently normalized.
 func TestDecryptWithPreservesPaddedKey(t *testing.T) {
 	const key = " \ttest-backup-secret\n "
 	s := New(Options{EncKey: key, SkipStartupCleanup: true}, nil)

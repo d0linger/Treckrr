@@ -84,6 +84,22 @@ func TestLoadRejectsPlaceholders(t *testing.T) {
 		}
 	})
 
+	// Both documented example URLs: the compose default (bootstrap superuser)
+	// and .env.example's separate application role, whose placeholder extends
+	// the documented one so the same check covers it.
+	for _, url := range []string{
+		"postgres://treckrr:treckrr-db-password-change-me@db:5432/treckrr?sslmode=disable",
+		"postgres://treckrr_app:treckrr-db-password-change-me-app@db:5432/treckrr?sslmode=disable",
+	} {
+		t.Run("placeholder database password is rejected: "+url, func(t *testing.T) {
+			setValid(t)
+			t.Setenv("DATABASE_URL", url)
+			if _, err := Load(); err == nil {
+				t.Fatal("expected an error for the placeholder database password")
+			}
+		})
+	}
+
 	t.Run("placeholder ENCRYPTION_SECRET is rejected", func(t *testing.T) {
 		setValid(t)
 		t.Setenv("ENCRYPTION_SECRET", placeholderSessionSecret)

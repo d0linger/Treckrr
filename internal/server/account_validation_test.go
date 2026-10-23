@@ -118,6 +118,8 @@ func testAccountServer(t *testing.T) *Server {
 	}
 }
 
+// TestHandleAccountPasswordSubmitValidation rejects oversized and reused
+// passwords with a specific message before any admission attempt is spent.
 func TestHandleAccountPasswordSubmitValidation(t *testing.T) {
 	s := testAccountServer(t)
 

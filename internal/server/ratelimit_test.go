@@ -41,6 +41,7 @@ func TestAccountKey(t *testing.T) {
 	}
 }
 
+// TestShareBlockedFailsClosed treats an unreachable limiter store as blocked.
 func TestShareBlockedFailsClosed(t *testing.T) {
 	lim := newLoginLimiter(closedTestStore(t))
 	if !lim.shareBlocked(t.Context(), "192.0.2.1") {
@@ -48,6 +49,9 @@ func TestShareBlockedFailsClosed(t *testing.T) {
 	}
 }
 
+// TestPublicShareResolutionFailsClosed answers 404 on every public token route
+// (invoice portal, statement, calendar) when the limiter cannot be checked,
+// before any token is resolved.
 func TestPublicShareResolutionFailsClosed(t *testing.T) {
 	s := testServer()
 	s.store = closedTestStore(t)
