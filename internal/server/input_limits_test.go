@@ -534,6 +534,54 @@ func TestInvoiceHandlersRejectInvalidYearIDs(t *testing.T) {
 	}
 }
 
+// TestPathIDRejectsNonPositive verifies that path parsing helpers reject zero and negative IDs.
+func TestPathIDRejectsNonPositive(t *testing.T) {
+	t.Parallel()
+	for _, val := range []string{"0", "-1", "-100"} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.SetPathValue("id", val)
+		req.SetPathValue("pid", val)
+		if id, err := pathID(req); err == nil {
+			t.Errorf("pathID(%q) = %d, want error", val, id)
+		}
+		if id, err := formInt64FromPath(req, "pid"); err == nil {
+			t.Errorf("formInt64FromPath(%q) = %d, want error", val, id)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.SetPathValue("id", "42")
+	req.SetPathValue("pid", "7")
+	if id, err := pathID(req); err != nil || id != 42 {
+		t.Errorf("pathID(\"42\") = %d, %v; want 42, nil", id, err)
+	}
+	if id, err := formInt64FromPath(req, "pid"); err != nil || id != 7 {
+		t.Errorf("formInt64FromPath(\"7\") = %d, %v; want 7, nil", id, err)
+	}
+}
+
+// TestBillingRuleInputLimits rejects oversized increment or minimum fields.
+func TestBillingRuleInputLimits(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	for _, tc := range []struct {
+		field, label string
+	}{
+		{field: "billing_increment_h", label: "Abrechnungstakt"},
+		{field: "minimum_h", label: "Mindestzeit"},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			form := url.Values{tc.field: {strings.Repeat("1", maxDecimalLen+1)}}
+			assertFormRedirect(
+				t,
+				s,
+				s.handleBaseBillingRule,
+				form,
+				"/bases#grundlage-1",
+				tc.label+" darf höchstens 32 Zeichen lang sein.",
+			)
+		})
+	}
+}
+
 func TestYearHandlersRejectNonPositiveIDs(t *testing.T) {
 	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
 	for _, tc := range []struct {

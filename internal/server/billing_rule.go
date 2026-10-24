@@ -62,6 +62,11 @@ func (s *Server) handleBaseBillingRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := "/bases#grundlage-" + strconv.FormatInt(id, 10)
+	if s.tooLong(w, r, "Abrechnungstakt", r.FormValue("billing_increment_h"), maxDecimalLen) ||
+		s.tooLong(w, r, "Mindestzeit", r.FormValue("minimum_h"), maxDecimalLen) {
+		redirect(w, r, back)
+		return
+	}
 	increment, okIncrement := parseBillingHours(r.FormValue("billing_increment_h"))
 	minimum, okMinimum := parseBillingHours(r.FormValue("minimum_h"))
 	if !okIncrement || !okMinimum {
