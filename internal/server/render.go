@@ -272,14 +272,28 @@ func (s *Server) verifyFlash(value string) (string, bool) {
 
 // ---- Form helpers -------------------------------------------------------
 
-// pathID parses the {id} path value as int64.
+// pathID parses the {id} path value as a positive int64.
 func pathID(r *http.Request) (int64, error) {
-	return strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	if id <= 0 {
+		return 0, strconv.ErrSyntax
+	}
+	return id, nil
 }
 
-// formInt64FromPath parses a named path value (e.g. a second {pid}) as int64.
+// formInt64FromPath parses a named path value (e.g. a second {pid}) as a positive int64.
 func formInt64FromPath(r *http.Request, name string) (int64, error) {
-	return strconv.ParseInt(r.PathValue(name), 10, 64)
+	id, err := strconv.ParseInt(r.PathValue(name), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	if id <= 0 {
+		return 0, strconv.ErrSyntax
+	}
+	return id, nil
 }
 
 // formInt64 parses a form field as int64 (0 on empty/invalid).
