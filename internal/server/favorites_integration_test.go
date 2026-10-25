@@ -83,9 +83,11 @@ func TestFavoritesIntegration(t *testing.T) {
 	}
 	post(`{"user_id":1,"enabled":true}`, 400)
 	post(`{"changes":[{"kind":"neighbor","value":"-1","active":true}]}`, 400)
+	// Raw invalid UTF-8 is refused, not decoded into U+FFFD and stored.
+	post("{\"changes\":[{\"kind\":\"task\",\"value\":\"\xff\xfe\",\"active\":true}]}", 400)
 	post(`{"enabled":false}`, 200)
 	post(`{"changes":[{"kind":"neighbor","value":"99","active":true}]}`, 200)
-	if state := read(); state.Enabled || len(state.Items["neighbor"]) != 8 {
+	if state := read(); state.Enabled || len(state.Items["neighbor"]) != 8 || len(state.Items["task"]) != 0 {
 		t.Fatalf("disabled changed preferences: %+v", state)
 	}
 }

@@ -26,7 +26,9 @@ type FavoriteChange struct {
 var ErrFavoriteInvalid = errors.New("invalid favorite")
 
 func validFavorite(c FavoriteChange) bool {
-	if c.Value != strings.TrimSpace(c.Value) || c.Value == "" || utf8.RuneCountInString(c.Value) > 100 {
+	// The JSON handler already refuses malformed bytes; this keeps the store's
+	// own contract for any other caller.
+	if !utf8.ValidString(c.Value) || c.Value != strings.TrimSpace(c.Value) || c.Value == "" || utf8.RuneCountInString(c.Value) > 100 {
 		return false
 	}
 	switch c.Kind {
