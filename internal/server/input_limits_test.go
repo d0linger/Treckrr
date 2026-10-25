@@ -441,6 +441,23 @@ func TestSavedViewQueryLimit(t *testing.T) {
 	}
 }
 
+// TestSecurityPolicyGraceDaysInputLimit rejects oversized grace_days before
+// parsing or accessing security policy storage.
+func TestSecurityPolicyGraceDaysInputLimit(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	form := url.Values{
+		"grace_days": {strings.Repeat("1", 51)},
+	}
+	assertFormRedirect(
+		t,
+		s,
+		s.handleSecurityPolicySave,
+		form,
+		"/admin/users#anmelderichtlinie",
+		"Übergangsfrist darf höchstens 50 Zeichen lang sein.",
+	)
+}
+
 // assertFormRedirect checks the handler's complete redirect/flash response.
 // Rejection-only callers deliberately omit a store: any database use panics.
 func assertFormRedirect(
