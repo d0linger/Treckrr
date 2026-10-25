@@ -26,7 +26,8 @@ type FavoriteChange struct {
 var ErrFavoriteInvalid = errors.New("invalid favorite")
 
 func validFavorite(c FavoriteChange) bool {
-	if c.Value != strings.TrimSpace(c.Value) || c.Value == "" || utf8.RuneCountInString(c.Value) > 100 {
+	// Reject invalid UTF-8 sequences upfront to prevent database encoding errors and invalid string handling.
+	if !utf8.ValidString(c.Value) || c.Value != strings.TrimSpace(c.Value) || c.Value == "" || utf8.RuneCountInString(c.Value) > 100 {
 		return false
 	}
 	switch c.Kind {

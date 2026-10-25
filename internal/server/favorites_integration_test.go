@@ -83,6 +83,7 @@ func TestFavoritesIntegration(t *testing.T) {
 	}
 	post(`{"user_id":1,"enabled":true}`, 400)
 	post(`{"changes":[{"kind":"neighbor","value":"-1","active":true}]}`, 400)
+	post("{\"changes\":[{\"kind\":\"task\",\"value\":\"\xff\xfe\",\"active\":true}]}", 400)
 	post(`{"enabled":false}`, 200)
 	post(`{"changes":[{"kind":"neighbor","value":"99","active":true}]}`, 200)
 	if state := read(); state.Enabled || len(state.Items["neighbor"]) != 8 {
