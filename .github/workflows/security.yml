@@ -27,7 +27,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - run: go mod tidy
       - name: Run gosec
-        uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
+        uses: securego/gosec@5eb1d104ef85ff2c905c877eb600e8c1dee33a22 # v2.30.0
         env:
           # The gosec container bundles its own Go with GOTOOLCHAIN=local,
           # which can lag behind the go.mod requirement (e.g. 1.26.2 vs
