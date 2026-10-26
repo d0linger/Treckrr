@@ -27,7 +27,11 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - run: go mod tidy
       - name: Run gosec
-        uses: securego/gosec@5eb1d104ef85ff2c905c877eb600e8c1dee33a22 # v2.30.0
+        # gosec retargets action.yml's scanner image only after tagging, so a
+        # release tag's commit still runs the previous release. Pin the commit
+        # whose action.yml names that release's image, and check that label
+        # when accepting a Dependabot bump of this line.
+        uses: securego/gosec@4504603eddc5a91a7b7713932d6d1d3792126103 # v2.30.0
         env:
           # The gosec container bundles its own Go with GOTOOLCHAIN=local,
           # which can lag behind the go.mod requirement (e.g. 1.26.2 vs
