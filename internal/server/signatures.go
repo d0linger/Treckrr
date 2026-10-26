@@ -49,10 +49,12 @@ func signatureFromForm(r *http.Request) (*models.EntrySignature, string) {
 	now := time.Now()
 	signedAt := now
 	// The pad stamps the device time of signing, which matters for a booking
-	// replayed from the offline queue days later. A clock far off is ignored.
-	if at, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(r.FormValue("signature_at"))); err == nil &&
-		at.Before(now.Add(10*time.Minute)) && at.After(now.AddDate(0, 0, -60)) {
-		signedAt = at
+	// replayed from the offline queue days later. A clock far off or oversized input is ignored.
+	if sigAt := strings.TrimSpace(r.FormValue("signature_at")); lenError("Unterschriftszeitpunkt", sigAt, 50) == "" {
+		if at, err := time.Parse(time.RFC3339Nano, sigAt); err == nil &&
+			at.Before(now.Add(10*time.Minute)) && at.After(now.AddDate(0, 0, -60)) {
+			signedAt = at
+		}
 	}
 	createdBy := ""
 	if u := userFromCtx(r); u != nil {
@@ -125,6 +127,16 @@ func (s *Server) handleEntrySignatureAdd(w http.ResponseWriter, r *http.Request)
 		s.notFound(w, r)
 		return
 	}
+	back := "/entries/" + itoa64(id) + "/edit#unterschrift"
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if s.tooLong(w, r, "Name", r.FormValue("signature_name"), maxNameLen) ||
+		s.tooLong(w, r, "Unterschriftszeitpunkt", r.FormValue("signature_at"), 50) {
+		redirect(w, r, back)
+		return
+	}
 	entry, err := s.store.GetEntry(r.Context(), id)
 	if err != nil {
 		s.notFound(w, r)
@@ -133,7 +145,6 @@ func (s *Server) handleEntrySignatureAdd(w http.ResponseWriter, r *http.Request)
 	if !s.entryYearOpen(w, r, entry, "Das Abrechnungsjahr ist abgeschlossen – Unterschriften können nicht mehr ergänzt werden.") {
 		return
 	}
-	back := "/entries/" + itoa64(id) + "/edit#unterschrift"
 	sig, msg := signatureFromForm(r)
 	if msg == "" && sig == nil {
 		msg = "Bitte unterschreiben lassen und den Namen angeben."
