@@ -62,6 +62,13 @@ func (s *Server) handleBaseBillingRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := "/bases#grundlage-" + strconv.FormatInt(id, 10)
+	// Same length guard as the fuel adjustment's amount: an oversized value gets
+	// its own message instead of the generic range hint.
+	if s.tooLong(w, r, "Abrechnungstakt", r.FormValue("billing_increment_h"), maxDecimalLen) ||
+		s.tooLong(w, r, "Mindestzeit", r.FormValue("minimum_h"), maxDecimalLen) {
+		redirect(w, r, back)
+		return
+	}
 	increment, okIncrement := parseBillingHours(r.FormValue("billing_increment_h"))
 	minimum, okMinimum := parseBillingHours(r.FormValue("minimum_h"))
 	if !okIncrement || !okMinimum {

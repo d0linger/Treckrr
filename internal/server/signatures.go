@@ -27,20 +27,31 @@ const (
 	minSignatureInk = 40
 )
 
+// signatureFields reads the signer name and the pad image and checks what
+// needs neither the database nor the image decoder: both present and the name
+// within maxNameLen. Both empty means no signature was given, which is not an
+// error by itself; the returned data is then empty.
+func signatureFields(r *http.Request) (name, data, msg string) {
+	name = strings.TrimSpace(r.FormValue("signature_name"))
+	data = strings.TrimSpace(r.FormValue("signature_png"))
+	switch {
+	case name == "" && data == "":
+		return "", "", ""
+	case data == "":
+		return "", "", "Bitte vor Ort unterschreiben lassen oder den Namen der unterschreibenden Person leeren."
+	case name == "" || lenError("Name", name, maxNameLen) != "":
+		return "", "", "Bitte den Namen der unterschreibenden Person angeben (höchstens 100 Zeichen)."
+	}
+	return name, data, ""
+}
+
 // signatureFromForm reads an optional on-site signature (signature_name,
 // signature_png, signature_at). It returns nil without a signature and a
 // German message for an unusable one.
 func signatureFromForm(r *http.Request) (*models.EntrySignature, string) {
-	name := strings.TrimSpace(r.FormValue("signature_name"))
-	data := strings.TrimSpace(r.FormValue("signature_png"))
-	if name == "" && data == "" {
-		return nil, ""
-	}
-	if data == "" {
-		return nil, "Bitte vor Ort unterschreiben lassen oder den Namen der unterschreibenden Person leeren."
-	}
-	if name == "" || lenError("Name", name, maxNameLen) != "" {
-		return nil, "Bitte den Namen der unterschreibenden Person angeben (höchstens 100 Zeichen)."
+	name, data, msg := signatureFields(r)
+	if msg != "" || data == "" {
+		return nil, msg
 	}
 	img, ok := decodeSignature(data)
 	if !ok {
@@ -125,6 +136,25 @@ func (s *Server) handleEntrySignatureAdd(w http.ResponseWriter, r *http.Request)
 		s.notFound(w, r)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	back := "/entries/" + itoa64(id) + "/edit#unterschrift"
+	// A missing or oversized field is refused before any database work; the
+	// image is decoded only once the booking is known to be signable.
+	if _, data, msg := signatureFields(r); msg != "" || data == "" {
+		if msg == "" {
+			msg = "Bitte unterschreiben lassen und den Namen angeben."
+		}
+		s.setFlash(w, r, "error", msg)
+		redirect(w, r, back)
+		return
+	}
 	entry, err := s.store.GetEntry(r.Context(), id)
 	if err != nil {
 		s.notFound(w, r)
@@ -133,11 +163,7 @@ func (s *Server) handleEntrySignatureAdd(w http.ResponseWriter, r *http.Request)
 	if !s.entryYearOpen(w, r, entry, "Das Abrechnungsjahr ist abgeschlossen – Unterschriften können nicht mehr ergänzt werden.") {
 		return
 	}
-	back := "/entries/" + itoa64(id) + "/edit#unterschrift"
 	sig, msg := signatureFromForm(r)
-	if msg == "" && sig == nil {
-		msg = "Bitte unterschreiben lassen und den Namen angeben."
-	}
 	if msg != "" {
 		s.setFlash(w, r, "error", msg)
 		redirect(w, r, back)

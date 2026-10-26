@@ -126,6 +126,10 @@ func (s *Server) handleSecurityPolicySave(w http.ResponseWriter, r *http.Request
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
+	if s.tooLong(w, r, "Übergangsfrist", r.FormValue("grace_days"), 50) {
+		redirect(w, r, "/admin/users#anmelderichtlinie")
+		return
+	}
 	grace, err := strconv.Atoi(r.FormValue("grace_days"))
 	if err != nil || grace < 0 || grace > 90 {
 		s.setFlash(w, r, "error", "Die Übergangsfrist muss zwischen 0 und 90 Tagen liegen.")

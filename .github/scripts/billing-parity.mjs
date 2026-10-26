@@ -130,7 +130,7 @@ try {
   await run('docker', ['run', '-d', '--rm', '--name', dbName, '--label', `treckrr.validation=${id}`,
     '--network', 'none', '--tmpfs', '/var/lib/postgresql/data',
     '-e', 'POSTGRES_USER=treckrr_test', '-e', 'POSTGRES_PASSWORD=synthetic-test-only', '-e', 'POSTGRES_DB=treckrr_parity_admin',
-    'postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea'], 'database');
+    'postgres:16-alpine@sha256:f4610795587492cd4fb887c2dc3de301b813278bb6f616992061141b5f15ac36'], 'database');
   databaseCreated = true;
   let ready = false;
   for (let attempt = 0; attempt < 60; attempt++) {

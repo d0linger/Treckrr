@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -272,14 +273,27 @@ func (s *Server) verifyFlash(value string) (string, bool) {
 
 // ---- Form helpers -------------------------------------------------------
 
-// pathID parses the {id} path value as int64.
+// errNonPositiveID rejects a path ID below 1. Database identities start at 1,
+// so such a value can only come from a crafted URL; refusing it here keeps it
+// away from every lookup instead of relying on each one to miss.
+var errNonPositiveID = errors.New("path id must be positive")
+
+// pathID parses the {id} path value as a positive int64.
 func pathID(r *http.Request) (int64, error) {
-	return strconv.ParseInt(r.PathValue("id"), 10, 64)
+	return formInt64FromPath(r, "id")
 }
 
-// formInt64FromPath parses a named path value (e.g. a second {pid}) as int64.
+// formInt64FromPath parses a named path value (e.g. a second {pid}) as a
+// positive int64.
 func formInt64FromPath(r *http.Request, name string) (int64, error) {
-	return strconv.ParseInt(r.PathValue(name), 10, 64)
+	id, err := strconv.ParseInt(r.PathValue(name), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	if id < 1 {
+		return 0, errNonPositiveID
+	}
+	return id, nil
 }
 
 // formInt64 parses a form field as int64 (0 on empty/invalid).

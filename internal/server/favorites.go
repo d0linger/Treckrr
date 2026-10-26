@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strconv"
+	"unicode/utf8"
 
 	"github.com/d0linger/treckrr/internal/store"
 )
@@ -27,7 +29,15 @@ func (s *Server) handleFavorites(w http.ResponseWriter, r *http.Request) {
 			Changes []store.FavoriteChange `json:"changes"`
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 16384)
-		decoder := json.NewDecoder(r.Body)
+		body, err := io.ReadAll(r.Body)
+		// encoding/json silently turns invalid UTF-8 into U+FFFD, so a malformed
+		// body would be stored as replacement characters instead of refused.
+		// Only the raw bytes still show the difference.
+		if err != nil || !utf8.Valid(body) {
+			s.badRequest(w, "Ungültige Favoriten.")
+			return
+		}
+		decoder := json.NewDecoder(bytes.NewReader(body))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&in); err != nil {
 			s.badRequest(w, "Ungültige Favoriten.")

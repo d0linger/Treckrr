@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -441,6 +442,23 @@ func TestSavedViewQueryLimit(t *testing.T) {
 	}
 }
 
+// TestSecurityPolicyGraceDaysInputLimit rejects oversized grace_days before
+// parsing or accessing security policy storage.
+func TestSecurityPolicyGraceDaysInputLimit(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	form := url.Values{
+		"grace_days": {strings.Repeat("1", 51)},
+	}
+	assertFormRedirect(
+		t,
+		s,
+		s.handleSecurityPolicySave,
+		form,
+		"/admin/users#anmelderichtlinie",
+		"Übergangsfrist darf höchstens 50 Zeichen lang sein.",
+	)
+}
+
 // assertFormRedirect checks the handler's complete redirect/flash response.
 // Rejection-only callers deliberately omit a store: any database use panics.
 func assertFormRedirect(
@@ -479,6 +497,7 @@ func TestMutationHandlersRejectMalformedForms(t *testing.T) {
 		{name: "reset TOTP", handler: s.handleUserResetTotp},
 		{name: "deactivate user", handler: s.handleUserDelete},
 		{name: "delete accounting profile", handler: s.handleAccountingProfileDelete},
+		{name: "add signature", handler: s.handleEntrySignatureAdd},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, body := range []struct {
@@ -531,6 +550,91 @@ func TestInvoiceHandlersRejectInvalidYearIDs(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestPathIDRejectsNonPositive accepts positive path IDs and refuses zero and
+// negative ones with errNonPositiveID, for {id} and for a named value.
+func TestPathIDRejectsNonPositive(t *testing.T) {
+	t.Parallel()
+	for _, val := range []string{"0", "-1", "-100"} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.SetPathValue("id", val)
+		req.SetPathValue("pid", val)
+		if id, err := pathID(req); !errors.Is(err, errNonPositiveID) {
+			t.Errorf("pathID(%q) = %d, %v; want errNonPositiveID", val, id, err)
+		}
+		if id, err := formInt64FromPath(req, "pid"); !errors.Is(err, errNonPositiveID) {
+			t.Errorf("formInt64FromPath(%q) = %d, %v; want errNonPositiveID", val, id, err)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.SetPathValue("id", "42")
+	req.SetPathValue("pid", "7")
+	if id, err := pathID(req); err != nil || id != 42 {
+		t.Errorf("pathID(\"42\") = %d, %v; want 42, nil", id, err)
+	}
+	if id, err := formInt64FromPath(req, "pid"); err != nil || id != 7 {
+		t.Errorf("formInt64FromPath(\"7\") = %d, %v; want 7, nil", id, err)
+	}
+	req.SetPathValue("id", "abc")
+	if _, err := pathID(req); err == nil || errors.Is(err, errNonPositiveID) {
+		t.Errorf("pathID(\"abc\") = %v; want a parse error", err)
+	}
+}
+
+// TestBillingRuleInputLimits rejects an oversized increment or minimum with
+// the length message before parsing or touching the store.
+func TestBillingRuleInputLimits(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	for _, tc := range []struct {
+		field, label string
+	}{
+		{field: "billing_increment_h", label: "Abrechnungstakt"},
+		{field: "minimum_h", label: "Mindestzeit"},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			form := url.Values{tc.field: {strings.Repeat("1", maxDecimalLen+1)}}
+			assertFormRedirect(t, s, s.handleBaseBillingRule, form, "/bases#grundlage-1",
+				tc.label+" darf höchstens 32 Zeichen lang sein.")
+		})
+	}
+}
+
+// TestSignatureRejectsBeforeLookup refuses a missing or oversized signature
+// field before the entry lookup, with the same messages the booking form shows.
+func TestSignatureRejectsBeforeLookup(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	pad := "data:image/png;base64,AAAA"
+	for _, tc := range []struct {
+		name, message string
+		form          url.Values
+	}{
+		{name: "name too long", message: "Bitte den Namen der unterschreibenden Person angeben (höchstens 100 Zeichen).",
+			form: url.Values{"signature_name": {strings.Repeat("a", maxNameLen+1)}, "signature_png": {pad}}},
+		{name: "image without name", message: "Bitte den Namen der unterschreibenden Person angeben",
+			form: url.Values{"signature_png": {pad}}},
+		{name: "name without image", message: "Bitte vor Ort unterschreiben lassen",
+			form: url.Values{"signature_name": {"Hans Huber"}}},
+		{name: "empty", message: "Bitte unterschreiben lassen und den Namen angeben.", form: url.Values{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertFormRedirect(t, s, s.handleEntrySignatureAdd, tc.form, "/entries/1/edit#unterschrift", tc.message)
+		})
+	}
+}
+
+// TestSignatureAtLimitReachesLookup lets a name of exactly maxNameLen
+// characters (not bytes) through to the single entry lookup.
+func TestSignatureAtLimitReachesLookup(t *testing.T) {
+	s, queries := quickServer(t)
+	form := url.Values{"signature_name": {strings.Repeat("ä", maxNameLen)}, "signature_png": {"data:image/png;base64,AAAA"}}
+	req := httptest.NewRequest(http.MethodPost, "/entries/1/signature", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", "1")
+	s.handleEntrySignatureAdd(httptest.NewRecorder(), req)
+	if *queries != 1 {
+		t.Errorf("database calls = %d, want the one entry lookup", *queries)
 	}
 }
 

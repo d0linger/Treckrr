@@ -78,3 +78,18 @@ test('scheduled allocation fuzzing is bounded and needs no database or upload', 
   assert.match(workflow, /timeout-minutes: 15/);
   assert.doesNotMatch(workflow, /services:|secrets:|secrets\.|upload-artifact/);
 });
+
+test('billing parity runs on the same reviewed image pins as the app', () => {
+  // Dependabot only scans the root Dockerfile and Compose files. The parity
+  // harness copies their pins, so an update that misses it must fail here
+  // instead of leaving the gate on an older image.
+  const golang = read('../../Dockerfile').match(/^FROM (golang:\S+@sha256:[0-9a-f]{64})/m)?.[1];
+  assert.ok(golang, 'root Dockerfile has no digest-pinned golang image');
+  assert.ok(read('./billing-parity.Dockerfile').includes(`FROM ${golang}\n`), 'billing-parity.Dockerfile golang pin drifted');
+  const postgres = read('../../docker-compose.yml').match(/image: (postgres:\S+@sha256:[0-9a-f]{64})/)?.[1];
+  assert.ok(postgres, 'docker-compose.yml has no digest-pinned postgres image');
+  for (const file of ['../../docker-compose.ghcr.yml', '../../compose.e2e.yml', '../../compose.demo.yml']) {
+    assert.ok(read(file).includes(`image: ${postgres}\n`), `${file} postgres pin drifted`);
+  }
+  assert.ok(read('./billing-parity.mjs').includes(`'${postgres}'`), 'billing-parity.mjs postgres pin drifted');
+});
