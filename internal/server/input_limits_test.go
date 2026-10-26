@@ -497,6 +497,7 @@ func TestMutationHandlersRejectMalformedForms(t *testing.T) {
 		{name: "reset TOTP", handler: s.handleUserResetTotp},
 		{name: "deactivate user", handler: s.handleUserDelete},
 		{name: "delete accounting profile", handler: s.handleAccountingProfileDelete},
+		{name: "add signature", handler: s.handleEntrySignatureAdd},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, body := range []struct {
@@ -597,6 +598,43 @@ func TestBillingRuleInputLimits(t *testing.T) {
 			assertFormRedirect(t, s, s.handleBaseBillingRule, form, "/bases#grundlage-1",
 				tc.label+" darf höchstens 32 Zeichen lang sein.")
 		})
+	}
+}
+
+// TestSignatureRejectsBeforeLookup refuses a missing or oversized signature
+// field before the entry lookup, with the same messages the booking form shows.
+func TestSignatureRejectsBeforeLookup(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	pad := "data:image/png;base64,AAAA"
+	for _, tc := range []struct {
+		name, message string
+		form          url.Values
+	}{
+		{name: "name too long", message: "Bitte den Namen der unterschreibenden Person angeben (höchstens 100 Zeichen).",
+			form: url.Values{"signature_name": {strings.Repeat("a", maxNameLen+1)}, "signature_png": {pad}}},
+		{name: "image without name", message: "Bitte den Namen der unterschreibenden Person angeben",
+			form: url.Values{"signature_png": {pad}}},
+		{name: "name without image", message: "Bitte vor Ort unterschreiben lassen",
+			form: url.Values{"signature_name": {"Hans Huber"}}},
+		{name: "empty", message: "Bitte unterschreiben lassen und den Namen angeben.", form: url.Values{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertFormRedirect(t, s, s.handleEntrySignatureAdd, tc.form, "/entries/1/edit#unterschrift", tc.message)
+		})
+	}
+}
+
+// TestSignatureAtLimitReachesLookup lets a name of exactly maxNameLen
+// characters (not bytes) through to the single entry lookup.
+func TestSignatureAtLimitReachesLookup(t *testing.T) {
+	s, queries := quickServer(t)
+	form := url.Values{"signature_name": {strings.Repeat("ä", maxNameLen)}, "signature_png": {"data:image/png;base64,AAAA"}}
+	req := httptest.NewRequest(http.MethodPost, "/entries/1/signature", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", "1")
+	s.handleEntrySignatureAdd(httptest.NewRecorder(), req)
+	if *queries != 1 {
+		t.Errorf("database calls = %d, want the one entry lookup", *queries)
 	}
 }
 
