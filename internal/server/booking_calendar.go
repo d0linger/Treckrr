@@ -49,7 +49,8 @@ func (c bookingCalendar) MonthLabel() string {
 // filter's start, else this month when it lies in the billing year, else the
 // year's January.
 func calendarMonth(r *http.Request, year *models.BillingYear, f store.BookingFilter, now time.Time) time.Time {
-	if m, err := time.ParseInLocation("2006-01", r.URL.Query().Get("month"), time.Local); err == nil && m.Year() > 1900 && m.Year() < 3100 {
+	monthRaw := sanitizeQueryParam(r.URL.Query().Get("month"), maxNameLen)
+	if m, err := time.ParseInLocation("2006-01", monthRaw, time.Local); err == nil && m.Year() > 1900 && m.Year() < 3100 {
 		return m
 	}
 	if !f.From.IsZero() {

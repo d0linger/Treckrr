@@ -15,7 +15,7 @@ import (
 // year exists yet it redirects the user to create one and returns ok=false.
 func (s *Server) resolveYear(w http.ResponseWriter, r *http.Request) (*models.BillingYear, bool) {
 	if raw := r.URL.Query().Get("year"); raw != "" {
-		if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		if id, err := strconv.ParseInt(raw, 10, 64); err == nil && id > 0 {
 			if year, err := s.store.GetBillingYear(r.Context(), id); err == nil {
 				return year, true
 			}
@@ -51,7 +51,7 @@ func (s *Server) withYearSelector(r *http.Request, p pageData, active *models.Bi
 // and gespann management pages, which operate on a basis directly.
 func (s *Server) resolveBase(w http.ResponseWriter, r *http.Request) (*models.PriceBase, bool) {
 	if raw := r.URL.Query().Get("base"); raw != "" {
-		if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		if id, err := strconv.ParseInt(raw, 10, 64); err == nil && id > 0 {
 			base, err := s.store.GetBase(r.Context(), id)
 			if err == nil {
 				return base, true
