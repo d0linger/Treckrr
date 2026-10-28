@@ -158,13 +158,21 @@ func priceTermFromForm(r *http.Request) (models.PriceTerm, string) {
 		return t, "Bitte einen Rabatt über 0 und unter 100 % mit höchstens zwei Nachkommastellen angeben."
 	}
 	t.DiscountPct = pct
-	from, err := time.Parse("2006-01-02", strings.TrimSpace(r.FormValue("valid_from")))
+	// Cap raw date input length at 50 characters before parsing to prevent CPU/memory resource exhaustion (DoS) attacks.
+	rawFrom := strings.TrimSpace(r.FormValue("valid_from"))
+	if lenError("Gültig ab", rawFrom, 50) != "" {
+		return t, "Bitte ein gültiges „Gültig ab“-Datum angeben."
+	}
+	from, err := time.Parse("2006-01-02", rawFrom)
 	if err != nil {
 		return t, "Bitte ein gültiges „Gültig ab“-Datum angeben."
 	}
 	t.ValidFrom = from
-	if raw := strings.TrimSpace(r.FormValue("valid_to")); raw != "" {
-		to, err := time.Parse("2006-01-02", raw)
+	if rawTo := strings.TrimSpace(r.FormValue("valid_to")); rawTo != "" {
+		if lenError("Gültig bis", rawTo, 50) != "" {
+			return t, "Das „Gültig bis“-Datum muss gültig sein und darf nicht vor „Gültig ab“ liegen."
+		}
+		to, err := time.Parse("2006-01-02", rawTo)
 		if err != nil || to.Before(from) {
 			return t, "Das „Gültig bis“-Datum muss gültig sein und darf nicht vor „Gültig ab“ liegen."
 		}
