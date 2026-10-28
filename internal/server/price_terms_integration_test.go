@@ -51,6 +51,16 @@ func TestPriceTermsIntegration(t *testing.T) {
 	if terms, _ := e.st.ListPriceTerms(e.ctx, e.neighborID); len(terms) != 0 {
 		t.Fatalf("a 100 %% discount was stored: %+v", terms)
 	}
+	// Oversized valid_from / valid_to date inputs must be rejected
+	oversizedDate := strings.Repeat("2026-01-01", 10)
+	e.post(termsURL, url.Values{"label": {"Familienrabatt"}, "discount_pct": {"10"}, "valid_from": {oversizedDate}})
+	if terms, _ := e.st.ListPriceTerms(e.ctx, e.neighborID); len(terms) != 0 {
+		t.Fatalf("term with oversized valid_from was stored: %+v", terms)
+	}
+	e.post(termsURL, url.Values{"label": {"Familienrabatt"}, "discount_pct": {"10"}, "valid_from": {"2026-04-01"}, "valid_to": {oversizedDate}})
+	if terms, _ := e.st.ListPriceTerms(e.ctx, e.neighborID); len(terms) != 0 {
+		t.Fatalf("term with oversized valid_to was stored: %+v", terms)
+	}
 	e.post(termsURL, url.Values{"label": {"Familienrabatt"}, "discount_pct": {"10"},
 		"valid_from": {"2026-04-01"}, "valid_to": {"2026-04-30"}})
 	terms, err := e.st.ListPriceTerms(e.ctx, e.neighborID)
