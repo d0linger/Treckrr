@@ -207,7 +207,7 @@ func (s *Server) beginRestore(ctx context.Context) (func(bool), error) {
 	}
 	return func(reconciled bool) {
 		if err := release(); err != nil {
-			slog.Error("restore: lease release failed; maintenance remains enabled", "err", err)
+			slog.Error("restore: lease release failed; maintenance remains enabled", "err", sanitizeLog(err.Error()))
 			reconciled = false
 		}
 		if reconciled {
