@@ -145,7 +145,7 @@ func (s *Server) audit(r *http.Request, action, entity string, entityID int64, d
 		idStr = strconv.FormatInt(entityID, 10)
 	}
 	if err := s.store.AddAudit(ctx, uid, uname, action, entity, idStr, detail, s.clientIP(r)); err != nil {
-		slog.Error("audit write failed", "action", action, "entity", entity, "err", err)
+		slog.Error("audit write failed", "action", sanitizeLog(action), "entity", sanitizeLog(entity), "err", sanitizeLog(err.Error()))
 	}
 }
 
@@ -244,7 +244,7 @@ func (s *Server) auditLogin(r *http.Request, username, action, detail string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
 	defer cancel()
 	if err := s.store.AddAudit(ctx, nil, username, action, "auth", "", detail, s.clientIP(r)); err != nil {
-		slog.Error("audit write failed", "action", action, "err", err)
+		slog.Error("audit write failed", "action", sanitizeLog(action), "err", sanitizeLog(err.Error()))
 	}
 }
 

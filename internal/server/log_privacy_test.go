@@ -64,3 +64,24 @@ func TestCSPReportDoesNotLogUntrustedURLsOrSamples(t *testing.T) {
 		t.Fatal("safe diagnostic fields missing")
 	}
 }
+
+func TestAuditLogSanitizesErrors(t *testing.T) {
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	s, _ := quickServer(t)
+	r := httptest.NewRequest(http.MethodPost, "/test", nil)
+
+	s.audit(r, "action\r\ninjected", "entity\r\ninjected", 1, "detail")
+	s.auditLogin(r, "user", "action\r\ninjected", "detail")
+
+	out := output.String()
+	if strings.Contains(out, "\r") {
+		t.Fatal("control character CR in audit log arguments was not sanitized")
+	}
+	if !strings.Contains(out, `action="action  injected"`) || !strings.Contains(out, `entity="entity  injected"`) {
+		t.Fatalf("sanitized audit log text missing from output: %s", out)
+	}
+}
