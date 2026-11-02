@@ -81,20 +81,34 @@ func (s *Server) handleFieldCreate(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	back := neighborURL(id, formInt64(r, "year")) + "#felder"
+	if s.tooLong(w, r, "Feldname", r.FormValue("name"), maxNameLen) ||
+		s.tooLong(w, r, "Schlagnummer", r.FormValue("plot_number"), maxPlotNumberLen) ||
+		s.tooLong(w, r, "Fläche", r.FormValue("area_ha"), maxDecimalLen) {
+		redirect(w, r, back)
+		return
+	}
 	neighbor, err := s.store.GetNeighbor(r.Context(), id)
 	if err != nil {
 		s.notFound(w, r)
 		return
 	}
-	back := neighborURL(id, formInt64(r, "year")) + "#felder"
 	if neighbor.Anonymized {
 		s.setFlash(w, r, "error", "Für einen anonymisierten Nachbarn können keine Felder angelegt werden.")
 		redirect(w, r, back)
 		return
 	}
 	f := models.Field{NeighborID: id, Name: strings.TrimSpace(r.FormValue("name")), PlotNumber: strings.TrimSpace(r.FormValue("plot_number"))}
-	if f.Name == "" || lenError("Feldname", f.Name, maxNameLen) != "" || len([]rune(f.PlotNumber)) > maxPlotNumberLen {
-		s.setFlash(w, r, "error", "Bitte einen Feldnamen (höchstens 100 Zeichen) und eine Schlagnummer mit höchstens 40 Zeichen angeben.")
+	if f.Name == "" {
+		s.setFlash(w, r, "error", "Bitte einen Feldnamen angeben.")
 		redirect(w, r, back)
 		return
 	}
@@ -127,6 +141,14 @@ func (s *Server) handleFieldArchive(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
 	back := neighborURL(id, formInt64(r, "year")) + "#felder"
 	fieldID, archive := formInt64(r, "field_id"), r.FormValue("archived") == "1"
 	field, err := s.store.GetField(r.Context(), id, fieldID)
@@ -155,6 +177,14 @@ func (s *Server) handleFieldDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		s.notFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
 		return
 	}
 	back := neighborURL(id, formInt64(r, "year")) + "#felder"

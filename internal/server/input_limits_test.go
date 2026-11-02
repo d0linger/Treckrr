@@ -486,6 +486,31 @@ func assertFormRedirect(
 	}
 }
 
+// TestFieldInputLimits rejects oversized field attributes before neighbor lookups.
+func TestFieldInputLimits(t *testing.T) {
+	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
+	for _, tc := range []struct {
+		name, field, label string
+		limit              int
+	}{
+		{name: "field name", field: "name", label: "Feldname", limit: maxNameLen},
+		{name: "plot number", field: "plot_number", label: "Schlagnummer", limit: maxPlotNumberLen},
+		{name: "area", field: "area_ha", label: "Fläche", limit: maxDecimalLen},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			form := url.Values{"year": {"1"}, "name": {"Feld"}, tc.field: {strings.Repeat("1", tc.limit+1)}}
+			assertFormRedirect(
+				t,
+				s,
+				s.handleFieldCreate,
+				form,
+				"/neighbors/1?year=1#felder",
+				fmt.Sprintf("%s darf höchstens %d Zeichen lang sein.", tc.label, tc.limit),
+			)
+		})
+	}
+}
+
 func TestMutationHandlersRejectMalformedForms(t *testing.T) {
 	// A valid header token bypasses the CSRF middleware's form parser. Each
 	// handler must still reject an unreadable body before any store access.
@@ -498,6 +523,9 @@ func TestMutationHandlersRejectMalformedForms(t *testing.T) {
 		{name: "deactivate user", handler: s.handleUserDelete},
 		{name: "delete accounting profile", handler: s.handleAccountingProfileDelete},
 		{name: "add signature", handler: s.handleEntrySignatureAdd},
+		{name: "create field", handler: s.handleFieldCreate},
+		{name: "archive field", handler: s.handleFieldArchive},
+		{name: "delete field", handler: s.handleFieldDelete},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, body := range []struct {
