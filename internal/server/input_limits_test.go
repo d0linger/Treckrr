@@ -666,6 +666,35 @@ func TestSignatureAtLimitReachesLookup(t *testing.T) {
 	}
 }
 
+// TestResolveSkipsNonPositiveQueryIDs falls back to the latest year or basis
+// without looking up a ?year= or ?base= below 1. On the counting mock every
+// lookup fails, so a positive ID costs two queries and a refused one only the
+// fallback's.
+func TestResolveSkipsNonPositiveQueryIDs(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want int
+	}{
+		{raw: "0", want: 1}, {raw: "-1", want: 1}, {raw: "-9223372036854775808", want: 1},
+		{raw: "abc", want: 1}, {raw: "7", want: 2},
+	} {
+		for _, param := range []string{"year", "base"} {
+			t.Run(param+"="+tc.raw, func(t *testing.T) {
+				s, queries := quickServer(t)
+				r := httptest.NewRequest(http.MethodGet, "/?"+param+"="+url.QueryEscape(tc.raw), nil)
+				if param == "year" {
+					s.resolveYear(httptest.NewRecorder(), r)
+				} else {
+					s.resolveBase(httptest.NewRecorder(), r)
+				}
+				if *queries != tc.want {
+					t.Errorf("database calls = %d, want %d", *queries, tc.want)
+				}
+			})
+		}
+	}
+}
+
 func TestYearHandlersRejectNonPositiveIDs(t *testing.T) {
 	s := &Server{cfg: &config.Config{SessionSecret: "test-session-secret-at-least-16-bytes"}}
 	for _, tc := range []struct {
