@@ -9,7 +9,7 @@ go 1.26.6
 
 // Prefer the patched application toolchain for automatic local builds.
 // Explicit analyzer compatibility pins still override this preference.
-toolchain go1.27.3
+toolchain go1.27.4
 
 require (
 	github.com/go-webauthn/webauthn v0.18.2

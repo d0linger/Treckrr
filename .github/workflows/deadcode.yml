@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.27.3"
+  GO_VERSION: "1.27.4"
 
 jobs:
   deadcode:
@@ -31,6 +31,6 @@ jobs:
       - name: Test deadcode gate failure handling
         run: node --test .github/scripts/check-deadcode.test.mjs
       - name: Install deadcode
-        run: go install golang.org/x/tools/cmd/deadcode@v0.49.0
+        run: go install golang.org/x/tools/cmd/deadcode@v0.52.0
       - name: Run deadcode
         run: sh .github/scripts/check-deadcode.sh

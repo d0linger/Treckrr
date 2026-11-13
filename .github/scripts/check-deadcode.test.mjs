@@ -94,7 +94,7 @@ test('Makefile installation failures cannot be overwritten by an empty scan', (t
   assert.equal(result.stdout, '');
   assert.throws(() => readFileSync(result.argsLog), { code: 'ENOENT' });
   assert.deepEqual(readFileSync(result.installLog, 'utf8').trim().split('\n'),
-    ['install', 'golang.org/x/tools/cmd/deadcode@v0.49.0']);
+    ['install', 'golang.org/x/tools/cmd/deadcode@v0.52.0']);
 });
 
 test('Makefile uses the same gate and preserves analyzer failures', (t) => {

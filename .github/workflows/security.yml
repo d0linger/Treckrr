@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.27.3"
+  GO_VERSION: "1.27.4"
 
 jobs:
   gosec:
@@ -31,14 +31,11 @@ jobs:
         # release tag's commit still runs the previous release. Pin the commit
         # whose action.yml names that release's image, and check that label
         # when accepting a Dependabot bump of this line.
-        uses: securego/gosec@a7abd50b2947e53b26a7e200223e635ce36fac9b # v2.30.0
+        uses: securego/gosec@14c713478ed40c9bdfa56d35d9c2142b91608106 # v2.30.0
         env:
-          # The gosec container bundles its own Go with GOTOOLCHAIN=local,
-          # which can lag behind the go.mod requirement (e.g. 1.26.2 vs
-          # 1.26.6). Let it download the exact toolchain instead. Track the
-          # go.mod language floor here, NOT the build toolchain — forcing a
-          # newer Go makes it emit export data this gosec build cannot read.
-          GOTOOLCHAIN: go1.26.6
+          # Use the patched Go 1.26 analyzer toolchain; the application builds
+          # on Go 1.27, whose export data this gosec build cannot read.
+          GOTOOLCHAIN: go1.26.11
         with:
           # Excluded rules (all reviewed and intentional):
           #   G115 – int64→uint64 of a non-negative Unix time (TOTP counter); safe.
@@ -66,6 +63,6 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - run: go mod tidy
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
       - name: Run govulncheck
         run: govulncheck ./...
