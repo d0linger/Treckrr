@@ -68,6 +68,16 @@ test('local full-suite command cannot silently omit the migration rehearsal', ()
   assert.ok(makefile.includes(`node .github/scripts/billing-parity.mjs ${baseline}`));
 });
 
+test('database-backed suites bypass test-result caching', () => {
+  for (const file of ['../workflows/ci.yml', '../workflows/docker-publish.yml', './test-local.sh']) {
+    const commands = read(file).match(/go test[^\n]*-tags=integration[^\n]*/g);
+    assert.ok(commands?.length, `${file} has no integration test command`);
+    for (const command of commands) {
+      assert.ok(command.split(/\s+/).includes('-count=1'), `${file} may reuse results from a different database`);
+    }
+  }
+});
+
 test('scheduled allocation fuzzing is bounded and needs no database or upload', () => {
   const workflow = read('../workflows/billing-fuzz.yml');
   assert.match(workflow, /^  schedule:$/m);

@@ -29,11 +29,11 @@ func TestReadBackupStatusFutureTimestamp(t *testing.T) {
 	}
 }
 
-// A recent successful backup reads as ok with a sane age.
+// A backup within the minimum five-minute schedule grace reads as ok.
 func TestReadBackupStatusOK(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "status.json")
-	recent := time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+	recent := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)
 	body := `{"last_backup":"` + recent + `","ok":true,"size_bytes":2097152}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -84,7 +84,7 @@ func TestBackupHealthTone(t *testing.T) {
 		return path
 	}
 	enabled := backup.New(backup.Options{EncKey: "not-a-real-secret"}, nil)
-	recent := time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+	recent := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)
 	old := time.Now().Add(-72 * time.Hour).UTC().Format(time.RFC3339)
 
 	cases := []struct {

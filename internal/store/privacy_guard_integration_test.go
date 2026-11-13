@@ -141,7 +141,7 @@ func TestPersonalDataWriteWaitsForErasureStateIntegration(t *testing.T) {
 	}()
 	t.Cleanup(func() {
 		cancel()
-		<-done
+		<-done //nolint:errcheck // Cleanup waits for the writer; the test checks its result.
 	})
 	waitForDatabaseBlock(t, ctx, pool, blockerPID)
 	if err := tx.Commit(); err != nil {

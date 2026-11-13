@@ -3,7 +3,7 @@
 # host database ports, external volumes, or production credentials.
 services:
   db:
-    image: postgres:16-alpine@sha256:f4610795587492cd4fb887c2dc3de301b813278bb6f616992061141b5f15ac36
+    image: postgres:16-alpine@sha256:f377d590e5474681d4d7838635031a2b50647923b7abfa803ce9b5ff35d5c663
     environment:
       POSTGRES_USER: treckrr_e2e
       POSTGRES_PASSWORD: disposable-test-password
