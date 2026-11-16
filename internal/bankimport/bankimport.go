@@ -294,9 +294,15 @@ func ParseCamt(data []byte) ([]Txn, error) {
 	if err := xml.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("camt-Datei konnte nicht gelesen werden: %w", err)
 	}
+	// A batch entry splits into one booking per detail (splitBatch), so it
+	// counts once per detail; one entry must not carry the file past MaxRows.
 	entries := doc.entries()
-	if len(entries) > MaxRows {
-		return nil, errTooManyRows
+	bookings := 0
+	for _, e := range entries {
+		bookings += max(1, len(e.Details))
+		if bookings > MaxRows {
+			return nil, errTooManyRows
+		}
 	}
 	var out []Txn
 	for _, e := range entries {

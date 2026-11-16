@@ -407,7 +407,18 @@ func TestParseRowLimit(t *testing.T) {
 		}
 		return b.String()
 	}
-	for name, build := range map[string]func(int) string{"CSV": csvRows, "camt": camtRows, "MT940": mt940Rows} {
+	// One SEPA batch entry whose details each state their amount splits into
+	// one booking per detail, so it counts once per detail.
+	camtBatch := func(n int) string {
+		var b strings.Builder
+		fmt.Fprintf(&b, `<?xml version="1.0"?><Document><BkToCstmrStmt><Stmt><Ntry><Amt Ccy="EUR">%d.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt>2026-02-01</Dt></BookgDt><NtryDtls>`, n)
+		for i := range n {
+			fmt.Fprintf(&b, `<TxDtls><Amt Ccy="EUR">1.00</Amt><RmtInf><Ustrd>R%d</Ustrd></RmtInf></TxDtls>`, i)
+		}
+		b.WriteString(`</NtryDtls></Ntry></Stmt></BkToCstmrStmt></Document>`)
+		return b.String()
+	}
+	for name, build := range map[string]func(int) string{"CSV": csvRows, "camt": camtRows, "camt batch": camtBatch, "MT940": mt940Rows} {
 		if txns, err := Parse([]byte(build(MaxRows))); err != nil || len(txns) != MaxRows {
 			t.Errorf("%s at the limit: %d txns, %v", name, len(txns), err)
 		}
