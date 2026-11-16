@@ -9,7 +9,9 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/xml"
+	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -17,6 +19,15 @@ import (
 
 	"github.com/shopspring/decimal"
 )
+
+// MaxRows bounds the bookings (credits and debits) one statement may carry.
+// 4 MB of short CSV lines is ~160,000 bookings, each matched against every
+// invoice reference and rendered in the preview; a real statement is far
+// below this and can always be exported for a shorter period.
+const MaxRows = 10_000
+
+// errTooManyRows is shown to the operator as is, like the other parse errors.
+var errTooManyRows = fmt.Errorf("die Datei enthält mehr als %d Buchungen — bitte den Export auf einen kürzeren Zeitraum beschränken", MaxRows)
 
 // Txn is one incoming credit (debits are dropped — only money received matters).
 type Txn struct {
@@ -136,9 +147,19 @@ func ParseCSV(data []byte) ([]Txn, error) {
 	cr := csv.NewReader(strings.NewReader(text))
 	cr.Comma = delim
 	cr.FieldsPerRecord = -1
-	rows, err := cr.ReadAll()
-	if err != nil {
-		return nil, fmt.Errorf("CSV konnte nicht gelesen werden: %w", err)
+	var rows [][]string
+	for {
+		rec, err := cr.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("CSV konnte nicht gelesen werden: %w", err)
+		}
+		if len(rows) > MaxRows { // header plus MaxRows bookings
+			return nil, errTooManyRows
+		}
+		rows = append(rows, rec)
 	}
 	if len(rows) < 2 {
 		return nil, fmt.Errorf("CSV enthält keine Datenzeilen")
@@ -273,8 +294,12 @@ func ParseCamt(data []byte) ([]Txn, error) {
 	if err := xml.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("camt-Datei konnte nicht gelesen werden: %w", err)
 	}
+	entries := doc.entries()
+	if len(entries) > MaxRows {
+		return nil, errTooManyRows
+	}
 	var out []Txn
-	for _, e := range doc.entries() {
+	for _, e := range entries {
 		if !strings.EqualFold(strings.TrimSpace(e.CdtDbtInd), "CRDT") {
 			continue // only money received
 		}
@@ -435,9 +460,13 @@ func ParseMT940(data []byte) ([]Txn, error) {
 		cur, raw86 = nil, ""
 	}
 	in86 := false
+	bookings := 0
 	for _, ln := range lines {
 		switch {
 		case strings.HasPrefix(ln, ":61:"):
+			if bookings++; bookings > MaxRows {
+				return nil, errTooManyRows
+			}
 			flush()
 			in86 = false
 			m := mt61.FindStringSubmatch(ln[4:])

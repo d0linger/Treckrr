@@ -119,6 +119,17 @@ func col(rec []string, i int) string {
 	return ""
 }
 
+// errImportTooManyRows refuses a CSV with more than maxImportRows bookings.
+var errImportTooManyRows = errors.New("import has too many rows")
+
+// importParseMessage is the flash for a CSV that parseImportCSV refused.
+func importParseMessage(err error) string {
+	if errors.Is(err, errImportTooManyRows) {
+		return "Die Datei hat zu viele Buchungen — höchstens 10.000 sind möglich. Bitte auf mehrere Dateien aufteilen."
+	}
+	return "CSV konnte nicht gelesen werden."
+}
+
 // parseImportCSV parses the semicolon CSV into rows, resolving each neighbor
 // against the year's members. It never touches the database beyond the caller's
 // prebuilt member map, so it is safe to run for the dry-run preview.
@@ -149,6 +160,9 @@ func parseImportCSV(text string, members map[string]int64) ([]importRow, error) 
 		}
 		if strings.TrimSpace(strings.Join(rec, "")) == "" {
 			continue
+		}
+		if len(out) >= maxImportRows {
+			return nil, errImportTooManyRows
 		}
 		qty, qtyOK := parseGermanDecimalOK(col(rec, 7))
 		price, priceOK := parseGermanDecimalOK(col(rec, 8))
@@ -326,7 +340,7 @@ func (s *Server) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, perr := parseImportCSV(string(raw), members)
 	if perr != nil {
-		s.setFlash(w, r, "error", "CSV konnte nicht gelesen werden.")
+		s.setFlash(w, r, "error", importParseMessage(perr))
 		redirect(w, r, "/entries/import?year="+itoa64(yearID))
 		return
 	}
@@ -446,7 +460,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, perr := parseImportCSV(string(raw), members)
 	if perr != nil {
-		s.setFlash(w, r, "error", "CSV konnte nicht gelesen werden.")
+		s.setFlash(w, r, "error", importParseMessage(perr))
 		redirect(w, r, back)
 		return
 	}

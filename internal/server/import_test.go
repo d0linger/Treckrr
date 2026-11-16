@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -177,5 +178,26 @@ func TestImportCommit_PayloadTooLarge(t *testing.T) {
 	loc := rr.Header().Get("Location")
 	if !strings.Contains(loc, "/entries/import?year=1") {
 		t.Errorf("expected redirect to /entries/import?year=1, got %q", loc)
+	}
+}
+
+// TestParseImportCSVRowLimit pins maxImportRows: 4 MB of short rows would
+// otherwise be ~140,000 bookings parsed, rendered and committed one by one
+// (Codex audit 2026-11, imports/unbounded-row-cardinality).
+func TestParseImportCSVRowLimit(t *testing.T) {
+	build := func(n int) string {
+		var b strings.Builder
+		b.WriteString("Nachbar;Datum;Tätigkeit;Traktor;Belastung;Maschinen;Einheit;Menge;Satz/Einheit (€);Kosten (€);Notiz\n")
+		for range n {
+			b.WriteString("Max Mustermann;2026-03-14;Mähen;;;;h;1;10;10;\n")
+		}
+		return b.String()
+	}
+	if rows, err := parseImportCSV(build(maxImportRows), testMembers()); err != nil || len(rows) != maxImportRows {
+		t.Fatalf("at the limit: %d rows, %v", len(rows), err)
+	}
+	_, err := parseImportCSV(build(maxImportRows+1), testMembers())
+	if !errors.Is(err, errImportTooManyRows) || !strings.Contains(importParseMessage(err), "10.000") {
+		t.Fatalf("over the limit = %v (%q)", err, importParseMessage(err))
 	}
 }
