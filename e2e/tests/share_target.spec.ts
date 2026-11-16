@@ -3,11 +3,12 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const appScript = path.resolve(__dirname, "../../internal/web/static/js/app.js");
-// Mirrors share_target.html for a writer with one open booking.
-const fixture = `<!doctype html><html lang="de"><head><meta charset="utf-8"></head><body>
+// Mirrors share_target.html for a writer (account 1) with one open booking.
+const fixture = `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="user-id" content="1"></head><body>
   <section data-share-target>
     <div data-share-preview hidden><strong data-share-count></strong><div data-share-thumbs></div></div>
     <p data-share-empty>Keine geteilten Fotos</p>
+    <div data-share-foreign hidden><p>Fotos eines anderen Kontos</p><button type="button" data-share-discard>Fremde Fotos verwerfen</button></div>
     <form method="post" enctype="multipart/form-data" data-share-form hidden>
       <input type="hidden" name="csrf_token" value="tok">
       <input type="file" name="photo" multiple hidden data-share-files>
@@ -34,10 +35,11 @@ async function openFixture(page: Page) {
   });
 }
 
-// Writes the parked share exactly as sw.js does.
-async function park(page: Page, count: number, id?: string) {
+// Writes the parked share exactly as sw.js does; extra fields stand in for an
+// owner stamp or an older share.
+async function park(page: Page, count: number, id?: string, extra: Record<string, unknown> = {}) {
   await page.goto("http://share-target.test/fixture");
-  await page.evaluate(async ({ png, count, id }) => {
+  await page.evaluate(async ({ png, count, id, extra }) => {
     const bytes = Uint8Array.from(atob(png), c => c.charCodeAt(0));
     const files = Array.from({ length: count }, (_, i) => ({ name: `beleg-${i + 1}.png`, type: "image/png", blob: new Blob([bytes], { type: "image/png" }) }));
     await new Promise<void>((resolve, reject) => {
@@ -46,13 +48,53 @@ async function park(page: Page, count: number, id?: string) {
       open.onerror = () => reject(open.error);
       open.onsuccess = () => {
         const tx = open.result.transaction("pending", "readwrite");
-        tx.objectStore("pending").put({ files, at: Date.now(), ...(id ? { id } : {}) }, "shared");
+        tx.objectStore("pending").put({ files, at: Date.now(), ...(id ? { id } : {}), ...extra }, "shared");
         tx.oncomplete = () => { open.result.close(); resolve(); };
       };
     });
-  }, { png, count, id });
+  }, { png, count, id, extra });
   await page.reload();
 }
+
+// The parked store is origin-wide: photos shared under one account must not be
+// shown to, or uploaded by, the next account on the same device (Codex audit
+// 2026-11, pwa/share-target-account-binding).
+for (const owner of [
+  { name: "another account", extra: { user: "2" } },
+  { name: "nobody, parked long ago", extra: { at: Date.now() - 60 * 60 * 1000 } },
+]) {
+  test(`photos claimed by ${owner.name} are neither shown nor uploadable, only discarded`, async ({ page }) => {
+    await openFixture(page);
+    const posts: string[] = [];
+    page.on("request", request => { if (request.method() === "POST") posts.push(request.url()); });
+    await park(page, 2, "d7445564-77f8-4a62-9308-8bf3527a5b49", owner.extra);
+    await expect(page.locator("[data-share-foreign]")).toBeVisible();
+    await expect(page.locator("[data-share-form]")).toBeHidden();
+    await expect(page.locator("[data-share-preview]")).toBeHidden();
+    await expect(page.locator("[data-share-thumbs] img")).toHaveCount(0);
+    await page.getByRole("button", { name: "Fremde Fotos verwerfen" }).click();
+    await expect(page).toHaveURL("http://share-target.test/buchungen");
+    await page.goto("http://share-target.test/fixture");
+    await expect(page.locator("[data-share-empty]")).toBeVisible();
+    await expect(page.locator("[data-share-foreign]")).toBeHidden();
+    expect(posts).toEqual([]);
+  });
+}
+
+test("a fresh share is claimed by the account that opens it first", async ({ page }) => {
+  await openFixture(page);
+  await park(page, 1);
+  await expect(page.locator("[data-share-count]")).toHaveText("1 Foto bereit");
+  const owner = await page.evaluate(() => new Promise<string>((resolve, reject) => {
+    const open = indexedDB.open("treckrr-share", 1);
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const get = open.result.transaction("pending").objectStore("pending").get("shared");
+      get.onsuccess = () => { open.result.close(); resolve(get.result.user); };
+    };
+  }));
+  expect(owner).toBe("1");
+});
 
 for (const identity of ["legacy timestamp", "unique ID"]) {
   test(`parked photos with ${identity} are attached and uploaded to the chosen booking once`, async ({ page }) => {

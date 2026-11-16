@@ -12,6 +12,11 @@
 		<div class="share-target__thumbs" data-share-thumbs></div>
 	</div>
 	<p class="muted" data-share-empty>Keine geteilten Fotos auf diesem Gerät gefunden. Fotos in der Galerie oder Kamera-App über „Teilen“ → Treckrr senden.</p>
+	<div class="card stack stack--tight" data-share-foreign hidden>
+		<p>Auf diesem Gerät warten geteilte Fotos, die diesem Konto nicht zugeordnet sind – sie wurden unter einem anderen Konto geteilt oder zu lange nicht angehängt. Sie werden hier nicht angezeigt.</p>
+		<div class="btnrow"><button class="btn btn--ghost" type="button" data-share-discard>Verwerfen</button></div>
+		<p class="muted small">Eigene Fotos danach einfach erneut teilen; die Originale bleiben in der Galerie.</p>
+	</div>
 	<form method="post" enctype="multipart/form-data" class="card form" data-share-form hidden>
 		<input type="file" name="photo" multiple hidden data-share-files>
 		<fieldset class="fieldset"><legend>Zu welcher Buchung gehören die Fotos?</legend>
