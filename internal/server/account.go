@@ -285,7 +285,9 @@ func (s *Server) verifySecondFactor(r *http.Request, userID int64, input string)
 }
 
 // handleRecoveryRegenerate creates a fresh set of recovery codes (invalidating
-// the old ones), after confirming the account password.
+// the old ones), after confirming the account password AND the second factor:
+// fresh codes pass the second login step, so the password alone must not mint
+// them.
 func (s *Server) handleRecoveryRegenerate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.badRequest(w, "Die Anfrage konnte nicht verarbeitet werden — bitte die Seite neu laden und erneut versuchen.")
@@ -304,7 +306,13 @@ func (s *Server) handleRecoveryRegenerate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if _, err := s.store.AuthenticateUser(r.Context(), user.Username, r.FormValue("password")); err != nil {
-		s.setFlash(w, r, "error", "Passwort falsch – Codes nicht neu erstellt.")
+		s.setFlash(w, r, "error", "Passwort oder Code falsch – Codes nicht neu erstellt.")
+		redirect(w, r, "/account/2fa")
+		return
+	}
+	if !s.verifySecondFactor(r, user.ID, r.FormValue("code")) {
+		s.audit(r, "recovery_regenerate_denied", "user", user.ID, "Zwei-Faktor-Code falsch")
+		s.setFlash(w, r, "error", "Passwort oder Code falsch – Codes nicht neu erstellt.")
 		redirect(w, r, "/account/2fa")
 		return
 	}
