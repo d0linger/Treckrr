@@ -11,15 +11,18 @@ esac
 
 # Hosted Ubuntu images remove their PGDG apt source after provisioning. Restore
 # the signed official source so the requested major is available for installation.
+# Both downloads retry: a dropped connection (curl exit 55, a mirror hiccup)
+# must not fail a release run that never reached the code under test.
 key=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
 sudo install -d /usr/share/postgresql-common/pgdg
 sudo curl --fail --silent --show-error --location \
+  --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 \
   https://www.postgresql.org/media/keys/ACCC4CF8.asc -o "$key"
 source /etc/os-release
 printf 'deb [signed-by=%s] https://apt.postgresql.org/pub/repos/apt %s-pgdg main\n' \
   "$key" "$VERSION_CODENAME" | sudo tee /etc/apt/sources.list.d/treckrr-pgdg.list >/dev/null
-sudo apt-get update
-sudo apt-get install --yes --no-install-recommends "postgresql-client-$PG_MAJOR"
+sudo apt-get -o Acquire::Retries=5 update
+sudo apt-get -o Acquire::Retries=5 install --yes --no-install-recommends "postgresql-client-$PG_MAJOR"
 
 # Use the versioned binaries, not Debian's pg_wrapper or another installed major.
 pg_bin="/usr/lib/postgresql/$PG_MAJOR/bin"
