@@ -93,6 +93,13 @@ func (s *Service) RotateKey(ctx context.Context, oldSecret string) (RotateResult
 			res.Skipped = append(res.Skipped, name+": verification after re-encryption failed: "+err.Error())
 			continue
 		}
+		// A canceled operation (Ctrl-C, or the work lease was lost) replaces
+		// nothing more; the dump stays on the old key. This only narrows the
+		// window — it is no proof the lease is still held during the write.
+		if ctx.Err() != nil {
+			res.Skipped = append(res.Skipped, name+": not replaced, rotation canceled: "+context.Cause(ctx).Error())
+			continue
+		}
 		staging := path + ".staging"
 		if err := writeFileAtomic(staging, reenc); err != nil {
 			res.Skipped = append(res.Skipped, name+": write failed: "+err.Error())

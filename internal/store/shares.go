@@ -133,13 +133,37 @@ func (s *Store) RecordBelegShareEvent(ctx context.Context, shareID, neighborID, 
 	default:
 		return fmt.Errorf("record beleg share event: unsupported event %q", event)
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO beleg_share_events (share_id,neighbor_id,billing_year_id,event)
-		SELECT $1,$2,$3,$4
-		 WHERE $4 NOT IN ('access','download') OR NOT EXISTS (
-			SELECT 1 FROM beleg_share_events
-			 WHERE neighbor_id=$2 AND billing_year_id=$3 AND share_id=$1 AND event=$4
-			   AND created_at > now() - interval '1 hour')`, shareID, neighborID, yearID, event)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if event == "access" || event == "download" {
+		// Lock the link first so concurrent views cannot each pass the hourly
+		// check; the check then runs with a fresh READ COMMITTED snapshot.
+		var lockedID int64
+		err := tx.QueryRowContext(ctx, `SELECT id FROM beleg_shares WHERE id=$1 FOR UPDATE`, shareID).Scan(&lockedID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound // revoked since it was resolved
+		}
+		if err != nil {
+			return err
+		}
+		var recent bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM beleg_share_events
+			WHERE neighbor_id=$2 AND billing_year_id=$3 AND share_id=$1 AND event=$4
+			  AND created_at > now() - interval '1 hour')`, shareID, neighborID, yearID, event).Scan(&recent); err != nil {
+			return err
+		}
+		if recent {
+			return nil
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO beleg_share_events (share_id,neighbor_id,billing_year_id,event)
+		VALUES ($1,$2,$3,$4)`, shareID, neighborID, yearID, event); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // CreateBelegFeedback records a confirmation or dispute after revalidating the

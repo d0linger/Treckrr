@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -236,6 +237,28 @@ func TestInvoicePortalWritesBoundedIntegration(t *testing.T) {
 			t.Fatal(err)
 		}
 		return n
+	}
+	// Concurrent views race the hourly check; the link's row lock serializes
+	// them, so exactly one event survives (CodeRabbit 2026-11-16).
+	var wg sync.WaitGroup
+	gate := make(chan struct{})
+	errs := make(chan error, 20)
+	for range 20 {
+		wg.Go(func() {
+			<-gate
+			errs <- st.RecordBelegShareEvent(ctx, shareID, nid, yearID, "access")
+		})
+	}
+	close(gate)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent access: %v", err)
+		}
+	}
+	if n := events("access"); n != 1 {
+		t.Fatalf("20 concurrent views stored %d access events, want 1", n)
 	}
 	for range 25 {
 		for _, event := range []string{"access", "download"} {
