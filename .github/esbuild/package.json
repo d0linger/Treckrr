@@ -1,0 +1,8 @@
+{
+  "name": "treckrr-release-esbuild",
+  "private": true,
+  "description": "Release-time JS minifier, installed by docker-publish.yml from the lockfile only (npm ci).",
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

@@ -67,6 +67,21 @@ updates:
           - "minor"
           - "patch"
 
+  # Release-time minifier (.github/esbuild), installed from its lockfile by
+  # docker-publish.yml.
+  - package-ecosystem: "npm"
+    directory: "/.github/esbuild"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Vienna"
+    labels:
+      - "dependencies"
+      - "javascript"
+    commit-message:
+      prefix: "ci"
+
   # Docker base image (Dockerfile)
   - package-ecosystem: "docker"
     directory: "/"
