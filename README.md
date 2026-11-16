@@ -187,8 +187,9 @@ docker compose -f docker-compose.yml -f compose.rotate-key.yml run --rm --no-dep
 Every **local** dump is re-encrypted, verified as restorable **with the new key**, and only
 then replaced atomically. A dump that fails verification is left untouched and
 reported, so a partial run degrades to "some files still use the old key" — never
-to an unreadable archive. The command is resumable: run it again after fixing
-whatever failed. Remove `BACKUP_ENCRYPTION_KEY_OLD` from the deployment environment
+to an unreadable archive. Such a run exits non-zero even when other dumps were
+rotated; only a zero exit means no local dump needs the old key anymore. The
+command is resumable: run it again after fixing whatever failed. Remove `BACKUP_ENCRYPTION_KEY_OLD` from the deployment environment
 after success, then recreate the app with its new key. **Do not destroy the old
 key**: S3, off-host copies and object versions are not rotated by this command.
 Keep a versioned recovery-key record in separate secure storage for as long as

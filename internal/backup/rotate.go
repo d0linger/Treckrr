@@ -10,11 +10,17 @@ import (
 	"sort"
 )
 
-// RotateResult summarizes a key rotation.
+// RotateResult summarizes a key rotation. Current holds dumps a previous run
+// already rotated; Skipped holds genuine failures that still need the old key.
 type RotateResult struct {
 	Rotated []string
+	Current []string
 	Skipped []string
 }
+
+// ErrRotationIncomplete reports a rotation that left at least one dump on the
+// previous key. Successfully rotated files stay rotated, and a rerun resumes.
+var ErrRotationIncomplete = errors.New("key rotation incomplete")
 
 // RotateKey re-encrypts every dump in the backup directory from oldSecret to the
 // service's current key.
@@ -31,8 +37,11 @@ type RotateResult struct {
 //     "some files still use the old key", never to "some files are unreadable".
 //   - Each file is replaced atomically (staging file + rename), so an interrupted
 //     run cannot leave a half-written dump in place.
-//   - A file that already opens with the new key is skipped, which makes the
+//   - A file that already opens with the new key is left as is, which makes the
 //     whole operation resumable: run it again after fixing whatever failed.
+//   - Any failed dump makes the call return ErrRotationIncomplete, even when
+//     others rotated: a nil error is what tells the operator (or automation)
+//     that no local dump needs the previous key anymore.
 func (s *Service) RotateKey(ctx context.Context, oldSecret string) (RotateResult, error) {
 	var res RotateResult
 	ctx, release, err := s.AcquireWork(ctx)
@@ -65,7 +74,7 @@ func (s *Service) RotateKey(ctx context.Context, oldSecret string) (RotateResult
 		}
 		// Already on the new key? Then a previous run got this far; leave it.
 		if _, derr := decrypt(enc, s.secret); derr == nil {
-			res.Skipped = append(res.Skipped, name+": already uses the current key")
+			res.Current = append(res.Current, name)
 			continue
 		}
 		raw, err := decrypt(enc, []byte(oldSecret))
@@ -97,8 +106,8 @@ func (s *Service) RotateKey(ctx context.Context, oldSecret string) (RotateResult
 		res.Rotated = append(res.Rotated, name)
 		slog.Info("backup re-encrypted with the new key", "file", name)
 	}
-	if len(res.Rotated) == 0 && len(res.Skipped) > 0 {
-		return res, fmt.Errorf("no dump could be rotated (%d skipped)", len(res.Skipped))
+	if len(res.Skipped) > 0 {
+		return res, fmt.Errorf("%w: %d of %d dumps still need the previous key", ErrRotationIncomplete, len(res.Skipped), len(files))
 	}
 	return res, nil
 }

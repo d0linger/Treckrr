@@ -2,6 +2,7 @@ package backup_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -85,13 +86,14 @@ func TestRotateKeyIntegration(t *testing.T) {
 		}
 	}
 
-	// Resumable: a second run finds nothing to do and says so instead of failing.
+	// Resumable: a second run finds every dump already on the new key — that is
+	// the finished state, not a failure.
 	res2, err := newSvc.RotateKey(ctx, oldKey)
-	if err == nil {
-		t.Error("a second rotation should report that nothing could be rotated")
+	if err != nil {
+		t.Errorf("a second rotation over rotated dumps failed: %v", err)
 	}
-	if len(res2.Rotated) != 0 || len(res2.Skipped) != 2 {
-		t.Errorf("second run: rotated=%d skipped=%d, want 0/2", len(res2.Rotated), len(res2.Skipped))
+	if len(res2.Rotated) != 0 || len(res2.Current) != 2 || len(res2.Skipped) != 0 {
+		t.Errorf("second run: rotated=%d current=%d skipped=%d, want 0/2/0", len(res2.Rotated), len(res2.Current), len(res2.Skipped))
 	}
 
 	// The guard against rotating to the same key.
@@ -127,8 +129,8 @@ func TestRotateKeyLeavesUnreadableDumpsUntouchedIntegration(t *testing.T) {
 		DatabaseURL: url, EncKey: "new-backup-key-at-least-32-bytes!!!!", Dir: dir,
 	}, pool)
 	res, err := svc.RotateKey(ctx, "old-backup-key-at-least-32-bytes!!!!")
-	if err == nil {
-		t.Error("rotation with nothing rotatable should report an error")
+	if !errors.Is(err, backup.ErrRotationIncomplete) {
+		t.Errorf("rotation with nothing rotatable = %v, want ErrRotationIncomplete", err)
 	}
 	if len(res.Rotated) != 0 {
 		t.Errorf("rotated %v, want nothing", res.Rotated)
@@ -142,5 +144,52 @@ func TestRotateKeyLeavesUnreadableDumpsUntouchedIntegration(t *testing.T) {
 	}
 	if leftovers, _ := filepath.Glob(filepath.Join(dir, "*.staging")); len(leftovers) != 0 {
 		t.Errorf("staging files left behind: %v", leftovers)
+	}
+}
+
+// A mixed run — one dump rotated, one genuinely unreadable — must not report
+// success: the skipped dump still needs the previous key, and a nil error is
+// what an operator or script takes as "the old key can be retired".
+func TestRotateKeyMixedResultIsIncompleteIntegration(t *testing.T) {
+	requirePGTools(t)
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping DB integration test")
+	}
+	ctx := context.Background()
+	pool, err := db.Connect(ctx, url)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	const oldKey = "old-backup-key-at-least-32-bytes!!!!"
+	const newKey = "new-backup-key-at-least-32-bytes!!!!"
+	dir := t.TempDir()
+	enc, _, err := backup.New(backup.Options{DatabaseURL: url, EncKey: oldKey, Dir: dir}, pool).CreateEncrypted(ctx)
+	if err != nil {
+		t.Fatalf("create dump: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "treckrr-20260101-010101.dump.enc"), enc, 0o600); err != nil { //nolint:gosec // G703: fixed name, dir from t.TempDir()
+		t.Fatalf("write dump: %v", err)
+	}
+	bad := filepath.Join(dir, "treckrr-20260101-020202.dump.enc")
+	junk := []byte("not an encrypted dump at all")
+	if err := os.WriteFile(bad, junk, 0o600); err != nil {
+		t.Fatalf("write junk: %v", err)
+	}
+
+	res, err := backup.New(backup.Options{DatabaseURL: url, EncKey: newKey, Dir: dir}, pool).RotateKey(ctx, oldKey)
+	if !errors.Is(err, backup.ErrRotationIncomplete) {
+		t.Errorf("mixed rotation = %v, want ErrRotationIncomplete", err)
+	}
+	if len(res.Rotated) != 1 || len(res.Skipped) != 1 || len(res.Current) != 0 {
+		t.Errorf("mixed rotation: rotated=%v current=%v skipped=%v, want 1/0/1", res.Rotated, res.Current, res.Skipped)
+	}
+	if after, err := os.ReadFile(bad); err != nil || string(after) != string(junk) { //nolint:gosec // G304: path built by this test
+		t.Errorf("the unreadable dump changed: %q (%v)", after, err)
 	}
 }
