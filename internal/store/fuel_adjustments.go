@@ -50,44 +50,32 @@ func (s *Store) FuelAdjustmentAt(ctx context.Context, baseID int64, date time.Ti
 	return &adjustment, err
 }
 
-// SaveFuelAdjustment creates or updates one version within a price basis.
+// SaveFuelAdjustment creates or updates one version within an unlocked price
+// basis.
 func (s *Store) SaveFuelAdjustment(ctx context.Context, adjustment *models.FuelAdjustment) error {
-	if adjustment.ID == 0 {
-		return s.db.QueryRowContext(ctx, `
-			INSERT INTO fuel_adjustments (base_id, effective_from, label, amount_per_h)
-			VALUES ($1,$2,$3,$4)
-			RETURNING id`, adjustment.BaseID, adjustment.EffectiveFrom, adjustment.Label,
-			adjustment.AmountPerH).Scan(&adjustment.ID)
-	}
-	res, err := s.db.ExecContext(ctx, `
-		UPDATE fuel_adjustments
-		   SET effective_from=$1, label=$2, amount_per_h=$3, updated_at=now()
-		 WHERE id=$4 AND base_id=$5`, adjustment.EffectiveFrom, adjustment.Label,
-		adjustment.AmountPerH, adjustment.ID, adjustment.BaseID)
-	if err != nil {
-		return err
-	}
-	if n, err := res.RowsAffected(); err != nil {
-		return err
-	} else if n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.inUnlockedBase(ctx, adjustment.BaseID, func(tx *sql.Tx) error {
+		if adjustment.ID == 0 {
+			return tx.QueryRowContext(ctx, `
+				INSERT INTO fuel_adjustments (base_id, effective_from, label, amount_per_h)
+				VALUES ($1,$2,$3,$4)
+				RETURNING id`, adjustment.BaseID, adjustment.EffectiveFrom, adjustment.Label,
+				adjustment.AmountPerH).Scan(&adjustment.ID)
+		}
+		return matchedRow(tx.ExecContext(ctx, `
+			UPDATE fuel_adjustments
+			   SET effective_from=$1, label=$2, amount_per_h=$3, updated_at=now()
+			 WHERE id=$4 AND base_id=$5`, adjustment.EffectiveFrom, adjustment.Label,
+			adjustment.AmountPerH, adjustment.ID, adjustment.BaseID))
+	})
 }
 
-// DeleteFuelAdjustment removes one version belonging to the selected basis.
+// DeleteFuelAdjustment removes one version belonging to the selected unlocked
+// basis.
 func (s *Store) DeleteFuelAdjustment(ctx context.Context, baseID, id int64) error {
-	res, err := s.db.ExecContext(ctx,
-		`DELETE FROM fuel_adjustments WHERE id=$1 AND base_id=$2`, id, baseID)
-	if err != nil {
-		return err
-	}
-	if n, err := res.RowsAffected(); err != nil {
-		return err
-	} else if n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return matchedRow(tx.ExecContext(ctx,
+			`DELETE FROM fuel_adjustments WHERE id=$1 AND base_id=$2`, id, baseID))
+	})
 }
 
 // EffectiveFuelAdjustment selects the latest applicable version from any

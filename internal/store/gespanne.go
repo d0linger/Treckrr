@@ -99,56 +99,73 @@ func (s *Store) gespannMachineIDs(ctx context.Context, gespannID int64) ([]int64
 
 // CreateGespann inserts a gespann and links its machines.
 func (s *Store) CreateGespann(ctx context.Context, baseID int64, name string, tractorID, loadLevelID *int64, machineIDs []int64, sortOrder int) (int64, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	var id int64
-	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO gespanne (base_id,name,tractor_id,load_level_id,sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		baseID, name, nullInt(tractorID), nullInt(loadLevelID), sortOrder).Scan(&id); err != nil {
-		return 0, err
-	}
-	for _, mid := range machineIDs {
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO gespann_machines (gespann_id,machine_id) VALUES ($1,$2)`, id, mid); err != nil {
-			return 0, err
+	err := s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		if err := requireGespannParts(ctx, tx, baseID, tractorID, loadLevelID, machineIDs); err != nil {
+			return err
 		}
-	}
-	return id, tx.Commit()
+		if err := tx.QueryRowContext(ctx,
+			`INSERT INTO gespanne (base_id,name,tractor_id,load_level_id,sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+			baseID, name, nullInt(tractorID), nullInt(loadLevelID), sortOrder).Scan(&id); err != nil {
+			return err
+		}
+		return insertGespannMachines(ctx, tx, id, machineIDs)
+	})
+	return id, err
 }
 
-// UpdateGespann replaces a gespann's fields and machine links.
-func (s *Store) UpdateGespann(ctx context.Context, id int64, name string, tractorID, loadLevelID *int64, machineIDs []int64, sortOrder int) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
+// UpdateGespann replaces a gespann's fields and machine links within its
+// unlocked base.
+func (s *Store) UpdateGespann(ctx context.Context, baseID, id int64, name string, tractorID, loadLevelID *int64, machineIDs []int64, sortOrder int) error {
+	return s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		if err := requireGespannParts(ctx, tx, baseID, tractorID, loadLevelID, machineIDs); err != nil {
+			return err
+		}
+		if err := matchedRow(tx.ExecContext(ctx,
+			`UPDATE gespanne SET name=$1, tractor_id=$2, load_level_id=$3, sort_order=$4 WHERE id=$5 AND base_id=$6`,
+			name, nullInt(tractorID), nullInt(loadLevelID), sortOrder, id, baseID)); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM gespann_machines WHERE gespann_id=$1`, id); err != nil {
+			return err
+		}
+		return insertGespannMachines(ctx, tx, id, machineIDs)
+	})
+}
 
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE gespanne SET name=$1, tractor_id=$2, load_level_id=$3, sort_order=$4 WHERE id=$5`,
-		name, nullInt(tractorID), nullInt(loadLevelID), sortOrder, id); err != nil {
+// DeleteGespann removes a gespann of an unlocked base.
+func (s *Store) DeleteGespann(ctx context.Context, baseID, id int64) error {
+	return s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return matchedRow(tx.ExecContext(ctx, `DELETE FROM gespanne WHERE id=$1 AND base_id=$2`, id, baseID))
+	})
+}
+
+// requireGespannParts refuses a tractor, load level or machine of another
+// base: a rig is priced from its own base, never from another (locked) one.
+func requireGespannParts(ctx context.Context, tx *sql.Tx, baseID int64, tractorID, loadLevelID *int64, machineIDs []int64) error {
+	var ok bool
+	if err := tx.QueryRowContext(ctx, `SELECT
+		($2::bigint IS NULL OR EXISTS (SELECT 1 FROM tractors WHERE id=$2 AND base_id=$1)) AND
+		($3::bigint IS NULL OR EXISTS (SELECT 1 FROM load_levels WHERE id=$3 AND base_id=$1)) AND
+		(SELECT count(*) FROM machines WHERE id=ANY($4) AND base_id=$1) =
+		(SELECT count(DISTINCT m) FROM unnest($4::bigint[]) AS m)`,
+		baseID, nullInt(tractorID), nullInt(loadLevelID), machineIDs).Scan(&ok); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM gespann_machines WHERE gespann_id=$1`, id); err != nil {
-		return err
+	if !ok {
+		return ErrNotFound
 	}
+	return nil
+}
+
+func insertGespannMachines(ctx context.Context, tx *sql.Tx, gespannID int64, machineIDs []int64) error {
 	for _, mid := range machineIDs {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO gespann_machines (gespann_id,machine_id) VALUES ($1,$2)`, id, mid); err != nil {
+			`INSERT INTO gespann_machines (gespann_id,machine_id) VALUES ($1,$2)`, gespannID, mid); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
-}
-
-// DeleteGespann removes a gespann.
-func (s *Store) DeleteGespann(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM gespanne WHERE id=$1`, id)
-	return err
+	return nil
 }
 
 type scanner interface{ Scan(...any) error }

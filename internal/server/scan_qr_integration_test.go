@@ -54,7 +54,7 @@ func TestTractorAndRigQRDraftFlowIntegration(t *testing.T) {
 		t.Fatal("booking form was not prefilled with the scanned rig")
 	}
 
-	if err := e.st.SetTractorActive(e.ctx, e.tractorID, false); err != nil {
+	if err := e.st.SetTractorActive(e.ctx, e.baseID64, e.tractorID, false); err != nil {
 		t.Fatal(err)
 	}
 	if inactive := e.get(fmt.Sprintf("/tractors/%d/book", e.tractorID)); !strings.Contains(inactive, "für neue Buchungen deaktiviert") ||

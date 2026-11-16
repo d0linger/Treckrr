@@ -90,7 +90,7 @@ func TestListGespanneBatchIntegration(t *testing.T) {
 			t.Fatalf("rig %s machine ids = %v", rig.Name, rig.MachineIDs)
 		}
 	}
-	if err := st.DeleteMachine(ctx, machineIDs[2]); err != nil {
+	if err := st.DeleteMachine(ctx, baseID, machineIDs[2]); err != nil {
 		t.Fatal(err)
 	}
 	counter.queries.Store(0)

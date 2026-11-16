@@ -16,9 +16,21 @@ import (
 // ErrBusy rejects another large backup job before it allocates memory.
 var ErrBusy = errors.New("another backup operation is running")
 
+// ErrWorkLeaseLost is the cancel cause of admitted work whose cross-process
+// lease ended with its database session: another process may hold it now.
+var ErrWorkLeaseLost = errors.New("backup work lease lost: its database session ended")
+
 // backupWorkLeaseKey serializes memory-heavy backup, restore, mirror and key
 // rotation work across every application process connected to this database.
 const backupWorkLeaseKey int64 = 472019260911
+
+// The advisory lock lives exactly as long as the session holding it. Admitted
+// work pings that session at this interval; a failed ping means the lock is
+// gone, so the work is canceled instead of running beside the next holder.
+const (
+	workLeaseProbeInterval = 5 * time.Second
+	workLeaseProbeTimeout  = 5 * time.Second
+)
 
 type workKey struct{}
 type workLease struct {
@@ -29,6 +41,8 @@ type workLease struct {
 // AcquireWork admits one memory-heavy operation. HTTP callers acquire before
 // parsing and keep the lease until their response and multipart cleanup finish.
 // Nested service calls reuse the lease; do not launch parallel work with it.
+// The returned context is canceled with ErrWorkLeaseLost when the
+// cross-process lease is lost, and nested calls on it then fail closed.
 func (s *Service) AcquireWork(ctx context.Context) (context.Context, func(), error) {
 	if err := ctx.Err(); err != nil {
 		return ctx, nil, err
@@ -41,27 +55,34 @@ func (s *Service) AcquireWork(ctx context.Context) (context.Context, func(), err
 	default:
 		return ctx, nil, ErrBusy
 	}
-	clusterRelease, err := s.acquireClusterWork(ctx)
+	lease := &workLease{service: s}
+	lease.active.Store(true)
+	workCtx, cancel := context.WithCancelCause(ctx)
+	clusterRelease, err := s.acquireClusterWork(ctx, func() {
+		lease.active.Store(false)
+		cancel(ErrWorkLeaseLost)
+	})
 	if err != nil {
+		cancel(nil)
 		<-s.workSem
 		return ctx, nil, err
 	}
-	lease := &workLease{service: s}
-	lease.active.Store(true)
 	var once sync.Once
 	release := func() {
 		once.Do(func() {
 			lease.active.Store(false)
 			clusterRelease()
+			cancel(nil)
 			<-s.workSem
 		})
 	}
-	return context.WithValue(ctx, workKey{}, lease), release, nil
+	return context.WithValue(workCtx, workKey{}, lease), release, nil
 }
 
 // acquireClusterWork takes the cross-process advisory lease for memory-heavy
-// backup operations and returns an idempotent caller-owned release function.
-func (s *Service) acquireClusterWork(ctx context.Context) (func(), error) {
+// backup operations and returns a release function the caller runs exactly
+// once. While held, the lease's session is probed; lost runs once if it ends.
+func (s *Service) acquireClusterWork(ctx context.Context, lost func()) (func(), error) {
 	if s.db == nil {
 		return func() {}, nil
 	}
@@ -78,7 +99,40 @@ func (s *Service) acquireClusterWork(ctx context.Context) (func(), error) {
 		_ = conn.Close()
 		return nil, ErrBusy
 	}
+	stop, stopped := make(chan struct{}), make(chan struct{})
+	var dead atomic.Bool
+	// The probe runs until release, not until the caller's context ends:
+	// release still needs the session alive to unlock it.
+	probeBase := context.WithoutCancel(ctx)
+	go func() {
+		defer close(stopped)
+		ticker := time.NewTicker(workLeaseProbeInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+			}
+			probeCtx, cancel := context.WithTimeout(probeBase, workLeaseProbeTimeout)
+			err := conn.PingContext(probeCtx)
+			cancel()
+			if err != nil {
+				dead.Store(true)
+				slog.Error("backup: cluster work lease lost, canceling the operation", "err", err)
+				lost()
+				return
+			}
+		}
+	}()
 	return func() {
+		close(stop)
+		<-stopped // the probe and the unlock must not share the connection
+		if dead.Load() {
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+			_ = conn.Close()
+			return
+		}
 		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if _, err := conn.ExecContext(releaseCtx, `SELECT pg_advisory_unlock($1)`, backupWorkLeaseKey); err != nil {

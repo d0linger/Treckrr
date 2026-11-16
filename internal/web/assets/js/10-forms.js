@@ -517,11 +517,19 @@
 	// Share target picker: photos shared into the installed app wait in
 	// IndexedDB (written by sw.js). They are moved into the form's file input
 	// and uploaded through the normal booking photo route, CSRF included.
+	//
+	// The store is origin-wide, not per account, and the service worker cannot
+	// tell who is signed in. So the first account to open the picker shortly
+	// after the share claims it; any other account — or anyone opening an old,
+	// unclaimed share — sees neither previews nor an upload form, only discard.
+	var SHARE_CLAIM_WINDOW = 10 * 60 * 1000;
 	document.querySelectorAll("[data-share-target]").forEach(function (root) {
 		var form = root.querySelector("[data-share-form]");
 		if (!form || !("indexedDB" in window) || typeof DataTransfer !== "function") return;
 		var input = form.querySelector("[data-share-files]"), preview = root.querySelector("[data-share-preview]"),
-			empty = root.querySelector("[data-share-empty]"), thumbs = root.querySelector("[data-share-thumbs]");
+			empty = root.querySelector("[data-share-empty]"), thumbs = root.querySelector("[data-share-thumbs]"),
+			foreign = root.querySelector("[data-share-foreign]");
+		var userMeta = document.querySelector('meta[name="user-id"]'), me = userMeta && userMeta.content ? userMeta.content : "";
 		var parkedAt = null, parkedID = null, uploading = false;
 		var shareErrors = {
 			empty: "Es wurden keine Fotos übernommen. Bitte Fotos in der Galerie auswählen und erneut teilen.",
@@ -567,11 +575,27 @@
 				return req;
 			});
 		}
-		withStore("readonly", function (store) { return store.get("shared"); }).then(function (record) {
+		withStore("readwrite", function (store) {
+			var req = store.get("shared");
+			req.onsuccess = function () {
+				var record = req.result;
+				if (me && record && !record.user && Array.isArray(record.files) && record.files.length &&
+					Date.now() - record.at >= 0 && Date.now() - record.at <= SHARE_CLAIM_WINDOW) {
+					record.user = me;
+					store.put(record, "shared");
+				}
+			};
+			return req;
+		}).then(function (record) {
 			var files = record && Array.isArray(record.files) ? record.files : [];
 			if (!files.length) return;
 			parkedAt = record.at;
 			parkedID = record.id || null;
+			if (!me || record.user !== me) {
+				if (foreign) foreign.hidden = false;
+				empty.hidden = true;
+				return;
+			}
 			var list = new DataTransfer();
 			files.forEach(function (f, i) {
 				var file = new File([f.blob], f.name || ("foto-" + (i + 1) + ".jpg"), { type: f.type || "image/jpeg" });
@@ -631,8 +655,10 @@
 				buttons.forEach(function (button) { button.disabled = false; });
 			});
 		});
-		root.querySelector("[data-share-discard]").addEventListener("click", function () {
-			forget().then(function () { window.location.href = "/buchungen"; }, function () { window.location.href = "/buchungen"; });
+		root.querySelectorAll("[data-share-discard]").forEach(function (discard) {
+			discard.addEventListener("click", function () {
+				forget().then(function () { window.location.href = "/buchungen"; }, function () { window.location.href = "/buchungen"; });
+			});
 		});
 	});
 

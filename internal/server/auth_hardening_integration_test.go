@@ -326,6 +326,66 @@ func TestTwoFactorDisableRequiresSecondFactorIntegration(t *testing.T) {
 	}
 }
 
+// TestRecoveryRegenerateRequiresSecondFactorIntegration pins the recovery-code
+// path: fresh codes pass the second login step, so the password alone must not
+// mint them (Codex audit 2026-11, auth-recovery-regeneration-password-only).
+func TestRecoveryRegenerateRequiresSecondFactorIntegration(t *testing.T) {
+	e := newHardeningEnv(t)
+	const password = "Regenerate-password-123"
+	uid := e.user("regenerate-user", password)
+	secret, recovery := e.enableTOTP(uid)
+	sess, hdr := e.session(uid)
+	unused := func() int {
+		n, err := e.st.CountUnusedRecoveryCodes(t.Context(), uid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	for _, form := range []url.Values{
+		{"password": {password}},
+		{"password": {password}, "code": {"000000"}},
+	} {
+		resp, body := e.postForm("/account/2fa/recovery", form, hdr, sess)
+		if resp.StatusCode != http.StatusSeeOther || strings.Contains(body, "data-codes") || unused() != 2 {
+			t.Fatalf("regenerate without a valid factor: status %d, %d unused codes", resp.StatusCode, unused())
+		}
+	}
+	current, _, err := totp.CodeAt(secret, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, body := e.postForm("/account/2fa/recovery", url.Values{"password": {"wrong-password"}, "code": {current}}, hdr, sess)
+	if resp.StatusCode != http.StatusSeeOther || strings.Contains(body, "data-codes") {
+		t.Fatalf("regenerate with a wrong password: status %d", resp.StatusCode)
+	}
+	resp, body = e.postForm("/account/2fa/recovery", url.Values{"password": {password}, "code": {current}}, hdr, sess)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "data-codes") || unused() != recoveryCodeCount {
+		t.Fatalf("regenerate with password + TOTP: status %d, %d unused codes", resp.StatusCode, unused())
+	}
+	var denied int
+	if err := e.pool.QueryRowContext(t.Context(), `SELECT count(*) FROM audit_log WHERE action='recovery_regenerate_denied'`).Scan(&denied); err != nil {
+		t.Fatal(err)
+	}
+	if denied != 2 {
+		t.Fatalf("recovery_regenerate_denied audits = %d, want 2", denied)
+	}
+	// The old recovery code died with the regeneration; a lost authenticator
+	// is still covered by one of the codes just issued.
+	resp, _ = e.postForm("/account/2fa/recovery", url.Values{"password": {password}, "code": {recovery}}, hdr, sess)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("regenerate with a replaced recovery code: status %d", resp.StatusCode)
+	}
+	fresh := regexp.MustCompile(`<li><code>([^<]+)</code></li>`).FindStringSubmatch(body)
+	if fresh == nil {
+		t.Fatal("regeneration page shows no codes")
+	}
+	resp, body = e.postForm("/account/2fa/recovery", url.Values{"password": {password}, "code": {fresh[1]}}, hdr, sess)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "data-codes") {
+		t.Fatalf("regenerate with a current recovery code: status %d", resp.StatusCode)
+	}
+}
+
 var totpSecretRe = regexp.MustCompile(`id="totp-secret">([A-Z2-7]+)<`)
 
 // TestTwoFactorSetupSeedAndEnrollmentCodeIntegration pins AUTH-07 (a fresh

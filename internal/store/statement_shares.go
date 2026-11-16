@@ -9,12 +9,13 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ErrFeedbackLimit refuses further statement feedback once a link has sent its
-// daily allowance, so a leaked link cannot flood the operator's account page.
-var ErrFeedbackLimit = errors.New("statement feedback limit reached")
+// ErrFeedbackLimit refuses further feedback once a statement or invoice link
+// has sent its daily allowance, so a leaked link cannot flood the operator's
+// account page.
+var ErrFeedbackLimit = errors.New("share feedback limit reached")
 
-// statementFeedbackPerDay bounds the responses one link may send in 24 hours.
-const statementFeedbackPerDay = 20
+// feedbackPerDay bounds the responses one public link may send in 24 hours.
+const feedbackPerDay = 20
 
 // StatementShare is one revocable public link to a neighbor's running annual
 // statement. Only the hash of its bearer token is stored.
@@ -150,7 +151,7 @@ func (s *Store) CreateStatementFeedback(ctx context.Context, shareID, neighborID
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM statement_feedback WHERE share_id=$1 AND created_at > now() - interval '1 day'`, lockedID).Scan(&recent); err != nil {
 		return err
 	}
-	if recent >= statementFeedbackPerDay {
+	if recent >= feedbackPerDay {
 		return ErrFeedbackLimit
 	}
 	if _, err := tx.ExecContext(ctx, `

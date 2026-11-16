@@ -58,7 +58,7 @@ func TestMachineQRDraftFlowIntegration(t *testing.T) {
 		t.Fatalf("GET-only QR flow created %d entries (err=%v)", entries, err)
 	}
 
-	if err := e.st.SetMachineActive(e.ctx, e.machineID, false); err != nil {
+	if err := e.st.SetMachineActive(e.ctx, e.baseID64, e.machineID, false); err != nil {
 		t.Fatal(err)
 	}
 	inactive := e.get(fmt.Sprintf("/machines/%d/book", e.machineID))

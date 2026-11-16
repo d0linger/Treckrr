@@ -46,27 +46,31 @@ func (s *Store) GetLoadLevel(ctx context.Context, id int64) (*models.LoadLevel, 
 	return &l, err
 }
 
-// CreateLoadLevel inserts a load level.
+// CreateLoadLevel inserts a load level into an unlocked base.
 func (s *Store) CreateLoadLevel(ctx context.Context, baseID int64, name string, cost decimal.Decimal, sort int) (int64, error) {
 	var id int64
-	err := s.db.QueryRowContext(ctx,
-		`INSERT INTO load_levels (base_id,name,cost_per_ps,sort_order) VALUES ($1,$2,$3,$4) RETURNING id`,
-		baseID, name, cost, sort).Scan(&id)
+	err := s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx,
+			`INSERT INTO load_levels (base_id,name,cost_per_ps,sort_order) VALUES ($1,$2,$3,$4) RETURNING id`,
+			baseID, name, cost, sort).Scan(&id)
+	})
 	return id, err
 }
 
-// UpdateLoadLevel updates a load level.
-func (s *Store) UpdateLoadLevel(ctx context.Context, id int64, name string, cost decimal.Decimal, sort int) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE load_levels SET name=$1, cost_per_ps=$2, sort_order=$3 WHERE id=$4`,
-		name, cost, sort, id)
-	return err
+// UpdateLoadLevel updates a load level of an unlocked base.
+func (s *Store) UpdateLoadLevel(ctx context.Context, baseID, id int64, name string, cost decimal.Decimal, sort int) error {
+	return s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return matchedRow(tx.ExecContext(ctx,
+			`UPDATE load_levels SET name=$1, cost_per_ps=$2, sort_order=$3 WHERE id=$4 AND base_id=$5`,
+			name, cost, sort, id, baseID))
+	})
 }
 
-// DeleteLoadLevel removes a load level.
-func (s *Store) DeleteLoadLevel(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM load_levels WHERE id=$1`, id)
-	return err
+// DeleteLoadLevel removes a load level of an unlocked base.
+func (s *Store) DeleteLoadLevel(ctx context.Context, baseID, id int64) error {
+	return s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return matchedRow(tx.ExecContext(ctx, `DELETE FROM load_levels WHERE id=$1 AND base_id=$2`, id, baseID))
+	})
 }
 
 // ---- Tractors ------------------------------------------------------------
@@ -116,32 +120,38 @@ func (s *Store) GetTractor(ctx context.Context, id int64) (*models.Tractor, erro
 	return &t, err
 }
 
-// SetTractorActive activates or deactivates a tractor.
-func (s *Store) SetTractorActive(ctx context.Context, id int64, active bool) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE tractors SET active=$1 WHERE id=$2`, active, id)
-	return err
+// SetTractorActive activates or deactivates a tractor of an unlocked base.
+func (s *Store) SetTractorActive(ctx context.Context, baseID, id int64, active bool) error {
+	return s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return matchedRow(tx.ExecContext(ctx, `UPDATE tractors SET active=$1 WHERE id=$2 AND base_id=$3`, active, id, baseID))
+	})
 }
 
-// CreateTractor inserts a tractor.
+// CreateTractor inserts a tractor into an unlocked base.
 func (s *Store) CreateTractor(ctx context.Context, baseID int64, ident, name string, ps decimal.Decimal, sortOrder int) (int64, error) {
 	var id int64
-	err := s.db.QueryRowContext(ctx,
-		`INSERT INTO tractors (base_id,ident,name,ps,sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		baseID, ident, name, ps, sortOrder).Scan(&id)
+	err := s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx,
+			`INSERT INTO tractors (base_id,ident,name,ps,sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+			baseID, ident, name, ps, sortOrder).Scan(&id)
+	})
 	return id, err
 }
 
-// UpdateTractor updates a tractor.
-func (s *Store) UpdateTractor(ctx context.Context, id int64, ident, name string, ps decimal.Decimal, sortOrder int) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE tractors SET ident=$1, name=$2, ps=$3, sort_order=$4 WHERE id=$5`, ident, name, ps, sortOrder, id)
-	return err
+// UpdateTractor updates a tractor of an unlocked base.
+func (s *Store) UpdateTractor(ctx context.Context, baseID, id int64, ident, name string, ps decimal.Decimal, sortOrder int) error {
+	return s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return matchedRow(tx.ExecContext(ctx,
+			`UPDATE tractors SET ident=$1, name=$2, ps=$3, sort_order=$4 WHERE id=$5 AND base_id=$6`,
+			ident, name, ps, sortOrder, id, baseID))
+	})
 }
 
-// DeleteTractor removes a tractor.
-func (s *Store) DeleteTractor(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM tractors WHERE id=$1`, id)
-	return err
+// DeleteTractor removes a tractor of an unlocked base.
+func (s *Store) DeleteTractor(ctx context.Context, baseID, id int64) error {
+	return s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return matchedRow(tx.ExecContext(ctx, `DELETE FROM tractors WHERE id=$1 AND base_id=$2`, id, baseID))
+	})
 }
 
 // ---- Machines ------------------------------------------------------------
@@ -183,32 +193,29 @@ func (s *Store) queryMachines(ctx context.Context, query string, args ...any) ([
 }
 
 // UpdateMachineCostModel stores calculation assumptions for a machine in the
-// selected base and optionally applies the proposal in the same statement.
+// selected unlocked base and optionally applies the proposal in the same
+// statement.
 func (s *Store) UpdateMachineCostModel(ctx context.Context, baseID int64, machine models.Machine, apply bool) error {
 	proposal, ok := machine.CalculatedSelfCost()
 	if apply && !ok {
 		return errors.New("machine self-cost assumptions incomplete")
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE machines SET acquisition_cost=$1, residual_value=$2,
-		useful_years=$3, annual_hours=$4, fuel_cost_per_h=$5, annual_maintenance=$6,
-		annual_insurance=$7, annual_other_cost=$8,
-		self_cost_per_h=CASE WHEN $9 THEN $10 ELSE self_cost_per_h END WHERE id=$11 AND base_id=$12`,
-		machine.AcquisitionCost, machine.ResidualValue, machine.UsefulYears, machine.AnnualHours,
-		machine.FuelCostPerH, machine.AnnualMaintenance, machine.AnnualInsurance,
-		machine.AnnualOtherCost, apply, proposal, machine.ID, baseID)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return matchedRow(tx.ExecContext(ctx, `UPDATE machines SET acquisition_cost=$1, residual_value=$2,
+			useful_years=$3, annual_hours=$4, fuel_cost_per_h=$5, annual_maintenance=$6,
+			annual_insurance=$7, annual_other_cost=$8,
+			self_cost_per_h=CASE WHEN $9 THEN $10 ELSE self_cost_per_h END WHERE id=$11 AND base_id=$12`,
+			machine.AcquisitionCost, machine.ResidualValue, machine.UsefulYears, machine.AnnualHours,
+			machine.FuelCostPerH, machine.AnnualMaintenance, machine.AnnualInsurance,
+			machine.AnnualOtherCost, apply, proposal, machine.ID, baseID))
+	})
 }
 
-// SetMachineActive activates or deactivates a machine.
-func (s *Store) SetMachineActive(ctx context.Context, id int64, active bool) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE machines SET active=$1 WHERE id=$2`, active, id)
-	return err
+// SetMachineActive activates or deactivates a machine of an unlocked base.
+func (s *Store) SetMachineActive(ctx context.Context, baseID, id int64, active bool) error {
+	return s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return matchedRow(tx.ExecContext(ctx, `UPDATE machines SET active=$1 WHERE id=$2 AND base_id=$3`, active, id, baseID))
+	})
 }
 
 // MachineCategories returns the distinct non-empty categories used in a base.
@@ -246,27 +253,31 @@ func (s *Store) MachinesByIDs(ctx context.Context, ids []int64) ([]models.Machin
 	return s.queryMachines(ctx, query, args...)
 }
 
-// CreateMachine inserts a machine.
+// CreateMachine inserts a machine into an unlocked base.
 func (s *Store) CreateMachine(ctx context.Context, baseID int64, name string, width, cost decimal.Decimal, category string, sortOrder int, selfCost decimal.Decimal) (int64, error) {
 	var id int64
-	err := s.db.QueryRowContext(ctx,
-		`INSERT INTO machines (base_id,name,working_width,cost_per_ab,category,sort_order,self_cost_per_h)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-		baseID, name, width, cost, category, sortOrder, selfCost).Scan(&id)
+	err := s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx,
+			`INSERT INTO machines (base_id,name,working_width,cost_per_ab,category,sort_order,self_cost_per_h)
+			 VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+			baseID, name, width, cost, category, sortOrder, selfCost).Scan(&id)
+	})
 	return id, err
 }
 
-// UpdateMachine updates a machine.
-func (s *Store) UpdateMachine(ctx context.Context, id int64, name string, width, cost decimal.Decimal, category string, sortOrder int, selfCost decimal.Decimal) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE machines SET name=$1, working_width=$2, cost_per_ab=$3, category=$4, sort_order=$5,
-		        self_cost_per_h=$7 WHERE id=$6`,
-		name, width, cost, category, sortOrder, id, selfCost)
-	return err
+// UpdateMachine updates a machine of an unlocked base.
+func (s *Store) UpdateMachine(ctx context.Context, baseID, id int64, name string, width, cost decimal.Decimal, category string, sortOrder int, selfCost decimal.Decimal) error {
+	return s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return matchedRow(tx.ExecContext(ctx,
+			`UPDATE machines SET name=$1, working_width=$2, cost_per_ab=$3, category=$4, sort_order=$5,
+			        self_cost_per_h=$7 WHERE id=$6 AND base_id=$8`,
+			name, width, cost, category, sortOrder, id, selfCost, baseID))
+	})
 }
 
-// DeleteMachine removes a machine.
-func (s *Store) DeleteMachine(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM machines WHERE id=$1`, id)
-	return err
+// DeleteMachine removes a machine of an unlocked base.
+func (s *Store) DeleteMachine(ctx context.Context, baseID, id int64) error {
+	return s.inUnlockedBase(ctx, baseID, func(tx *sql.Tx) error {
+		return matchedRow(tx.ExecContext(ctx, `DELETE FROM machines WHERE id=$1 AND base_id=$2`, id, baseID))
+	})
 }

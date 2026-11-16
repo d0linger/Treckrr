@@ -121,7 +121,9 @@ func (s *Store) ResolveInvoiceBelegShareAccess(ctx context.Context, tokenHash st
 	return id, neighborID, yearID, invoiceID, true, nil
 }
 
-// RecordBelegShareEvent appends a data-minimal portal audit event.
+// RecordBelegShareEvent appends a data-minimal portal audit event. Access and
+// download events are kept once per link and hour: a valid link is anonymous,
+// and every page view or download must not grow the table without bound.
 func (s *Store) RecordBelegShareEvent(ctx context.Context, shareID, neighborID, yearID int64, event string) error {
 	if shareID == 0 { // legacy HMAC link: no backing share row
 		return nil
@@ -131,13 +133,43 @@ func (s *Store) RecordBelegShareEvent(ctx context.Context, shareID, neighborID, 
 	default:
 		return fmt.Errorf("record beleg share event: unsupported event %q", event)
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO beleg_share_events (share_id,neighbor_id,billing_year_id,event)
-		VALUES ($1,$2,$3,$4)`, shareID, neighborID, yearID, event)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	if event == "access" || event == "download" {
+		// Lock the link first so concurrent views cannot each pass the hourly
+		// check; the check then runs with a fresh READ COMMITTED snapshot.
+		var lockedID int64
+		err := tx.QueryRowContext(ctx, `SELECT id FROM beleg_shares WHERE id=$1 FOR UPDATE`, shareID).Scan(&lockedID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound // revoked since it was resolved
+		}
+		if err != nil {
+			return err
+		}
+		var recent bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM beleg_share_events
+			WHERE neighbor_id=$2 AND billing_year_id=$3 AND share_id=$1 AND event=$4
+			  AND created_at > now() - interval '1 hour')`, shareID, neighborID, yearID, event).Scan(&recent); err != nil {
+			return err
+		}
+		if recent {
+			return nil
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO beleg_share_events (share_id,neighbor_id,billing_year_id,event)
+		VALUES ($1,$2,$3,$4)`, shareID, neighborID, yearID, event); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // CreateBelegFeedback records a confirmation or dispute after revalidating the
-// active share, account and immutable invoice hash in one statement.
+// active share, account and immutable invoice hash in one statement. Like a
+// statement link, one invoice link may send feedbackPerDay responses a day;
+// beyond that it gets ErrFeedbackLimit.
 func (s *Store) CreateBelegFeedback(ctx context.Context, shareID, invoiceID, neighborID, yearID int64, contentHash, status string, linePosition *int, message string) error {
 	if status != "confirmed" && status != "disputed" {
 		return fmt.Errorf("create beleg feedback: unsupported status %q", status)
@@ -147,17 +179,29 @@ func (s *Store) CreateBelegFeedback(ctx context.Context, shareID, invoiceID, nei
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	var valid bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
-		SELECT 1 FROM beleg_shares s JOIN invoices i
+	var lockedID int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT s.id FROM beleg_shares s JOIN invoices i
 		  ON i.id=$2 AND i.id=s.invoice_id AND i.neighbor_id=s.neighbor_id AND i.billing_year_id=s.billing_year_id
 		 WHERE s.id=$1 AND s.neighbor_id=$3 AND s.billing_year_id=$4 AND s.expires_at>now()
-		   AND i.kind='invoice' AND i.status='issued' AND i.content_hash=$5)`,
-		shareID, invoiceID, neighborID, yearID, contentHash).Scan(&valid); err != nil {
+		   AND i.kind='invoice' AND i.status='issued' AND i.content_hash=$5
+		 FOR UPDATE OF s`,
+		shareID, invoiceID, neighborID, yearID, contentHash).Scan(&lockedID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
 		return err
 	}
-	if !valid {
-		return ErrNotFound
+	// Count after acquiring the link lock, with a fresh READ COMMITTED snapshot.
+	var recent int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM beleg_feedback
+		WHERE neighbor_id=$2 AND billing_year_id=$3 AND share_id=$1 AND created_at > now() - interval '1 day'`,
+		lockedID, neighborID, yearID).Scan(&recent); err != nil {
+		return err
+	}
+	if recent >= feedbackPerDay {
+		return ErrFeedbackLimit
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO beleg_feedback
 		(share_id,invoice_id,neighbor_id,billing_year_id,content_hash,status,line_position,message)

@@ -194,7 +194,7 @@ func (s *Server) handleGespannSave(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		before, _ := s.store.GetGespann(r.Context(), id)
-		err = s.store.UpdateGespann(r.Context(), id, name, tractorID, loadID, machineIDs, sortOrder)
+		err = s.store.UpdateGespann(r.Context(), baseID, id, name, tractorID, loadID, machineIDs, sortOrder)
 		if err == nil {
 			detail := name
 			if before != nil {
@@ -229,7 +229,7 @@ func (s *Server) handleGespannDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	before, _ := s.store.GetGespann(r.Context(), id)
-	err = s.store.DeleteGespann(r.Context(), id)
+	err = s.store.DeleteGespann(r.Context(), baseID, id)
 	if err == nil {
 		detail := ""
 		if before != nil {

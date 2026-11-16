@@ -126,15 +126,19 @@ jobs:
       # Minify the embedded static JS before the image build so the shipped image
       # (go:embed internal/web/static) carries the compact assets. Runs in the
       # ephemeral workspace only — the committed sources stay readable. node --check
-      # syntax-verifies each result so a broken minify fails the build.
+      # syntax-verifies each result so a broken minify fails the build. esbuild
+      # comes from .github/esbuild/package-lock.json (npm ci checks every
+      # tarball against its recorded integrity; no install scripts run), so the
+      # shipped assets are built by exactly the reviewed tool.
       - name: Minify static JavaScript
         run: |
+          npm ci --prefix .github/esbuild --ignore-scripts --no-audit --no-fund
           for f in internal/web/static/js/app.js \
                    internal/web/static/js/entry-form.js \
                    internal/web/static/js/passkey.js \
                    internal/web/static/js/recovery.js \
                    internal/web/static/sw.js; do
-            npx --yes esbuild@0.28.2 "$f" --minify --allow-overwrite --outfile="$f"
+            .github/esbuild/node_modules/.bin/esbuild "$f" --minify --allow-overwrite --outfile="$f"
             node --check "$f"
           done
 

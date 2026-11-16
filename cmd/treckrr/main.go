@@ -679,13 +679,20 @@ func runRotateKeyCLI(ctx context.Context, args []string) error {
 	for _, n := range res.Rotated {
 		slog.Info("rotated", "file", n)
 	}
+	for _, n := range res.Current {
+		slog.Info("already uses the current key", "file", n)
+	}
 	for _, n := range res.Skipped {
 		slog.Warn("skipped", "detail", n)
+	}
+	if errors.Is(err, backup.ErrRotationIncomplete) {
+		slog.Error("key rotation incomplete: the skipped dumps still need BACKUP_ENCRYPTION_KEY_OLD — do not retire it; fix the cause and run rotate-key again",
+			"rotated", len(res.Rotated), "skipped", len(res.Skipped))
 	}
 	if err != nil {
 		return err
 	}
-	slog.Info("key rotation finished", "rotated", len(res.Rotated), "skipped", len(res.Skipped))
+	slog.Info("key rotation finished", "rotated", len(res.Rotated), "already_current", len(res.Current))
 	if bk.S3Enabled() {
 		slog.Warn("only local backups were rotated; keep the previous key in secure recovery storage for older S3 archives")
 	}

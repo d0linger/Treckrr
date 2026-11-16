@@ -1,7 +1,9 @@
 package bankimport
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -373,5 +375,55 @@ func TestParseMT940_DuplicateCreditsKeepDistinctHashes(t *testing.T) {
 	}
 	if again[0].Hash != txns[0].Hash || again[1].Hash != txns[1].Hash {
 		t.Fatal("hashes not stable across re-parse — re-imported statements would double-book")
+	}
+}
+
+// TestParseRowLimit pins MaxRows for every format: a 4 MB statement of short
+// lines would otherwise parse into ~160,000 bookings before matching and the
+// preview multiply that memory (Codex audit 2026-11, imports/unbounded-row-cardinality).
+func TestParseRowLimit(t *testing.T) {
+	csvRows := func(n int) string {
+		var b strings.Builder
+		b.WriteString("Datum;Betrag;Verwendungszweck\n")
+		for i := range n {
+			fmt.Fprintf(&b, "01.02.2026;1,00;R%d\n", i)
+		}
+		return b.String()
+	}
+	camtRows := func(n int) string {
+		var b strings.Builder
+		b.WriteString(`<?xml version="1.0"?><Document><BkToCstmrStmt><Stmt>`)
+		for i := range n {
+			fmt.Fprintf(&b, `<Ntry><Amt Ccy="EUR">1.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt>2026-02-01</Dt></BookgDt><NtryDtls><TxDtls><RmtInf><Ustrd>R%d</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry>`, i)
+		}
+		b.WriteString(`</Stmt></BkToCstmrStmt></Document>`)
+		return b.String()
+	}
+	mt940Rows := func(n int) string {
+		var b strings.Builder
+		b.WriteString(":20:STATEMENT\n")
+		for i := range n {
+			fmt.Fprintf(&b, ":61:2602010201C1,00NTRFNONREF\n:86:R%d\n", i)
+		}
+		return b.String()
+	}
+	// One SEPA batch entry whose details each state their amount splits into
+	// one booking per detail, so it counts once per detail.
+	camtBatch := func(n int) string {
+		var b strings.Builder
+		fmt.Fprintf(&b, `<?xml version="1.0"?><Document><BkToCstmrStmt><Stmt><Ntry><Amt Ccy="EUR">%d.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt>2026-02-01</Dt></BookgDt><NtryDtls>`, n)
+		for i := range n {
+			fmt.Fprintf(&b, `<TxDtls><Amt Ccy="EUR">1.00</Amt><RmtInf><Ustrd>R%d</Ustrd></RmtInf></TxDtls>`, i)
+		}
+		b.WriteString(`</NtryDtls></Ntry></Stmt></BkToCstmrStmt></Document>`)
+		return b.String()
+	}
+	for name, build := range map[string]func(int) string{"CSV": csvRows, "camt": camtRows, "camt batch": camtBatch, "MT940": mt940Rows} {
+		if txns, err := Parse([]byte(build(MaxRows))); err != nil || len(txns) != MaxRows {
+			t.Errorf("%s at the limit: %d txns, %v", name, len(txns), err)
+		}
+		if _, err := Parse([]byte(build(MaxRows + 1))); !errors.Is(err, errTooManyRows) {
+			t.Errorf("%s over the limit = %v, want errTooManyRows", name, err)
+		}
 	}
 }

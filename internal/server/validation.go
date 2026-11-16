@@ -15,6 +15,10 @@ const (
 	maxNameLen          = 100     // short names, labels, identifiers, categories
 	maxNoteLen          = 500     // notes, descriptions, cancellation reasons
 	maxImportPayloadLen = 4 << 20 // 4MB ceiling for import file/form payloads
+	// maxImportRows bounds the bookings one CSV import may carry. 4 MB of short
+	// rows is ~140,000 bookings, each parsed, rendered in the preview and
+	// committed one by one; real imports are a season's work, far below this.
+	maxImportRows = 10_000
 	// maxQuickEntries bounds the rows one Schnellerfassung submit may carry. The
 	// form renders a fixed six (neighbor.html) and has no way to add more, so this
 	// is pure headroom; see handleQuickEntries for what each row costs.

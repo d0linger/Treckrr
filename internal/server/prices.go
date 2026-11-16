@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/d0linger/treckrr/internal/calc"
 	"github.com/d0linger/treckrr/internal/models"
+	"github.com/d0linger/treckrr/internal/store"
 )
 
 // tractorView pairs a tractor with its computed rates per load level.
@@ -129,7 +131,7 @@ func (s *Server) handleFuelAdjustmentSave(w http.ResponseWriter, r *http.Request
 		Label: label, AmountPerH: amount,
 	}
 	if err := s.store.SaveFuelAdjustment(r.Context(), adjustment); err != nil {
-		s.setFlash(w, r, "error", "Anpassung konnte nicht gespeichert werden. Pro Stichtag ist nur eine Version möglich.")
+		s.setFlash(w, r, "error", catalogFailure(err, "Anpassung konnte nicht gespeichert werden. Pro Stichtag ist nur eine Version möglich."))
 		redirect(w, r, back)
 		return
 	}
@@ -229,7 +231,7 @@ func (s *Server) handleMachineCostModel(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if err := s.store.UpdateMachineCostModel(r.Context(), baseID, machine, apply); err != nil {
-		s.setFlash(w, r, "error", "Kostenmodell konnte nicht gespeichert werden.")
+		s.setFlash(w, r, "error", catalogFailure(err, "Kostenmodell konnte nicht gespeichert werden."))
 	} else if apply {
 		proposal, _ := machine.CalculatedSelfCost()
 		s.audit(r, "apply_cost_model", "machine", id, "Selbstkosten "+proposal.StringFixed(2)+" €/h")
@@ -250,12 +252,16 @@ func (s *Server) lockedRedirect(w http.ResponseWriter, r *http.Request, baseID i
 		return true
 	}
 	if base.Locked {
-		s.setFlash(w, r, "error", "Diese Bemessungsgrundlage ist gesperrt und kann nicht geändert werden.")
+		s.setFlash(w, r, "error", msgBaseLocked)
 		redirect(w, r, target)
 		return true
 	}
 	return false
 }
+
+// msgBaseLocked refuses a change to a locked basis. The store enforces the
+// lock again in the write's own transaction (store.ErrBaseLocked).
+const msgBaseLocked = "Diese Bemessungsgrundlage ist gesperrt und kann nicht geändert werden."
 
 // ---- Load levels ---------------------------------------------------------
 
@@ -293,7 +299,7 @@ func (s *Server) handleLoadLevelSave(w http.ResponseWriter, r *http.Request) {
 		action = "create"
 		id, err = s.store.CreateLoadLevel(r.Context(), baseID, name, cost, sort)
 	} else {
-		err = s.store.UpdateLoadLevel(r.Context(), id, name, cost, sort)
+		err = s.store.UpdateLoadLevel(r.Context(), baseID, id, name, cost, sort)
 	}
 	if err == nil {
 		s.audit(r, action, "load_level", id, name)
@@ -315,7 +321,7 @@ func (s *Server) handleLoadLevelDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	before, _ := s.store.GetLoadLevel(r.Context(), id)
-	err = s.store.DeleteLoadLevel(r.Context(), id)
+	err = s.store.DeleteLoadLevel(r.Context(), baseID, id)
 	if err == nil {
 		detail := ""
 		if before != nil {
@@ -368,7 +374,7 @@ func (s *Server) handleTractorSave(w http.ResponseWriter, r *http.Request) {
 		action = "create"
 		id, err = s.store.CreateTractor(r.Context(), baseID, ident, name, ps, sortOrder)
 	} else {
-		err = s.store.UpdateTractor(r.Context(), id, ident, name, ps, sortOrder)
+		err = s.store.UpdateTractor(r.Context(), baseID, id, ident, name, ps, sortOrder)
 	}
 	if err == nil {
 		s.audit(r, action, "tractor", id, ident)
@@ -395,8 +401,8 @@ func (s *Server) handleTractorToggle(w http.ResponseWriter, r *http.Request) {
 	}
 	active := r.FormValue("active") == "true"
 	label := s.tractorLabel(r, &id)
-	if err := s.store.SetTractorActive(r.Context(), id, active); err != nil {
-		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
+	if err := s.store.SetTractorActive(r.Context(), baseID, id, active); err != nil {
+		s.setFlash(w, r, "error", catalogFailure(err, "Aktion fehlgeschlagen."))
 	} else if active {
 		s.audit(r, "activate", "tractor", id, label)
 		s.setFlash(w, r, "success", "Traktor aktiviert.")
@@ -420,7 +426,7 @@ func (s *Server) handleTractorDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	before, _ := s.store.GetTractor(r.Context(), id)
-	err = s.store.DeleteTractor(r.Context(), id)
+	err = s.store.DeleteTractor(r.Context(), baseID, id)
 	if err == nil {
 		detail := ""
 		if before != nil {
@@ -488,7 +494,7 @@ func (s *Server) handleMachineSave(w http.ResponseWriter, r *http.Request) {
 		action = "create"
 		id, err = s.store.CreateMachine(r.Context(), baseID, name, width, cost, category, sortOrder, selfCost)
 	} else {
-		err = s.store.UpdateMachine(r.Context(), id, name, width, cost, category, sortOrder, selfCost)
+		err = s.store.UpdateMachine(r.Context(), baseID, id, name, width, cost, category, sortOrder, selfCost)
 	}
 	if err == nil {
 		s.audit(r, action, "machine", id, name)
@@ -515,8 +521,8 @@ func (s *Server) handleMachineToggle(w http.ResponseWriter, r *http.Request) {
 	}
 	active := r.FormValue("active") == "true"
 	name := s.machineNames(r, []int64{id})
-	if err := s.store.SetMachineActive(r.Context(), id, active); err != nil {
-		s.setFlash(w, r, "error", "Aktion fehlgeschlagen.")
+	if err := s.store.SetMachineActive(r.Context(), baseID, id, active); err != nil {
+		s.setFlash(w, r, "error", catalogFailure(err, "Aktion fehlgeschlagen."))
 	} else if active {
 		s.audit(r, "activate", "machine", id, name)
 		s.setFlash(w, r, "success", "Maschine aktiviert.")
@@ -543,7 +549,7 @@ func (s *Server) handleMachineDelete(w http.ResponseWriter, r *http.Request) {
 	if ms, mErr := s.store.MachinesByIDs(r.Context(), []int64{id}); mErr == nil && len(ms) > 0 {
 		name = ms[0].Name
 	}
-	err = s.store.DeleteMachine(r.Context(), id)
+	err = s.store.DeleteMachine(r.Context(), baseID, id)
 	if err == nil {
 		s.audit(r, "delete", "machine", id, name)
 	}
@@ -555,7 +561,7 @@ func (s *Server) handleMachineDelete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) flashSaved(w http.ResponseWriter, r *http.Request, err error) {
 	if err != nil {
-		s.setFlash(w, r, "error", "Speichern fehlgeschlagen (evtl. Name bereits vergeben).")
+		s.setFlash(w, r, "error", catalogFailure(err, "Speichern fehlgeschlagen (evtl. Name bereits vergeben)."))
 		return
 	}
 	s.setFlash(w, r, "success", "Gespeichert.")
@@ -563,8 +569,21 @@ func (s *Server) flashSaved(w http.ResponseWriter, r *http.Request, err error) {
 
 func (s *Server) flashDeleted(w http.ResponseWriter, r *http.Request, err error) {
 	if err != nil {
-		s.setFlash(w, r, "error", "Löschen fehlgeschlagen (evtl. noch in Verwendung).")
+		s.setFlash(w, r, "error", catalogFailure(err, "Löschen fehlgeschlagen (evtl. noch in Verwendung)."))
 		return
 	}
 	s.setFlash(w, r, "success", "Gelöscht.")
+}
+
+// catalogFailure names the two refusals the store makes for every catalog
+// write: the basis was locked meanwhile, or the item is not part of the basis
+// the form was submitted for.
+func catalogFailure(err error, fallback string) string {
+	switch {
+	case errors.Is(err, store.ErrBaseLocked):
+		return msgBaseLocked
+	case errors.Is(err, store.ErrNotFound):
+		return "Eintrag nicht gefunden – er gehört nicht (mehr) zu dieser Bemessungsgrundlage."
+	}
+	return fallback
 }

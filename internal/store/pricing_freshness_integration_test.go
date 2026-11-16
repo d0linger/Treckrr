@@ -109,7 +109,7 @@ func TestPricingFreshnessGateIntegration(t *testing.T) {
 
 	// Edit the basis. The trigger must bump price_bases.items_updated_at; if a
 	// write path could bypass it, the gate would report 0 and hide the repricing.
-	if err := st.UpdateLoadLevel(ctx, loadID, "mittel", decimal.RequireFromString("0.40"), 1); err != nil {
+	if err := st.UpdateLoadLevel(ctx, baseID, loadID, "mittel", decimal.RequireFromString("0.40"), 1); err != nil {
 		t.Fatalf("update load: %v", err)
 	}
 	// BOTH bookings were priced before the edit, so both count — the gate is an

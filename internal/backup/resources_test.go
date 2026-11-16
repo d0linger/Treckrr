@@ -39,7 +39,8 @@ func TestBackupWorkAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer secondRelease()
-	if _, _, err := s.AcquireWork(ctx); !errors.Is(err, ErrBusy) {
+	// Release also cancels the work context it handed out.
+	if _, _, err := s.AcquireWork(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("released context bypassed gate: %v", err)
 	}
 	canceled, cancel := context.WithCancel(t.Context())

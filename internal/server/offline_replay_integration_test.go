@@ -87,7 +87,7 @@ func TestReplayDedupesBeforeValidationIntegration(t *testing.T) {
 	defer e.setYearStatus(models.YearInProgress)
 
 	t.Run("unified form after a catalog change", func(t *testing.T) {
-		t.Cleanup(func() { _ = e.st.SetTractorActive(e.ctx, e.tractorID, true) })
+		t.Cleanup(func() { _ = e.st.SetTractorActive(e.ctx, e.baseID64, e.tractorID, true) })
 		key := e.uname + "-v2"
 		form := func(hours string) url.Values {
 			return url.Values{"booking_form_version": {"2"}, "booking_kind": {"equipment"}, "booking_direction": {"out"},
@@ -99,7 +99,7 @@ func TestReplayDedupesBeforeValidationIntegration(t *testing.T) {
 			t.Fatalf("first replay = %d %s", res.status, res.body)
 		}
 		// The tractor is deactivated after the booking was stored (the answer was lost).
-		if err := e.st.SetTractorActive(e.ctx, e.tractorID, false); err != nil {
+		if err := e.st.SetTractorActive(e.ctx, e.baseID64, e.tractorID, false); err != nil {
 			t.Fatal(err)
 		}
 		if res := e.replay("/entries", form("2"), true); res.status != http.StatusNoContent {
@@ -221,7 +221,7 @@ func TestReplayValidationIntegration(t *testing.T) {
 	}
 
 	// A hand-picked deactivated tractor is refused for a new legacy booking.
-	if err := e.st.SetTractorActive(e.ctx, e.tractorID, false); err != nil {
+	if err := e.st.SetTractorActive(e.ctx, e.baseID64, e.tractorID, false); err != nil {
 		t.Fatal(err)
 	}
 	res = e.replay("/entries", url.Values{"year_id": {yid}, "neighbor_id": {nid}, "mode": {"manual"},
@@ -230,7 +230,7 @@ func TestReplayValidationIntegration(t *testing.T) {
 	if res.status != http.StatusUnprocessableEntity || !strings.Contains(res.body, "inaktiv") {
 		t.Fatalf("inactive tractor = %d %s", res.status, res.body)
 	}
-	if err := e.st.SetTractorActive(e.ctx, e.tractorID, true); err != nil {
+	if err := e.st.SetTractorActive(e.ctx, e.baseID64, e.tractorID, true); err != nil {
 		t.Fatal(err)
 	}
 

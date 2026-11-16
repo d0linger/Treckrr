@@ -186,10 +186,73 @@ type recurringOccurrence struct {
 	Date       time.Time
 	Companions []models.RecurCompanion
 	PersonID   *int64
+	// Schedule is the rule's schedule the runner selected it with; nil for
+	// "jetzt buchen", which does not follow the schedule.
+	Schedule *recurringSchedule
+}
+
+// recurringSchedule is a rule's schedule as the runner selected it. Booking an
+// occurrence and saving the run's progress both require it unchanged, so a
+// reschedule completed during the run — even one keeping next_run but changing
+// the cadence or end — wins over the stale runner.
+type recurringSchedule struct {
+	NextRun time.Time
+	Kind    string
+	EndsOn  *time.Time
+}
+
+// args returns next_run, interval_kind and ends_on as query parameters.
+func (s recurringSchedule) args() []any {
+	var endsOn any
+	if s.EndsOn != nil {
+		endsOn = *s.EndsOn
+	}
+	return []any{s.NextRun, s.Kind, endsOn}
+}
+
+// errRecurringChanged stops an occurrence whose rule was paused, deleted or
+// rescheduled after the runner read it. Nothing was booked.
+var errRecurringChanged = errors.New("recurring rule changed since it was selected")
+
+// recurringRunKey carries the rule an occurrence is booked for into the
+// booking transaction (see confirmRecurringRun).
+type recurringRunKey struct{}
+
+type recurringRun struct {
+	ruleID   int64
+	schedule *recurringSchedule
+}
+
+// confirmRecurringRun rechecks, inside the booking transaction and under its
+// account lock, that the rule an occurrence is booked for is still active and
+// unchanged. FOR SHARE holds off a concurrent pause, delete or reschedule
+// until the booking commits, so "paused" means no further occurrence. A
+// booking without a recurring run in its context is not affected.
+func confirmRecurringRun(ctx context.Context, tx *sql.Tx) error {
+	run, ok := ctx.Value(recurringRunKey{}).(recurringRun)
+	if !ok {
+		return nil
+	}
+	query := `SELECT active FROM recurring_entries WHERE id=$1 FOR SHARE`
+	args := []any{run.ruleID}
+	if run.schedule != nil {
+		query = `SELECT active AND next_run=$2::date AND interval_kind=$3::text AND ends_on IS NOT DISTINCT FROM $4::date
+			FROM recurring_entries WHERE id=$1 FOR SHARE`
+		args = append(args, run.schedule.args()...)
+	}
+	var current bool
+	err := tx.QueryRowContext(ctx, query, args...).Scan(&current)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !current) {
+		return errRecurringChanged
+	}
+	return err
 }
 
 // materializeRecurring preserves accounting direction and per-occurrence retries.
 func (s *Store) materializeRecurring(ctx context.Context, occurrence recurringOccurrence) (int64, error) {
+	ctx = context.WithValue(ctx, recurringRunKey{}, recurringRun{
+		ruleID: occurrence.RuleID, schedule: occurrence.Schedule,
+	})
 	tmpl := occurrence.Template
 	key := fmt.Sprintf("recur:%d:%s", occurrence.RuleID, occurrence.Date.Format("2006-01-02"))
 	if tmpl.LedgerBooking != nil {
