@@ -13,6 +13,50 @@ import (
 
 // ---- Price bases ---------------------------------------------------------
 
+// ErrBaseLocked refuses a catalog change in a locked pricing basis.
+var ErrBaseLocked = errors.New("price basis is locked")
+
+// inUnlockedBase runs one catalog write of baseID in a transaction that holds
+// the basis row FOR SHARE: a concurrent SetBaseLocked waits for the write, and
+// a lock committed first refuses it with ErrBaseLocked. The write must bind
+// every row it touches to baseID, so an ID from another basis — which carries
+// its own lock — matches nothing and reports ErrNotFound.
+func (s *Store) inUnlockedBase(ctx context.Context, baseID int64, write func(tx *sql.Tx) error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var locked bool
+	err = tx.QueryRowContext(ctx, `SELECT locked FROM price_bases WHERE id=$1 FOR SHARE`, baseID).Scan(&locked)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if locked {
+		return ErrBaseLocked
+	}
+	if err := write(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// matchedRow maps an UPDATE or DELETE that matched no row to ErrNotFound.
+func matchedRow(res sql.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // ListBases returns all pricing bases, newest year first.
 func (s *Store) ListBases(ctx context.Context) ([]models.PriceBase, error) {
 	rows, err := s.db.QueryContext(ctx,

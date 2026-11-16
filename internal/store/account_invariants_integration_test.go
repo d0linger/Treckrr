@@ -338,7 +338,7 @@ func TestRecalcCannotCommitAfterInvoiceFreeze(t *testing.T) {
 	if err := st.UpdateEntry(ctx, entry, []int64{machineID}); err != nil {
 		t.Fatalf("prepare entry: %v", err)
 	}
-	if err := st.UpdateMachine(ctx, machineID, "review machine",
+	if err := st.UpdateMachine(ctx, year.BaseID, machineID, "review machine",
 		decimal.NewFromInt(1), decimal.NewFromInt(200), "", 0, decimal.Zero); err != nil {
 		t.Fatalf("reprice machine: %v", err)
 	}

@@ -97,7 +97,7 @@ func TestRecalcIntegration(t *testing.T) {
 	}
 
 	// Edit the basis: load level 0.36 → 0.40 → new rate 40.00/h, 2 h → 80.00.
-	if err := st.UpdateLoadLevel(ctx, loadID, "mittel", decimal.RequireFromString("0.40"), 1); err != nil {
+	if err := st.UpdateLoadLevel(ctx, baseID, loadID, "mittel", decimal.RequireFromString("0.40"), 1); err != nil {
 		t.Fatalf("update load: %v", err)
 	}
 

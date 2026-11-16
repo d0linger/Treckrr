@@ -101,7 +101,7 @@ func TestRecalcMachinesOnlyIntegration(t *testing.T) {
 
 	// Raise the implement to 12,00 €/h. Without the fix this reported no change,
 	// leaving the booking priced at the old rate for good.
-	if err := st.UpdateMachine(ctx, mixerID, "Zwangsmischer",
+	if err := st.UpdateMachine(ctx, baseID, mixerID, "Zwangsmischer",
 		decimal.RequireFromString("1.7"), decimal.RequireFromString("7.0588"), "Sonstige", 1, decimal.Zero); err != nil {
 		t.Fatalf("update machine: %v", err)
 	}

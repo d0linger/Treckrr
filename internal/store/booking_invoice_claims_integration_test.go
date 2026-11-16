@@ -215,7 +215,7 @@ func TestPendingRecalcAfterInvoice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.UpdateMachine(ctx, machineID, "Claim test machine", dec("1"), dec("200"), "", 0, dec("0")); err != nil {
+	if err := st.UpdateMachine(ctx, year.BaseID, machineID, "Claim test machine", dec("1"), dec("200"), "", 0, dec("0")); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := st.RecalcPreview(ctx, yearID, &neighborID)
