@@ -186,10 +186,48 @@ type recurringOccurrence struct {
 	Date       time.Time
 	Companions []models.RecurCompanion
 	PersonID   *int64
+	// ScheduledFrom is the rule's next_run the runner selected it with; nil
+	// for "jetzt buchen", which does not follow the schedule.
+	ScheduledFrom *time.Time
+}
+
+// errRecurringChanged stops an occurrence whose rule was paused, deleted or
+// rescheduled after the runner read it. Nothing was booked.
+var errRecurringChanged = errors.New("recurring rule changed since it was selected")
+
+// recurringRunKey carries the rule an occurrence is booked for into the
+// booking transaction (see confirmRecurringRun).
+type recurringRunKey struct{}
+
+type recurringRun struct {
+	ruleID        int64
+	scheduledFrom *time.Time
+}
+
+// confirmRecurringRun rechecks, inside the booking transaction and under its
+// account lock, that the rule an occurrence is booked for is still active and
+// unchanged. FOR SHARE holds off a concurrent pause, delete or reschedule
+// until the booking commits, so "paused" means no further occurrence. A
+// booking without a recurring run in its context is not affected.
+func confirmRecurringRun(ctx context.Context, tx *sql.Tx) error {
+	run, ok := ctx.Value(recurringRunKey{}).(recurringRun)
+	if !ok {
+		return nil
+	}
+	var current bool
+	err := tx.QueryRowContext(ctx, `SELECT active AND ($2::date IS NULL OR next_run=$2::date)
+		FROM recurring_entries WHERE id=$1 FOR SHARE`, run.ruleID, run.scheduledFrom).Scan(&current)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !current) {
+		return errRecurringChanged
+	}
+	return err
 }
 
 // materializeRecurring preserves accounting direction and per-occurrence retries.
 func (s *Store) materializeRecurring(ctx context.Context, occurrence recurringOccurrence) (int64, error) {
+	ctx = context.WithValue(ctx, recurringRunKey{}, recurringRun{
+		ruleID: occurrence.RuleID, scheduledFrom: occurrence.ScheduledFrom,
+	})
 	tmpl := occurrence.Template
 	key := fmt.Sprintf("recur:%d:%s", occurrence.RuleID, occurrence.Date.Format("2006-01-02"))
 	if tmpl.LedgerBooking != nil {

@@ -366,6 +366,7 @@ func (s *Store) runDueRule(
 		return 0, err
 	}
 	var runErr error
+	changed := false
 	for i := 0; i < 60 && !next.After(today) && (endsOn == nil || !next.After(*endsOn)); i++ { // cap catch-up per rule per tick
 		yid, ok, yerr := s.neighborYearForDate(ctx, neighborID, next)
 		if yerr != nil {
@@ -382,10 +383,16 @@ func (s *Store) runDueRule(
 		}
 		id, cerr := s.materializeRecurring(ctx, recurringOccurrence{
 			Template: tmpl, RuleID: ruleID, YearID: yid, NeighborID: neighborID,
-			Date: next, Companions: companions, PersonID: personID,
+			Date: next, Companions: companions, PersonID: personID, ScheduledFrom: &start,
 		})
 		if cerr != nil {
-			if reason, waiting := recurringWaitReason(cerr); waiting {
+			if errors.Is(cerr, errRecurringChanged) {
+				// Paused, deleted or rescheduled since this tick selected it:
+				// the operator's change wins, nothing more is booked.
+				slog.Info("recurring rule changed during its run, stopping", "rule", ruleID,
+					"date", next.Format("2006-01-02"))
+				changed = true
+			} else if reason, waiting := recurringWaitReason(cerr); waiting {
 				metrics.Inc(recurringBlockedMetric)
 				slog.Warn("recurring booking waiting", "rule", ruleID, "neighbor", neighborID,
 					"date", next.Format("2006-01-02"), "reason", cerr)
@@ -407,15 +414,17 @@ func (s *Store) runDueRule(
 	// stays unchanged while waiting; last_run_at moves only when an occurrence
 	// ran; last_error shows the current waiting state and clears once it runs.
 	ended := endsOn != nil && next.After(*endsOn)
-	if err := s.saveRuleProgress(ctx, ruleID, next, lastRun, waitReason, runErr == nil, ended); err != nil {
+	if err := s.saveRuleProgress(ctx, ruleID, start, next, lastRun, waitReason, runErr == nil && !changed, ended); err != nil {
 		return created, errors.Join(runErr, err)
 	}
 	return created, runErr
 }
 
 // saveRuleProgress writes next_run/last_run_at when an occurrence ran and, when
-// the rule's outcome is known, its waiting reason (” clears it).
-func (s *Store) saveRuleProgress(ctx context.Context, ruleID int64, next time.Time, lastRun *time.Time, waitReason string, outcomeKnown, ended bool) error {
+// the rule's outcome is known, its waiting reason (” clears it). Progress is
+// saved only while next_run is still the start the runner selected: a
+// reschedule during the run is the operator's newer decision and stays.
+func (s *Store) saveRuleProgress(ctx context.Context, ruleID int64, start, next time.Time, lastRun *time.Time, waitReason string, outcomeKnown, ended bool) error {
 	if lastRun != nil || ended {
 		var ran any
 		if lastRun != nil {
@@ -424,7 +433,7 @@ func (s *Store) saveRuleProgress(ctx context.Context, ruleID int64, next time.Ti
 		if _, err := s.db.ExecContext(ctx, `
 			UPDATE recurring_entries
 			   SET next_run=$1, last_run_at=COALESCE($2,last_run_at), active=CASE WHEN $3 THEN false ELSE active END
-			 WHERE id=$4`, next, ran, ended, ruleID); err != nil {
+			 WHERE id=$4 AND next_run=$5`, next, ran, ended, ruleID, start); err != nil {
 			return err
 		}
 	}
@@ -696,6 +705,9 @@ func (s *Store) RunRecurringNow(ctx context.Context, id int64) (int64, bool, err
 		Template: tmpl, RuleID: id, YearID: yid, NeighborID: neighborID,
 		Date: today, Companions: companions, PersonID: personID,
 	})
+	if errors.Is(err, errRecurringChanged) {
+		return 0, false, ErrInactiveRule // paused or deleted meanwhile
+	}
 	if err != nil {
 		return 0, false, err
 	}

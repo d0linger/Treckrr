@@ -118,7 +118,10 @@ func lockAccountBoundary(
 }
 
 func lockMutableBookingAccount(ctx context.Context, tx *sql.Tx, yearID, neighborID int64) error {
-	return lockOpenAccount(ctx, tx, yearID, neighborID)
+	if err := lockOpenAccount(ctx, tx, yearID, neighborID); err != nil {
+		return err
+	}
+	return confirmRecurringRun(ctx, tx)
 }
 
 // lockUninvoicedEntry protects an individual source after the caller has taken
