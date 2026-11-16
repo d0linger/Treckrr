@@ -184,3 +184,97 @@ func TestBelegShareIntegration(t *testing.T) {
 		t.Errorf("same-day stamp must not be rewritten (untouched=%v, err=%v)", untouched, err)
 	}
 }
+
+// TestInvoicePortalWritesBoundedIntegration pins the anonymous write budget of
+// one valid invoice link: repeated views and downloads keep one event per
+// hour, and feedback stops at the daily allowance statement links already
+// have (Codex audit 2026-11, public-portal-unbounded-event-feedback-writes).
+func TestInvoicePortalWritesBoundedIntegration(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping DB integration test")
+	}
+	ctx := context.Background()
+	pool, err := db.Connect(ctx, url)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	st := store.New(pool, "test-encryption-secret")
+	nano := time.Now().UnixNano()
+	yr := int(nano%1_000_000_000) + 1_000_000_000
+	baseID, err := st.CreateEmptyBase(ctx, yr, "Portal-Basis")
+	if err != nil {
+		t.Fatal(err)
+	}
+	yearID, err := st.CreateBillingYear(ctx, yr, baseID, "Portal-Jahr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nid, err := st.CreateNeighbor(ctx, fmt.Sprintf("Portal%d", nano), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const contentHash = "portal-budget-content"
+	var invoiceID int64
+	if err := pool.QueryRowContext(ctx, `INSERT INTO invoices
+		(billing_year_id,neighbor_id,number,net,vat_rate,vat_amount,gross,issuer,recipient,lines,content_hash,status,kind)
+		VALUES ($1,$2,$3,10,0,0,10,'{}','{}','[]',$4,'issued','invoice') RETURNING id`,
+		yearID, nid, fmt.Sprintf("%d-902", yr), contentHash).Scan(&invoiceID); err != nil {
+		t.Fatal(err)
+	}
+	shareID, err := st.CreateInvoiceBelegShare(ctx, fmt.Sprintf("portal-budget-%d", nano), nid, yearID, invoiceID, time.Now().Add(time.Hour), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := func(event string) int {
+		var n int
+		if err := pool.QueryRowContext(ctx, `SELECT count(*) FROM beleg_share_events WHERE share_id=$1 AND event=$2`, shareID, event).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	for range 25 {
+		for _, event := range []string{"access", "download"} {
+			if err := st.RecordBelegShareEvent(ctx, shareID, nid, yearID, event); err != nil {
+				t.Fatalf("%s: %v", event, err)
+			}
+		}
+	}
+	if events("access") != 1 || events("download") != 1 {
+		t.Fatalf("repeated use stored %d access and %d download events, want 1 each", events("access"), events("download"))
+	}
+	// An hour later the next view is recorded again.
+	if _, err := pool.ExecContext(ctx, `UPDATE beleg_share_events SET created_at=now()-interval '61 minutes' WHERE share_id=$1`, shareID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordBelegShareEvent(ctx, shareID, nid, yearID, "access"); err != nil {
+		t.Fatal(err)
+	}
+	if events("access") != 2 {
+		t.Fatalf("access after an hour: %d events, want 2", events("access"))
+	}
+
+	for i := range 25 {
+		err := st.CreateBelegFeedback(ctx, shareID, invoiceID, nid, yearID, contentHash, "confirmed", nil, "")
+		switch {
+		case i < 20 && err != nil:
+			t.Fatalf("feedback %d: %v", i, err)
+		case i >= 20 && !errors.Is(err, store.ErrFeedbackLimit):
+			t.Fatalf("feedback %d = %v, want ErrFeedbackLimit", i, err)
+		}
+	}
+	if n := events("confirm"); n != 20 {
+		t.Fatalf("confirm events = %d, want 20", n)
+	}
+	var feedback int
+	if err := pool.QueryRowContext(ctx, `SELECT count(*) FROM beleg_feedback WHERE share_id=$1`, shareID).Scan(&feedback); err != nil {
+		t.Fatal(err)
+	}
+	if feedback != 20 {
+		t.Fatalf("feedback rows = %d, want 20", feedback)
+	}
+}

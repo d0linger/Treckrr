@@ -141,11 +141,15 @@ func (s *Server) handlePortalFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 	err = s.store.CreateBelegFeedback(r.Context(), shareID, iv.ID, neighborID, yearID,
 		iv.Content.Hash, status, linePosition, message)
-	if errors.Is(err, store.ErrNotFound) {
+	switch {
+	case errors.Is(err, store.ErrNotFound):
 		s.notFound(w, r)
 		return
-	}
-	if err != nil {
+	case errors.Is(err, store.ErrFeedbackLimit):
+		writeErrorPage(w, http.StatusTooManyRequests, "Zu viele Rückmeldungen",
+			"Über diesen Link wurden heute bereits viele Rückmeldungen gesendet. Bitte morgen erneut versuchen.")
+		return
+	case err != nil:
 		s.serverError(w, "portal feedback", err)
 		return
 	}
