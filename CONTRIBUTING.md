@@ -58,8 +58,8 @@ server**, never the existing development or production database. The Docker
 allowed to create its owned scratch databases:
 
 ```bash
-make test TEST_DATABASE_URL='<isolated disposable test database URL>' TEST_INVOICE_MIGRATION_DATABASES=1 PG_MAJOR=16
-# Use PG_MAJOR=18 with a matching disposable PG18 server.
+make test TEST_DATABASE_URL='<isolated disposable PostgreSQL 18 database URL>' TEST_INVOICE_MIGRATION_DATABASES=1
+# For a disposable PostgreSQL 16 server, also pass PG_MAJOR=16.
 ```
 
 The explicit migration opt-in is required: without it, `make test` fails before

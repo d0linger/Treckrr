@@ -8,7 +8,7 @@ if [ "${TEST_INVOICE_MIGRATION_DATABASES:-}" != "1" ]; then
   echo "Use: make test TEST_DATABASE_URL='<isolated disposable test database URL>' TEST_INVOICE_MIGRATION_DATABASES=1"
   exit 1
 fi
-PG_MAJOR=${PG_MAJOR:-16}
+PG_MAJOR=${PG_MAJOR:-18}
 case "$PG_MAJOR" in 16|18) ;; *) echo "PG_MAJOR must be 16 or 18"; exit 1;; esac
 apk add --no-cache build-base "postgresql${PG_MAJOR}-client"
 pg_isready --dbname "$TEST_DATABASE_URL"

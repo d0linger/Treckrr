@@ -53,7 +53,7 @@ rollback point.
    ```
 
    Choose unused role/database names. `\password` avoids putting the new secret
-   in shell history. PostgreSQL 16's `public` schema is owned by
+   in shell history. PostgreSQL 18's `public` schema is owned by
    `pg_database_owner`, so the new database owner can create its schema objects.
 3. Restore with the Treckrr offline CLI against the **new** database as the app
    role, using the archive's backup key. Use a separate explicit environment

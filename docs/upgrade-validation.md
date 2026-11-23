@@ -3,6 +3,52 @@
 Use this procedure for the production upgrade. The local source-build Compose
 stack is development; a healthy local container is not production acceptance.
 
+## PostgreSQL major upgrades
+
+Use PostgreSQL 18 for new deployments. The image expects its database volume or
+host bind directory at `/var/lib/postgresql` and uses `/var/lib/postgresql/18/docker`
+inside it.
+
+1. Stop the app and all other writers. Use PostgreSQL 18 tools to dump each
+   database in custom format and dump globals separately.
+2. Start an isolated PostgreSQL 18 database on a new volume such as `treckrr-pg18`
+   or a fresh host bind directory mounted at `/var/lib/postgresql`. Use the source
+   bootstrap role name as `POSTGRES_USER` and `POSTGRES_DB=postgres` so the target
+   starts without a pre-created `treckrr` database. Leave out the usual
+   `deploy/postgres-init` mount. Keep the app stopped through verification.
+   If the source uses custom tablespaces, prepare empty target directories
+   owned by PostgreSQL's operating-system user. Mount them at the dump's
+   container paths in both the isolated restore and the production database.
+3. Restore globals first with `psql -X -v ON_ERROR_STOP=1`. Preserve the original
+   dump. In the restore copy omit only the duplicate `CREATE ROLE` for the
+   verified bootstrap role. Apply the role attributes, password, memberships,
+   and all other globals from the dump.
+4. Restore each new database with `pg_restore --exit-on-error --create -d postgres`.
+   For an archive of the existing `postgres` or `template1` database, restore into
+   that database without `--create`. Compare encoding, locale provider and
+   collation settings first. If they differ, recreate the empty database on the
+   isolated target from `template0` with the source properties. Connect to a
+   separate maintenance database for that step. Clear the template flag before
+   dropping `template1` and restore it when recreating the database. Match
+   database-level settings, owner, and grants with the source.
+5. Verify the restored data, owners, permissions, and extensions. Update the
+   production `db` mount
+   to `treckrr-pg18:/var/lib/postgresql` for the example named volume and
+   declare `treckrr-pg18` with `external: true` and `name: treckrr-pg18` in the
+   top-level `volumes` section. For a bind mount, use the exact host path used
+   for the restore. Confirm that the production database has mounted the
+   restored storage before starting the app. Keep the old storage and a copy of
+   the previous Compose definition for rollback.
+
+If a restore fails, restart from the original dumps on fresh target storage,
+including any tablespace directories. Reconcile any writes made on PostgreSQL
+18 before rolling back.
+
+The app image ships PostgreSQL 18 backup clients. For routine PostgreSQL 18
+patch updates, back up first, review the release notes and reuse the existing
+PostgreSQL 18 directory. Plan a separate migration and update the clients and
+validation jobs when changing major versions.
+
 ## Rehearse against a production backup
 
 1. Record the running production image digest, PostgreSQL major version and last

@@ -1,7 +1,7 @@
 services:
   db:
     # Reviewed image; Compose Dependabot updates this digest with the E2E pin.
-    image: postgres:16-alpine@sha256:f377d590e5474681d4d7838635031a2b50647923b7abfa803ce9b5ff35d5c663
+    image: postgres:18-alpine@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71
     container_name: treckrr-db
     restart: unless-stopped
     security_opt:
@@ -40,7 +40,7 @@ services:
       APP_DB_USER: ${APP_DB_USER:-}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
       - ./deploy/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-treckrr} -d ${POSTGRES_DB:-treckrr}"]
