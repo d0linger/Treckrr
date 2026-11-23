@@ -3,7 +3,7 @@
 
 IMG    := golang:1.27.4-alpine3.24
 LINT   := golangci/golangci-lint:v2.15.0
-PG_MAJOR ?= 16
+PG_MAJOR ?= 18
 GO     := docker run --rm -v "$(CURDIR):/src" -v treckrr-gomod:/go/pkg/mod -w /src -e GOTOOLCHAIN=go1.27.4 $(IMG) sh -c
 GOTEST := docker run --rm --network treckrr-itest -v "$(CURDIR):/src" -v treckrr-gomod:/go/pkg/mod -w /src -e GOTOOLCHAIN=go1.27.4 -e PG_MAJOR="$(PG_MAJOR)" -e TEST_DATABASE_URL="$(TEST_DATABASE_URL)" -e TEST_INVOICE_MIGRATION_DATABASES="$(TEST_INVOICE_MIGRATION_DATABASES)" $(IMG) sh -c
 
@@ -52,7 +52,7 @@ lint: ## golangci-lint
 deadcode: ## unreachable-function analysis (matches CI)
 	$(GO) "go install golang.org/x/tools/cmd/deadcode@v0.52.0 && sh .github/scripts/check-deadcode.sh"
 
-test: ## Full race + integration suite (isolated TEST_DATABASE_URL, TEST_INVOICE_MIGRATION_DATABASES=1, PG_MAJOR=16 or 18)
+test: ## Full race + integration suite (isolated TEST_DATABASE_URL, TEST_INVOICE_MIGRATION_DATABASES=1, PG_MAJOR=18 by default)
 	$(GOTEST) "sh .github/scripts/test-local.sh"
 
 test-parity: ## Old/new financial comparison in owned disposable containers (Docker, Node, git history required)

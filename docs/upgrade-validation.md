@@ -3,6 +3,21 @@
 Use this procedure for the production upgrade. The local source-build Compose
 stack is development; a healthy local container is not production acceptance.
 
+## PostgreSQL major upgrades
+
+Use PostgreSQL 18 for new deployments. The image expects its database volume or
+host bind directory at `/var/lib/postgresql` and uses `/var/lib/postgresql/18/docker`
+inside it. For a PostgreSQL 16 source, stop all writers and use PostgreSQL 18
+tools to dump every database in custom format and dump globals separately.
+Restore those backups to a fresh PostgreSQL 18 directory, verify data, owners,
+permissions and extensions, then cut over. Keep the old volume and stack
+settings. Reconcile writes made on the new cluster before rolling back.
+
+The app image ships PostgreSQL 18 backup clients. For routine PostgreSQL 18
+patch updates, back up first, review the release notes and reuse the existing
+PostgreSQL 18 directory. Plan a separate migration and update the clients and
+validation jobs when changing major versions.
+
 ## Rehearse against a production backup
 
 1. Record the running production image digest, PostgreSQL major version and last

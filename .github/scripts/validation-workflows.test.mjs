@@ -96,10 +96,22 @@ test('billing parity runs on the same reviewed image pins as the app', () => {
   const golang = read('../../Dockerfile').match(/^FROM (golang:\S+@sha256:[0-9a-f]{64})/m)?.[1];
   assert.ok(golang, 'root Dockerfile has no digest-pinned golang image');
   assert.ok(read('./billing-parity.Dockerfile').includes(`FROM ${golang}\n`), 'billing-parity.Dockerfile golang pin drifted');
-  const postgres = read('../../docker-compose.yml').match(/image: (postgres:\S+@sha256:[0-9a-f]{64})/)?.[1];
-  assert.ok(postgres, 'docker-compose.yml has no digest-pinned postgres image');
-  for (const file of ['../../docker-compose.ghcr.yml', '../../compose.e2e.yml', '../../compose.demo.yml']) {
-    assert.ok(read(file).includes(`image: ${postgres}\n`), `${file} postgres pin drifted`);
+  const postgres = read('../../docker-compose.yml').match(/^    image: (postgres:18-alpine@sha256:[0-9a-f]{64})$/m)?.[1];
+  assert.ok(postgres, 'docker-compose.yml has no digest-pinned PostgreSQL 18 Alpine image');
+  for (const [file, mount] of [
+    ['../../docker-compose.yml', 'pgdata:/var/lib/postgresql'],
+    ['../../docker-compose.ghcr.yml', 'pgdata:/var/lib/postgresql'],
+    ['../../compose.e2e.yml', '/var/lib/postgresql'],
+    ['../../compose.demo.yml', 'demo-pgdata:/var/lib/postgresql'],
+  ]) {
+    const compose = read(file);
+    assert.ok(compose.includes(`image: ${postgres}\n`), `${file} postgres pin drifted`);
+    assert.ok(compose.includes(`      - ${mount}\n`), `${file} must mount the PostgreSQL 18 parent directory`);
+    assert.doesNotMatch(compose, /\/var\/lib\/postgresql\/data\b/, `${file} mounts the pre-18 path`);
   }
-  assert.ok(read('./billing-parity.mjs').includes(`'${postgres}'`), 'billing-parity.mjs postgres pin drifted');
+  const parity = read('./billing-parity.mjs');
+  assert.ok(parity.includes(`'${postgres}'`), 'billing-parity.mjs postgres pin drifted');
+  assert.ok(parity.includes("'--tmpfs', '/var/lib/postgresql'"), 'billing parity must mount the PostgreSQL 18 parent directory');
+  assert.match(read('./billing-parity.Dockerfile'), /\bpostgresql18-client\b/);
+  assert.match(read('../../Dockerfile'), /^\s*&& apk add[^\n]*\bpostgresql18-client\b/m);
 });

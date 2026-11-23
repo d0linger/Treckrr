@@ -44,15 +44,15 @@ RUN go build -trimpath -mod=readonly \
 FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 # Non-root user & CA certs (for completeness; app talks only to local DB).
-# postgresql16-client provides pg_dump/pg_restore for encrypted backups; the
-# major version must match the Postgres server (postgres:16-alpine).
+# postgresql18-client provides pg_dump/pg_restore for encrypted backups; the
+# major version must match the Postgres server (postgres:18-alpine).
 # `apk upgrade` FIRST, and this is not optional hygiene. The digest pin above
 # fixes the starting layer, which means the packages baked into it stay frozen at
 # whatever Alpine shipped when that layer was built — while the Alpine repository
 # keeps publishing security fixes for them. Without this the image ships
 # known-vulnerable openssl for as long as the pin stands: the first run of the
 # image scan caught exactly that, six fixed HIGH CVEs across libcrypto3, libssl3,
-# libpq and postgresql16-client.
+# libpq and postgresql18-client.
 #
 # Pinning and upgrading are complements, not alternatives: the pin makes the base
 # layer reproducible, the upgrade makes the shipped packages current. Doing only
@@ -66,7 +66,7 @@ FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5
 # caching.
 ARG APK_REFRESH=static
 RUN apk upgrade --no-cache \
-	&& apk add --no-cache ca-certificates tzdata wget postgresql16-client \
+	&& apk add --no-cache ca-certificates tzdata wget postgresql18-client \
 	&& adduser -D -u 10001 treckrr
 ENV TZ=Europe/Vienna
 # The shipped 768 MiB profile starts with a 512 MiB Go heap ceiling, leaving

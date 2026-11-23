@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: treckrr
           POSTGRES_PASSWORD: test
@@ -81,7 +81,7 @@ jobs:
         run: go vet -tags=integration ./...
       - name: Install matching PostgreSQL client
         env:
-          PG_MAJOR: "16"
+          PG_MAJOR: "18"
         run: bash .github/scripts/setup-postgres-client.sh
       # The same guard ci.yml carries, and it matters more here: this job decides
       # whether an image is published. Without it, a Postgres service that failed

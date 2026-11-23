@@ -89,6 +89,10 @@ openssl rand -hex 32   # BACKUP_ENCRYPTION_KEY (optional, enables backups)
 
 For a fresh installation, set **SESSION_SECRET**, **ADMIN_PASSWORD**, **POSTGRES_PASSWORD** and a separate **APP_DB_PASSWORD**. Put the application password in **DATABASE_URL**, using the `APP_DB_USER` role from `.env.example`. The app refuses the documented placeholder secrets. Existing databases need the [role conversion procedure](deploy/database-role.md) before switching credentials. The local source-build profile enables direct HTTP on loopback for development; do not reuse that setting in production.
 
+For an existing PostgreSQL 16 installation, follow the
+[database migration](docs/upgrade-validation.md#postgresql-major-upgrades)
+before deploying.
+
 ```bash
 docker compose up -d
 ```
@@ -236,11 +240,15 @@ Use the [upgrade validation procedure](docs/upgrade-validation.md) for a product
 backup rehearsal, a read-only comparison of existing business values, and cutover
 and recovery checks.
 
+The default database is PostgreSQL 18 Alpine. PostgreSQL 18 mounts the named
+volume or host bind directory at `/var/lib/postgresql`. The image uses
+`/var/lib/postgresql/18/docker` for the cluster.
+
 Persist these two named volumes:
 
 | Volume | Contents |
 | --- | --- |
-| `pgdata` | PostgreSQL data directory — all business data |
+| `pgdata` | PostgreSQL 18 data directory — all business data |
 | `backups` | Encrypted dumps, `status.json`, and private plaintext scratch files while a backup or restore is running |
 
 Backups next to the database are not backups: set the **S3_\*** variables, or copy
@@ -317,8 +325,9 @@ reports unknown deployed-image coverage; scanning `latest` is not deployment
 inventory. Candidate tags from failed gates must never be selected for deployment.
 
 For local core Go checks, `make check` requires an isolated `TEST_DATABASE_URL`
-on the `treckrr-itest` network and matching `PG_MAJOR=16` or `18`; it runs race and
-tagged integration tests serially. `make test-unit` is explicitly unit-only.
+on the `treckrr-itest` network. It defaults to PostgreSQL 18 and runs race and
+tagged integration tests serially. Use `PG_MAJOR=16` with a matching PostgreSQL 16
+server for the legacy compatibility run. `make test-unit` is explicitly unit-only.
 Security scanners, browser tests, image builds and registry promotion remain
 separate CI jobs, not claims made by the Make target.
 
