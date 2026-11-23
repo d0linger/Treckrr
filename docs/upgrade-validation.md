@@ -7,11 +7,26 @@ stack is development; a healthy local container is not production acceptance.
 
 Use PostgreSQL 18 for new deployments. The image expects its database volume or
 host bind directory at `/var/lib/postgresql` and uses `/var/lib/postgresql/18/docker`
-inside it. For a PostgreSQL 16 source, stop all writers and use PostgreSQL 18
-tools to dump every database in custom format and dump globals separately.
-Restore those backups to a fresh PostgreSQL 18 directory, verify data, owners,
-permissions and extensions, then cut over. Keep the old volume and stack
-settings. Reconcile writes made on the new cluster before rolling back.
+inside it.
+
+1. Stop the app and all other writers. Use PostgreSQL 18 tools to dump each
+   database in custom format and dump globals separately.
+2. Start an isolated PostgreSQL 18 database on a new volume such as `treckrr-pg18`
+   or a fresh host bind directory mounted at `/var/lib/postgresql`. Use the source
+   bootstrap role name as `POSTGRES_USER` and `POSTGRES_DB=postgres` so the target
+   starts without a pre-created `treckrr` database. Leave out the usual
+   `deploy/postgres-init` mount. Keep the app stopped through verification.
+3. Restore globals first with `psql -X -v ON_ERROR_STOP=1`. Preserve the original
+   dump. In the restore copy omit only the duplicate `CREATE ROLE` for the
+   verified bootstrap role. Apply the role attributes, password, memberships,
+   and all other globals from the dump.
+4. Restore each new database with `pg_restore --exit-on-error --create -d postgres`.
+   For an archive of the existing `postgres` or `template1` database, restore into
+   that database without `--create` and reconcile its database-level settings,
+   owner, and grants with the source. Verify data, owners, permissions, and
+   extensions, then point the production stack at the same restored volume.
+   Keep the old volume and stack settings. Reconcile any writes made on the new
+   cluster before rolling back.
 
 The app image ships PostgreSQL 18 backup clients. For routine PostgreSQL 18
 patch updates, back up first, review the release notes and reuse the existing
