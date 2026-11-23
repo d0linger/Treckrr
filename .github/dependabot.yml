@@ -109,6 +109,10 @@ updates:
       - "docker"
     commit-message:
       prefix: "docker"
+    # PostgreSQL major upgrades require a planned data migration.
+    ignore:
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
 
   # Keep the browser runtime digest refreshed. Its version must match the exact
   # @playwright/test version in e2e/package.json when accepting an update.

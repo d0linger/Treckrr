@@ -20,7 +20,7 @@ require (
 	github.com/signintech/gopdf v0.38.4
 	golang.org/x/crypto v0.59.0
 	golang.org/x/image v0.48.0
-	golang.org/x/net v0.62.0
+	golang.org/x/net v0.63.0
 	rsc.io/qr v0.2.0
 )
 
